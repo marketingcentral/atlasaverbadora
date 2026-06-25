@@ -119,7 +119,6 @@ export function BancoUsuariosLista() {
         rows={filtered}
         rowKey={(u) => u.id}
         loading={data.isLoading}
-        onRowClick={(u) => nav(u.id)}
         actions={(u) => (
           <>
             <IconButton title="Editar" onClick={() => nav(u.id)}>✎</IconButton>
