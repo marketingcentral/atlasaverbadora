@@ -106,6 +106,8 @@ export interface AdminBanco {
   status: "ativo" | "pausado" | "inativo";
   adapter: "sandbox" | "ifractal";
   contatoEmail: string;
+  loginEmail?: string;
+  hasPassword: boolean;
   scopes: string[];
   mtlsHabilitado: boolean;
   ultimoTeste?: string;
@@ -118,6 +120,8 @@ export interface AdminBancoInput {
   status: "ativo" | "pausado" | "inativo";
   adapter: "sandbox" | "ifractal";
   contatoEmail: string;
+  loginEmail?: string;
+  password?: string;
   scopes?: string[];
   mtlsHabilitado?: boolean;
 }
@@ -501,6 +505,8 @@ export class AtlasClient {
     getBanco: (id: number) => this.request<{ banco: AdminBanco }>(`/v1/admin/bancos/${id}`),
     upsertBanco: (b: AdminBancoInput) => this.request<{ banco: AdminBanco }>("/v1/admin/bancos", { method: "POST", body: b }),
     testarBanco: (id: number) => this.request<{ ok: boolean; banco: AdminBanco }>(`/v1/admin/bancos/${id}/testar-conexao`, { method: "POST" }),
+    resetBancoPassword: (id: number, password: string) =>
+      this.request<{ banco: AdminBanco }>(`/v1/admin/bancos/${id}/reset-password`, { method: "POST", body: { password } }),
     listPrefeituras: () => this.request<{ prefeituras: AdminPrefeitura[] }>("/v1/admin/prefeituras"),
     upsertPrefeitura: (p: AdminPrefeituraInput) => this.request<{ prefeitura: AdminPrefeitura }>("/v1/admin/prefeituras", { method: "POST", body: p }),
     sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),

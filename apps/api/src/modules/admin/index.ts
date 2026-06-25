@@ -22,10 +22,18 @@ export interface BancoAdmin {
   status: "ativo" | "pausado" | "inativo";
   adapter: "sandbox" | "ifractal";
   contatoEmail: string;
+  loginEmail?: string;
+  passwordHash?: string;
   scopes: string[];
   mtlsHabilitado: boolean;
   ultimoTeste?: string;
   ultimoTesteOk?: boolean;
+}
+
+// Strip secrets before returning over the wire.
+function sanitizeBanco(b: BancoAdmin) {
+  const { passwordHash, ...rest } = b;
+  return { ...rest, hasPassword: !!passwordHash };
 }
 
 export interface PrefeituraAdmin {
@@ -115,10 +123,10 @@ function csvResponse(filename: string, csv: string): Response {
 
 export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
   .get("/v1/admin/bancos/csv-template", () => csvResponse("bancos-exemplo.csv", buildCsv(
-    ["nome", "status", "adapter", "contatoEmail", "scopes", "mtlsHabilitado"],
+    ["nome", "status", "adapter", "contatoEmail", "loginEmail", "password", "scopes", "mtlsHabilitado"],
     [
-      { nome: "Banco Exemplo S.A.", status: "ativo", adapter: "sandbox", contatoEmail: "ti@banco.com.br", scopes: "propostas:rw|margem:r", mtlsHabilitado: "false" },
-      { nome: "Outro Banco", status: "pausado", adapter: "ifractal", contatoEmail: "integracao@outro.com.br", scopes: "propostas:rw", mtlsHabilitado: "true" },
+      { nome: "Banco Exemplo S.A.", status: "ativo", adapter: "sandbox", contatoEmail: "ti@banco.com.br", loginEmail: "operador@banco.com.br", password: "trocar123", scopes: "propostas:rw|margem:r", mtlsHabilitado: "false" },
+      { nome: "Outro Banco", status: "pausado", adapter: "ifractal", contatoEmail: "integracao@outro.com.br", loginEmail: "", password: "", scopes: "propostas:rw", mtlsHabilitado: "true" },
     ],
   )))
   .get("/v1/admin/prefeituras/csv-template", () => csvResponse("prefeituras-exemplo.csv", buildCsv(
@@ -168,13 +176,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/bancos", async (c) => {
     requireAdmin(c.get("jwt"));
-    return c.json({ bancos });
+    return c.json({ bancos: bancos.map(sanitizeBanco) });
   })
   .get("/v1/admin/bancos/:id", async (c) => {
     requireAdmin(c.get("jwt"));
     const b = bancos.find((x) => x.id === Number(c.req.param("id")));
     if (!b) throw Errors.notFound("banco");
-    return c.json({ banco: b });
+    return c.json({ banco: sanitizeBanco(b) });
   })
 
   .get("/v1/admin/db/ping", async (c) => {
@@ -211,20 +219,41 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         status: z.enum(["ativo", "pausado", "inativo"]),
         adapter: z.enum(["sandbox", "ifractal"]),
         contatoEmail: z.string(),
+        loginEmail: z.string().email().optional().or(z.literal("")),
+        password: z.string().min(6).optional(),
         scopes: z.array(z.string()).default([]),
         mtlsHabilitado: z.boolean().default(false),
       })
       .parse(await c.req.json());
+    const { password, loginEmail, ...rest } = body;
+    const normalizedLogin = loginEmail ? loginEmail.trim().toLowerCase() : undefined;
+    if (normalizedLogin) {
+      const dup = bancos.find((b) => b.loginEmail === normalizedLogin && b.id !== body.id);
+      if (dup) throw Errors.validation({ loginEmail: `Login ja em uso pelo banco ${dup.nome}` });
+    }
     if (body.id) {
       const idx = bancos.findIndex((b) => b.id === body.id);
       if (idx < 0) throw Errors.notFound("banco");
-      bancos[idx] = { ...bancos[idx]!, ...body, id: body.id };
-      return c.json({ banco: bancos[idx] });
+      const current = bancos[idx]!;
+      bancos[idx] = {
+        ...current,
+        ...rest,
+        id: body.id,
+        loginEmail: normalizedLogin ?? current.loginEmail,
+        passwordHash: password ? await sha256Hex(password) : current.passwordHash,
+      };
+      pushEvent("info", "admin", `Banco "${bancos[idx]!.nome}" atualizado${password ? " (senha trocada)" : ""}`);
+      return c.json({ banco: sanitizeBanco(bancos[idx]!) });
     }
-    const novo: BancoAdmin = { ...body, id: Math.max(...bancos.map((b) => b.id), 0) + 1 };
+    const novo: BancoAdmin = {
+      ...rest,
+      id: Math.max(...bancos.map((b) => b.id), 0) + 1,
+      loginEmail: normalizedLogin,
+      passwordHash: password ? await sha256Hex(password) : undefined,
+    };
     bancos.push(novo);
-    pushEvent("info", "admin", `Banco "${novo.nome}" criado`);
-    return c.json({ banco: novo });
+    pushEvent("info", "admin", `Banco "${novo.nome}" criado${password ? " com credencial de acesso" : ""}`);
+    return c.json({ banco: sanitizeBanco(novo) });
   })
   .post("/v1/admin/bancos/:id/testar-conexao", async (c) => {
     requireAdmin(c.get("jwt"));
@@ -233,7 +262,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.ultimoTeste = new Date().toISOString();
     b.ultimoTesteOk = b.adapter === "sandbox"; // sandbox sempre passa
     pushEvent(b.ultimoTesteOk ? "info" : "error", "admin", `Teste de conexao ${b.nome} ${b.ultimoTesteOk ? "OK" : "FALHOU"}`);
-    return c.json({ ok: b.ultimoTesteOk, banco: b });
+    return c.json({ ok: b.ultimoTesteOk, banco: sanitizeBanco(b) });
+  })
+  .post("/v1/admin/bancos/:id/reset-password", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const b = bancos.find((x) => x.id === Number(c.req.param("id")));
+    if (!b) throw Errors.notFound("banco");
+    const body = z.object({ password: z.string().min(6) }).parse(await c.req.json());
+    b.passwordHash = await sha256Hex(body.password);
+    pushEvent("warn", "admin.bancos.reset-password", `Senha do banco "${b.nome}" trocada por user:${c.get("jwt").sub}`);
+    return c.json({ banco: sanitizeBanco(b) });
   })
 
   .get("/v1/admin/prefeituras", async (c) => {
@@ -565,16 +603,26 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const text = await readCsvBody(c);
     const { rows } = parseCsv(text);
     const out: ImportOutcome<BancoAdmin> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
-    rows.forEach((r, idx) => {
+    for (let idx = 0; idx < rows.length; idx++) {
+      const r = rows[idx]!;
       const line = idx + 2;
-      if (!r.nome) { out.errors.push({ line, message: "nome obrigatorio" }); return; }
+      if (!r.nome) { out.errors.push({ line, message: "nome obrigatorio" }); continue; }
+      const loginEmail = r.loginEmail?.trim().toLowerCase() || undefined;
+      const password = r.password?.trim() || undefined;
+      if (password && password.length < 6) { out.errors.push({ line, message: "password deve ter ao menos 6 caracteres" }); continue; }
       const existing = bancos.find((b) => b.nome.toLowerCase() === r.nome!.toLowerCase());
+      if (loginEmail) {
+        const dup = bancos.find((b) => b.loginEmail === loginEmail && b.id !== existing?.id);
+        if (dup) { out.errors.push({ line, message: `loginEmail ja em uso pelo banco ${dup.nome}` }); continue; }
+      }
       const banco: BancoAdmin = {
         id: existing?.id ?? Math.max(0, ...bancos.map((b) => b.id)) + 1,
         nome: r.nome!,
         status: ((r.status ?? "ativo").toLowerCase() as BancoAdmin["status"]),
         adapter: ((r.adapter ?? "sandbox").toLowerCase() as BancoAdmin["adapter"]),
         contatoEmail: r.contatoEmail ?? "",
+        loginEmail: loginEmail ?? existing?.loginEmail,
+        passwordHash: password ? await sha256Hex(password) : existing?.passwordHash,
         scopes: (r.scopes ?? "propostas:rw").split("|").map((s) => s.trim()).filter(Boolean),
         mtlsHabilitado: r.mtlsHabilitado === "true" || r.mtlsHabilitado === "1",
       };
@@ -586,7 +634,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         out.inserted++;
       }
       out.rows.push(banco);
-    });
+    }
     pushEvent("info", "admin.bancos.import", `${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
     return c.json(out);
   })

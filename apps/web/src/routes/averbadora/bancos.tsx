@@ -33,6 +33,18 @@ export function AdminBancos() {
     { key: "nome", header: "Banco" },
     { key: "adapter", header: "Adapter" },
     { key: "contatoEmail", header: "Contato" },
+    {
+      key: "acesso",
+      header: "Acesso /login",
+      render: (b) =>
+        b.loginEmail && b.hasPassword ? (
+          <span style={{ color: "var(--emerald-500)" }}>{b.loginEmail}</span>
+        ) : b.loginEmail ? (
+          <span style={{ color: "var(--danger-500)" }} title="Login cadastrado mas sem senha">{b.loginEmail} (sem senha)</span>
+        ) : (
+          <span style={{ color: "var(--text-dim)" }}>—</span>
+        ),
+    },
     { key: "scopes", header: "Scopes", render: (b) => b.scopes.join(", ") || "—" },
     { key: "mtlsHabilitado", header: "mTLS", render: (b) => (b.mtlsHabilitado ? "sim" : "não") },
     {
@@ -61,7 +73,7 @@ export function AdminBancos() {
 
       <CsvImportPanel
         title="Importar bancos"
-        columnsHint="Colunas: nome, status, adapter, contatoEmail, scopes (separados por |), mtlsHabilitado"
+        columnsHint="Colunas: nome, status, adapter, contatoEmail, loginEmail, password (min 6), scopes (separados por |), mtlsHabilitado"
         templateUrl={atlas.admin.csvTemplateUrl("bancos")}
         onImport={async (csv) => atlas.admin.importCsv("bancos", csv)}
         onImported={() => qc.invalidateQueries({ queryKey: ["admin", "bancos"] })}
@@ -93,16 +105,29 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
     status: initial?.status ?? "ativo",
     adapter: initial?.adapter ?? "sandbox",
     contatoEmail: initial?.contatoEmail ?? "",
+    loginEmail: initial?.loginEmail ?? "",
+    password: "",
     scopes: initial?.scopes ?? ["propostas:rw"],
     mtlsHabilitado: initial?.mtlsHabilitado ?? false,
   });
+  const [error, setError] = useState<string | null>(null);
   const save = useMutation({
-    mutationFn: () => atlas.admin.upsertBanco(form),
+    mutationFn: () => {
+      const payload: AdminBancoInput = { ...form };
+      if (!payload.loginEmail) delete payload.loginEmail;
+      if (!payload.password) delete payload.password;
+      return atlas.admin.upsertBanco(payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "bancos"] });
       onClose();
     },
+    onError: (err) => setError(err instanceof Error ? err.message : "Erro ao salvar"),
   });
+
+  const senhaHint = initial?.hasPassword
+    ? "Deixe em branco para manter a senha atual."
+    : "Mínimo 6 caracteres. Será enviada ao operador do banco.";
 
   return (
     <div onClick={onClose} style={modalBackdrop}>
@@ -111,6 +136,21 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
         <FormGrid cols={2}>
           <TextField label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
           <TextField label="Contato (email)" value={form.contatoEmail} onChange={(e) => setForm({ ...form, contatoEmail: e.target.value })} required />
+          <TextField
+            label="Login (email de acesso ao /login)"
+            type="email"
+            value={form.loginEmail ?? ""}
+            onChange={(e) => setForm({ ...form, loginEmail: e.target.value })}
+            placeholder="operador@banco.com.br"
+          />
+          <TextField
+            label={initial?.hasPassword ? "Nova senha (opcional)" : "Senha"}
+            type="password"
+            value={form.password ?? ""}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            placeholder={initial?.hasPassword ? "••••••••" : "min. 6 caracteres"}
+            hint={senhaHint}
+          />
           <SelectField
             label="Situação"
             value={form.status}
@@ -145,6 +185,7 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
             ]}
           />
         </FormGrid>
+        {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
           <Button type="button" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Salvando..." : "Salvar"}</Button>

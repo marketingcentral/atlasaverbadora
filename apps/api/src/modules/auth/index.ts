@@ -6,6 +6,7 @@ import type { Env } from "../../env.js";
 import { generateRefreshToken, signAccessToken } from "./jwt.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
+import { bancos as bancosStore } from "../admin/index.js";
 
 interface ResolvedUser {
   id: number;
@@ -38,6 +39,28 @@ async function resolveServidorByCredentials(
 }
 
 /**
+ * Auth-resolve a banco from the admin `bancos` store pelo loginEmail (validando SHA-256 da senha).
+ * Mesma semantica do resolveServidor: claimedBy=true bloqueia fallback DEV_USERS quando o login
+ * existe no cadastro mas a senha nao bate.
+ */
+async function resolveBancoByCredentials(
+  identifier: string,
+  password: string,
+): Promise<{ match: ResolvedUser | null; claimedBy: boolean }> {
+  const email = identifier.trim().toLowerCase();
+  if (!email.includes("@")) return { match: null, claimedBy: false };
+  const b = bancosStore.find((x) => x.loginEmail === email);
+  if (!b || !b.passwordHash) return { match: null, claimedBy: false };
+  if (b.status !== "ativo") return { match: null, claimedBy: true };
+  const hash = await sha256Hex(password);
+  if (hash !== b.passwordHash) return { match: null, claimedBy: true };
+  return {
+    match: { id: 1000 + b.id, nome: b.nome, role: "banco", banco_id: b.id },
+    claimedBy: true,
+  };
+}
+
+/**
  * Lightweight dev-only login: accepts any user from the seeded sandbox.
  * Replace with real DB-backed lookup + Argon2 comparison once `users` is populated.
  */
@@ -57,10 +80,18 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     // 1) Servidor cadastrado via averbadora (login = CPF) com senha SHA-256.
     const servidorAuth = await resolveServidorByCredentials(body.identifier, body.password);
     let resolved: ResolvedUser | null = servidorAuth.match;
+    let claimed = servidorAuth.claimedBy;
 
-    // 2) Fallback DEV_USERS — só se o identifier NÃO foi reivindicado por um servidor com senha cadastrada
-    //    (caso contrário a senha demo continuaria valendo mesmo após o admin trocar).
-    if (!resolved && !servidorAuth.claimedBy) {
+    // 2) Banco cadastrado via averbadora (login = email + senha SHA-256).
+    if (!resolved && !claimed) {
+      const bancoAuth = await resolveBancoByCredentials(body.identifier, body.password);
+      resolved = bancoAuth.match;
+      claimed = claimed || bancoAuth.claimedBy;
+    }
+
+    // 3) Fallback DEV_USERS — só se o identifier NÃO foi reivindicado por servidor/banco
+    //    cadastrado (caso contrário a senha demo continuaria valendo mesmo após o admin trocar).
+    if (!resolved && !claimed) {
       const dev = DEV_USERS.find((u) => u.identifier === identifier);
       if (dev && dev.password === body.password) {
         resolved = {
@@ -86,7 +117,19 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     });
     const refreshToken = generateRefreshToken();
     if (c.env.KV_SESSIONS) {
-      await c.env.KV_SESSIONS.put(`rt:${refreshToken}`, JSON.stringify({ user_id: resolved.id, role: resolved.role, device_id: body.device_id }), { expirationTtl: 60 * 60 * 24 * 30 });
+      await c.env.KV_SESSIONS.put(
+        `rt:${refreshToken}`,
+        JSON.stringify({
+          user_id: resolved.id,
+          role: resolved.role,
+          servidor_id: resolved.servidor_id,
+          banco_id: resolved.banco_id,
+          prefeitura_id: resolved.prefeitura_id,
+          nome: resolved.nome,
+          device_id: body.device_id,
+        }),
+        { expirationTtl: 60 * 60 * 24 * 30 },
+      );
     }
     return c.json({
       access_token: accessToken,
@@ -101,21 +144,63 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     if (!c.env.KV_SESSIONS) throw Errors.unauthorized("Refresh nao disponivel sem KV_SESSIONS");
     const data = await c.env.KV_SESSIONS.get(`rt:${body.refresh_token}`);
     if (!data) throw Errors.unauthorized("Refresh token invalido ou revogado");
-    const parsed = z.object({ user_id: z.number(), device_id: z.string().optional() }).parse(JSON.parse(data));
-    const user = DEV_USERS.find((u) => u.id === parsed.user_id);
+    const parsed = z
+      .object({
+        user_id: z.number(),
+        role: z.enum(["servidor", "banco", "averbadora", "prefeitura"]).optional(),
+        servidor_id: z.number().optional(),
+        banco_id: z.number().optional(),
+        prefeitura_id: z.number().optional(),
+        nome: z.string().optional(),
+        device_id: z.string().optional(),
+      })
+      .parse(JSON.parse(data));
+    // Sessoes antigas (sem role no payload) caem no DEV_USERS; novas (banco/servidor cadastrados) ja trazem tudo.
+    const dev = DEV_USERS.find((u) => u.id === parsed.user_id);
+    const user = parsed.role
+      ? {
+          id: parsed.user_id,
+          role: parsed.role,
+          nome: parsed.nome ?? dev?.nome ?? "Usuario",
+          servidor_id: parsed.servidor_id,
+          banco_id: parsed.banco_id,
+          prefeitura_id: parsed.prefeitura_id,
+        }
+      : dev
+        ? {
+            id: dev.id,
+            role: dev.role as "servidor" | "banco" | "averbadora" | "prefeitura",
+            nome: dev.nome,
+            servidor_id: "servidor_id" in dev ? dev.servidor_id : undefined,
+            banco_id: "banco_id" in dev ? dev.banco_id : undefined,
+            prefeitura_id: "prefeitura_id" in dev ? dev.prefeitura_id : undefined,
+          }
+        : null;
     if (!user) throw Errors.unauthorized();
     // Rotate refresh token.
     await c.env.KV_SESSIONS.delete(`rt:${body.refresh_token}`);
     const accessToken = await signAccessToken(c.env, {
       sub: String(user.id),
       role: user.role,
-      servidor_id: "servidor_id" in user ? user.servidor_id : undefined,
-      banco_id: "banco_id" in user ? user.banco_id : undefined,
-      prefeitura_id: "prefeitura_id" in user ? user.prefeitura_id : undefined,
+      servidor_id: user.servidor_id,
+      banco_id: user.banco_id,
+      prefeitura_id: user.prefeitura_id,
       device_id: parsed.device_id,
     });
     const newRefresh = generateRefreshToken();
-    await c.env.KV_SESSIONS.put(`rt:${newRefresh}`, JSON.stringify(parsed), { expirationTtl: 60 * 60 * 24 * 30 });
+    await c.env.KV_SESSIONS.put(
+      `rt:${newRefresh}`,
+      JSON.stringify({
+        user_id: user.id,
+        role: user.role,
+        servidor_id: user.servidor_id,
+        banco_id: user.banco_id,
+        prefeitura_id: user.prefeitura_id,
+        nome: user.nome,
+        device_id: parsed.device_id,
+      }),
+      { expirationTtl: 60 * 60 * 24 * 30 },
+    );
     return c.json({
       access_token: accessToken,
       refresh_token: newRefresh,
