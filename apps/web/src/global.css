@@ -1,0 +1,58 @@
+html, body, #root { height: 100%; }
+body { font-family: var(--font-sans); }
+
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; }
+
+/* Auth layout */
+.auth-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: radial-gradient(circle at top right, rgba(201,169,97,.18), transparent 60%),
+              radial-gradient(circle at bottom left, rgba(16,185,129,.14), transparent 60%),
+              var(--bg);
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: var(--space-7);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+}
+
+/* App shell (after login) */
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  grid-template-rows: 64px 1fr;
+  grid-template-areas: "sidebar topbar" "sidebar main";
+}
+@media (max-width: 860px) {
+  .app-shell { grid-template-columns: 1fr; grid-template-areas: "topbar" "main"; }
+  .app-sidebar { display: none; }
+}
+.app-sidebar { grid-area: sidebar; background: var(--bg-elev); border-right: 1px solid var(--border); padding: var(--space-5); }
+.app-topbar { grid-area: topbar; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 var(--space-5); }
+.app-main { grid-area: main; padding: var(--space-6); overflow-y: auto; }
+
+.app-brand { display: flex; align-items: center; gap: var(--space-3); font-weight: 700; font-size: 1.05rem; }
+.app-brand .mark {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--gold-500), var(--gold-400) 40%, var(--emerald-500));
+  display: grid; place-items: center; color: var(--navy-900); font-weight: 800;
+  box-shadow: var(--shadow-gold);
+}
+
+.nav-side a {
+  display: block; padding: 10px 14px; border-radius: var(--radius-md);
+  color: var(--text-muted); font-size: .95rem; margin-bottom: 4px;
+}
+.nav-side a:hover, .nav-side a.active { background: var(--bg-elev-2); color: var(--text); }
+
+.eyebrow { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }

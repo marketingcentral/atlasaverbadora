@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>API Reference · Averba</title>
+<meta name="description" content="Documentação técnica da API Averba — autenticação, endpoints, parâmetros, exemplos." />
+<link rel="icon" href="assets/img/logo.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/css/tokens.css" />
+<link rel="stylesheet" href="assets/css/base.css" />
+<link rel="stylesheet" href="assets/css/components.css" />
+<link rel="stylesheet" href="assets/css/docs.css" />
+<script src="assets/js/theme.js"></script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-brand"><span class="mark">A</span><span>Averba<small style="opacity:.6">.io</small></span></a>
+    <button class="nav-toggle" aria-label="Menu"><span></span></button>
+    <nav>
+      <ul class="nav-links">
+        <li><a href="index.html">Início</a></li>
+        <li><a href="arquitetura.html">Arquitetura</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="demo-ui.html">Demo UI</a></li>
+        <li><a href="docs.html">API Docs</a></li>
+      </ul>
+    </nav>
+    <div class="nav-actions">
+      <button class="theme-toggle" data-theme-toggle aria-label="Alternar tema">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <a href="index.html#contato" class="btn btn-primary btn-sm nav-cta-desktop">Solicitar Proposta</a>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="docs-mobile-bar">
+    <strong>API Reference</strong>
+    <button class="btn btn-ghost btn-sm" data-docs-sidebar-toggle>☰ Endpoints</button>
+  </div>
+
+  <div class="docs-shell">
+
+    <!-- ========== SIDEBAR ========== -->
+    <aside class="docs-sidebar">
+      <h4>Visão geral</h4>
+      <ul>
+        <li><a href="#intro">Introdução</a></li>
+        <li><a href="#auth">Autenticação</a></li>
+        <li><a href="#errors">Erros &amp; rate-limit</a></li>
+      </ul>
+
+      <h4>Servidores</h4>
+      <ul>
+        <li><a href="#srv-get"><span class="method-pill method-get">GET</span>Obter servidor</a></li>
+        <li><a href="#srv-margem"><span class="method-pill method-get">GET</span>Margem consignável</a></li>
+        <li><a href="#srv-list"><span class="method-pill method-get">GET</span>Listar servidores</a></li>
+      </ul>
+
+      <h4>Propostas</h4>
+      <ul>
+        <li><a href="#prop-sim"><span class="method-pill method-post">POST</span>Simular crédito</a></li>
+        <li><a href="#prop-create"><span class="method-pill method-post">POST</span>Criar proposta</a></li>
+        <li><a href="#prop-port"><span class="method-pill method-post">POST</span>Portabilidade</a></li>
+      </ul>
+
+      <h4>Bancos &amp; Prefeituras</h4>
+      <ul>
+        <li><a href="#bancos-list"><span class="method-pill method-get">GET</span>Listar bancos</a></li>
+        <li><a href="#pref-list"><span class="method-pill method-get">GET</span>Listar prefeituras</a></li>
+      </ul>
+
+      <h4>Webhooks</h4>
+      <ul>
+        <li><a href="#wh-register"><span class="method-pill method-post">POST</span>Registrar webhook</a></li>
+        <li><a href="#wh-events"><span class="method-pill method-get">GET</span>Eventos</a></li>
+      </ul>
+    </aside>
+
+    <!-- ========== MAIN ========== -->
+    <main class="docs-main">
+
+      <section class="doc-section" id="intro">
+        <h1>API Reference</h1>
+        <p>A API do Averba é REST sobre HTTPS, com payloads em JSON. Todos os endpoints retornam UTF-8 e usam ISO-8601 para datas. Versionamento é prefixado na URL (<code>/v1/</code>) e novas versões são introduzidas sem quebrar versões anteriores por pelo menos 12 meses.</p>
+        <p><strong>Base URL:</strong> <code>https://api.averba.io</code> &nbsp;·&nbsp; <strong>Sandbox:</strong> <code>https://api.sandbox.averba.io</code></p>
+      </section>
+
+      <section class="doc-section" id="auth">
+        <h2>Autenticação</h2>
+        <p>A API usa <strong>JWT (Bearer)</strong> com refresh token rotativo. O access token expira em 15 minutos; o refresh token em 30 dias. Envie o token no header <code>Authorization: Bearer &lt;jwt&gt;</code>. Para integrações de banco há também suporte a OAuth2 client credentials + mTLS.</p>
+      </section>
+
+      <section class="doc-section" id="errors">
+        <h2>Erros &amp; rate-limit</h2>
+        <p>Erros seguem o formato <code>{ "error": { "code", "message", "details" } }</code>. Rate-limit padrão: 600 req/min por token; bursts até 100 req em 10s. Headers <code>X-RateLimit-Remaining</code> e <code>X-RateLimit-Reset</code> informam o estado atual.</p>
+      </section>
+
+      <!-- ========== EXEMPLAR ENDPOINT ========== -->
+      <article class="endpoint" id="srv-margem">
+        <div class="endpoint-head">
+          <span class="method-pill method-get">GET</span>
+          <span class="path">/v1/servidores/<span class="param">{servidor_id}</span>/margem-consignavel</span>
+        </div>
+        <p>Retorna a margem consignável atualizada do servidor — salário base, valor comprometido, valor disponível e fonte dos dados (folha da prefeitura). Resposta cacheada por 5 minutos em borda; invalidada automaticamente quando há nova averbação.</p>
+
+        <h3 style="font-size: 1.05rem; margin-top: 24px">Path parameters</h3>
+        <table class="params-table">
+          <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>servidor_id</code></td>
+              <td class="type">integer</td>
+              <td><span class="req">required</span></td>
+              <td>Identificador numérico do servidor municipal cadastrado.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 style="font-size: 1.05rem; margin-top: 24px">Query parameters</h3>
+        <table class="params-table">
+          <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>force_refresh</code></td>
+              <td class="type">boolean</td>
+              <td><span class="opt">optional</span></td>
+              <td>Se <code>true</code>, ignora cache e consulta a folha da prefeitura em tempo real. Padrão: <code>false</code>.</td>
+            </tr>
+            <tr>
+              <td><code>include</code></td>
+              <td class="type">string</td>
+              <td><span class="opt">optional</span></td>
+              <td>Recursos adicionais — valores aceitos: <code>contratos</code>, <code>historico</code>. Separados por vírgula.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 style="font-size: 1.05rem; margin-top: 24px">Respostas</h3>
+
+        <div class="response-block open">
+          <div class="response-head"><span class="status s2">200</span><span>OK — margem retornada com sucesso</span><span class="chev">›</span></div>
+          <div class="response-body">
+            <div class="code-block" style="margin:0;border-radius:0;border:0">
+              <pre><span class="tok-key">"servidor_id"</span>: <span class="tok-num">42</span>,
+<span class="tok-key">"matricula"</span>: <span class="tok-str">"M-009821"</span>,
+<span class="tok-key">"prefeitura_id"</span>: <span class="tok-num">17</span>,
+<span class="tok-key">"margem"</span>: {
+  <span class="tok-key">"salario_base"</span>: <span class="tok-num">4620.00</span>,
+  <span class="tok-key">"comprometido"</span>: <span class="tok-num">1566.00</span>,
+  <span class="tok-key">"disponivel"</span>: <span class="tok-num">1480.32</span>,
+  <span class="tok-key">"percentual_uso"</span>: <span class="tok-num">0.339</span>
+},
+<span class="tok-key">"fonte"</span>: {
+  <span class="tok-key">"tipo"</span>: <span class="tok-str">"folha_prefeitura"</span>,
+  <span class="tok-key">"sincronizado_em"</span>: <span class="tok-str">"2026-06-17T02:14:32Z"</span>,
+  <span class="tok-key">"cache_status"</span>: <span class="tok-str">"HIT"</span>
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="response-block">
+          <div class="response-head"><span class="status s4">401</span><span>Unauthorized — token inválido ou expirado</span><span class="chev">›</span></div>
+          <div class="response-body">
+            <div class="code-block" style="margin:0;border-radius:0;border:0">
+              <pre><span class="tok-key">"error"</span>: {
+  <span class="tok-key">"code"</span>: <span class="tok-str">"unauthorized"</span>,
+  <span class="tok-key">"message"</span>: <span class="tok-str">"O access token expirou. Use refresh_token para renovar."</span>
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="response-block">
+          <div class="response-head"><span class="status s4">404</span><span>Not Found — servidor não encontrado</span><span class="chev">›</span></div>
+          <div class="response-body">
+            <div class="code-block" style="margin:0;border-radius:0;border:0">
+              <pre><span class="tok-key">"error"</span>: {
+  <span class="tok-key">"code"</span>: <span class="tok-str">"servidor_not_found"</span>,
+  <span class="tok-key">"message"</span>: <span class="tok-str">"Nenhum servidor cadastrado com o ID informado."</span>
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="response-block">
+          <div class="response-head"><span class="status s4">422</span><span>Unprocessable — folha indisponível</span><span class="chev">›</span></div>
+          <div class="response-body">
+            <div class="code-block" style="margin:0;border-radius:0;border:0">
+              <pre><span class="tok-key">"error"</span>: {
+  <span class="tok-key">"code"</span>: <span class="tok-str">"folha_indisponivel"</span>,
+  <span class="tok-key">"message"</span>: <span class="tok-str">"A folha da prefeitura ainda não foi sincronizada para o mês corrente."</span>,
+  <span class="tok-key">"details"</span>: { <span class="tok-key">"prefeitura_id"</span>: <span class="tok-num">17</span> }
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inline code panel for mobile -->
+        <div class="endpoint-code" style="display:none">
+          <h3 style="font-size: 1.05rem">Exemplos</h3>
+          <!-- mobile code block here if needed -->
+        </div>
+      </article>
+
+      <!-- ========== SHORTER ENDPOINTS ========== -->
+      <article class="endpoint" id="srv-get">
+        <div class="endpoint-head">
+          <span class="method-pill method-get">GET</span>
+          <span class="path">/v1/servidores/<span class="param">{servidor_id}</span></span>
+        </div>
+        <p>Retorna os dados cadastrais do servidor: nome, matrícula, prefeitura, status, contratos ativos.</p>
+        <h3 style="font-size: 1.05rem; margin-top: 16px">Path parameters</h3>
+        <table class="params-table">
+          <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+          <tbody>
+            <tr><td><code>servidor_id</code></td><td class="type">integer</td><td><span class="req">required</span></td><td>ID do servidor.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="endpoint" id="srv-list">
+        <div class="endpoint-head">
+          <span class="method-pill method-get">GET</span>
+          <span class="path">/v1/servidores</span>
+        </div>
+        <p>Lista paginada de servidores (apenas para clientes administrativos). Suporta filtros por prefeitura, status e busca textual.</p>
+        <h3 style="font-size: 1.05rem; margin-top: 16px">Query parameters</h3>
+        <table class="params-table">
+          <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+          <tbody>
+            <tr><td><code>prefeitura_id</code></td><td class="type">integer</td><td><span class="opt">optional</span></td><td>Filtra por prefeitura.</td></tr>
+            <tr><td><code>status</code></td><td class="type">string</td><td><span class="opt">optional</span></td><td><code>ativo</code> · <code>bloqueado</code> · <code>arquivado</code></td></tr>
+            <tr><td><code>cursor</code></td><td class="type">string</td><td><span class="opt">optional</span></td><td>Cursor de paginação (retornado em <code>meta.next_cursor</code>).</td></tr>
+            <tr><td><code>limit</code></td><td class="type">integer</td><td><span class="opt">optional</span></td><td>1–100. Padrão 25.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="endpoint" id="prop-sim">
+        <div class="endpoint-head">
+          <span class="method-pill method-post">POST</span>
+          <span class="path">/v1/propostas/simular</span>
+        </div>
+        <p>Faz fan-out de simulação para todos os bancos elegíveis e retorna lista ordenada por CET. Latência típica 800–1500ms.</p>
+        <h3 style="font-size: 1.05rem; margin-top: 16px">Request body</h3>
+        <table class="params-table">
+          <thead><tr><th>Nome</th><th>Tipo</th><th>Obrigatório</th><th>Descrição</th></tr></thead>
+          <tbody>
+            <tr><td><code>servidor_id</code></td><td class="type">integer</td><td><span class="req">required</span></td><td>ID do servidor solicitante.</td></tr>
+            <tr><td><code>valor</code></td><td class="type">number</td><td><span class="req">required</span></td><td>Valor desejado em BRL (mínimo R$ 500).</td></tr>
+            <tr><td><code>parcelas</code></td><td class="type">integer</td><td><span class="req">required</span></td><td>Número de parcelas (12 a 96).</td></tr>
+            <tr><td><code>bancos</code></td><td class="type">array&lt;int&gt;</td><td><span class="opt">optional</span></td><td>Restringe simulação a IDs de bancos específicos.</td></tr>
+          </tbody>
+        </table>
+      </article>
+
+      <article class="endpoint" id="prop-create">
+        <div class="endpoint-head">
+          <span class="method-pill method-post">POST</span>
+          <span class="path">/v1/propostas</span>
+        </div>
+        <p>Cria uma proposta a partir de uma simulação aceita pelo servidor. Dispara webhook para o banco e abre fluxo de assinatura digital.</p>
+      </article>
+
+      <article class="endpoint" id="prop-port">
+        <div class="endpoint-head">
+          <span class="method-pill method-post">POST</span>
+          <span class="path">/v1/propostas/portabilidade</span>
+        </div>
+        <p>Inicia processo de portabilidade de um contrato existente. Workflow assíncrono — retorne ao endpoint de status para acompanhar.</p>
+      </article>
+
+      <article class="endpoint" id="bancos-list">
+        <div class="endpoint-head">
+          <span class="method-pill method-get">GET</span>
+          <span class="path">/v1/bancos</span>
+        </div>
+        <p>Lista bancos ativos elegíveis para o servidor autenticado, com produtos, faixas de taxa e status do serviço.</p>
+      </article>
+
+      <article class="endpoint" id="pref-list">
+        <div class="endpoint-head">
+          <span class="method-pill method-get">GET</span>
+          <span class="path">/v1/prefeituras</span>
+        </div>
+        <p>Lista prefeituras afiliadas. Cada item inclui status da última sincronização da folha.</p>
+      </article>
+
+      <article class="endpoint" id="wh-register">
+        <div class="endpoint-head">
+          <span class="method-pill method-post">POST</span>
+          <span class="path">/v1/webhooks</span>
+        </div>
+        <p>Registra um endpoint para receber eventos. Eventos disponíveis: <code>proposta.criada</code>, <code>proposta.aprovada</code>, <code>proposta.contratada</code>, <code>proposta.averbada</code>, <code>portabilidade.concluida</code>.</p>
+      </article>
+
+      <article class="endpoint" id="wh-events">
+        <div class="endpoint-head">
+          <span class="method-pill method-get">GET</span>
+          <span class="path">/v1/webhooks/eventos</span>
+        </div>
+        <p>Lista eventos disparados, com status de entrega, próximas tentativas e payload original (para depuração).</p>
+      </article>
+
+    </main>
+
+    <!-- ========== RIGHT CODE PANEL ========== -->
+    <aside class="docs-code-col">
+
+      <!-- REQUEST -->
+      <div class="code-block">
+        <div class="code-tabs">
+          <button data-lang="curl">cURL</button>
+          <button data-lang="js">JavaScript</button>
+          <button data-lang="ts">TypeScript</button>
+          <button data-lang="py">Python</button>
+          <button class="copy-btn" data-label="Copiar">⧉ Copiar</button>
+        </div>
+        <div class="label">Request</div>
+        <div class="code-pane" data-lang="curl">
+<pre><span class="tok-meth">curl</span> <span class="tok-flag">-X</span> GET <span class="tok-url">"https://api.averba.io/v1/servidores/42/margem-consignavel"</span> \
+  <span class="tok-flag">-H</span> <span class="tok-str">"Authorization: Bearer eyJhbGciOiJSUzI1NiIs..."</span> \
+  <span class="tok-flag">-H</span> <span class="tok-str">"Accept: application/json"</span></pre>
+        </div>
+        <div class="code-pane" data-lang="js">
+<pre><span class="tok-key">const</span> res = <span class="tok-key">await</span> fetch(
+  <span class="tok-str">"https://api.averba.io/v1/servidores/42/margem-consignavel"</span>,
+  {
+    <span class="tok-key">method</span>: <span class="tok-str">"GET"</span>,
+    <span class="tok-key">headers</span>: {
+      <span class="tok-str">"Authorization"</span>: <span class="tok-str">`Bearer ${token}`</span>,
+      <span class="tok-str">"Accept"</span>: <span class="tok-str">"application/json"</span>
+    }
+  }
+);
+<span class="tok-key">const</span> data = <span class="tok-key">await</span> res.json();</pre>
+        </div>
+        <div class="code-pane" data-lang="ts">
+<pre><span class="tok-com">// usando o SDK oficial</span>
+<span class="tok-key">import</span> { AverbaClient } <span class="tok-key">from</span> <span class="tok-str">"@averba/sdk"</span>;
+
+<span class="tok-key">const</span> averba = <span class="tok-key">new</span> AverbaClient({ token: process.env.AVERBA_TOKEN! });
+
+<span class="tok-key">const</span> margem = <span class="tok-key">await</span> averba.servidores.margem(<span class="tok-num">42</span>, {
+  forceRefresh: <span class="tok-bool">false</span>,
+  include: [<span class="tok-str">"contratos"</span>]
+});
+
+console.log(margem.disponivel); <span class="tok-com">// 1480.32</span></pre>
+        </div>
+        <div class="code-pane" data-lang="py">
+<pre><span class="tok-key">import</span> requests
+
+resp = requests.<span class="tok-meth">get</span>(
+    <span class="tok-str">"https://api.averba.io/v1/servidores/42/margem-consignavel"</span>,
+    headers={
+        <span class="tok-str">"Authorization"</span>: <span class="tok-key">f</span><span class="tok-str">"Bearer {token}"</span>,
+        <span class="tok-str">"Accept"</span>: <span class="tok-str">"application/json"</span>,
+    },
+)
+data = resp.json()</pre>
+        </div>
+      </div>
+
+      <!-- RESPONSE -->
+      <div class="code-block">
+        <div class="code-tabs">
+          <button data-lang="curl" class="active">200 OK</button>
+          <button class="copy-btn" data-label="Copiar">⧉ Copiar</button>
+        </div>
+        <div class="label">Response</div>
+        <div class="code-pane active" data-lang="curl">
+<pre>{
+  <span class="tok-key">"servidor_id"</span>: <span class="tok-num">42</span>,
+  <span class="tok-key">"matricula"</span>: <span class="tok-str">"M-009821"</span>,
+  <span class="tok-key">"prefeitura_id"</span>: <span class="tok-num">17</span>,
+  <span class="tok-key">"margem"</span>: {
+    <span class="tok-key">"salario_base"</span>: <span class="tok-num">4620.00</span>,
+    <span class="tok-key">"comprometido"</span>: <span class="tok-num">1566.00</span>,
+    <span class="tok-key">"disponivel"</span>: <span class="tok-num">1480.32</span>,
+    <span class="tok-key">"percentual_uso"</span>: <span class="tok-num">0.339</span>
+  },
+  <span class="tok-key">"fonte"</span>: {
+    <span class="tok-key">"tipo"</span>: <span class="tok-str">"folha_prefeitura"</span>,
+    <span class="tok-key">"sincronizado_em"</span>: <span class="tok-str">"2026-06-17T02:14:32Z"</span>,
+    <span class="tok-key">"cache_status"</span>: <span class="tok-str">"HIT"</span>
+  },
+  <span class="tok-key">"contratos"</span>: [
+    {
+      <span class="tok-key">"id"</span>: <span class="tok-str">"CTR-9742"</span>,
+      <span class="tok-key">"banco_id"</span>: <span class="tok-num">3</span>,
+      <span class="tok-key">"parcela"</span>: <span class="tok-num">782.40</span>,
+      <span class="tok-key">"saldo_devedor"</span>: <span class="tok-num">22184.50</span>,
+      <span class="tok-key">"taxa_am"</span>: <span class="tok-num">0.0215</span>
+    }
+  ],
+  <span class="tok-key">"_meta"</span>: {
+    <span class="tok-key">"trace_id"</span>: <span class="tok-str">"4f2a-91e3-7c1d"</span>,
+    <span class="tok-key">"duracao_ms"</span>: <span class="tok-num">187</span>
+  }
+}</pre>
+        </div>
+      </div>
+
+    </aside>
+
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-bottom">
+      <span>© 2026 Averba — API Reference (demo).</span>
+      <span><a href="index.html">← Voltar ao início</a></span>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/js/nav.js"></script>
+<script src="assets/js/animations.js"></script>
+<script src="assets/js/docs.js"></script>
+
+</body>
+</html>

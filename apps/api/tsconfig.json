@@ -1,0 +1,10 @@
+{
+  "extends": "@atlas/config-tsconfig/worker.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "moduleResolution": "Bundler",
+    "module": "ESNext"
+  },
+  "include": ["src/**/*", "worker-configuration.d.ts"]
+}

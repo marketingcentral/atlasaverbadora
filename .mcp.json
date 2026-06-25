@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "atlas-bank-sandbox": {
+      "command": "node",
+      "args": ["mcp-servers/atlas-bank-sandbox/dist/index.js"]
+    },
+    "atlas-design-system": {
+      "command": "node",
+      "args": ["mcp-servers/atlas-design-system/dist/index.js"]
+    },
+    "atlas-domain": {
+      "command": "node",
+      "args": ["mcp-servers/atlas-domain/dist/index.js"]
+    }
+  }
+}

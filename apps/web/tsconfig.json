@@ -1,0 +1,9 @@
+{
+  "extends": "@atlas/config-tsconfig/react.json",
+  "compilerOptions": {
+    "moduleResolution": "Bundler",
+    "module": "ESNext",
+    "noEmit": true
+  },
+  "include": ["src/**/*", "vite.config.ts"]
+}

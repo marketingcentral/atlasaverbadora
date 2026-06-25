@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Averba — Proposta de Plataforma de Averbação Digital</title>
+<meta name="description" content="Proposta técnica e comercial para plataforma de averbação de crédito consignado conectando servidores municipais, prefeituras e bancos." />
+<link rel="icon" href="assets/img/logo.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/css/tokens.css" />
+<link rel="stylesheet" href="assets/css/base.css" />
+<link rel="stylesheet" href="assets/css/components.css" />
+<script src="assets/js/theme.js"></script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-brand" aria-label="Averba — início">
+      <span class="mark">A</span>
+      <span>Averba<small style="opacity:.6">.io</small></span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu"><span></span></button>
+    <nav>
+      <ul class="nav-links">
+        <li><a href="index.html">Início</a></li>
+        <li><a href="arquitetura.html">Arquitetura</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="demo-ui.html">Demo UI</a></li>
+        <li><a href="docs.html">API Docs</a></li>
+      </ul>
+    </nav>
+    <div class="nav-actions">
+      <button class="theme-toggle" data-theme-toggle aria-label="Alternar tema">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <a href="#contato" class="btn btn-primary btn-sm nav-cta-desktop">Solicitar Proposta</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="container hero-grid">
+      <div data-reveal>
+        <span class="eyebrow">Averbadora · Crédito Consignado · Edge Native</span>
+        <h1>A ponte digital entre <span class="accent">Servidores, Prefeituras e Bancos</span>.</h1>
+        <p class="lead">Plataforma completa de averbação com app mobile para o servidor municipal, painel administrativo para a averbadora e integração REST nativa com bancos parceiros — tudo rodando na borda da Cloudflare.</p>
+        <div class="hero-actions">
+          <a href="arquitetura.html" class="btn btn-primary">Explorar Arquitetura →</a>
+          <a href="docs.html" class="btn btn-ghost">Ver Demo da API</a>
+        </div>
+        <div class="hero-meta">
+          <span><b>Edge-first</b> · Cloudflare Workers</span>
+          <span><b>Mobile</b> · React Native + Expo</span>
+          <span><b>JWT</b> + Refresh Token</span>
+          <span><b>Latência p50</b> &lt; 180ms</span>
+        </div>
+      </div>
+      <div data-reveal>
+        <div class="phone" aria-hidden="true">
+          <div class="phone-screen">
+            <div class="phone-mt"></div>
+            <div class="phone-row hi">
+              <span>Margem disponível</span>
+              <span class="val">R$ 1.480,32</span>
+            </div>
+            <div class="phone-row">
+              <span>Salário base</span>
+              <span class="val">R$ 4.620,00</span>
+            </div>
+            <div class="phone-row">
+              <span>Contratos ativos</span>
+              <span class="val">2</span>
+            </div>
+            <div class="phone-row hi">
+              <span>Melhor oferta</span>
+              <span class="val">1,72% a.m.</span>
+            </div>
+            <div class="phone-row">
+              <span>Banco</span>
+              <span class="val">Banco Y</span>
+            </div>
+            <div class="phone-row">
+              <span>Parcelas</span>
+              <span class="val">60×</span>
+            </div>
+            <div class="phone-row" style="background:linear-gradient(135deg,#C9A96130,#10B98130);border-color:#C9A96160">
+              <span style="color:#fff;font-weight:600">▶ Simular crédito</span>
+              <span class="val">→</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- STATS BAND -->
+  <section class="container" data-reveal>
+    <div class="stats-band">
+      <div class="stat">
+        <div class="num"><span data-counter="55" data-prefix="R$ " data-suffix=" bi" data-decimals="0"></span></div>
+        <div class="lbl">Em consignados públicos / ano (Brasil)</div>
+      </div>
+      <div class="stat">
+        <div class="num"><span data-counter="5570" data-decimals="0"></span></div>
+        <div class="lbl">Prefeituras potencialmente atendíveis</div>
+      </div>
+      <div class="stat">
+        <div class="num"><span data-counter="12" data-suffix=" M+"></span></div>
+        <div class="lbl">Servidores municipais elegíveis</div>
+      </div>
+      <div class="stat">
+        <div class="num"><span data-counter="99.95" data-decimals="2" data-suffix="%"></span></div>
+        <div class="lbl">SLA da camada edge</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROBLEMA × SOLUÇÃO -->
+  <section class="section container">
+    <div class="center" data-reveal style="margin-bottom: 40px">
+      <span class="eyebrow">O cenário</span>
+      <h2>O processo manual está engessando o mercado</h2>
+      <p class="lead" style="margin: 0 auto">Hoje a averbação ainda depende de planilhas, papelada e processos manuais entre três pontas que mal se enxergam.</p>
+    </div>
+    <div class="compare" data-reveal>
+      <div class="compare-col problem">
+        <h3><span class="bullet">×</span> Como é hoje</h3>
+        <ul>
+          <li><span class="bullet">×</span> Servidor não sabe a margem real e perde dias entre bancos</li>
+          <li><span class="bullet">×</span> Prefeitura recebe ofícios em papel para averbar contratos</li>
+          <li><span class="bullet">×</span> Banco depende de planilha + e-mail para confirmar averbação</li>
+          <li><span class="bullet">×</span> Portabilidade vira processo de semanas</li>
+          <li><span class="bullet">×</span> Não há observabilidade — falhas só aparecem no fim</li>
+          <li><span class="bullet">×</span> Atendimento humano para tudo, escala limitada</li>
+        </ul>
+      </div>
+      <div class="compare-col solution">
+        <h3><span class="bullet">✓</span> Com a plataforma</h3>
+        <ul>
+          <li><span class="bullet">✓</span> Margem em tempo real no app, com 3 cliques</li>
+          <li><span class="bullet">✓</span> Averbação digital com webhook bidirecional</li>
+          <li><span class="bullet">✓</span> Bancos recebem propostas via API REST padronizada</li>
+          <li><span class="bullet">✓</span> Portabilidade em até 1 dia útil</li>
+          <li><span class="bullet">✓</span> Logs e traces em tempo real (Sentry + dashboard)</li>
+          <li><span class="bullet">✓</span> Self-service no app + painel admin completo</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 PILARES -->
+  <section class="section container">
+    <div class="center" data-reveal style="margin-bottom: 40px">
+      <span class="eyebrow">Três personas, uma plataforma</span>
+      <h2>Desenhada para conectar quem vinha trabalhando isolado</h2>
+    </div>
+    <div class="grid grid-3" data-reveal>
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"/><path d="M6 22v-2a6 6 0 0 1 12 0v2"/></svg>
+        </div>
+        <h3>Servidor Municipal</h3>
+        <ul>
+          <li>Margem consignável em tempo real</li>
+          <li>Simulação, propostas e portabilidade</li>
+          <li>Comparador de bancos + dicas financeiras</li>
+        </ul>
+        <a href="features.html#servidor" class="card-link">Ver features do app →</a>
+      </article>
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+        </div>
+        <h3>Averbadora</h3>
+        <ul>
+          <li>Dashboard com métricas e alertas</li>
+          <li>Gestão de bancos, prefeituras e servidores</li>
+          <li>Logs inteligentes + vitrine de banners</li>
+        </ul>
+        <a href="features.html#averbadora" class="card-link">Ver painel admin →</a>
+      </article>
+      <article class="card">
+        <div class="icon">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 7l10-5 10 5-10 5L2 7z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+        </div>
+        <h3>Banco Parceiro</h3>
+        <ul>
+          <li>API REST padronizada para propostas</li>
+          <li>Webhooks de status assinados (HMAC)</li>
+          <li>Catálogo de produtos sempre atualizado</li>
+        </ul>
+        <a href="features.html#banco" class="card-link">Ver integração →</a>
+      </article>
+    </div>
+  </section>
+
+  <!-- DIFERENCIAIS TÉCNICOS -->
+  <section class="section container">
+    <div class="center" data-reveal style="margin-bottom: 40px">
+      <span class="eyebrow">Diferenciais técnicos</span>
+      <h2>Por que escolhemos a Cloudflare como orquestrador</h2>
+    </div>
+    <div class="grid grid-3" data-reveal>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg></div>
+        <h3>Edge Computing</h3>
+        <p>Workers executando no datacenter mais próximo do servidor — latência típica abaixo de 180ms p50, mesmo no interior.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v6c0 1.7 4 3 9 3s9-1.3 9-3V5M3 11v6c0 1.7 4 3 9 3s9-1.3 9-3v-6"/></svg></div>
+        <h3>Cache inteligente</h3>
+        <p>KV em borda + stale-while-revalidate para margem e catálogos. 8 de cada 10 leituras nunca tocam o Postgres.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+        <h3>Webhooks confiáveis</h3>
+        <p>Callbacks dos bancos com HMAC + idempotency key + retry exponencial. Nenhum evento perdido, nenhum processado duas vezes.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+        <h3>Crons programáticas</h3>
+        <p>Reconciliação noturna com folhas, expiração de propostas, dicas financeiras semanais — tudo agendado em Workers Triggers.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
+        <h3>Push em tempo real</h3>
+        <p>Firebase Cloud Messaging via Expo Push — proposta aprovada, contrato pronto, oferta personalizada chegam em segundos.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h3>JWT + Refresh seguro</h3>
+        <p>Access token curto (15min) + refresh rotativo. Revogação imediata por dispositivo. mTLS na ponta com bancos.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STACK -->
+  <section class="section container">
+    <div class="center" data-reveal style="margin-bottom: 32px">
+      <span class="eyebrow">Stack</span>
+      <h2>Tecnologias maduras, escolhidas para escala</h2>
+    </div>
+    <div class="badges" data-reveal>
+      <span class="badge"><span class="dot"></span>React Native</span>
+      <span class="badge"><span class="dot"></span>Expo</span>
+      <span class="badge"><span class="dot"></span>TypeScript</span>
+      <span class="badge"><span class="dot"></span>Cloudflare Workers</span>
+      <span class="badge"><span class="dot"></span>Cloudflare Pages</span>
+      <span class="badge"><span class="dot"></span>Cloudflare KV</span>
+      <span class="badge"><span class="dot"></span>Cloudflare R2</span>
+      <span class="badge"><span class="dot"></span>PostgreSQL · Neon</span>
+      <span class="badge"><span class="dot"></span>Drizzle ORM</span>
+      <span class="badge"><span class="dot"></span>Firebase FCM</span>
+      <span class="badge"><span class="dot"></span>Sentry</span>
+      <span class="badge"><span class="dot"></span>Hono</span>
+    </div>
+  </section>
+
+  <!-- CTA FINAL -->
+  <section class="section container" id="contato">
+    <div class="cta-final" data-reveal>
+      <span class="eyebrow">Pronto para começar</span>
+      <h2 style="max-width: 22ch; margin: 0 auto 12px">Vamos construir a averbadora digital do seu município?</h2>
+      <p class="lead" style="margin: 0 auto 32px">Reúna a equipe de TI e a área de produto — em 30 minutos cobrimos arquitetura, cronograma e orçamento.</p>
+      <div class="hero-actions" style="justify-content: center">
+        <a href="mailto:diego@digitalsolvers.com?subject=Proposta%20Averba" class="btn btn-primary">Agendar conversa</a>
+        <a href="docs.html" class="btn btn-ghost">Ver documentação técnica</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="nav-brand" style="margin-bottom: 12px"><span class="mark">A</span><span>Averba<small style="opacity:.6">.io</small></span></div>
+        <p style="max-width: 36ch">Plataforma de averbação digital nativa em edge, conectando servidores municipais, prefeituras e bancos parceiros.</p>
+      </div>
+      <div>
+        <h4>Produto</h4>
+        <ul>
+          <li><a href="arquitetura.html">Arquitetura</a></li>
+          <li><a href="features.html">Features</a></li>
+          <li><a href="docs.html">API Docs</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Personas</h4>
+        <ul>
+          <li><a href="features.html#servidor">Servidor</a></li>
+          <li><a href="features.html#averbadora">Averbadora</a></li>
+          <li><a href="features.html#banco">Banco</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Contato</h4>
+        <ul>
+          <li><a href="mailto:diego@digitalsolvers.com">diego@digitalsolvers.com</a></li>
+          <li><a href="#">+55 (00) 0000-0000</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Averba — proposta técnica e comercial.</span>
+      <span>Construído por Digital Solvers</span>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/js/nav.js"></script>
+<script src="assets/js/animations.js"></script>
+
+</body>
+</html>

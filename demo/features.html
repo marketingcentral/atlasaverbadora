@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Features · Averba</title>
+<meta name="description" content="Features por persona — App do servidor, Painel da averbadora, Integração do banco." />
+<link rel="icon" href="assets/img/logo.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/css/tokens.css" />
+<link rel="stylesheet" href="assets/css/base.css" />
+<link rel="stylesheet" href="assets/css/components.css" />
+<script src="assets/js/theme.js"></script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-brand"><span class="mark">A</span><span>Averba<small style="opacity:.6">.io</small></span></a>
+    <button class="nav-toggle" aria-label="Menu"><span></span></button>
+    <nav>
+      <ul class="nav-links">
+        <li><a href="index.html">Início</a></li>
+        <li><a href="arquitetura.html">Arquitetura</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="demo-ui.html">Demo UI</a></li>
+        <li><a href="docs.html">API Docs</a></li>
+      </ul>
+    </nav>
+    <div class="nav-actions">
+      <button class="theme-toggle" data-theme-toggle aria-label="Alternar tema">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <a href="index.html#contato" class="btn btn-primary btn-sm nav-cta-desktop">Solicitar Proposta</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="section container">
+    <div class="center" data-reveal style="margin-bottom: 32px">
+      <span class="eyebrow">Features por persona</span>
+      <h1>O que cada um vê da plataforma</h1>
+      <p class="lead" style="margin: 0 auto">Três experiências distintas, um único backend. Cada persona tem permissões, fluxos e telas pensadas para o trabalho que precisa fazer.</p>
+    </div>
+
+    <div class="center" data-reveal style="margin-bottom: 40px">
+      <div class="tabs" role="tablist" id="persona-tabs">
+        <button role="tab" data-tab="servidor" class="active">📱 Servidor Municipal</button>
+        <button role="tab" data-tab="averbadora">🏢 Painel Averbadora</button>
+        <button role="tab" data-tab="banco">🏦 Banco Parceiro</button>
+      </div>
+    </div>
+
+    <!-- ============== TAB SERVIDOR ============== -->
+    <div class="tab-panel active" id="servidor" role="tabpanel">
+      <div data-reveal>
+        <span class="eyebrow">App Mobile · React Native + Expo</span>
+        <h2 style="margin-bottom: 8px">Crédito consignado na palma da mão</h2>
+        <p class="lead" style="margin-bottom: 32px">App nativo iOS e Android com onboarding em 2 minutos. Margem em tempo real, comparador de bancos e portabilidade self-service.</p>
+      </div>
+      <div class="grid grid-3" data-reveal>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 5l7 7-7 7"/></svg></div>
+            <h4>Simulação de crédito</h4>
+          </div>
+          <p>Slider de valor + parcelas. Resultado em &lt; 2s com taxa, CET e parcela mensal de todos os bancos elegíveis.</p>
+          <div class="mock">
+            <div class="m-row"><span>Valor</span><span class="v">R$ 8.500</span></div>
+            <div class="m-row"><span>Parcelas</span><span class="v">60×</span></div>
+            <div class="m-row"><span>Parcela</span><span class="v">R$ 185,40</span></div>
+            <div class="m-bar"><i style="width:74%"></i></div>
+          </div>
+          <span class="more">+ Detalhes técnicos <span class="chev">›</span></span>
+          <div class="extra">Endpoint <code>POST /v1/propostas/simular</code> com fan-out para até 8 bancos em paralelo, timeout 1.2s por banco, agregação ordenada por taxa.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg></div>
+            <h4>Margem consignável</h4>
+          </div>
+          <p>Margem atualizada da folha da prefeitura. Exibe quanto está comprometido e quanto sobra para novas operações.</p>
+          <div class="mock">
+            <div class="m-row"><span>Salário base</span><span class="v">R$ 4.620,00</span></div>
+            <div class="m-row"><span>Comprometido</span><span class="v">R$ 1.566,00</span></div>
+            <div class="m-row"><span>Disponível</span><span class="v">R$ 1.480,32</span></div>
+            <div class="m-bar"><i style="width:48%;background:linear-gradient(90deg,#C9A961,#DC2626)"></i></div>
+          </div>
+          <span class="more">+ Detalhes técnicos <span class="chev">›</span></span>
+          <div class="extra">Cache KV TTL 5min + invalidação por webhook quando há nova averbação. Recálculo noturno via cron pela folha oficial da prefeitura.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></div>
+            <h4>Propostas</h4>
+          </div>
+          <p>Histórico completo de propostas: simuladas, em análise, aprovadas, contratos assinados. Status em tempo real via push.</p>
+          <div class="mock">
+            <div class="m-row"><span>PRO-9821</span><span class="v" style="color:#10B981">Aprovada</span></div>
+            <div class="m-row"><span>PRO-9805</span><span class="v" style="color:#F59E0B">Em análise</span></div>
+            <div class="m-row"><span>PRO-9742</span><span class="v" style="color:#64748B">Expirada</span></div>
+          </div>
+          <span class="more">+ Detalhes técnicos <span class="chev">›</span></span>
+          <div class="extra">Estados modelados como máquina finita; transições registradas em <code>proposta_eventos</code> com auditoria imutável (append-only).</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg></div>
+            <h4>Comparador de bancos</h4>
+          </div>
+          <p>Visualização lado a lado: taxa, CET, parcela, prazo de liberação, score do banco. Recomendação do melhor custo total.</p>
+          <div class="mock">
+            <div class="m-row"><span>Banco Y · 1,72%</span><span class="v">Melhor</span></div>
+            <div class="m-row"><span>Banco X · 1,89%</span><span class="v">-2%</span></div>
+            <div class="m-row"><span>Banco Z · 2,15%</span><span class="v">-7%</span></div>
+          </div>
+          <span class="more">+ Detalhes técnicos <span class="chev">›</span></span>
+          <div class="extra">Ranking determinístico por CET total. Cache de 90s por <code>(servidor_id, valor, parcelas)</code>. Empate desfeito por prazo de liberação.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M16 3h5v5"/><path d="M4 20L21 3"/><path d="M21 16v5h-5"/><path d="M15 15l6 6"/><path d="M4 4l5 5"/></svg></div>
+            <h4>Portabilidade (troca)</h4>
+          </div>
+          <p>Fluxo guiado de portabilidade: identifica contratos ativos, calcula economia e envia pedido formal ao banco destino.</p>
+          <div class="mock">
+            <div class="m-row"><span>Contrato atual</span><span class="v">2,15% a.m.</span></div>
+            <div class="m-row"><span>Nova proposta</span><span class="v">1,72% a.m.</span></div>
+            <div class="m-row"><span>Economia 60m</span><span class="v" style="color:#10B981">R$ 2.470</span></div>
+          </div>
+          <span class="more">+ Detalhes técnicos <span class="chev">›</span></span>
+          <div class="extra">Integração com convênio do BC para troca de credor. Workflow assíncrono com retomada por <code>portabilidade_id</code>.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3M12 17h.01"/></svg></div>
+            <h4>Dicas financeiras</h4>
+          </div>
+          <p>Conteúdo personalizado por perfil: educação financeira, alertas de margem, sugestões de quitação antecipada.</p>
+          <div class="mock">
+            <div class="m-row"><span>Dica da semana</span><span class="v">Nova</span></div>
+            <div class="m-row"><span>"Quando vale portar?"</span><span class="v">↗</span></div>
+            <div class="m-row"><span>"Reserva de emergência"</span><span class="v">↗</span></div>
+          </div>
+          <span class="more">+ Detalhes técnicos <span class="chev">›</span></span>
+          <div class="extra">Conteúdo cacheado em KV por segmento. Engagement medido (open rate, tempo de leitura). Disparo semanal via cron.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></div>
+            <h4>Push em tempo real</h4>
+          </div>
+          <p>Notificações inteligentes: aprovação de proposta, contrato pronto, oferta personalizada, atualização de margem.</p>
+          <div class="mock">
+            <div class="m-row"><span>"Sua proposta foi aprovada"</span><span class="v">2 min</span></div>
+            <div class="m-row"><span>"3 ofertas para você"</span><span class="v">1h</span></div>
+          </div>
+          <span class="more">+ Detalhes técnicos <span class="chev">›</span></span>
+          <div class="extra">Firebase FCM para Android, APNs via Expo para iOS. Templates segmentados, opt-out granular por categoria.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+            <h4>Login biométrico</h4>
+          </div>
+          <p>Face ID, Touch ID, biometria Android. Refresh token rotativo armazenado no Keychain / Keystore.</p>
+          <div class="mock">
+            <div class="m-row"><span>Autenticação</span><span class="v" style="color:#10B981">Face ID</span></div>
+            <div class="m-row"><span>Sessão</span><span class="v">15 min</span></div>
+            <div class="m-row"><span>Refresh</span><span class="v">30 dias</span></div>
+          </div>
+          <span class="more">+ Detalhes técnicos <span class="chev">›</span></span>
+          <div class="extra">Expo SecureStore + LocalAuthentication. JWT RS256 com kid rotativo. Revogação imediata via endpoint admin.</div>
+        </article>
+
+      </div>
+    </div>
+
+    <!-- ============== TAB AVERBADORA ============== -->
+    <div class="tab-panel" id="averbadora" role="tabpanel">
+      <div data-reveal>
+        <span class="eyebrow">Painel Web · React + Vite</span>
+        <h2 style="margin-bottom: 8px">Comando central da averbadora</h2>
+        <p class="lead" style="margin-bottom: 32px">Sete módulos integrados para operar bancos, prefeituras, servidores, logs em tempo real e monetização via vitrine.</p>
+      </div>
+      <div class="grid grid-3" data-reveal>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg></div>
+            <h4>Dashboard</h4>
+          </div>
+          <p>KPIs em tempo real: propostas/dia, taxa de conversão, ticket médio, top bancos, top prefeituras, falhas, tempo médio de aprovação.</p>
+          <div class="mock">
+            <div class="m-row"><span>Propostas hoje</span><span class="v">1.482</span></div>
+            <div class="m-row"><span>Conversão</span><span class="v">42,7%</span></div>
+            <div class="m-row"><span>Ticket médio</span><span class="v">R$ 9.420</span></div>
+            <div class="m-bar"><i style="width:78%"></i></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Recharts + queries agregadas por janela. Filtros por período, banco, prefeitura. Export CSV/XLSX. Drill-down para detalhe transacional.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 7l10-5 10 5-10 5L2 7z"/><path d="M2 17l10 5 10-5M2 12l10 5 10-5"/></svg></div>
+            <h4>Bancos</h4>
+          </div>
+          <p>CRUD de bancos parceiros: credenciais OAuth, endpoints, produtos disponíveis, faixas de taxa, política de comissão.</p>
+          <div class="mock">
+            <div class="m-row"><span>Banco Y</span><span class="v" style="color:#10B981">Ativo</span></div>
+            <div class="m-row"><span>Banco X</span><span class="v" style="color:#10B981">Ativo</span></div>
+            <div class="m-row"><span>Banco W</span><span class="v" style="color:#F59E0B">Pausado</span></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Segredos armazenados em Workers Secrets. Teste de conexão direto na UI. Versionamento de configuração com rollback.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/></svg></div>
+            <h4>Prefeituras</h4>
+          </div>
+          <p>Cadastro de prefeituras afiliadas: dados, contatos, convênio, modo de integração (REST, SOAP, upload), agenda de sincronização.</p>
+          <div class="mock">
+            <div class="m-row"><span>Pref. de XPTO</span><span class="v">REST · 2.4k srv</span></div>
+            <div class="m-row"><span>Pref. de ABC</span><span class="v">SOAP · 1.1k srv</span></div>
+            <div class="m-row"><span>Pref. de DEF</span><span class="v">CSV · 480 srv</span></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Cron noturno para ETL de folha. Detecção de mudanças (delta) com checksum por matrícula. Trilha de auditoria por convênio.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
+            <h4>Servidores</h4>
+          </div>
+          <p>Cadastro individual ou importação em massa (CSV/XLSX). Status, prefeitura, margem, contratos ativos, histórico.</p>
+          <div class="mock">
+            <div class="m-row"><span>Total cadastrados</span><span class="v">28.940</span></div>
+            <div class="m-row"><span>Ativos último 30d</span><span class="v">11.207</span></div>
+            <div class="m-row"><span>Bloqueados</span><span class="v" style="color:#DC2626">342</span></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Importação valida CPF, matrícula, prefeitura. Erros agrupados por motivo. Re-execução pontual. Bloqueio por compliance manual ou automático.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg></div>
+            <h4>Servers / Health</h4>
+          </div>
+          <p>Monitor de Web Services e rotas: uptime, latência p50/p95/p99, último ping, taxa de erro por endpoint, alertas configuráveis.</p>
+          <div class="mock">
+            <div class="m-row"><span>Banco Y · /propostas</span><span class="v" style="color:#10B981">142ms · 100%</span></div>
+            <div class="m-row"><span>Pref. ABC · /folha</span><span class="v" style="color:#F59E0B">820ms · 98,2%</span></div>
+            <div class="m-row"><span>Banco W · /portabilidade</span><span class="v" style="color:#DC2626">timeout</span></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Health checks via Workers Cron (cada 60s). Métricas armazenadas em janela rolante. Alertas por e-mail/Slack/webhook quando p99 &gt; SLA.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></div>
+            <h4>Logs inteligentes</h4>
+          </div>
+          <p>Console de depuração em tempo real: filtros por severidade, serviço, trace_id, usuário. Stream ao vivo via WebSocket.</p>
+          <div class="mock" style="font-family: var(--font-mono); font-size: .7rem">
+            <div style="color:#34D399">[INFO] worker.proposta.simular srv=42 dur=187ms</div>
+            <div style="color:#F59E0B">[WARN] cache.kv MISS key=margem:srv:42</div>
+            <div style="color:#FCA5A5">[ERR] banco.W timeout after 1200ms</div>
+            <div style="color:#93C5FD">[DBG] webhook.in HMAC ok id=9821</div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Logs estruturados (JSON) com trace_id ponta-a-ponta. Busca full-text + filtros facetados. Retenção 30 dias quente + R2 frio.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg></div>
+            <h4>Vitrine</h4>
+          </div>
+          <p>Gestão de banners patrocinados por bancos: campanhas, segmentação por prefeitura/perfil, métricas de impressão e clique, faturamento.</p>
+          <div class="mock">
+            <div class="m-row"><span>Banner Banco Y</span><span class="v">42k imp / 8% CTR</span></div>
+            <div class="m-row"><span>Banner Banco X</span><span class="v">28k imp / 5% CTR</span></div>
+            <div class="m-row"><span>Receita mês</span><span class="v" style="color:#10B981">R$ 47.200</span></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Banners servidos via Workers + R2 (CDN nativa). Agendamento de campanhas. A/B test built-in. Faturamento auto-gerado mensal.</div>
+        </article>
+
+      </div>
+    </div>
+
+    <!-- ============== TAB BANCO ============== -->
+    <div class="tab-panel" id="banco" role="tabpanel">
+      <div data-reveal>
+        <span class="eyebrow">Integração · API REST + Webhooks</span>
+        <h2 style="margin-bottom: 8px">Como o banco se conecta</h2>
+        <p class="lead" style="margin-bottom: 32px">Integração padronizada e versionada — onboard em até 5 dias úteis. Sandbox completo, autenticação OAuth2 + mTLS, webhooks idempotentes.</p>
+      </div>
+      <div class="grid grid-3" data-reveal>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></div>
+            <h4>Endpoints expostos</h4>
+          </div>
+          <p>O banco implementa 4 endpoints REST: simular, criar proposta, consultar status, cancelar. Contrato OpenAPI 3.1 público.</p>
+          <div class="mock" style="font-family: var(--font-mono); font-size: .72rem">
+            <div style="color:#34D399">POST /v1/simular</div>
+            <div style="color:#34D399">POST /v1/propostas</div>
+            <div style="color:#93C5FD">GET  /v1/propostas/{id}</div>
+            <div style="color:#FCA5A5">POST /v1/propostas/{id}/cancelar</div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Spec OpenAPI versionada. Geração automática de SDK em TS/Python. Testes de contrato no pipeline.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+            <h4>Autenticação</h4>
+          </div>
+          <p>OAuth2 client credentials + mTLS opcional. Token cacheado pelo Averba com refresh proativo a 80% do TTL.</p>
+          <div class="mock" style="font-family: var(--font-mono); font-size: .72rem">
+            <div>POST /oauth/token</div>
+            <div style="color:#FDE68A">grant_type=client_credentials</div>
+            <div style="color:#FDE68A">scope=propostas:rw</div>
+            <div style="color:#34D399">→ access_token (TTL 3600s)</div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Credenciais por ambiente (sandbox/prod). Rotação assistida. mTLS validado no perímetro Cloudflare.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+            <h4>Webhooks de callback</h4>
+          </div>
+          <p>Eventos enviados pelo banco quando proposta muda de estado: aprovada, contratada, averbada, cancelada, com payload assinado.</p>
+          <div class="mock" style="font-family: var(--font-mono); font-size: .72rem">
+            <div style="color:#93C5FD">X-Averba-Signature: sha256=...</div>
+            <div style="color:#93C5FD">X-Averba-Event: proposta.aprovada</div>
+            <div style="color:#93C5FD">X-Averba-Idempotency: 9821-aprov</div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">HMAC-SHA256 com segredo compartilhado. Retry exponencial (3 tentativas) com dead-letter. Deduplicação por idempotency key (24h).</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <h4>SLA &amp; suporte</h4>
+          </div>
+          <p>SLA de 99,9% mensal, resposta a incidentes em até 30min em horário comercial. Status page público.</p>
+          <div class="mock">
+            <div class="m-row"><span>Uptime mês</span><span class="v" style="color:#10B981">99,97%</span></div>
+            <div class="m-row"><span>Latência p95</span><span class="v">312ms</span></div>
+            <div class="m-row"><span>Incidentes 30d</span><span class="v">2</span></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Statuspage.io integrado. Postmortems públicos para sev-1. War-room dedicado por banco em incidentes &gt; 15min.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+            <h4>Sandbox completo</h4>
+          </div>
+          <p>Ambiente de homologação espelhado. Servidores e prefeituras fictícios. Possibilidade de simular respostas customizadas para testes.</p>
+          <div class="mock">
+            <div class="m-row"><span>Servidores mock</span><span class="v">5.000</span></div>
+            <div class="m-row"><span>Prefeituras mock</span><span class="v">12</span></div>
+            <div class="m-row"><span>Cenários prontos</span><span class="v">28</span></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Reset por API. Headers especiais para forçar erros, latência alta, taxa de aprovação X%. Documentado no portal do banco.</div>
+        </article>
+
+        <article class="feature-card">
+          <div class="head">
+            <div class="icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg></div>
+            <h4>Catálogo de produtos</h4>
+          </div>
+          <p>Banco mantém catálogo de produtos no painel: faixas de taxa por prazo, idade mínima, prefeituras aceitas, política de margem.</p>
+          <div class="mock">
+            <div class="m-row"><span>Consignado clássico</span><span class="v">1,72%–2,30%</span></div>
+            <div class="m-row"><span>Portabilidade</span><span class="v">desconto 0,2%</span></div>
+            <div class="m-row"><span>Cartão consignado</span><span class="v">em breve</span></div>
+          </div>
+          <span class="more">+ Mais <span class="chev">›</span></span>
+          <div class="extra">Validação automática contra regulação. Versionamento com data efetiva. Banco pode publicar mudanças com agendamento.</div>
+        </article>
+
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-bottom">
+      <span>© 2026 Averba — proposta técnica e comercial.</span>
+      <span><a href="index.html">← Voltar ao início</a></span>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/js/nav.js"></script>
+<script src="assets/js/animations.js"></script>
+<script>
+(function () {
+  const tabs = document.querySelectorAll('#persona-tabs button');
+  const panels = document.querySelectorAll('.tab-panel');
+  function activate(name) {
+    tabs.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    panels.forEach(p => p.classList.toggle('active', p.id === name));
+    if (location.hash !== '#' + name) history.replaceState(null, '', '#' + name);
+  }
+  tabs.forEach(b => b.addEventListener('click', () => activate(b.dataset.tab)));
+  const initial = (location.hash || '#servidor').slice(1);
+  if (['servidor', 'averbadora', 'banco'].includes(initial)) activate(initial);
+})();
+</script>
+
+</body>
+</html>

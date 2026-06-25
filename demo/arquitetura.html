@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Arquitetura · Averba</title>
+<meta name="description" content="Arquitetura orquestrada na borda — Cloudflare Workers, Pages, KV, R2 + PostgreSQL Neon, com integrações para bancos e prefeituras." />
+<link rel="icon" href="assets/img/logo.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/css/tokens.css" />
+<link rel="stylesheet" href="assets/css/base.css" />
+<link rel="stylesheet" href="assets/css/components.css" />
+<script src="assets/js/theme.js"></script>
+</head>
+<body>
+
+<header class="nav">
+  <div class="container nav-inner">
+    <a href="index.html" class="nav-brand"><span class="mark">A</span><span>Averba<small style="opacity:.6">.io</small></span></a>
+    <button class="nav-toggle" aria-label="Menu"><span></span></button>
+    <nav>
+      <ul class="nav-links">
+        <li><a href="index.html">Início</a></li>
+        <li><a href="arquitetura.html">Arquitetura</a></li>
+        <li><a href="features.html">Features</a></li>
+        <li><a href="demo-ui.html">Demo UI</a></li>
+        <li><a href="docs.html">API Docs</a></li>
+      </ul>
+    </nav>
+    <div class="nav-actions">
+      <button class="theme-toggle" data-theme-toggle aria-label="Alternar tema">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      </button>
+      <a href="index.html#contato" class="btn btn-primary btn-sm nav-cta-desktop">Solicitar Proposta</a>
+    </div>
+  </div>
+</header>
+
+<main>
+
+  <section class="section container">
+    <div class="center" data-reveal style="margin-bottom: 32px">
+      <span class="eyebrow">Arquitetura</span>
+      <h1>Orquestração nativa na borda</h1>
+      <p class="lead" style="margin: 0 auto">Todo o tráfego entra pela Cloudflare. Workers especializados roteiam, autenticam, cacheiam e despacham — falando com Postgres (Neon), R2, KV e os Web Services dos bancos e prefeituras. Clique nos nós para detalhes.</p>
+    </div>
+
+    <div class="arch-wrap" data-reveal>
+      <svg class="arch-svg" viewBox="0 0 1100 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Diagrama de arquitetura">
+        <defs>
+          <linearGradient id="grad-client" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stop-color="#1A2942" stop-opacity=".9"/>
+            <stop offset="1" stop-color="#122038" stop-opacity=".9"/>
+          </linearGradient>
+          <linearGradient id="grad-edge" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stop-color="#C9A961" stop-opacity=".2"/>
+            <stop offset="1" stop-color="#10B981" stop-opacity=".18"/>
+          </linearGradient>
+          <linearGradient id="grad-data" x1="0" x2="1" y1="0" y2="1">
+            <stop offset="0" stop-color="#2D4263" stop-opacity=".55"/>
+            <stop offset="1" stop-color="#1A2942" stop-opacity=".55"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Layer labels -->
+        <text x="20" y="50" fill="#94A3B8" font-size="11" font-weight="600" letter-spacing="2">CLIENTES</text>
+        <text x="20" y="200" fill="#C9A961" font-size="11" font-weight="600" letter-spacing="2">EDGE — ORQUESTRADOR</text>
+        <text x="20" y="350" fill="#94A3B8" font-size="11" font-weight="600" letter-spacing="2">DADOS &amp; STORAGE</text>
+        <text x="20" y="500" fill="#94A3B8" font-size="11" font-weight="600" letter-spacing="2">INTEGRAÇÕES &amp; OBSERVABILIDADE</text>
+
+        <!-- Edges -->
+        <path id="e-app-edge"     class="arch-edge" d="M 240 110 C 240 160, 460 160, 460 210"/>
+        <path id="e-web-edge"     class="arch-edge" d="M 700 110 C 700 160, 580 160, 580 210"/>
+        <path id="e-edge-kv"      class="arch-edge" d="M 460 290 C 460 330, 240 330, 240 380"/>
+        <path id="e-edge-r2"      class="arch-edge" d="M 500 290 C 500 330, 460 330, 460 380"/>
+        <path id="e-edge-neon"    class="arch-edge" d="M 580 290 C 580 330, 700 330, 700 380"/>
+        <path id="e-edge-pref"    class="arch-edge" d="M 540 290 C 540 360, 920 360, 920 380"/>
+        <path id="e-edge-bancos"  class="arch-edge" d="M 500 290 C 500 410, 240 460, 140 530"/>
+        <path id="e-edge-firebase"class="arch-edge" d="M 560 290 C 560 470, 700 470, 700 530"/>
+        <path id="e-edge-sentry"  class="arch-edge" d="M 620 290 C 620 470, 920 470, 920 530"/>
+        <path id="e-edge-cron"    class="arch-edge" d="M 460 290 C 460 410, 380 460, 380 530"/>
+        <path id="e-edge-webhook" class="arch-edge" d="M 620 290 C 620 410, 560 460, 540 530"/>
+
+        <!-- LAYER 1: CLIENTS -->
+        <g class="arch-node" data-node="app-mobile" transform="translate(140, 65)" role="button" aria-label="App Mobile">
+          <rect width="200" height="80" rx="14" fill="url(#grad-client)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="32" fill="#EAF0FA" font-size="14" font-weight="700" text-anchor="middle">App Mobile</text>
+          <text x="100" y="52" fill="#9BAAC2" font-size="11" text-anchor="middle">React Native · Expo</text>
+          <text x="100" y="68" fill="#C9A961" font-size="10" text-anchor="middle">Servidor Municipal</text>
+        </g>
+        <g class="arch-node" data-node="web-admin" transform="translate(600, 65)" role="button" aria-label="Painel Averbadora">
+          <rect width="200" height="80" rx="14" fill="url(#grad-client)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="32" fill="#EAF0FA" font-size="14" font-weight="700" text-anchor="middle">Painel Admin Web</text>
+          <text x="100" y="52" fill="#9BAAC2" font-size="11" text-anchor="middle">React · Vite</text>
+          <text x="100" y="68" fill="#C9A961" font-size="10" text-anchor="middle">Averbadora</text>
+        </g>
+
+        <!-- LAYER 2: EDGE (big box) -->
+        <g class="arch-node" data-node="edge" transform="translate(300, 210)" role="button" aria-label="Cloudflare Pages e Workers">
+          <rect width="500" height="80" rx="16" fill="url(#grad-edge)" stroke="#C9A961" stroke-width="2"/>
+          <text x="250" y="32" fill="#EAF0FA" font-size="15" font-weight="700" text-anchor="middle">Cloudflare Pages + Workers</text>
+          <text x="250" y="52" fill="#D4BC7E" font-size="11" text-anchor="middle">Load balancer · Auth gateway · Roteamento · Rate-limit</text>
+          <text x="250" y="69" fill="#9BAAC2" font-size="10" text-anchor="middle">Hono · itty-router · mTLS · cf-ray · idempotency</text>
+        </g>
+
+        <!-- LAYER 3: DATA -->
+        <g class="arch-node" data-node="kv" transform="translate(140, 380)" role="button" aria-label="Cloudflare KV">
+          <rect width="200" height="80" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="32" fill="#EAF0FA" font-size="14" font-weight="700" text-anchor="middle">Cloudflare KV</text>
+          <text x="100" y="52" fill="#9BAAC2" font-size="11" text-anchor="middle">Cache distribuído</text>
+          <text x="100" y="68" fill="#10B981" font-size="10" text-anchor="middle">SWR · TTL · edge</text>
+        </g>
+        <g class="arch-node" data-node="r2" transform="translate(360, 380)" role="button" aria-label="Cloudflare R2">
+          <rect width="200" height="80" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="32" fill="#EAF0FA" font-size="14" font-weight="700" text-anchor="middle">Cloudflare R2</text>
+          <text x="100" y="52" fill="#9BAAC2" font-size="11" text-anchor="middle">Storage de arquivos</text>
+          <text x="100" y="68" fill="#10B981" font-size="10" text-anchor="middle">PDFs · banners · anexos</text>
+        </g>
+        <g class="arch-node" data-node="neon" transform="translate(600, 380)" role="button" aria-label="PostgreSQL Neon">
+          <rect width="200" height="80" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="32" fill="#EAF0FA" font-size="14" font-weight="700" text-anchor="middle">PostgreSQL · Neon</text>
+          <text x="100" y="52" fill="#9BAAC2" font-size="11" text-anchor="middle">Source of truth</text>
+          <text x="100" y="68" fill="#10B981" font-size="10" text-anchor="middle">Drizzle · branching</text>
+        </g>
+        <g class="arch-node" data-node="prefeituras" transform="translate(820, 380)" role="button" aria-label="Prefeituras">
+          <rect width="200" height="80" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="32" fill="#EAF0FA" font-size="14" font-weight="700" text-anchor="middle">Prefeituras</text>
+          <text x="100" y="52" fill="#9BAAC2" font-size="11" text-anchor="middle">Folha de pagamento</text>
+          <text x="100" y="68" fill="#10B981" font-size="10" text-anchor="middle">SOAP / REST · VPN</text>
+        </g>
+
+        <!-- LAYER 4: INTEGRATIONS & OBS -->
+        <g class="arch-node" data-node="bancos" transform="translate(40, 530)" role="button" aria-label="Bancos">
+          <rect width="200" height="74" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="30" fill="#EAF0FA" font-size="13" font-weight="700" text-anchor="middle">Bancos parceiros</text>
+          <text x="100" y="48" fill="#9BAAC2" font-size="10" text-anchor="middle">REST · OAuth2 · mTLS</text>
+          <text x="100" y="63" fill="#C9A961" font-size="10" text-anchor="middle">Propostas · portabilidade</text>
+        </g>
+        <g class="arch-node" data-node="cron" transform="translate(280, 530)" role="button" aria-label="Crons">
+          <rect width="200" height="74" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="30" fill="#EAF0FA" font-size="13" font-weight="700" text-anchor="middle">Crons</text>
+          <text x="100" y="48" fill="#9BAAC2" font-size="10" text-anchor="middle">Workers Triggers</text>
+          <text x="100" y="63" fill="#C9A961" font-size="10" text-anchor="middle">Reconciliação · expiração</text>
+        </g>
+        <g class="arch-node" data-node="webhook" transform="translate(520, 530)" role="button" aria-label="Webhooks">
+          <rect width="200" height="74" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="30" fill="#EAF0FA" font-size="13" font-weight="700" text-anchor="middle">Webhooks</text>
+          <text x="100" y="48" fill="#9BAAC2" font-size="10" text-anchor="middle">HMAC · idempotência</text>
+          <text x="100" y="63" fill="#C9A961" font-size="10" text-anchor="middle">Callbacks de bancos</text>
+        </g>
+        <g class="arch-node" data-node="firebase" transform="translate(620, 530)" role="button" aria-label="Firebase">
+          <rect width="160" height="74" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="80" y="30" fill="#EAF0FA" font-size="13" font-weight="700" text-anchor="middle">Firebase + Expo</text>
+          <text x="80" y="48" fill="#9BAAC2" font-size="10" text-anchor="middle">FCM · APNs</text>
+          <text x="80" y="63" fill="#C9A961" font-size="10" text-anchor="middle">Push notifications</text>
+        </g>
+        <g class="arch-node" data-node="sentry" transform="translate(820, 530)" role="button" aria-label="Sentry e Analytics">
+          <rect width="200" height="74" rx="14" fill="url(#grad-data)" stroke="#3D5984" stroke-width="1.5"/>
+          <text x="100" y="30" fill="#EAF0FA" font-size="13" font-weight="700" text-anchor="middle">Sentry + Analytics</text>
+          <text x="100" y="48" fill="#9BAAC2" font-size="10" text-anchor="middle">Errors · traces · vitals</text>
+          <text x="100" y="63" fill="#C9A961" font-size="10" text-anchor="middle">Observabilidade</text>
+        </g>
+      </svg>
+
+      <div class="arch-legend">
+        <span><span class="swatch" style="background:#C9A961"></span>Camada edge (Cloudflare)</span>
+        <span><span class="swatch" style="background:#10B981"></span>Dados &amp; storage</span>
+        <span><span class="swatch" style="background:#3D5984"></span>Integrações externas</span>
+        <span>· Clique em qualquer nó para detalhes técnicos</span>
+      </div>
+    </div>
+
+    <!-- FLOW SIMULATOR -->
+    <div class="flow-panel" data-reveal>
+      <div class="flow-controls">
+        <span class="eyebrow">Simulador de fluxo</span>
+        <h3 style="margin-bottom: 8px">Servidor solicita simulação de crédito</h3>
+        <p>Veja o caminho que a requisição percorre — do app à edge, passando por cache, banco de dados, prefeitura e bancos parceiros, voltando com a melhor oferta.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:16px">
+          <button id="run-sim" class="btn btn-primary">▶ Simular fluxo</button>
+          <button id="reset-sim" class="btn btn-ghost btn-sm">Resetar</button>
+        </div>
+        <p style="font-size:.85rem;color:var(--text-dim);margin-top:16px">Os nós no diagrama acendem em sequência conforme a requisição flui. Latências e cache HIT/MISS aparecem no log à direita.</p>
+      </div>
+      <div id="flow-timeline" class="flow-timeline" aria-live="polite">
+        <div class="line show"><span class="ts">--:--:--</span> <span class="info">Aguardando simulação...</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CROSS-CUTTING CONCERNS -->
+  <section class="section container">
+    <div class="center" data-reveal style="margin-bottom: 32px">
+      <span class="eyebrow">Cross-cutting concerns</span>
+      <h2>Camadas que atravessam toda a arquitetura</h2>
+    </div>
+    <div class="grid grid-4" data-reveal>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        <h3 style="font-size:1.05rem">Autenticação</h3>
+        <p style="font-size:.9rem">JWT (RS256) com kid rotativo trimestral. Refresh token rotativo + revogação por dispositivo. mTLS com bancos.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></div>
+        <h3 style="font-size:1.05rem">Filtros AJAX</h3>
+        <p style="font-size:.9rem">Listagens com debounce 250ms, paginação cursor-based, ordenação multi-coluna. URL state preservada.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/></svg></div>
+        <h3 style="font-size:1.05rem">Load balancing</h3>
+        <p style="font-size:.9rem">Anycast da Cloudflare + health checks nos web services dos bancos. Failover automático em &lt; 2s.</p>
+      </div>
+      <div class="card">
+        <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>
+        <h3 style="font-size:1.05rem">Observabilidade</h3>
+        <p style="font-size:.9rem">Sentry para erros + traces, Cloudflare Analytics agregado, logs estruturados (JSON) com trace_id ponta-a-ponta.</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- MODAL -->
+<div id="arch-modal" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="arch-modal-title">
+  <div class="modal">
+    <div class="modal-head">
+      <div>
+        <span class="modal-tag" data-modal-tag>—</span>
+        <h3 id="arch-modal-title" data-modal-title style="margin-top:8px">—</h3>
+      </div>
+      <button class="modal-close" data-modal-close aria-label="Fechar">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p data-modal-desc>—</p>
+      <h4 style="font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text-dim);margin: 16px 0 8px">Tecnologias</h4>
+      <ul class="modal-list" data-modal-tech></ul>
+      <h4 style="font-size:.78rem;text-transform:uppercase;letter-spacing:.1em;color:var(--text-dim);margin: 16px 0 8px">Exemplo</h4>
+      <code data-modal-payload style="display:block;padding:10px 12px">—</code>
+    </div>
+  </div>
+</div>
+
+<footer class="footer">
+  <div class="container">
+    <div class="footer-bottom">
+      <span>© 2026 Averba — proposta técnica e comercial.</span>
+      <span><a href="index.html">← Voltar ao início</a></span>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/js/nav.js"></script>
+<script src="assets/js/animations.js"></script>
+<script src="assets/js/architecture.js"></script>
+<script src="assets/js/flow-sim.js"></script>
+
+</body>
+</html>

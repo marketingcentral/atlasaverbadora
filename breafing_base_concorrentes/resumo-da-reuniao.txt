@@ -1,0 +1,45 @@
+Com base na transcrição da reunião, o sistema de **averbação de margem consignada** funciona como uma ponte de orquestração entre instituições financeiras (bancos) e órgãos públicos (ou empresas privadas) para gerir empréstimos descontados em folha de pagamento.
+
+Aqui está o levantamento do que o sistema precisa ter, organizado por funcionalidades e visões de usuário:
+
+# Requisitos do Sistema de Gestão de Margem Consignada
+
+## 1. Visões de Acesso (Alçadas)
+O sistema deve ser dividido em três perspectivas principais:
+*   **Visão Banco:** Instituição financeira que concede o crédito.
+*   **Visão Servidor Público:** O usuário final que consulta e contrata o crédito.
+*   **Visão Órgão Público:** A entidade (ex: Prefeitura) que detém a folha de pagamento e define as regras.
+
+## 2. Funcionalidades da Visão Banco (Operacional)
+Esta é a área onde o banco realiza a gestão dos contratos.
+*   **Dashboard Inicial:** Visualização do período da folha atual, data de corte (fechamento da folha), data de repasse do pagamento e mural de comunicados da prefeitura.
+*   **Consulta de Margem:** Busca por CPF ou Matrícula (um servidor pode ter múltiplas matrículas e cada uma tem sua própria margem).
+    *   Exibição detalhada de: Margem de empréstimo, margem de cartão consignado (RMC) e margem de cartão benefício (RCC).
+*   **Reserva de Margem:** Funcionalidade para "travar" o valor da parcela disponível do servidor para um novo contrato.
+*   **Gestão de Contratos:** Listagem de contratos ativos, suspensos, cancelados ou quitados.
+    *   Ações permitidas: Suspender, cancelar, liquidar, alterar, alongar e imprimir comprovante em PDF.
+*   **Histórico e Logs:** Registro detalhado de todas as operações e alterações feitas em cada contrato (auditoria).
+*   **Configuração de Regras do Banco:** Cadastro de taxas de juros e prazos máximos (ex: até 120 meses) permitidos pela instituição para cada convênio.
+
+## 3. Funcionalidades da Visão Servidor (Marketplace)
+*   **App/Portal do Servidor:** Espaço para o servidor consultar quanto tem de margem disponível.
+*   **Marketplace de Propostas:** Exibição de ofertas pré-aprovadas pelos bancos parceiros (ex: "Pegue R$ 20.000 com parcela de R$ 200").
+*   **Auto-averbação:** O servidor pode clicar em uma proposta e realizar a averbação diretamente, que será depois aprovada pelo banco.
+
+## 4. Regras de Negócio e Cálculos
+O sistema deve processar as regras específicas definidas por decretos de cada órgão público.
+*   **Gestão de Margens Percentuais:** Cálculo automático baseado no salário (ex: 35% para empréstimo, 5% para cartão RMC, 5% para cartão benefício).
+*   **Lógica de Cartão Consignado:**
+    *   **Reserva Total:** Reserva do valor total da margem (ex: R$ 350) por tempo indeterminado.
+    *   **Lançamento Parcial:** Desconto efetivo em folha apenas do valor utilizado (ex: 70% de saque inicial e 30% para limite de crédito).
+*   **Portabilidade:** Ferramenta para gerir a migração de contratos entre bancos.
+
+## 5. Administração e Integração
+*   **Gestão de Usuários Master:** O banco deve ter autonomia para criar seus próprios usuários e perfis de acesso (ex: perfil só de consulta, perfil de relatórios).
+*   **Segurança:** Controle de acesso por IP fixo (opcional, dependendo da configuração).
+*   **API de Integração:** Documentação e endpoints para que os bancos integrem seus sistemas próprios com a averbadora para automatizar consultas e averbações.
+*   **Relatórios:** Extração de relatórios de movimentação financeira, ocorrências de usuários e faturamento completo para os bancos.
+
+## 6. Diferenciais sugeridos na reunião
+*   **Multi-Prefeituras:** Capacidade de gerir múltiplas prefeituras/órgãos sob um mesmo acesso de banco, alternando facilmente entre eles.
+*   **Simplicidade (Arroz com Feijão):** O foco inicial deve ser no trio: **Reservar Margem, Consultar Margem e Consultar Consignação (Contratos)**.

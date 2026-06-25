@@ -1,0 +1,20 @@
+# Copy this file to .dev.vars and fill in real values for local development.
+# NEVER commit .dev.vars (it is gitignored).
+#
+# For local dev WITHOUT Hyperdrive (e.g., SSH tunnel to the Postgres @ Portainer):
+#   ssh -L 5434:127.0.0.1:5434 root@5.161.88.70 -N &
+# Then point DATABASE_URL to localhost:
+DATABASE_URL="postgresql://atlas_app:CHANGE_ME@localhost:5434/atlas_app?sslmode=disable"
+
+# JWT keys — generate with:
+#   openssl genpkey -algorithm RSA -out priv.pem -pkeyopt rsa_keygen_bits:2048
+#   openssl rsa -pubout -in priv.pem -out pub.pem
+# Then paste here as single-line PEM (use \n as literal newline escape):
+JWT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----"
+JWT_PUBLIC_KEY="-----BEGIN PUBLIC KEY-----\nMIIB...\n-----END PUBLIC KEY-----"
+
+# Optional
+SENTRY_DSN=""
+
+# Bank adapter: "sandbox" (in-process mock) or "ifractal" (real)
+BANK_ADAPTER="sandbox"

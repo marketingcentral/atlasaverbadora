@@ -1,0 +1,40 @@
+name = "atlas-api"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+APP_ENV = "prod"
+LOG_LEVEL = "info"
+BANK_ADAPTER = "sandbox"
+
+[[kv_namespaces]]
+binding = "KV_CACHE"
+id = "d942c4e73c9f454c840d54b64a016560"
+preview_id = "c293bd5df6d141c1a1b74d3e893319be"
+
+[[kv_namespaces]]
+binding = "KV_SESSIONS"
+id = "6f349aa6bb664fd488b37f32895586bc"
+preview_id = "dcd87780d6634b1182c406cd30c7f4f4"
+
+[[kv_namespaces]]
+binding = "KV_RATELIMIT"
+id = "6a23458931c8425093ee08825e303f93"
+preview_id = "4a2521eb38d34392888462ed9609392d"
+
+[[r2_buckets]]
+binding = "R2_FILES"
+bucket_name = "atlas-files"
+
+# Hyperdrive: pool de conexoes + cache no edge CF apontando para o Postgres do Portainer.
+# Configurado com sslmode=require (cert auto-assinado no container; rotacionar para Let's Encrypt depois).
+[[hyperdrive]]
+binding = "HYPERDRIVE"
+id = "f694c34adfb4445fae2e3acb4457bf25"
+
+# Secrets (set via `wrangler secret put NAME`):
+# - DATABASE_URL         # postgresql://atlas_app:SENHA@65.109.134.78:5434/atlas_app
+# - JWT_PRIVATE_KEY      # RS256 private key (PEM)
+# - JWT_PUBLIC_KEY       # RS256 public key (PEM)
+# - SENTRY_DSN           # optional

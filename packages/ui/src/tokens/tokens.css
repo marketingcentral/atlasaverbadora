@@ -1,0 +1,105 @@
+/* Atlas design tokens — mirror of demo/assets/css/tokens.css. Import once at app root. */
+
+:root {
+  --navy-900: #0A1628;
+  --navy-800: #122038;
+  --navy-700: #1A2942;
+  --navy-600: #233556;
+  --navy-500: #2D4263;
+  --navy-400: #3D5984;
+
+  --gold-600: #B8964F;
+  --gold-500: #C9A961;
+  --gold-400: #D4BC7E;
+  --gold-300: #E2D1A3;
+
+  --emerald-600: #059669;
+  --emerald-500: #10B981;
+  --emerald-400: #34D399;
+
+  --ivory-50: #FAF8F3;
+  --ivory-100: #F3EFE6;
+
+  --slate-900: #0F172A;
+  --slate-700: #334155;
+  --slate-500: #64748B;
+  --slate-400: #94A3B8;
+  --slate-300: #CBD5E1;
+  --slate-200: #E2E8F0;
+  --slate-100: #F1F5F9;
+  --white: #FFFFFF;
+
+  --danger-500: #DC2626;
+  --warn-500: #F59E0B;
+  --info-500: #3B82F6;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-pill: 999px;
+
+  --shadow-sm: 0 1px 2px rgba(10, 22, 40, .08);
+  --shadow-md: 0 6px 18px rgba(10, 22, 40, .12);
+  --shadow-lg: 0 18px 48px rgba(10, 22, 40, .18);
+  --shadow-gold: 0 8px 30px rgba(201, 169, 97, .25);
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+
+  --font-sans: 'Inter', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
+
+  --container: 1200px;
+  --nav-h: 72px;
+
+  --ease-out: cubic-bezier(.22, .61, .36, 1);
+  --ease-in-out: cubic-bezier(.65, .05, .36, 1);
+}
+
+[data-theme="dark"] {
+  --bg: var(--navy-900);
+  --bg-elev: var(--navy-800);
+  --bg-elev-2: var(--navy-700);
+  --surface: rgba(26, 41, 66, .6);
+  --surface-solid: var(--navy-700);
+  --border: rgba(255, 255, 255, .08);
+  --border-strong: rgba(255, 255, 255, .16);
+  --text: #EAF0FA;
+  --text-muted: #9BAAC2;
+  --text-dim: #64748B;
+  --accent: var(--gold-500);
+  --accent-hover: var(--gold-400);
+  --success: var(--emerald-500);
+  --scrim: rgba(0, 0, 0, .6);
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --bg: var(--ivory-50);
+  --bg-elev: var(--white);
+  --bg-elev-2: var(--ivory-100);
+  --surface: rgba(255, 255, 255, .85);
+  --surface-solid: var(--white);
+  --border: rgba(10, 22, 40, .08);
+  --border-strong: rgba(10, 22, 40, .16);
+  --text: var(--navy-900);
+  --text-muted: var(--slate-700);
+  --text-dim: var(--slate-500);
+  --accent: var(--gold-600);
+  --accent-hover: var(--gold-500);
+  --success: var(--emerald-600);
+  --scrim: rgba(10, 22, 40, .4);
+  color-scheme: light;
+}
+
+html, body { background: var(--bg); color: var(--text); font-family: var(--font-sans); }
+body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+* { box-sizing: border-box; }
