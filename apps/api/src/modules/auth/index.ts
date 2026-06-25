@@ -6,7 +6,7 @@ import type { Env } from "../../env.js";
 import { generateRefreshToken, signAccessToken } from "./jwt.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
-import { bancos as bancosStore } from "../admin/index.js";
+import { bancos as bancosStore, prefeituras as prefeiturasStore } from "../admin/index.js";
 
 interface ResolvedUser {
   id: number;
@@ -61,6 +61,26 @@ async function resolveBancoByCredentials(
 }
 
 /**
+ * Auth-resolve uma prefeitura do admin `prefeituras` store pelo loginEmail (sha256 da senha).
+ */
+async function resolvePrefeituraByCredentials(
+  identifier: string,
+  password: string,
+): Promise<{ match: ResolvedUser | null; claimedBy: boolean }> {
+  const email = identifier.trim().toLowerCase();
+  if (!email.includes("@")) return { match: null, claimedBy: false };
+  const p = prefeiturasStore.find((x) => x.loginEmail === email);
+  if (!p || !p.passwordHash) return { match: null, claimedBy: false };
+  if (p.status !== "ativo") return { match: null, claimedBy: true };
+  const hash = await sha256Hex(password);
+  if (hash !== p.passwordHash) return { match: null, claimedBy: true };
+  return {
+    match: { id: 2000 + p.id, nome: p.nome, role: "prefeitura", prefeitura_id: p.id },
+    claimedBy: true,
+  };
+}
+
+/**
  * Lightweight dev-only login: accepts any user from the seeded sandbox.
  * Replace with real DB-backed lookup + Argon2 comparison once `users` is populated.
  */
@@ -89,7 +109,14 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       claimed = claimed || bancoAuth.claimedBy;
     }
 
-    // 3) Fallback DEV_USERS — só se o identifier NÃO foi reivindicado por servidor/banco
+    // 3) Prefeitura cadastrada via averbadora (login = email + senha SHA-256).
+    if (!resolved && !claimed) {
+      const prefAuth = await resolvePrefeituraByCredentials(body.identifier, body.password);
+      resolved = prefAuth.match;
+      claimed = claimed || prefAuth.claimedBy;
+    }
+
+    // 4) Fallback DEV_USERS — só se o identifier NÃO foi reivindicado por servidor/banco/prefeitura
     //    cadastrado (caso contrário a senha demo continuaria valendo mesmo após o admin trocar).
     if (!resolved && !claimed) {
       const dev = DEV_USERS.find((u) => u.identifier === identifier);

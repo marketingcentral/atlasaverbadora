@@ -43,8 +43,15 @@ export interface PrefeituraAdmin {
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
   status: "ativo" | "pausado";
+  loginEmail?: string;
+  passwordHash?: string;
   servidoresCount: number;
   ultimaSincronizacao?: string;
+}
+
+function sanitizePrefeitura(p: PrefeituraAdmin) {
+  const { passwordHash, ...rest } = p;
+  return { ...rest, hasPassword: !!passwordHash };
 }
 
 export interface FolhaAdmin {
@@ -130,10 +137,10 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
     ],
   )))
   .get("/v1/admin/prefeituras/csv-template", () => csvResponse("prefeituras-exemplo.csv", buildCsv(
-    ["nome", "uf", "municipioIbge", "modoIntegracao", "status"],
+    ["nome", "uf", "municipioIbge", "modoIntegracao", "status", "loginEmail", "password"],
     [
-      { nome: "Palhoca", uf: "SC", municipioIbge: 4211900, modoIntegracao: "REST", status: "ativo" },
-      { nome: "Joinville", uf: "SC", municipioIbge: 4209102, modoIntegracao: "CSV", status: "ativo" },
+      { nome: "Palhoca", uf: "SC", municipioIbge: 4211900, modoIntegracao: "REST", status: "ativo", loginEmail: "rh@palhoca.sc.gov.br", password: "trocar123" },
+      { nome: "Joinville", uf: "SC", municipioIbge: 4209102, modoIntegracao: "CSV", status: "ativo", loginEmail: "", password: "" },
     ],
   )))
   .get("/v1/admin/convenios/csv-template", () => csvResponse("convenios-exemplo.csv", buildCsv(
@@ -276,7 +283,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/prefeituras", async (c) => {
     requireAdmin(c.get("jwt"));
-    return c.json({ prefeituras });
+    return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
   })
   .post("/v1/admin/prefeituras", async (c) => {
     requireAdmin(c.get("jwt"));
@@ -288,19 +295,40 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         municipioIbge: z.number().int(),
         modoIntegracao: z.enum(["REST", "SOAP", "CSV", "MANUAL"]),
         status: z.enum(["ativo", "pausado"]),
+        loginEmail: z.string().email().optional().or(z.literal("")),
+        password: z.string().min(6).optional(),
         servidoresCount: z.number().int().default(0),
       })
       .parse(await c.req.json());
+    const { password, loginEmail, ...rest } = body;
+    const normalizedLogin = loginEmail ? loginEmail.trim().toLowerCase() : undefined;
+    if (normalizedLogin) {
+      const dup = prefeituras.find((p) => p.loginEmail === normalizedLogin && p.id !== body.id);
+      if (dup) throw Errors.validation({ loginEmail: `Login ja em uso pela prefeitura ${dup.nome}` });
+    }
     if (body.id) {
       const idx = prefeituras.findIndex((p) => p.id === body.id);
       if (idx < 0) throw Errors.notFound("prefeitura");
-      prefeituras[idx] = { ...prefeituras[idx]!, ...body, id: body.id };
-      return c.json({ prefeitura: prefeituras[idx] });
+      const current = prefeituras[idx]!;
+      prefeituras[idx] = {
+        ...current,
+        ...rest,
+        id: body.id,
+        loginEmail: normalizedLogin ?? current.loginEmail,
+        passwordHash: password ? await sha256Hex(password) : current.passwordHash,
+      };
+      pushEvent("info", "admin", `Prefeitura "${prefeituras[idx]!.nome}" atualizada${password ? " (senha trocada)" : ""}`);
+      return c.json({ prefeitura: sanitizePrefeitura(prefeituras[idx]!) });
     }
-    const novo: PrefeituraAdmin = { ...body, id: Math.max(...prefeituras.map((p) => p.id), 0) + 1 };
+    const novo: PrefeituraAdmin = {
+      ...rest,
+      id: Math.max(...prefeituras.map((p) => p.id), 0) + 1,
+      loginEmail: normalizedLogin,
+      passwordHash: password ? await sha256Hex(password) : undefined,
+    };
     prefeituras.push(novo);
-    pushEvent("info", "admin", `Prefeitura "${novo.nome}/${novo.uf}" criada`);
-    return c.json({ prefeitura: novo });
+    pushEvent("info", "admin", `Prefeitura "${novo.nome}/${novo.uf}" criada${password ? " com credencial de acesso" : ""}`);
+    return c.json({ prefeitura: sanitizePrefeitura(novo) });
   })
   .post("/v1/admin/prefeituras/:id/sincronizar", async (c) => {
     requireAdmin(c.get("jwt"));
@@ -308,7 +336,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!p) throw Errors.notFound("prefeitura");
     p.ultimaSincronizacao = new Date().toISOString();
     pushEvent("info", "cron", `Folha ${p.nome} sincronizada manualmente`);
-    return c.json({ prefeitura: p });
+    return c.json({ prefeitura: sanitizePrefeitura(p) });
+  })
+  .post("/v1/admin/prefeituras/:id/reset-password", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const p = prefeituras.find((x) => x.id === Number(c.req.param("id")));
+    if (!p) throw Errors.notFound("prefeitura");
+    const body = z.object({ password: z.string().min(6) }).parse(await c.req.json());
+    p.passwordHash = await sha256Hex(body.password);
+    pushEvent("warn", "admin.prefeituras.reset-password", `Senha da prefeitura "${p.nome}" trocada por user:${c.get("jwt").sub}`);
+    return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
 
   .get("/v1/admin/convenios", async (c) => {
@@ -643,13 +680,21 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const text = await readCsvBody(c);
     const { rows } = parseCsv(text);
     const out: ImportOutcome<PrefeituraAdmin> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
-    rows.forEach((r, idx) => {
+    for (let idx = 0; idx < rows.length; idx++) {
+      const r = rows[idx]!;
       const line = idx + 2;
-      if (!r.nome) { out.errors.push({ line, message: "nome obrigatorio" }); return; }
-      if (!r.uf || r.uf.length !== 2) { out.errors.push({ line, message: "uf invalida (use 2 letras)" }); return; }
+      if (!r.nome) { out.errors.push({ line, message: "nome obrigatorio" }); continue; }
+      if (!r.uf || r.uf.length !== 2) { out.errors.push({ line, message: "uf invalida (use 2 letras)" }); continue; }
       const ibge = Number(r.municipioIbge);
-      if (!Number.isFinite(ibge)) { out.errors.push({ line, message: "municipioIbge deve ser numero" }); return; }
+      if (!Number.isFinite(ibge)) { out.errors.push({ line, message: "municipioIbge deve ser numero" }); continue; }
+      const loginEmail = r.loginEmail?.trim().toLowerCase() || undefined;
+      const password = r.password?.trim() || undefined;
+      if (password && password.length < 6) { out.errors.push({ line, message: "password deve ter ao menos 6 caracteres" }); continue; }
       const existing = prefeituras.find((p) => p.nome.toLowerCase() === r.nome!.toLowerCase() && p.uf === r.uf!.toUpperCase());
+      if (loginEmail) {
+        const dup = prefeituras.find((p) => p.loginEmail === loginEmail && p.id !== existing?.id);
+        if (dup) { out.errors.push({ line, message: `loginEmail ja em uso pela prefeitura ${dup.nome}` }); continue; }
+      }
       const p: PrefeituraAdmin = {
         id: existing?.id ?? Math.max(0, ...prefeituras.map((x) => x.id)) + 1,
         nome: r.nome!,
@@ -657,12 +702,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         municipioIbge: ibge,
         modoIntegracao: ((r.modoIntegracao ?? "REST").toUpperCase() as PrefeituraAdmin["modoIntegracao"]),
         status: ((r.status ?? "ativo").toLowerCase() as PrefeituraAdmin["status"]),
+        loginEmail: loginEmail ?? existing?.loginEmail,
+        passwordHash: password ? await sha256Hex(password) : existing?.passwordHash,
         servidoresCount: existing?.servidoresCount ?? 0,
       };
       if (existing) { Object.assign(existing, p); out.updated++; }
       else { prefeituras.push(p); out.inserted++; }
       out.rows.push(p);
-    });
+    }
     pushEvent("info", "admin.prefeituras.import", `${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
     return c.json(out);
   })

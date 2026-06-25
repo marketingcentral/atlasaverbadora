@@ -29,6 +29,18 @@ export function AdminPrefeituras() {
     { key: "status", header: "Situação", render: (p) => <Pill variant={p.status === "ativo" ? "averbado" : "pendente"}>{p.status}</Pill> },
     { key: "nome", header: "Prefeitura", render: (p) => `${p.nome}/${p.uf}` },
     { key: "modoIntegracao", header: "Integração" },
+    {
+      key: "acesso",
+      header: "Acesso /login",
+      render: (p) =>
+        p.loginEmail && p.hasPassword ? (
+          <span style={{ color: "var(--emerald-500)" }}>{p.loginEmail}</span>
+        ) : p.loginEmail ? (
+          <span style={{ color: "var(--danger-500)" }} title="Login cadastrado mas sem senha">{p.loginEmail} (sem senha)</span>
+        ) : (
+          <span style={{ color: "var(--text-dim)" }}>—</span>
+        ),
+    },
     { key: "servidoresCount", header: "Servidores", align: "right", render: (p) => p.servidoresCount.toLocaleString("pt-BR") },
     {
       key: "ultimaSincronizacao",
@@ -51,7 +63,7 @@ export function AdminPrefeituras() {
 
       <CsvImportPanel
         title="Importar prefeituras"
-        columnsHint="Colunas: nome, uf, municipioIbge, modoIntegracao (REST|SOAP|CSV|MANUAL), status"
+        columnsHint="Colunas: nome, uf, municipioIbge, modoIntegracao (REST|SOAP|CSV|MANUAL), status, loginEmail, password (min 6)"
         templateUrl={atlas.admin.csvTemplateUrl("prefeituras")}
         onImport={async (csv) => atlas.admin.importCsv("prefeituras", csv)}
         onImported={() => qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] })}
@@ -84,15 +96,28 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
     municipioIbge: initial?.municipioIbge ?? 0,
     modoIntegracao: initial?.modoIntegracao ?? "REST",
     status: initial?.status ?? "ativo",
+    loginEmail: initial?.loginEmail ?? "",
+    password: "",
     servidoresCount: initial?.servidoresCount ?? 0,
   });
+  const [error, setError] = useState<string | null>(null);
   const save = useMutation({
-    mutationFn: () => atlas.admin.upsertPrefeitura(form),
+    mutationFn: () => {
+      const payload: AdminPrefeituraInput = { ...form };
+      if (!payload.loginEmail) delete payload.loginEmail;
+      if (!payload.password) delete payload.password;
+      return atlas.admin.upsertPrefeitura(payload);
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] });
       onClose();
     },
+    onError: (err) => setError(err instanceof Error ? err.message : "Erro ao salvar"),
   });
+
+  const senhaHint = initial?.hasPassword
+    ? "Deixe em branco para manter a senha atual."
+    : "Mínimo 6 caracteres. Será enviada ao responsável da prefeitura.";
 
   return (
     <div onClick={onClose} style={modalBackdrop}>
@@ -113,6 +138,21 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
               { value: "MANUAL", label: "MANUAL" },
             ]}
           />
+          <TextField
+            label="Login (email de acesso ao /login)"
+            type="email"
+            value={form.loginEmail ?? ""}
+            onChange={(e) => setForm({ ...form, loginEmail: e.target.value })}
+            placeholder="rh@prefeitura.gov.br"
+          />
+          <TextField
+            label={initial?.hasPassword ? "Nova senha (opcional)" : "Senha"}
+            type="password"
+            value={form.password ?? ""}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            placeholder={initial?.hasPassword ? "••••••••" : "min. 6 caracteres"}
+            hint={senhaHint}
+          />
           <SelectField
             label="Situação"
             value={form.status}
@@ -124,6 +164,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
           />
           <NumberField label="Servidores cadastrados" value={form.servidoresCount} onChange={(e) => setForm({ ...form, servidoresCount: Number(e.target.value) })} />
         </FormGrid>
+        {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
           <Button type="button" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Salvando..." : "Salvar"}</Button>

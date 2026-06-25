@@ -133,6 +133,8 @@ export interface AdminPrefeitura {
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
   status: "ativo" | "pausado";
+  loginEmail?: string;
+  hasPassword: boolean;
   servidoresCount: number;
   ultimaSincronizacao?: string;
 }
@@ -144,6 +146,8 @@ export interface AdminPrefeituraInput {
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
   status: "ativo" | "pausado";
+  loginEmail?: string;
+  password?: string;
   servidoresCount?: number;
 }
 
@@ -510,6 +514,8 @@ export class AtlasClient {
     listPrefeituras: () => this.request<{ prefeituras: AdminPrefeitura[] }>("/v1/admin/prefeituras"),
     upsertPrefeitura: (p: AdminPrefeituraInput) => this.request<{ prefeitura: AdminPrefeitura }>("/v1/admin/prefeituras", { method: "POST", body: p }),
     sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
+    resetPrefeituraPassword: (id: number, password: string) =>
+      this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/reset-password`, { method: "POST", body: { password } }),
     listConvenios: () => this.request<{ convenios: AdminConvenio[] }>("/v1/admin/convenios"),
     listServidores: (q?: { prefeitura_id?: number; status?: string }) =>
       this.request<{ servidores: AdminServidor[]; total: number }>("/v1/admin/servidores", { query: q ?? {} }),
