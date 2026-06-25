@@ -91,6 +91,8 @@ export interface BancoUsuarioInput {
   id?: string;
   nome: string;
   email: string;
+  /** Full 11-digit CPF (sem pontuacao). Quando enviado, sobrescreve a mascara. */
+  cpf?: string;
   cpfMasked?: string;
   organizacao?: string;
   perfil: BancoPerfil;
@@ -481,6 +483,9 @@ export class AtlasClient {
     getUsuario: (id: string) => this.request<{ usuario: BancoUsuario }>(`/v1/portal/banco/cadastros/usuarios/${id}`),
     upsertUsuario: (body: BancoUsuarioInput) => this.request<{ usuario: BancoUsuario }>("/v1/portal/banco/cadastros/usuarios", { method: "POST", body }),
     removerUsuario: (id: string) => this.request<void>(`/v1/portal/banco/cadastros/usuarios/${id}`, { method: "DELETE" }),
+    /** Devolve o CPF completo do usuario (acesso registrado em audit log no servidor). */
+    revealUsuarioCpf: (id: string) =>
+      this.request<{ id: string; cpf: string; cpfMasked: string }>(`/v1/portal/banco/cadastros/usuarios/${id}/cpf`),
 
     // Relatorios
     relatorioConsignacoes: (q?: { tipo?: string; inicio?: string; fim?: string }) =>

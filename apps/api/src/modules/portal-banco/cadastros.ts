@@ -19,6 +19,8 @@ export interface BancoUsuario {
   codigo: string;
   nome: string;
   email: string;
+  /** 11-digit CPF without punctuation. Never sent in list responses — fetched per-row via reveal endpoint. */
+  cpf: string;
   cpfMasked: string;
   organizacao: string;
   perfil: "admin" | "operador" | "consulta" | "relatorios";
@@ -53,12 +55,18 @@ const _tabelas: TabelaEmprestimo[] = [
 ];
 
 const _usuarios: BancoUsuario[] = [
-  { id: "U-116612", bancoId: 1, codigo: "116612", nome: "Bruno Lopes do Nascimento", email: "BRUNOLOPES@DELTAGLOBAL", cpfMasked: "***.***.***-77", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "admin", ipsPermitidos: [], ativo: true, criadoEm: "2026-01-10" },
-  { id: "U-116889", bancoId: 1, codigo: "116889", nome: "Vinicius Costa Nery", email: "44445948888@DELTAGLOBAL", cpfMasked: "***.***.***-88", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", ipsPermitidos: [], ativo: true, criadoEm: "2026-02-05" },
-  { id: "U-116891", bancoId: 1, codigo: "116891", nome: "Lucas Vicente Ohi", email: "34537215860@DELTAGLOBAL", cpfMasked: "***.***.***-60", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", ipsPermitidos: [], ativo: true, criadoEm: "2026-02-12" },
-  { id: "U-118327", bancoId: 1, codigo: "118327", nome: "Camila Alves", email: "CAMILAALVES@DELTAGLOBAL", cpfMasked: "***.***.***-22", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "consulta", ipsPermitidos: [], ativo: true, criadoEm: "2026-03-01" },
-  { id: "U-120258", bancoId: 1, codigo: "120258", nome: "Kaua Nogueira da Cunha", email: "45198007811@DELTAGLOBAL", cpfMasked: "***.***.***-11", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "relatorios", ipsPermitidos: ["189.45.10.0/24"], ativo: true, criadoEm: "2026-04-20" },
+  { id: "U-116612", bancoId: 1, codigo: "116612", nome: "Bruno Lopes do Nascimento", email: "BRUNOLOPES@DELTAGLOBAL", cpf: "12345678977", cpfMasked: "***.***.***-77", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "admin", ipsPermitidos: [], ativo: true, criadoEm: "2026-01-10" },
+  { id: "U-116889", bancoId: 1, codigo: "116889", nome: "Vinicius Costa Nery", email: "44445948888@DELTAGLOBAL", cpf: "44445948888", cpfMasked: "***.***.***-88", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", ipsPermitidos: [], ativo: true, criadoEm: "2026-02-05" },
+  { id: "U-116891", bancoId: 1, codigo: "116891", nome: "Lucas Vicente Ohi", email: "34537215860@DELTAGLOBAL", cpf: "34537215860", cpfMasked: "***.***.***-60", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", ipsPermitidos: [], ativo: true, criadoEm: "2026-02-12" },
+  { id: "U-118327", bancoId: 1, codigo: "118327", nome: "Camila Alves", email: "CAMILAALVES@DELTAGLOBAL", cpf: "55566677722", cpfMasked: "***.***.***-22", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "consulta", ipsPermitidos: [], ativo: true, criadoEm: "2026-03-01" },
+  { id: "U-120258", bancoId: 1, codigo: "120258", nome: "Kaua Nogueira da Cunha", email: "45198007811@DELTAGLOBAL", cpf: "45198007811", cpfMasked: "***.***.***-11", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "relatorios", ipsPermitidos: ["189.45.10.0/24"], ativo: true, criadoEm: "2026-04-20" },
 ];
+
+/** Helpers para padrao mask/cpf consistente */
+function maskCpf(cpf11: string): string {
+  if (cpf11.length !== 11) return "***.***.***-**";
+  return `***.***.***-${cpf11.slice(-2)}`;
+}
 
 let _tblSeq = 100;
 let _userSeq = 999000;
@@ -103,11 +111,22 @@ export function listUsuarios(opts: { perfil?: BancoUsuario["perfil"]; somenteAdm
 export function getUsuario(id: string): BancoUsuario | undefined {
   return _usuarios.find((u) => u.id === id);
 }
-export function upsertUsuario(input: Omit<BancoUsuario, "id" | "criadoEm" | "codigo"> & { id?: string }): BancoUsuario {
+type UsuarioUpsert = Omit<BancoUsuario, "id" | "criadoEm" | "codigo" | "cpf" | "cpfMasked"> & {
+  id?: string;
+  cpf?: string;
+  cpfMasked?: string;
+};
+
+export function upsertUsuario(input: UsuarioUpsert): BancoUsuario {
+  const cpf = (input.cpf ?? "").replace(/\D/g, "");
+  const cpfMasked = cpf.length === 11 ? maskCpf(cpf) : input.cpfMasked ?? "***.***.***-**";
+  const normalized = { ...input, cpf, cpfMasked };
   if (input.id) {
     const idx = _usuarios.findIndex((u) => u.id === input.id);
     if (idx >= 0) {
-      const updated = { ..._usuarios[idx]!, ...input } as BancoUsuario;
+      const updated = { ..._usuarios[idx]!, ...normalized } as BancoUsuario;
+      // Preserva CPF anterior se nenhum novo foi enviado
+      if (!cpf) updated.cpf = _usuarios[idx]!.cpf;
       _usuarios[idx] = updated;
       return updated;
     }
@@ -116,7 +135,7 @@ export function upsertUsuario(input: Omit<BancoUsuario, "id" | "criadoEm" | "cod
     id: `U-${++_userSeq}`,
     codigo: String(_userSeq),
     criadoEm: new Date().toISOString().slice(0, 10),
-    ...input,
+    ...normalized,
   };
   _usuarios.push(novo);
   return novo;

@@ -13,6 +13,36 @@ import {
 import { atlas } from "../../../../lib/sdk";
 import type { BancoPerfil, BancoUsuario } from "@atlas/sdk";
 
+function formatCpf(cpf: string): string {
+  const d = cpf.replace(/\D/g, "");
+  if (d.length !== 11) return cpf;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
+
+function CopyCpfButton({ usuarioId }: { usuarioId: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "ok" | "err">("idle");
+  async function copy() {
+    if (state === "loading") return;
+    setState("loading");
+    try {
+      const { cpf } = await atlas.banco.revealUsuarioCpf(usuarioId);
+      await navigator.clipboard.writeText(formatCpf(cpf));
+      setState("ok");
+    } catch {
+      setState("err");
+    } finally {
+      setTimeout(() => setState("idle"), 1800);
+    }
+  }
+  const title = state === "ok" ? "CPF copiado!" : state === "err" ? "Falha ao copiar" : "Copiar CPF";
+  const glyph = state === "ok" ? "✓" : state === "err" ? "!" : state === "loading" ? "…" : "⧉";
+  return (
+    <IconButton title={title} onClick={copy} danger={state === "err"}>
+      {glyph}
+    </IconButton>
+  );
+}
+
 const PERFIS: { value: BancoPerfil | ""; label: string }[] = [
   { value: "", label: "Todos os perfis" },
   { value: "admin", label: "Admin" },
@@ -93,6 +123,7 @@ export function BancoUsuariosLista() {
         actions={(u) => (
           <>
             <IconButton title="Editar" onClick={() => nav(u.id)}>✎</IconButton>
+            <CopyCpfButton usuarioId={u.id} />
             <IconButton
               title="Remover"
               danger

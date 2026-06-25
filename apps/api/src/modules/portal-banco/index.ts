@@ -285,13 +285,35 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const u = new URL(c.req.url);
     const perfil = u.searchParams.get("perfil") as "admin" | "operador" | "consulta" | "relatorios" | null;
     const somenteAdmin = u.searchParams.get("somenteAdmin") === "true";
-    return c.json({ usuarios: listUsuarios({ perfil: perfil ?? undefined, somenteAdmin }) });
+    // PII hygiene: nunca devolver cpf na listagem; so cpfMasked.
+    const usuarios = listUsuarios({ perfil: perfil ?? undefined, somenteAdmin }).map(({ cpf: _cpf, ...rest }) => rest);
+    return c.json({ usuarios });
   })
   .get("/v1/portal/banco/cadastros/usuarios/:id", async (c) => {
     requireBancoRole(c.get("jwt"));
     const u = getUsuario(c.req.param("id"));
     if (!u) throw Errors.notFound("usuario");
-    return c.json({ usuario: u });
+    const { cpf: _cpf, ...rest } = u;
+    return c.json({ usuario: rest });
+  })
+  .get("/v1/portal/banco/cadastros/usuarios/:id/cpf", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const u = getUsuario(c.req.param("id"));
+    if (!u) throw Errors.notFound("usuario");
+    // Audit append-only para acesso a PII (LGPD).
+    console.info(JSON.stringify({
+      ts: new Date().toISOString(),
+      level: "warn",
+      source: "banco.usuarios.reveal-cpf",
+      trace_id: c.get("trace_id"),
+      actor: `user:${j.sub}`,
+      banco_id: j.banco_id,
+      target_user: u.id,
+      target_codigo: u.codigo,
+      message: `User ${j.sub} (banco_id=${j.banco_id}) revealed CPF of usuario ${u.id}`,
+    }));
+    return c.json({ id: u.id, cpf: u.cpf, cpfMasked: u.cpfMasked });
   })
   .post("/v1/portal/banco/cadastros/usuarios", async (c) => {
     const j = c.get("jwt");
@@ -301,6 +323,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         id: z.string().optional(),
         nome: z.string().min(3),
         email: z.string(),
+        cpf: z.string().regex(/^\d{11}$/, "CPF deve ter 11 digitos").optional(),
         cpfMasked: z.string().optional().default("***.***.***-**"),
         organizacao: z.string().default("DELTA GLOBAL"),
         perfil: z.enum(["admin", "operador", "consulta", "relatorios"]),
@@ -308,7 +331,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         ativo: z.boolean().default(true),
       })
       .parse(await c.req.json());
-    return c.json({ usuario: upsertUsuario({ ...body, bancoId: j.banco_id ?? 1 }) });
+    const saved = upsertUsuario({ ...body, bancoId: j.banco_id ?? 1 });
+    const { cpf: _cpf, ...rest } = saved;
+    return c.json({ usuario: rest });
   })
   .delete("/v1/portal/banco/cadastros/usuarios/:id", async (c) => {
     requireBancoRole(c.get("jwt"));
