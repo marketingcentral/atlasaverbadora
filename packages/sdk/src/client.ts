@@ -432,6 +432,13 @@ export class AtlasClient {
           salarioLiquido: number; idConvenio: string;
         };
       }>("/v1/portal/banco/margem/buscar", { method: "POST", body: input }),
+    margemExemplos: () =>
+      this.request<{
+        activeConvenioId: string;
+        activeConvenioNome: string;
+        noConvenio: { nome: string; matricula: string; cpf: string; cpfMasked: string; idConvenio: string }[];
+        outrosConvenios: { nome: string; matricula: string; cpfMasked: string; idConvenio: string; convenio: string }[];
+      }>("/v1/portal/banco/margem/exemplos"),
     margemCalcular: (idMatricula: string, input: { mes: number; ano: number }) =>
       this.request<{
         competencia: string;

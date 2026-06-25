@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { calcCET, margemDisponivel, margemTotal } from "@atlas/domain";
 import { authRequired, type JwtClaims } from "../../middleware/auth.js";
-import { Errors } from "../../_shared/errors.js";
+import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
 import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos } from "./store.js";
@@ -129,15 +129,50 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       .refine((b) => !!b.cpf || !!b.matricula, "cpf_ou_matricula_obrigatorio")
       .parse(await c.req.json());
     const activeConv = await getActiveConvenioId(c.env, j);
+    const activeConvNome = CONVENIOS_MOCK.find((cv) => cv.id === activeConv)?.nome ?? activeConv;
     const cpfNorm = body.cpf?.replace(/\D/g, "");
-    const found = SERVIDORES_BUSCA_MOCK.find((s) => {
-      if (s.idConvenio !== activeConv) return false;
-      if (cpfNorm) return s.cpf === cpfNorm;
-      if (body.matricula) return s.matricula === body.matricula;
-      return false;
-    });
-    if (!found) throw Errors.notFound("colaborador");
-    return c.json({ ficha: found });
+    const matchPred = (s: typeof SERVIDORES_BUSCA_MOCK[number]) =>
+      cpfNorm ? s.cpf === cpfNorm : body.matricula ? s.matricula === body.matricula : false;
+    const found = SERVIDORES_BUSCA_MOCK.find((s) => s.idConvenio === activeConv && matchPred(s));
+    if (found) return c.json({ ficha: found });
+    // Pista util: existe em outro convenio?
+    const elsewhere = SERVIDORES_BUSCA_MOCK.find(matchPred);
+    if (elsewhere) {
+      const outroNome = CONVENIOS_MOCK.find((cv) => cv.id === elsewhere.idConvenio)?.nome ?? elsewhere.idConvenio;
+      throw new HttpError(
+        404,
+        "not_found_in_active_convenio",
+        `Colaborador encontrado no convenio "${outroNome}", mas o convenio ativo e "${activeConvNome}". Troque o convenio ativo no menu lateral.`,
+        { outroConvenioId: elsewhere.idConvenio, outroConvenioNome: outroNome, activeConvenioId: activeConv, activeConvenioNome: activeConvNome },
+      );
+    }
+    throw new HttpError(
+      404,
+      "not_found",
+      `Nenhum colaborador encontrado para ${cpfNorm ? `CPF ${body.cpf}` : `matricula ${body.matricula}`} em qualquer convenio.`,
+      { activeConvenioId: activeConv, activeConvenioNome: activeConvNome },
+    );
+  })
+
+  // --------- Exemplos de busca (auxilia debug e demo) ----------
+  .get("/v1/portal/banco/margem/exemplos", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const activeConv = await getActiveConvenioId(c.env, j);
+    const activeConvNome = CONVENIOS_MOCK.find((cv) => cv.id === activeConv)?.nome ?? activeConv;
+    const noConvenio = SERVIDORES_BUSCA_MOCK.filter((s) => s.idConvenio === activeConv)
+      .slice(0, 3)
+      .map((s) => ({ nome: s.nome, matricula: s.matricula, cpf: s.cpf, cpfMasked: s.cpfMasked, idConvenio: s.idConvenio }));
+    const outrosConvenios = SERVIDORES_BUSCA_MOCK.filter((s) => s.idConvenio !== activeConv)
+      .slice(0, 3)
+      .map((s) => ({
+        nome: s.nome,
+        matricula: s.matricula,
+        cpfMasked: s.cpfMasked,
+        idConvenio: s.idConvenio,
+        convenio: CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.nome ?? s.idConvenio,
+      }));
+    return c.json({ activeConvenioId: activeConv, activeConvenioNome: activeConvNome, noConvenio, outrosConvenios });
   })
 
   // --------- Calcular margem para uma competencia ----------
