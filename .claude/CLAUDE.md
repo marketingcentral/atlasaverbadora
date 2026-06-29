@@ -35,6 +35,16 @@ Monorepo pnpm + Turborepo:
 7. **PII mascarada em logs** — CPF, RG, nome completo, salario nunca em log de aplicacao. Use helper `maskPII()`.
 8. **Conventional commits** com escopo de pacote: `feat(api): ...`, `fix(web): ...`, `chore(ui): ...`, `docs(specs): ...`
 
+## Workflow Git (obrigatorio)
+**Antes de qualquer alteracao:** o hook `UserPromptSubmit` em `.claude/settings.json` ja roda `git fetch origin main --quiet` automaticamente — nao desligue. Se `main` divergir de `origin/main` apos o fetch, parar e perguntar ao usuario antes de editar.
+
+**Depois de concluir cada alteracao solicitada pelo usuario:**
+1. `git add <arquivos-especificos>` (nunca `git add .` / `-A`)
+2. `git commit -m` com Conventional Commits + escopo (regra 8 acima)
+3. `git push origin main`
+
+Se o `git push` travar pedindo credencial do Git Credential Manager, **avise o usuario e pare** — nao ficar tentando em loop. Nao commitar arquivos sensiveis (`.dev.vars`, `env`, segredos) — confira `.gitignore` antes.
+
 ## Como trabalhar
 - Antes de tocar UI, **consulte o MCP `atlas-design-system`** ou a skill `atlas-design-system`.
 - Antes de tocar integracao bancaria, **consulte o MCP `atlas-bank-sandbox`** e os BPMNs em `integracao_exemplo/Rotas Banco 1/`.
