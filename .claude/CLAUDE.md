@@ -32,6 +32,14 @@ Monorepo pnpm + Turborepo:
 4. **Idempotencia** em toda mutacao que toca sistema externo (banco, prefeitura). Use `Idempotency-Key` header e KV para dedup.
 5. **Audit log append-only** para qualquer transicao de estado de Proposta/Contrato/Portabilidade.
 6. **Nenhum segredo em git** — use `.dev.vars` (Workers), Expo SecureStore (mobile), Worker Secrets (prod). Adicione padroes no `.gitignore` antes de criar arquivos sensiveis.
+
+   **Tokens de operacao local (raiz do repo, arquivo `env` — sem ponto):**
+   - Vars suportadas hoje: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `GITHUB_TOKEN`, `TESTSPRITE_API_KEY`, `R2_*`.
+   - `env` esta no `.gitignore` (linha 74) — **nunca tirar de la, nunca commitar**.
+   - Para adicionar nova chave: editar `env`, atualizar `env.example` com a chave vazia, atualizar esta lista no `CLAUDE.md`.
+   - Para usar em comando: ler com `source env` (POSIX) ou `Get-Content env | ForEach-Object { ... }` (PowerShell). **Nao inline tokens em comandos** — sempre via variavel de ambiente.
+   - Para rotacionar: gerar novo token no provedor, substituir valor em `env`, atualizar `~/.git-credentials` se for `GITHUB_TOKEN`. Revogar o antigo no provedor.
+   - **Se um token for exposto** (chat, log, push acidental) — assumir comprometido, revogar e rotacionar imediatamente.
 7. **PII mascarada em logs** — CPF, RG, nome completo, salario nunca em log de aplicacao. Use helper `maskPII()`.
 8. **Conventional commits** com escopo de pacote: `feat(api): ...`, `fix(web): ...`, `chore(ui): ...`, `docs(specs): ...`
 
