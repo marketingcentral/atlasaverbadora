@@ -47,10 +47,8 @@ export function BancoTabelaEmprestimosLista() {
         rows={data.data?.tabelas ?? []}
         rowKey={(t) => t.id}
         loading={data.isLoading}
-        onRowClick={(t) => nav(t.id)}
         actions={(t) => (
           <>
-            <IconButton title="Visualizar" onClick={() => nav(t.id)}>👁</IconButton>
             <IconButton title="Editar" onClick={() => nav(t.id)}>✎</IconButton>
             <IconButton
               title="Remover"
