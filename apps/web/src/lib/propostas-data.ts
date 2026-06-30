@@ -52,73 +52,11 @@ export const ESTADOS_TIMELINE: EstadoProposta[] = [
   "liberada",
 ];
 
-// Datas em ISO — necessario pra tempoRelativo() das notificacoes funcionar
-// e ticar em tempo real. As telas formatam quando precisam exibir.
-const HOJE = "2026-06-30";
-
-export const PROPOSTAS_INICIAIS: Proposta[] = [
-  {
-    id: "PRO-9821",
-    banco: "SCred Financeira",
-    estado: "aguardando_formalizacao",
-    valor: 25000,
-    parcelas: 48,
-    parcela: 750,
-    taxaAm: 1.65,
-    criadaEm: "2026-06-29T14:22:00",
-    expiraEm: "2026-07-01T14:22:00",
-    linkFormalizacao: "https://scred.test/formalizar/PRO-9821",
-    idMatricula: "MAT-852029100",
-  },
-  {
-    id: "PRO-9805",
-    banco: "Banco Y",
-    estado: "em_analise",
-    valor: 12000,
-    parcelas: 36,
-    parcela: 412.4,
-    taxaAm: 1.72,
-    criadaEm: `${HOJE}T09:10:00`,
-    expiraEm: "2026-07-02T09:10:00",
-    idMatricula: "MAT-852029100",
-  },
-  {
-    id: "PRO-9803",
-    banco: "Pan Credito",
-    estado: "aprovada",
-    valor: 8000,
-    parcelas: 24,
-    parcela: 380.5,
-    taxaAm: 1.88,
-    criadaEm: `${HOJE}T11:00:00`,
-    expiraEm: "2026-07-01T11:00:00",
-    linkFormalizacao: "https://pan.test/contrato/PRO-9803",
-    idMatricula: "MAT-009821",
-  },
-  {
-    id: "PRO-9742",
-    banco: "Pan Credito",
-    estado: "expirada",
-    valor: 6000,
-    parcelas: 24,
-    parcela: 320.1,
-    taxaAm: 1.99,
-    criadaEm: "2026-06-20T16:00:00",
-    idMatricula: "MAT-852029100",
-  },
-  {
-    id: "PRO-9701",
-    banco: "Banco Y",
-    estado: "recusada",
-    valor: 15000,
-    parcelas: 60,
-    parcela: 380,
-    taxaAm: 1.72,
-    criadaEm: "2026-06-15T10:30:00",
-    motivoRecusa: "Comprometimento de renda acima do limite do convenio.",
-    idMatricula: "MAT-009821",
-  },
-];
+// Demo comeca vazia. Propostas sao criadas pelo usuario via /simular -> /termo
+// (salvas em localStorage[atlas:propostas:userCriadas]) ou via /portabilidade.
+// Para popular dados pre-existentes, adicione entradas aqui com idMatricula
+// apontando para a matricula correspondente.
+export const PROPOSTAS_INICIAIS: Proposta[] = [];
 
 /** Formata ISO em "DD/MM/YYYY HH:MM" para exibicao nas telas. */
 export function fmtDateTime(iso: string): string {
