@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -35,6 +35,12 @@ export function ServidorLayout() {
   useEffect(() => {
     setMeta(readMeta());
   }, [location.pathname]);
+
+  function trocarMatricula() {
+    window.localStorage.removeItem("atlas:idMatricula");
+    window.localStorage.removeItem(META_KEY);
+    nav("/servidor/selecionar-matricula");
+  }
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
@@ -75,7 +81,7 @@ export function ServidorLayout() {
               Atlas
             </div>
 
-            {meta ? <MatriculaSwitcher meta={meta} /> : null}
+            {meta ? <MatriculaBadge meta={meta} /> : null}
 
             <nav style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {NAV.map((n) => {
@@ -103,6 +109,11 @@ export function ServidorLayout() {
             </nav>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
+            {meta ? (
+              <Button variant="ghost" size="sm" onClick={trocarMatricula}>
+                Trocar matricula
+              </Button>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
             </Button>
@@ -130,91 +141,29 @@ export function ServidorLayout() {
   );
 }
 
-function MatriculaSwitcher({ meta }: { meta: MatriculaMeta }) {
-  const nav = useNavigate();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", handler);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  function trocar() {
-    window.localStorage.removeItem("atlas:idMatricula");
-    window.localStorage.removeItem(META_KEY);
-    setOpen(false);
-    nav("/servidor/selecionar-matricula");
-  }
-
+function MatriculaBadge({ meta }: { meta: MatriculaMeta }) {
   return (
-    <div ref={ref} style={{ position: "relative" }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
+    <div
+      style={{
+        display: "flex", alignItems: "center", gap: 8,
+        padding: "6px 12px", borderRadius: 999,
+        background: "var(--surface)", border: "1px solid var(--border)",
+        fontSize: 12, color: "var(--text)",
+      }}
+      title={`${meta.cargo} · ${meta.uf}`}
+    >
+      <span
         style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "6px 12px", borderRadius: 999,
-          background: "var(--surface)", border: "1px solid var(--border)",
-          fontSize: 12, color: "var(--text)", cursor: "pointer",
+          display: "inline-block", width: 6, height: 6, borderRadius: "50%",
+          background: "var(--emerald-500)",
         }}
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        <span
-          style={{
-            display: "inline-block", width: 6, height: 6, borderRadius: "50%",
-            background: "var(--emerald-500)",
-          }}
-        />
-        <span style={{ fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {meta.prefeitura}
-        </span>
-        <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-          {meta.matricula}
-        </span>
-        <span style={{ color: "var(--text-muted)" }}>▾</span>
-      </button>
-
-      {open ? (
-        <div
-          role="menu"
-          style={{
-            position: "absolute", top: "calc(100% + 6px)", left: 0,
-            minWidth: 280, background: "var(--surface)", border: "1px solid var(--border)",
-            borderRadius: 12, boxShadow: "0 8px 24px rgba(0,0,0,.25)",
-            padding: 12, display: "flex", flexDirection: "column", gap: 8, zIndex: 20,
-          }}
-        >
-          <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
-            Matricula ativa
-          </div>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: ".95rem" }}>{meta.prefeitura}</div>
-            <div style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 2 }}>
-              {meta.cargo} · {meta.uf}
-            </div>
-            <div style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 2, fontFamily: "var(--font-mono)" }}>
-              Mat. {meta.matricula}
-            </div>
-          </div>
-          <div style={{ height: 1, background: "var(--border)", margin: "4px 0" }} />
-          <Button size="sm" variant="ghost" onClick={trocar}>
-            Trocar matricula →
-          </Button>
-        </div>
-      ) : null}
+      />
+      <span style={{ fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {meta.prefeitura}
+      </span>
+      <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+        {meta.matricula}
+      </span>
     </div>
   );
 }

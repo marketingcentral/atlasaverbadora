@@ -68,12 +68,6 @@ export function ServidorConta() {
     setSavedAt(new Date());
   }
 
-  function trocarMatricula() {
-    window.localStorage.removeItem("atlas:idMatricula");
-    window.localStorage.removeItem(META_KEY);
-    nav("/servidor/selecionar-matricula");
-  }
-
   const nome = profile.data?.nome ?? "Servidor";
   const cpfMasked = "***.***.222-33";
   const endereco = "Rua das Acacias, 145 — Palhoca/SC, 88130-XXX";
@@ -92,12 +86,7 @@ export function ServidorConta() {
       </header>
 
       <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h3 style={{ margin: 0 }}>Dados cadastrais</h3>
-          <Button size="sm" variant="ghost" onClick={trocarMatricula}>
-            Trocar matricula
-          </Button>
-        </div>
+        <h3 style={{ marginTop: 0, marginBottom: 16 }}>Dados cadastrais</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
           <ReadField label="Nome" value={nome} />
           <ReadField label="CPF" value={cpfMasked} />
