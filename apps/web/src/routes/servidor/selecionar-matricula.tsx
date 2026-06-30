@@ -97,9 +97,14 @@ export function ServidorSelecionarMatricula() {
           </span>
           <div style={{ fontWeight: 700 }}>Atlas</div>
         </div>
-        <Button variant="ghost" size="sm" onClick={sair}>
-          Sair
-        </Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button variant="ghost" size="sm" onClick={() => nav(-1)}>
+            ← Voltar
+          </Button>
+          <Button variant="ghost" size="sm" onClick={sair}>
+            Sair
+          </Button>
+        </div>
       </header>
 
       <main style={{ flex: 1, padding: "48px 24px", maxWidth: 720, width: "100%", margin: "0 auto" }}>
