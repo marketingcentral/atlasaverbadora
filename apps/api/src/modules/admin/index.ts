@@ -9,7 +9,7 @@ import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, ty
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, toggleWebhook, type WebhookEvent } from "./webhooks.js";
+import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, sendTestPing, toggleWebhook, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
 import { deleteConvenioConfig, getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import { cancelPreReserva, countExpiringNext24h, getPreReserva, listPreReservas, summarizePreReservas, sweepExpired, type PreReservaStatus } from "./pre-reservas.js";
@@ -38,7 +38,7 @@ export interface BancoAdmin {
 }
 
 // Strip secrets before returning over the wire.
-function sanitizeBanco(b: BancoAdmin) {
+export function sanitizeBanco(b: BancoAdmin) {
   const { passwordHash, ...rest } = b;
   return { ...rest, hasPassword: !!passwordHash };
 }
@@ -56,7 +56,7 @@ export interface PrefeituraAdmin {
   ultimaSincronizacao?: string;
 }
 
-function sanitizePrefeitura(p: PrefeituraAdmin) {
+export function sanitizePrefeitura(p: PrefeituraAdmin) {
   const { passwordHash, ...rest } = p;
   return { ...rest, hasPassword: !!passwordHash };
 }
@@ -657,6 +657,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }).parse(await c.req.json());
     const deliveries = await fireEvent(body.event, body.payload, { environment: body.environment });
     return c.json({ deliveries: deliveries.length });
+  })
+  // Send a one-off test ping to a single webhook (ignores its event subscriptions).
+  .post("/v1/admin/webhooks/:id/test", authRequired, async (c) => {
+    const j = c.get("jwt"); requireAdmin(j);
+    const delivery = await sendTestPing(c.req.param("id"));
+    if (!delivery) throw Errors.notFound("webhook");
+    return c.json({
+      delivery: {
+        id: delivery.id, status: delivery.status, httpStatus: delivery.httpStatus,
+        attempt: delivery.attempt, error: delivery.error, deliveredAt: delivery.deliveredAt,
+      },
+    });
   })
 
   // ===== CSV Import =====

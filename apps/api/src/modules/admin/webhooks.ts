@@ -1,5 +1,6 @@
 // Webhook subscriptions + deliveries — in-memory store.
-// HMAC-SHA256 signature (X-Atlas-Signature) prevents tampering.
+// Deliveries are sent over HTTP with an HMAC-SHA256 signature (X-Atlas-Signature)
+// so the receiver can verify authenticity. Best-effort with a short retry.
 
 import type { ApiEnvironment, ApiAudience } from "./api-tokens.js";
 
@@ -21,6 +22,7 @@ export const WEBHOOK_EVENTS = [
   "comunicado.publicado",
   "portabilidade.solicitada",
   "portabilidade.concluida",
+  "webhook.test",
 ] as const;
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
@@ -31,7 +33,7 @@ export interface WebhookEndpoint {
   partnerId: number;
   environment: ApiEnvironment;
   url: string;
-  secretPrefix: string; // for display only — store first 8 chars
+  secretPrefix: string; // for display only — store first 12 chars
   secretHash: string;   // SHA-256 hex of the actual secret
   events: WebhookEvent[];
   active: boolean;
@@ -53,9 +55,14 @@ export interface WebhookDelivery {
 }
 
 const _endpoints = new Map<string, WebhookEndpoint>();
+/** Raw signing secrets, kept out of WebhookEndpoint so they never get serialized. */
+const _secrets = new Map<string, string>();
 const _deliveries: WebhookDelivery[] = [];
 let _wSeq = 1;
 let _dSeq = 1;
+
+const DELIVERY_TIMEOUT_MS = 8000;
+const MAX_ATTEMPTS = 3;
 
 function genId(prefix: string, n: number): string {
   return `${prefix}_${n.toString().padStart(6, "0")}`;
@@ -67,10 +74,26 @@ function randomHex(bytes: number): string {
   return Array.from(buf, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+function toHex(buf: ArrayBuffer): string {
+  return Array.from(new Uint8Array(buf), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 async function sha256(input: string): Promise<string> {
   const data = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+  return toHex(await crypto.subtle.digest("SHA-256", data));
+}
+
+/** HMAC-SHA256(secret, body) as hex — what the receiver recomputes to verify. */
+async function hmacSha256Hex(secret: string, body: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
+  return toHex(sig);
 }
 
 export interface CreateWebhookInput {
@@ -84,8 +107,9 @@ export interface CreateWebhookInput {
 
 export async function createWebhook(input: CreateWebhookInput): Promise<{ webhook: WebhookEndpoint; secret: string }> {
   const secret = `whsec_${randomHex(24)}`;
+  const id = genId("wh", _wSeq++);
   const wh: WebhookEndpoint = {
-    id: genId("wh", _wSeq++),
+    id,
     audience: input.audience,
     partnerId: input.partnerId,
     environment: input.environment,
@@ -98,10 +122,12 @@ export async function createWebhook(input: CreateWebhookInput): Promise<{ webhoo
     createdBy: input.createdBy,
   };
   _endpoints.set(wh.id, wh);
+  _secrets.set(wh.id, secret);
   return { webhook: wh, secret };
 }
 
 export function listWebhooks(filter?: { audience?: ApiAudience; partnerId?: number; environment?: ApiEnvironment }): WebhookEndpoint[] {
+  ensureSeeded();
   return Array.from(_endpoints.values())
     .filter((w) => (!filter?.audience || w.audience === filter.audience)
       && (filter?.partnerId == null || w.partnerId === filter.partnerId)
@@ -121,6 +147,7 @@ export function toggleWebhook(id: string): WebhookEndpoint | null {
 }
 
 export function removeWebhook(id: string): boolean {
+  _secrets.delete(id);
   return _endpoints.delete(id);
 }
 
@@ -129,59 +156,139 @@ export function listDeliveries(webhookId?: string, limit = 50): WebhookDelivery[
   return all.sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt)).slice(0, limit);
 }
 
+/** Build the JSON envelope a receiver gets. The signature is computed over this exact string. */
+function buildBody(delivery: WebhookDelivery, w: WebhookEndpoint, event: WebhookEvent, payload: unknown): string {
+  return JSON.stringify({
+    id: delivery.id,
+    event,
+    environment: w.environment,
+    webhook_id: w.id,
+    created_at: delivery.scheduledAt,
+    data: payload,
+  });
+}
+
+/** POST the body to the webhook URL with signature headers; one attempt. */
+async function attemptDelivery(w: WebhookEndpoint, delivery: WebhookDelivery, bodyStr: string, signature: string): Promise<void> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), DELIVERY_TIMEOUT_MS);
+  try {
+    const res = await fetch(w.url, {
+      method: "POST",
+      signal: ctrl.signal,
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Atlas-Webhooks/1.0",
+        "X-Atlas-Event": delivery.event,
+        "X-Atlas-Delivery": delivery.id,
+        "X-Atlas-Webhook-Id": w.id,
+        "X-Atlas-Signature": `sha256=${signature}`,
+      },
+      body: bodyStr,
+    });
+    delivery.httpStatus = res.status;
+    delivery.deliveredAt = new Date().toISOString();
+    if (res.ok) {
+      delivery.status = "success";
+      delivery.error = undefined;
+    } else {
+      delivery.status = "failed";
+      delivery.error = `HTTP ${res.status}`;
+    }
+  } catch (err) {
+    delivery.deliveredAt = new Date().toISOString();
+    delivery.status = "failed";
+    delivery.error = err instanceof Error ? (err.name === "AbortError" ? "timeout" : err.message) : "fetch_error";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Deliver one event to one webhook, retrying on failure up to MAX_ATTEMPTS. */
+async function deliver(w: WebhookEndpoint, event: WebhookEvent, payload: unknown): Promise<WebhookDelivery> {
+  const delivery: WebhookDelivery = {
+    id: genId("dlv", _dSeq++),
+    webhookId: w.id,
+    event,
+    status: "pending",
+    attempt: 0,
+    scheduledAt: new Date().toISOString(),
+    payloadPreview: JSON.stringify(payload).slice(0, 200),
+  };
+  _deliveries.push(delivery);
+
+  const bodyStr = buildBody(delivery, w, event, payload);
+  const secret = _secrets.get(w.id) ?? "";
+  const signature = secret ? await hmacSha256Hex(secret, bodyStr) : "";
+
+  for (let i = 1; i <= MAX_ATTEMPTS; i++) {
+    delivery.attempt = i;
+    await attemptDelivery(w, delivery, bodyStr, signature);
+    if (delivery.status === "success") break;
+    // Don't retry client errors (4xx) — they won't succeed on a repeat. Only
+    // retry transient failures: network errors/timeouts (no httpStatus) or 5xx.
+    const http = delivery.httpStatus;
+    if (http != null && http >= 400 && http < 500) break;
+  }
+  return delivery;
+}
+
 /**
- * Fire an event to all webhooks subscribed. Best-effort: schedules delivery and
- * logs a synthetic outcome (not actually sending fetch in this in-memory build).
- * Replace with a Cloudflare Queue + retry policy in production.
+ * Fire an event to all subscribed + active webhooks. Awaits the HTTP deliveries
+ * (with timeout/retry) so the caller gets real outcomes back.
  */
 export async function fireEvent(event: WebhookEvent, payload: unknown, filter?: { audience?: ApiAudience; partnerId?: number; environment?: ApiEnvironment }): Promise<WebhookDelivery[]> {
   const targets = listWebhooks(filter).filter((w) => w.active && w.events.includes(event));
-  const out: WebhookDelivery[] = [];
-  for (const w of targets) {
-    const delivery: WebhookDelivery = {
-      id: genId("dlv", _dSeq++),
-      webhookId: w.id,
-      event,
-      status: "pending",
-      attempt: 1,
-      scheduledAt: new Date().toISOString(),
-      payloadPreview: JSON.stringify(payload).slice(0, 200),
-    };
-    _deliveries.push(delivery);
-    // Synthetic outcome: assume 2xx unless URL host is "fail.test".
-    setTimeout(() => {
-      delivery.deliveredAt = new Date().toISOString();
-      try {
-        const u = new URL(w.url);
-        if (u.hostname === "fail.test") {
-          delivery.status = "failed";
-          delivery.httpStatus = 500;
-          delivery.error = "Synthetic failure";
-        } else {
-          delivery.status = "success";
-          delivery.httpStatus = 200;
-        }
-      } catch {
-        delivery.status = "failed";
-        delivery.error = "invalid_url";
-      }
-    }, 50);
-    out.push(delivery);
-  }
-  return out;
+  return Promise.all(targets.map((w) => deliver(w, event, payload)));
 }
 
-// Seed: 1 webhook + 3 deliveries for visual testing.
-(async () => {
-  const { webhook } = await createWebhook({
+/** Send a one-off test ping to a single webhook, regardless of its event subscriptions. */
+export async function sendTestPing(webhookId: string): Promise<WebhookDelivery | null> {
+  const w = _endpoints.get(webhookId);
+  if (!w) return null;
+  return deliver(w, "webhook.test", {
+    message: "Ping de teste do Atlas. Se você recebeu isto, o webhook está funcionando.",
+    ts: new Date().toISOString(),
+  });
+}
+
+// Lazy seed — runs on first request (never at module/global scope, where Workers
+// forbids crypto/random). Adds one demo webhook + two synthetic deliveries.
+let _seeded = false;
+function ensureSeeded(): void {
+  if (_seeded) return;
+  _seeded = true;
+  const secret = `whsec_${randomHex(24)}`;
+  const id = genId("wh", _wSeq++);
+  const wh: WebhookEndpoint = {
+    id,
     audience: "banco",
     partnerId: 1,
     environment: "sandbox",
     url: "https://webhook.site/atlas-demo",
+    secretPrefix: secret.slice(0, 12) + "…",
+    secretHash: "", // demo only; not used for signing the synthetic rows below
     events: ["proposta.criada", "contrato.averbado", "contrato.cancelado"],
+    active: true,
+    createdAt: new Date().toISOString(),
     createdBy: "seed",
-  });
-  await fireEvent("proposta.criada", { propostaId: "PRO-9821", valor: 25000 }, { environment: "sandbox" });
-  await fireEvent("contrato.averbado", { adf: "9001234", valorParcela: 750 }, { environment: "sandbox" });
-  void webhook;
-})().catch(() => undefined);
+  };
+  _endpoints.set(id, wh);
+  _secrets.set(id, secret);
+  for (const [event, payload] of [
+    ["proposta.criada", { propostaId: "PRO-9821", valor: 25000 }],
+    ["contrato.averbado", { adf: "9001234", valorParcela: 750 }],
+  ] as [WebhookEvent, unknown][]) {
+    _deliveries.push({
+      id: genId("dlv", _dSeq++),
+      webhookId: id,
+      event,
+      status: "success",
+      httpStatus: 200,
+      attempt: 1,
+      scheduledAt: new Date().toISOString(),
+      deliveredAt: new Date().toISOString(),
+      payloadPreview: JSON.stringify(payload).slice(0, 200),
+    });
+  }
+}

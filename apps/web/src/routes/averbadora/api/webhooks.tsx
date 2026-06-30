@@ -26,6 +26,21 @@ export function AverbadoraApiWebhooks() {
     mutationFn: (id: string) => atlas.admin.deleteWebhook(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-webhooks"] }),
   });
+  const [testingId, setTestingId] = useState<string | null>(null);
+  const test = useMutation({
+    mutationFn: (id: string) => atlas.admin.testWebhook(id),
+    onMutate: (id: string) => setTestingId(id),
+    onSettled: (_d, _e, id) => {
+      setTestingId((cur) => (cur === id ? null : cur));
+      qc.invalidateQueries({ queryKey: ["webhook-deliveries", id] });
+    },
+    onSuccess: (data) => {
+      const d = data.delivery;
+      if (d.status === "success") alert(`✓ Ping entregue — HTTP ${d.httpStatus}. Verifique seu n8n.`);
+      else alert(`✗ Falha ao entregar — ${d.error ?? "erro"}${d.httpStatus ? ` (HTTP ${d.httpStatus})` : ""}. Confira a URL e se o workflow está ativo.`);
+    },
+    onError: (err) => alert(`Erro ao testar: ${(err as Error).message}`),
+  });
 
   const rows = q.data?.webhooks ?? [];
 
@@ -40,6 +55,7 @@ export function AverbadoraApiWebhooks() {
       header: "",
       render: (w) => (
         <div style={{ display: "flex", gap: 6 }}>
+          <IconButton onClick={() => { if (testingId !== w.id) test.mutate(w.id); }}>{testingId === w.id ? "Testando…" : "Testar"}</IconButton>
           <IconButton onClick={() => setSelected(w.id)}>Entregas</IconButton>
           <IconButton onClick={() => toggle.mutate(w.id)}>{w.active ? "Pausar" : "Retomar"}</IconButton>
           <IconButton onClick={() => { if (confirm("Remover webhook?")) remove.mutate(w.id); }}>Remover</IconButton>
@@ -106,6 +122,8 @@ function DeliveriesPanel({ id, onClose }: { id: string; onClose: () => void }) {
     { key: "event", header: "Evento", render: (d) => <code style={{ fontSize: 12 }}>{d.event}</code> },
     { key: "status", header: "Status", render: (d) => <Pill variant={d.status === "success" ? "emdia" : d.status === "failed" ? "expirado" : "pendente"}>{d.status}</Pill> },
     { key: "httpStatus", header: "HTTP", render: (d) => d.httpStatus ?? "—" },
+    { key: "attempt", header: "Tent.", render: (d) => d.attempt ?? "—" },
+    { key: "error", header: "Erro", render: (d) => d.error ? <span style={{ fontSize: 11, color: "#ef4444" }}>{d.error}</span> : "—" },
     { key: "preview", header: "Payload", render: (d) => <code style={{ fontSize: 11, color: "var(--text-muted)" }}>{d.payloadPreview}</code> },
   ];
   return (
