@@ -200,6 +200,13 @@ export function PrimeiroAcessoPage() {
               />
               {error ? <ErrorBox>{error}</ErrorBox> : null}
               <Button type="submit">Continuar →</Button>
+              <button
+                type="button"
+                onClick={() => setStep("codigo")}
+                style={{ background: "transparent", border: 0, color: "var(--text-muted)", fontSize: ".88rem", cursor: "pointer" }}
+              >
+                ← Voltar
+              </button>
             </form>
           ) : null}
 
@@ -241,6 +248,14 @@ export function PrimeiroAcessoPage() {
               <Button onClick={finalizar} disabled={!aceitouTermos || !aceitouLgpd || loading}>
                 {loading ? "Concluindo..." : "Ativar minha conta"}
               </Button>
+              <button
+                type="button"
+                onClick={() => setStep("senha")}
+                disabled={loading}
+                style={{ background: "transparent", border: 0, color: "var(--text-muted)", fontSize: ".88rem", cursor: loading ? "not-allowed" : "pointer" }}
+              >
+                ← Voltar
+              </button>
             </div>
           ) : null}
 

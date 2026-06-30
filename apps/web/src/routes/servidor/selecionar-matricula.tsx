@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { clearAtlasState } from "../../lib/session";
 
 interface MatriculaOption {
   idMatricula: string;
@@ -69,10 +70,7 @@ export function ServidorSelecionarMatricula() {
 
   async function sair() {
     await atlas.logout().catch(() => undefined);
-    window.localStorage.removeItem("atlas:role");
-    window.localStorage.removeItem("atlas:tokens");
-    window.localStorage.removeItem(STORAGE_KEY);
-    window.localStorage.removeItem(META_KEY);
+    clearAtlasState();
     nav("/login", { replace: true });
   }
 
@@ -102,9 +100,12 @@ export function ServidorSelecionarMatricula() {
           <div style={{ fontWeight: 700 }}>Atlas</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="ghost" size="sm" onClick={() => nav(-1)}>
-            ← Voltar
-          </Button>
+          {/* So mostra "Voltar" se existe matricula salva (senao voltaria pro login que redireciona pra ca, loop). */}
+          {window.localStorage.getItem(STORAGE_KEY) ? (
+            <Button variant="ghost" size="sm" onClick={() => nav("/servidor/dashboard")}>
+              ← Voltar
+            </Button>
+          ) : null}
           <Button variant="ghost" size="sm" onClick={sair}>
             Sair
           </Button>

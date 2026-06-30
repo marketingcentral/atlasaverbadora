@@ -180,11 +180,24 @@ export function ServidorPropostas() {
         </p>
       </header>
 
-      <div style={{ display: "grid", gap: 16 }}>
-        {propostas.map((p) => (
-          <PropostaCard key={p.id} p={p} onCancelar={() => cancelar(p.id)} />
-        ))}
-      </div>
+      {propostas.length === 0 ? (
+        <Card>
+          <div style={{ textAlign: "center", padding: "24px 12px" }}>
+            <div style={{ fontSize: 36, opacity: 0.5 }}>📭</div>
+            <h3 style={{ marginTop: 12, marginBottom: 6 }}>Voce ainda nao tem propostas</h3>
+            <p style={{ color: "var(--text-muted)", fontSize: ".9rem", maxWidth: 380, margin: "0 auto" }}>
+              Quando voce simular um emprestimo ou consolidar contratos via portabilidade, suas propostas
+              aparecerao aqui.
+            </p>
+          </div>
+        </Card>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          {propostas.map((p) => (
+            <PropostaCard key={p.id} p={p} onCancelar={() => cancelar(p.id)} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

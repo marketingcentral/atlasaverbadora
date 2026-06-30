@@ -1,6 +1,7 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { clearAtlasState } from "../../lib/session";
 import { NotificationBell } from "../../components/NotificationBell";
 
 const NAV = [
@@ -95,10 +96,7 @@ export function ServidorLayout() {
               size="sm"
               onClick={async () => {
                 await atlas.logout().catch(() => undefined);
-                window.localStorage.removeItem("atlas:role");
-                window.localStorage.removeItem("atlas:tokens");
-                window.localStorage.removeItem("atlas:idMatricula");
-                window.localStorage.removeItem(META_KEY);
+                clearAtlasState();
                 nav("/login");
               }}
             >

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Input, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { clearAtlasState } from "../../lib/session";
 
 interface MatriculaMeta {
   idMatricula: string;
@@ -14,6 +15,15 @@ interface MatriculaMeta {
 }
 
 const META_KEY = "atlas:idMatricula:meta";
+
+function readMeta(): MatriculaMeta | null {
+  try {
+    const raw = window.localStorage.getItem(META_KEY);
+    return raw ? (JSON.parse(raw) as MatriculaMeta) : null;
+  } catch {
+    return null;
+  }
+}
 
 // Original values used as the source of truth when the user cancels the edit.
 const ORIGINAL_EMAIL = "ana.carolina@palhoca.sc.gov.br";
@@ -32,15 +42,15 @@ export function ServidorConta() {
   const [showSelfie, setShowSelfie] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
 
-  // Read selected matricula meta from the selection screen.
-  const matriculaMeta: MatriculaMeta | null = (() => {
-    try {
-      const raw = window.localStorage.getItem(META_KEY);
-      return raw ? (JSON.parse(raw) as MatriculaMeta) : null;
-    } catch {
-      return null;
-    }
-  })();
+  // Re-le meta no mount E quando o storage muda (ex.: troca de matricula via dropdown do dashboard).
+  const [matriculaMeta, setMatriculaMeta] = useState<MatriculaMeta | null>(() => readMeta());
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === META_KEY) setMatriculaMeta(readMeta());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   function comecarEdicao() {
     setDraftEmail(savedEmail);
@@ -173,10 +183,7 @@ export function ServidorConta() {
           variant="ghost"
           onClick={async () => {
             await atlas.logout().catch(() => undefined);
-            window.localStorage.removeItem("atlas:role");
-            window.localStorage.removeItem("atlas:tokens");
-            window.localStorage.removeItem("atlas:idMatricula");
-            window.localStorage.removeItem(META_KEY);
+            clearAtlasState();
             nav("/login");
           }}
         >
