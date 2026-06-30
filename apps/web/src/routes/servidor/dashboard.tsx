@@ -29,6 +29,15 @@ export function ServidorDashboard() {
   const profile = useQuery({ queryKey: ["me"], queryFn: () => atlas.getMyProfile() });
   const margem = useQuery({ queryKey: ["margem"], queryFn: () => atlas.getMyMargem() });
 
+  // Garante que sempre exista uma matricula ativa antes de renderizar o
+  // dashboard. Sem isso, o dropdown some e o usuario nao tem como voltar
+  // pra tela de selecao.
+  useEffect(() => {
+    if (!window.localStorage.getItem(META_KEY)) {
+      nav("/servidor/selecionar-matricula", { replace: true });
+    }
+  }, [nav]);
+
   if (profile.isLoading || margem.isLoading) {
     return <Card><span style={{ color: "var(--text-muted)" }}>Carregando seus dados...</span></Card>;
   }
