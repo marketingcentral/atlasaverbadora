@@ -5,200 +5,46 @@ import {
   STORAGE_KEY_ID,
   STORAGE_KEY_META,
 } from "../../lib/matricula-data";
-
-const PROPOSTAS_KEY = "atlas:propostas:userCriadas";
-
-interface StoredProposta {
-  id: string;
-  banco: string;
-  estado: Estado;
-  valor: number;
-  parcelas: number;
-  parcela: number;
-  taxaAm: number;
-  tipo: "novo" | "portabilidade" | "refinanciamento";
-  criadaEm: string;
-  expiraEm?: string;
-  idMatricula?: string;
-}
-
-const fmtDateTime = (iso: string) => {
-  try {
-    return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
-  } catch {
-    return iso;
-  }
-};
-
-function readUserPropostas(idMatricula: string | null): Proposta[] {
-  try {
-    const raw = window.localStorage.getItem(PROPOSTAS_KEY);
-    if (!raw) return [];
-    const list = JSON.parse(raw) as StoredProposta[];
-    return list
-      .filter((p) => !idMatricula || !p.idMatricula || p.idMatricula === idMatricula)
-      .map((p) => ({
-        id: p.id,
-        banco: p.banco,
-        estado: p.estado,
-        valor: p.valor,
-        parcelas: p.parcelas,
-        parcela: p.parcela,
-        taxaAm: p.taxaAm,
-        criadaEm: fmtDateTime(p.criadaEm),
-        expiraEm: p.expiraEm ? fmtDateTime(p.expiraEm) : undefined,
-        idMatricula: p.idMatricula,
-      }));
-  } catch {
-    return [];
-  }
-}
-
-type Estado =
-  | "em_analise"
-  | "aprovada"
-  | "aguardando_formalizacao"
-  | "formalizada"
-  | "liberada"
-  | "recusada"
-  | "expirada"
-  | "cancelada";
-
-interface Proposta {
-  id: string;
-  banco: string;
-  estado: Estado;
-  valor: number;
-  parcelas: number;
-  parcela: number;
-  taxaAm: number;
-  criadaEm: string;
-  expiraEm?: string;
-  linkFormalizacao?: string;
-  motivoRecusa?: string;
-  idMatricula?: string;
-}
-
-const PROPOSTAS_INICIAIS: Proposta[] = [
-  {
-    id: "PRO-9821",
-    banco: "SCred Financeira",
-    estado: "aguardando_formalizacao",
-    valor: 25000,
-    parcelas: 48,
-    parcela: 750,
-    taxaAm: 1.65,
-    criadaEm: "29/06/2026 14:22",
-    expiraEm: "01/07/2026 14:22",
-    linkFormalizacao: "https://scred.test/formalizar/PRO-9821",
-    idMatricula: "MAT-852029100",
-  },
-  {
-    id: "PRO-9805",
-    banco: "Banco Y",
-    estado: "em_analise",
-    valor: 12000,
-    parcelas: 36,
-    parcela: 412.4,
-    taxaAm: 1.72,
-    criadaEm: "30/06/2026 09:10",
-    expiraEm: "02/07/2026 09:10",
-    idMatricula: "MAT-852029100",
-  },
-  {
-    id: "PRO-9803",
-    banco: "Pan Credito",
-    estado: "aprovada",
-    valor: 8000,
-    parcelas: 24,
-    parcela: 380.5,
-    taxaAm: 1.88,
-    criadaEm: "30/06/2026 11:00",
-    expiraEm: "01/07/2026 11:00",
-    linkFormalizacao: "https://pan.test/contrato/PRO-9803",
-    idMatricula: "MAT-009821",
-  },
-  {
-    id: "PRO-9742",
-    banco: "Pan Credito",
-    estado: "expirada",
-    valor: 6000,
-    parcelas: 24,
-    parcela: 320.1,
-    taxaAm: 1.99,
-    criadaEm: "20/06/2026 16:00",
-    idMatricula: "MAT-852029100",
-  },
-  {
-    id: "PRO-9701",
-    banco: "Banco Y",
-    estado: "recusada",
-    valor: 15000,
-    parcelas: 60,
-    parcela: 380,
-    taxaAm: 1.72,
-    criadaEm: "15/06/2026 10:30",
-    motivoRecusa: "Comprometimento de renda acima do limite do convenio.",
-    idMatricula: "MAT-009821",
-  },
-];
-
-const ESTADO_LABEL: Record<Estado, string> = {
-  em_analise: "Em analise pelo banco",
-  aprovada: "Aprovada",
-  aguardando_formalizacao: "Aguardando formalizacao",
-  formalizada: "Formalizada",
-  liberada: "Liberada",
-  recusada: "Recusada",
-  expirada: "Expirada",
-  cancelada: "Cancelada",
-};
-
-const TIMELINE: Estado[] = ["em_analise", "aprovada", "aguardando_formalizacao", "formalizada", "liberada"];
+import {
+  ESTADO_LABEL,
+  ESTADOS_TIMELINE,
+  PROPOSTAS_KEY,
+  getAllPropostasForMatricula,
+  readUserPropostas,
+  writeUserPropostas,
+  type EstadoProposta,
+  type Proposta,
+} from "../../lib/propostas-data";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
-function buildLista(idMatricula: string | null): Proposta[] {
-  const filteredIniciais = idMatricula
-    ? PROPOSTAS_INICIAIS.filter((p) => !p.idMatricula || p.idMatricula === idMatricula)
-    : PROPOSTAS_INICIAIS;
-  return [...readUserPropostas(idMatricula), ...filteredIniciais];
-}
-
 export function ServidorPropostas() {
   const [idMatricula, setIdMatricula] = useState<string | null>(() => readActiveIdMatricula());
-  const [propostas, setPropostas] = useState<Proposta[]>(() => buildLista(readActiveIdMatricula()));
+  const [propostas, setPropostas] = useState<Proposta[]>(() => getAllPropostasForMatricula(readActiveIdMatricula()));
 
-  // Re-le do localStorage ao montar e quando matricula muda.
   useEffect(() => {
-    setPropostas(buildLista(idMatricula));
+    setPropostas(getAllPropostasForMatricula(idMatricula));
   }, [idMatricula]);
 
-  // Reage a troca de matricula em outra aba.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
         setIdMatricula(readActiveIdMatricula());
+      } else if (e.key === PROPOSTAS_KEY) {
+        setPropostas(getAllPropostasForMatricula(idMatricula));
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [idMatricula]);
 
   function cancelar(id: string) {
     if (!window.confirm("Cancelar pre-reserva? Sua margem voltara a ficar disponivel.")) return;
     setPropostas((ps) => ps.map((p) => (p.id === id ? { ...p, estado: "cancelada" } : p)));
-    // Persiste a mudanca pras propostas que vieram do localStorage.
-    try {
-      const raw = window.localStorage.getItem(PROPOSTAS_KEY);
-      if (!raw) return;
-      const list = JSON.parse(raw) as StoredProposta[];
-      const next = list.map((p) => (p.id === id ? { ...p, estado: "cancelada" as Estado } : p));
-      window.localStorage.setItem(PROPOSTAS_KEY, JSON.stringify(next));
-    } catch {
-      // ignore
-    }
+    const list = readUserPropostas();
+    const next = list.map((p) => (p.id === id ? { ...p, estado: "cancelada" as EstadoProposta } : p));
+    writeUserPropostas(next);
   }
 
   return (
@@ -309,11 +155,11 @@ function PropostaCard({ p, onCancelar }: { p: Proposta; onCancelar: () => void }
   );
 }
 
-function Timeline({ atual }: { atual: Estado }) {
-  const idxAtual = TIMELINE.indexOf(atual);
+function Timeline({ atual }: { atual: EstadoProposta }) {
+  const idxAtual = ESTADOS_TIMELINE.indexOf(atual);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      {TIMELINE.map((s, i) => {
+      {ESTADOS_TIMELINE.map((s, i) => {
         const done = i < idxAtual;
         const active = i === idxAtual;
         return (
@@ -341,7 +187,7 @@ function Timeline({ atual }: { atual: Estado }) {
             >
               {ESTADO_LABEL[s]}
             </span>
-            {i < TIMELINE.length - 1 ? (
+            {i < ESTADOS_TIMELINE.length - 1 ? (
               <div style={{ flex: 1, height: 1, background: "var(--border)", minWidth: 12 }} />
             ) : null}
           </div>

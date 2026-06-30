@@ -1,60 +1,58 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-
-type NotifType = "status_proposta" | "expiracao_trava" | "folha_processada" | "novo_device";
-
-interface Notification {
-  id: string;
-  type: NotifType;
-  titulo: string;
-  mensagem: string;
-  quando: string;
-  href?: string;
-  lida: boolean;
-}
-
-const NOTIFS_INICIAIS: Notification[] = [
-  {
-    id: "N1",
-    type: "status_proposta",
-    titulo: "Proposta PRO-9821 aprovada",
-    mensagem: "O SCred Financeira aprovou sua proposta. Formalize ate 01/07.",
-    quando: "ha 12min",
-    href: "/servidor/propostas",
-    lida: false,
-  },
-  {
-    id: "N2",
-    type: "expiracao_trava",
-    titulo: "Trava de margem expira em 6h",
-    mensagem: "Proposta PRO-9805 — formalize ou cancele para liberar margem.",
-    quando: "ha 1h",
-    href: "/servidor/propostas",
-    lida: false,
-  },
-  {
-    id: "N3",
-    type: "folha_processada",
-    titulo: "Folha de Junho/2026 processada",
-    mensagem: "Sua margem foi recalculada com base na nova folha da prefeitura.",
-    quando: "ontem",
-    href: "/servidor/dashboard",
-    lida: true,
-  },
-];
+import { useLocation, useNavigate } from "react-router-dom";
+import {
+  buildNotifications,
+  markAllAsRead,
+  markAsRead,
+  type NotifType,
+  type Notification,
+} from "../lib/notifications";
+import { STORAGE_KEY_ID, STORAGE_KEY_META } from "../lib/matricula-data";
+import { PROPOSTAS_KEY } from "../lib/propostas-data";
 
 const ICONS: Record<NotifType, string> = {
-  status_proposta: "📋",
-  expiracao_trava: "⏰",
+  proposta_em_analise: "📋",
+  proposta_aprovada: "✅",
+  proposta_aguardando_formalizacao: "📝",
+  proposta_recusada: "❌",
+  proposta_cancelada: "🚫",
+  proposta_expirando: "⏰",
   folha_processada: "💼",
-  novo_device: "🔐",
 };
 
 export function NotificationBell() {
   const nav = useNavigate();
+  const location = useLocation();
   const [open, setOpen] = useState(false);
-  const [notifs, setNotifs] = useState<Notification[]>(NOTIFS_INICIAIS);
+  const [notifs, setNotifs] = useState<Notification[]>(() => buildNotifications());
   const ref = useRef<HTMLDivElement>(null);
+
+  // Recalcula notifs sempre que a rota muda (cobre o caso de criar proposta
+  // em /servidor/termo e voltar) ou quando outra aba mexe no storage.
+  useEffect(() => {
+    setNotifs(buildNotifications());
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (
+        e.key === STORAGE_KEY_META ||
+        e.key === STORAGE_KEY_ID ||
+        e.key === PROPOSTAS_KEY ||
+        e.key === "atlas:notifications:read"
+      ) {
+        setNotifs(buildNotifications());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Recalcula tambem ao abrir o sino (capta criacoes na MESMA aba que nao
+  // disparam evento "storage").
+  useEffect(() => {
+    if (open) setNotifs(buildNotifications());
+  }, [open]);
 
   const unread = notifs.filter((n) => !n.lida).length;
 
@@ -75,13 +73,15 @@ export function NotificationBell() {
   }, [open]);
 
   function abrirNotif(n: Notification) {
-    setNotifs((list) => list.map((x) => (x.id === n.id ? { ...x, lida: true } : x)));
+    markAsRead(n.id);
+    setNotifs(buildNotifications());
     if (n.href) nav(n.href);
     setOpen(false);
   }
 
   function marcarTodasLidas() {
-    setNotifs((list) => list.map((x) => ({ ...x, lida: true })));
+    markAllAsRead(notifs.map((n) => n.id));
+    setNotifs(buildNotifications());
   }
 
   return (
@@ -138,7 +138,7 @@ export function NotificationBell() {
             position: "absolute",
             top: "calc(100% + 8px)",
             right: 0,
-            width: 360,
+            width: 380,
             maxWidth: "calc(100vw - 32px)",
             background: "var(--bg-elev)",
             border: "1px solid var(--border-strong)",
@@ -176,10 +176,10 @@ export function NotificationBell() {
             ) : null}
           </div>
 
-          <div style={{ maxHeight: 420, overflowY: "auto" }}>
+          <div style={{ maxHeight: 460, overflowY: "auto" }}>
             {notifs.length === 0 ? (
-              <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: ".88rem" }}>
-                Nenhuma notificacao.
+              <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: ".88rem" }}>
+                Nenhuma notificacao para esta matricula.
               </div>
             ) : (
               notifs.map((n) => (
