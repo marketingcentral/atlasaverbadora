@@ -38,7 +38,7 @@ export function ServidorDashboard() {
         <span className="eyebrow">Bem-vindo(a)</span>
         <h1 style={{ margin: "6px 0 0", fontSize: "2rem", letterSpacing: "-.02em" }}>{info.nome}</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6 }}>
-          Matricula <b>{info.matricula}</b> · {info.cargo} · {info.vinculo}
+          Matrícula <b>{info.matricula}</b> · {info.cargo} · {info.vinculo}
         </p>
       </div>
 
@@ -104,7 +104,7 @@ export function ServidorDashboard() {
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
             {info.contratos.filter((c) => c.status !== "Quitado").length === 0 ? (
               <div style={{ padding: "10px 12px", color: "var(--text-muted)", fontSize: ".88rem" }}>
-                Nenhum contrato ativo nesta matricula.
+                Nenhum contrato ativo nesta matrícula.
               </div>
             ) : (
               info.contratos
@@ -208,7 +208,7 @@ function MatriculaDropdown({ info }: { info: MatriculaInfo }) {
           />
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
-              Matricula ativa
+              Matrícula ativa
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
               <span style={{ fontWeight: 700, fontSize: ".98rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -255,7 +255,7 @@ function MatriculaDropdown({ info }: { info: MatriculaInfo }) {
           </div>
           <div style={{ height: 1, background: "var(--border)" }} />
           <Button size="sm" variant="ghost" onClick={trocar}>
-            Trocar matricula →
+            Trocar matrícula →
           </Button>
         </div>
       ) : null}
