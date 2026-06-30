@@ -1,8 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Card, MargemCard, Pill } from "@atlas/ui/web";
-import { atlas } from "../../lib/sdk";
+import type { MargemResponse } from "@atlas/types";
 
 interface MatriculaMeta {
   idMatricula: string;
@@ -13,63 +12,144 @@ interface MatriculaMeta {
   vinculo?: string;
 }
 
+interface ContratoAtivoMock {
+  id: string;
+  banco: string;
+  parcela: number;
+  parcelasPagas: number;
+  total: number;
+  status: "Averbado" | "Em dia";
+}
+
+interface MatriculaData {
+  prefeitura_id: number;
+  servidor_id: number;
+  vinculo: "ESTATUTARIO" | "CLT" | "COMISSIONADO";
+  cargo: string;
+  margem: MargemResponse;
+  contratos: ContratoAtivoMock[];
+}
+
 const META_KEY = "atlas:idMatricula:meta";
 
-// Mock: contratos ativos para preview na home. Em prod virao do GET /v1/servidores/me/contratos.
-const CONTRATOS_ATIVOS = [
-  { id: "ADF-S0003", banco: "SCred Financeira", parcela: 1176.37, parcelasPagas: 3, total: 60, status: "Averbado" },
-  { id: "ADF-S0002", banco: "SCred Financeira", parcela: 1773.79, parcelasPagas: 4, total: 48, status: "Em dia" },
-];
+// Mock por matricula. Cada idMatricula tem margem + contratos proprios — o
+// switcher do header altera o idMatricula salvo e o dashboard re-renderiza
+// com os numeros corretos. Em prod, isso viria de
+// GET /v1/servidores/me/margem-consignavel?idMatricula=...
+const MATRICULA_DATA: Record<string, MatriculaData> = {
+  "MAT-852029100": {
+    prefeitura_id: 1,
+    servidor_id: 1,
+    vinculo: "ESTATUTARIO",
+    cargo: "Analista Administrativo",
+    margem: {
+      servidor_id: 1,
+      matricula: "852029100",
+      prefeitura_id: 1,
+      margem: {
+        salario_base: 4620,
+        comprometido: 355.74,
+        disponivel: 1261.26,
+        percentual_uso: 0.22,
+      },
+      margens_por_tipo: [
+        { tipo: "EMPRESTIMO", disponivel: 1261.26, total: 1617 },
+        { tipo: "CARTAO_CONSIGNADO", disponivel: 207.9, total: 231 },
+        { tipo: "CARTAO_BENEFICIOS", disponivel: 231, total: 231 },
+      ],
+      fonte: {
+        tipo: "folha_prefeitura",
+        sincronizado_em: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+        cache_status: "MISS",
+      },
+    },
+    contratos: [
+      { id: "ADF-S0003", banco: "SCred Financeira", parcela: 1176.37, parcelasPagas: 3, total: 60, status: "Averbado" },
+      { id: "ADF-S0002", banco: "SCred Financeira", parcela: 1773.79, parcelasPagas: 4, total: 48, status: "Em dia" },
+    ],
+  },
+  "MAT-009821": {
+    prefeitura_id: 2,
+    servidor_id: 2,
+    vinculo: "ESTATUTARIO",
+    cargo: "Professor II",
+    margem: {
+      servidor_id: 2,
+      matricula: "M-009821",
+      prefeitura_id: 2,
+      margem: {
+        salario_base: 6890,
+        comprometido: 542.1,
+        disponivel: 2347.9,
+        percentual_uso: 0.19,
+      },
+      margens_por_tipo: [
+        { tipo: "EMPRESTIMO", disponivel: 2347.9, total: 2890 },
+        { tipo: "CARTAO_CONSIGNADO", disponivel: 410.5, total: 445 },
+        { tipo: "CARTAO_BENEFICIOS", disponivel: 380, total: 445 },
+      ],
+      fonte: {
+        tipo: "folha_prefeitura",
+        sincronizado_em: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+        cache_status: "HIT",
+      },
+    },
+    contratos: [
+      { id: "ADF-F0021", banco: "Banco Y", parcela: 412.4, parcelasPagas: 8, total: 36, status: "Averbado" },
+    ],
+  },
+};
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 export function ServidorDashboard() {
   const nav = useNavigate();
-  const profile = useQuery({ queryKey: ["me"], queryFn: () => atlas.getMyProfile() });
-  const margem = useQuery({ queryKey: ["margem"], queryFn: () => atlas.getMyMargem() });
+  // Track meta in state so a remount/route change causes re-read.
+  const [meta, setMeta] = useState<MatriculaMeta | null>(() => readMeta());
 
-  // Garante que sempre exista uma matricula ativa antes de renderizar o
-  // dashboard. useLayoutEffect roda antes da pintura — evita flash do estado
-  // sem matricula antes do redirect.
   useLayoutEffect(() => {
     if (!window.localStorage.getItem(META_KEY)) {
       nav("/servidor/selecionar-matricula", { replace: true });
+    } else {
+      setMeta(readMeta());
     }
   }, [nav]);
 
-  if (profile.isLoading || margem.isLoading) {
-    return <Card><span style={{ color: "var(--text-muted)" }}>Carregando seus dados...</span></Card>;
-  }
+  const data = useMemo<MatriculaData | null>(() => {
+    if (!meta) return null;
+    return MATRICULA_DATA[meta.idMatricula] ?? null;
+  }, [meta]);
 
-  if (profile.error || margem.error) {
+  if (!meta) return null;
+
+  if (!data) {
     return (
       <Card>
-        <h3 style={{ marginTop: 0 }}>Erro ao carregar</h3>
+        <h3 style={{ marginTop: 0 }}>Matricula sem dados</h3>
         <p style={{ color: "var(--text-muted)" }}>
-          {(profile.error ?? margem.error) instanceof Error
-            ? (profile.error ?? margem.error)!.message
-            : "Erro desconhecido"}
+          Nao encontramos dados para a matricula {meta.matricula}. Selecione outra ou contate o RH.
         </p>
       </Card>
     );
   }
 
+  const nome = "Ana Carolina Silva"; // mesmo titular em ambas matriculas (acumulacao de cargos)
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 960, margin: "0 auto", width: "100%" }}>
       <div>
         <span className="eyebrow">Bem-vindo(a)</span>
-        <h1 style={{ margin: "6px 0 0", fontSize: "2rem", letterSpacing: "-.02em" }}>{profile.data?.nome}</h1>
+        <h1 style={{ margin: "6px 0 0", fontSize: "2rem", letterSpacing: "-.02em" }}>{nome}</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6 }}>
-          Matricula <b>{profile.data?.matricula}</b> · {profile.data?.vinculo}
+          Matricula <b>{meta.matricula}</b> · {data.cargo} · {data.vinculo}
         </p>
       </div>
 
-      <MatriculaDropdown />
+      <MatriculaDropdown meta={meta} />
 
-      {margem.data ? <MargemCard data={margem.data} /> : null}
+      <MargemCard data={data.margem} />
 
-      {/* Atalhos rapidos */}
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
         <AtalhoCard
           titulo="Simular"
@@ -94,12 +174,11 @@ export function ServidorDashboard() {
         />
       </div>
 
-      {/* Margens por tipo + Contratos ativos */}
       <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr" }}>
         <Card>
           <span className="eyebrow">Margens por tipo</span>
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            {margem.data?.margens_por_tipo.map((m) => (
+            {data.margem.margens_por_tipo.map((m) => (
               <div
                 key={m.tipo}
                 style={{
@@ -127,26 +206,30 @@ export function ServidorDashboard() {
             </button>
           </div>
           <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            {CONTRATOS_ATIVOS.map((c) => (
-              <div
-                key={c.id}
-                style={{
-                  padding: "10px 12px", background: "var(--bg-elev-2)", borderRadius: 10,
-                  display: "flex", flexDirection: "column", gap: 6,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontWeight: 600, fontSize: ".92rem" }}>{c.banco}</span>
-                  <Pill variant={c.status === "Averbado" ? "averbado" : "aceita"}>{c.status}</Pill>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".82rem", color: "var(--text-muted)" }}>
-                  <span>{fmtBRL(c.parcela)}/mes</span>
-                  <span>
-                    {c.parcelasPagas}/{c.total} parcelas
-                  </span>
-                </div>
+            {data.contratos.length === 0 ? (
+              <div style={{ padding: "10px 12px", color: "var(--text-muted)", fontSize: ".88rem" }}>
+                Nenhum contrato ativo nesta matricula.
               </div>
-            ))}
+            ) : (
+              data.contratos.map((c) => (
+                <div
+                  key={c.id}
+                  style={{
+                    padding: "10px 12px", background: "var(--bg-elev-2)", borderRadius: 10,
+                    display: "flex", flexDirection: "column", gap: 6,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontWeight: 600, fontSize: ".92rem" }}>{c.banco}</span>
+                    <Pill variant={c.status === "Averbado" ? "averbado" : "aceita"}>{c.status}</Pill>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".82rem", color: "var(--text-muted)" }}>
+                    <span>{fmtBRL(c.parcela)}/mes</span>
+                    <span>{c.parcelasPagas}/{c.total} parcelas</span>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </Card>
       </div>
@@ -154,10 +237,10 @@ export function ServidorDashboard() {
       <Card>
         <span className="eyebrow">Fonte</span>
         <div style={{ marginTop: 12, fontSize: ".9rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
-          <div>Tipo: {margem.data?.fonte.tipo}</div>
-          <div>Sincronizado: {margem.data ? new Date(margem.data.fonte.sincronizado_em).toLocaleString("pt-BR") : "-"}</div>
+          <div>Tipo: {data.margem.fonte.tipo}</div>
+          <div>Sincronizado: {new Date(data.margem.fonte.sincronizado_em).toLocaleString("pt-BR")}</div>
           <div>
-            Cache: <b style={{ color: "var(--accent)" }}>{margem.data?.fonte.cache_status}</b>
+            Cache: <b style={{ color: "var(--accent)" }}>{data.margem.fonte.cache_status}</b>
           </div>
         </div>
       </Card>
@@ -165,11 +248,10 @@ export function ServidorDashboard() {
   );
 }
 
-function MatriculaDropdown() {
+function MatriculaDropdown({ meta }: { meta: MatriculaMeta }) {
   const nav = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  const meta = readMeta();
 
   useEffect(() => {
     if (!open) return;
@@ -188,13 +270,9 @@ function MatriculaDropdown() {
   }, [open]);
 
   function trocar() {
-    // Don't clear localStorage here — only on actual switch or logout.
-    // The selector screen treats `?trocar=1` as a signal to skip the auto-redirect.
     setOpen(false);
     nav("/servidor/selecionar-matricula?trocar=1");
   }
-
-  if (!meta) return null;
 
   return (
     <div ref={ref} style={{ position: "relative", zIndex: 30 }}>
