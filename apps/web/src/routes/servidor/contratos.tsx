@@ -1,21 +1,56 @@
 import { useState } from "react";
-import { Card, Pill, Tabs } from "@atlas/ui/web";
+import { Button, Card, Pill, Tabs } from "@atlas/ui/web";
 
-const CONTRATOS = [
-  { id: "ADF-S0003", banco: "SCred Financeira", parcela: 1176.37, parcelasPagas: 3, total: 60, status: "Averbado" },
-  { id: "ADF-S0002", banco: "SCred Financeira", parcela: 1773.79, parcelasPagas: 4, total: 48, status: "Em dia" },
-  { id: "ADF-C0001", banco: "Banco Y", parcela: 1163.43, parcelasPagas: 36, total: 36, status: "Quitado" },
+interface Contrato {
+  id: string;
+  banco: string;
+  parcela: number;
+  parcelasPagas: number;
+  total: number;
+  status: "Averbado" | "Em dia" | "Quitado";
+  proximaParcela: string;
+  taxaAm: number;
+  valorFinanciado: number;
+  pdfUrl: string;
+}
+
+const CONTRATOS: Contrato[] = [
+  {
+    id: "ADF-S0003", banco: "SCred Financeira", parcela: 1176.37, parcelasPagas: 3, total: 60,
+    status: "Averbado", proximaParcela: "05/07/2026", taxaAm: 1.65, valorFinanciado: 48000,
+    pdfUrl: "https://atlas.io/mock/contrato-ADF-S0003.pdf",
+  },
+  {
+    id: "ADF-S0002", banco: "SCred Financeira", parcela: 1773.79, parcelasPagas: 4, total: 48,
+    status: "Em dia", proximaParcela: "05/07/2026", taxaAm: 1.72, valorFinanciado: 65000,
+    pdfUrl: "https://atlas.io/mock/contrato-ADF-S0002.pdf",
+  },
+  {
+    id: "ADF-C0001", banco: "Banco Y", parcela: 1163.43, parcelasPagas: 36, total: 36,
+    status: "Quitado", proximaParcela: "—", taxaAm: 1.95, valorFinanciado: 30000,
+    pdfUrl: "https://atlas.io/mock/contrato-ADF-C0001.pdf",
+  },
 ];
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 export function ServidorContratos() {
   const [tab, setTab] = useState<"todos" | "ativos" | "quitados">("todos");
+  const [downloading, setDownloading] = useState<string | null>(null);
+
   const filtered = CONTRATOS.filter((c) => {
     if (tab === "ativos") return c.status !== "Quitado";
     if (tab === "quitados") return c.status === "Quitado";
     return true;
   });
+
+  async function baixarPdf(c: Contrato) {
+    setDownloading(c.id);
+    // Mock: pretend to generate signed URL (~700ms) before opening.
+    await new Promise((r) => setTimeout(r, 700));
+    setDownloading(null);
+    window.open(c.pdfUrl, "_blank", "noopener,noreferrer");
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -24,6 +59,9 @@ export function ServidorContratos() {
           Meus contratos
         </span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Contratos ativos e histórico</h1>
+        <p style={{ color: "var(--text-muted)", marginTop: 6, fontSize: ".9rem" }}>
+          Quitacao antecipada nao e feita pelo Atlas — contate diretamente o banco credor.
+        </p>
       </header>
 
       <Tabs
@@ -40,35 +78,73 @@ export function ServidorContratos() {
       <div style={{ display: "grid", gap: 12 }}>
         {filtered.map((c) => {
           const pct = (c.parcelasPagas / c.total) * 100;
+          const quitado = c.status === "Quitado";
           return (
             <Card key={c.id}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                 <div>
                   <div style={{ fontWeight: 700 }}>{c.banco}</div>
-                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>Contrato #{c.id}</div>
-                </div>
-                <Pill variant={c.status === "Quitado" ? "emdia" : c.status === "Averbado" ? "averbado" : "aceita"}>{c.status}</Pill>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16, fontSize: 13 }}>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
-                    Parcela
+                  <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                    Contrato #{c.id}
                   </div>
-                  <div style={{ fontWeight: 700, color: "var(--accent)", marginTop: 2 }}>{fmtBRL(c.parcela)}</div>
                 </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
-                    Progresso
-                  </div>
-                  <div>{c.parcelasPagas} de {c.total}</div>
-                </div>
+                <Pill variant={quitado ? "emdia" : c.status === "Averbado" ? "averbado" : "aceita"}>{c.status}</Pill>
               </div>
-              <div style={{ marginTop: 10, height: 6, background: "var(--bg-elev-2)", borderRadius: 3, overflow: "hidden" }}>
-                <div style={{ height: "100%", width: `${pct}%`, background: "linear-gradient(90deg, var(--gold-500), var(--emerald-500))" }} />
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                  gap: 12,
+                  marginTop: 16,
+                  fontSize: 13,
+                }}
+              >
+                <KV label="Parcela" v={fmtBRL(c.parcela)} accent />
+                <KV label="Progresso" v={`${c.parcelasPagas}/${c.total}`} />
+                <KV label="Proxima" v={c.proximaParcela} />
+                <KV label="Taxa a.m." v={`${c.taxaAm.toFixed(2)}%`} />
+                <KV label="Valor financiado" v={fmtBRL(c.valorFinanciado)} />
+              </div>
+
+              <div style={{ marginTop: 12, height: 6, background: "var(--bg-elev-2)", borderRadius: 3, overflow: "hidden" }}>
+                <div
+                  style={{
+                    height: "100%",
+                    width: `${pct}%`,
+                    background: quitado
+                      ? "var(--emerald-500)"
+                      : "linear-gradient(90deg, var(--gold-500), var(--emerald-500))",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <Button size="sm" variant="ghost" onClick={() => baixarPdf(c)} disabled={downloading === c.id}>
+                  {downloading === c.id ? "Gerando link…" : "📄 Baixar PDF"}
+                </Button>
+                {!quitado ? (
+                  <span style={{ fontSize: ".82rem", color: "var(--text-muted)", alignSelf: "center" }}>
+                    Para quitar: fale com o {c.banco}.
+                  </span>
+                ) : null}
               </div>
             </Card>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+function KV({ label, v, accent }: { label: string; v: string; accent?: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+        {label}
+      </div>
+      <div style={{ marginTop: 4, color: accent ? "var(--accent)" : "var(--text)", fontWeight: accent ? 700 : 500 }}>
+        {v}
       </div>
     </div>
   );

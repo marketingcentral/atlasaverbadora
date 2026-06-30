@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
+import { TwoFactorModal } from "../../components/TwoFactorModal";
 
 type Tipo = "novo" | "portabilidade" | "refinanciamento";
 
@@ -42,6 +43,7 @@ export function ServidorTermo() {
 
   const [aceito, setAceito] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [show2FA, setShow2FA] = useState(false);
   const [done, setDone] = useState<null | { propostaId: string; quando: Date; ip: string; device: string }>(null);
 
   const prazo = PRAZOS[tipo];
@@ -52,7 +54,13 @@ export function ServidorTermo() {
     [],
   );
 
+  function pedirAutorizacao() {
+    // Acao sensivel — abre 2FA antes de fechar a pre-reserva.
+    setShow2FA(true);
+  }
+
   async function autorizar() {
+    setShow2FA(false);
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 1200));
     const quando = new Date();
@@ -206,13 +214,22 @@ export function ServidorTermo() {
       </Card>
 
       <div style={{ display: "flex", gap: 8 }}>
-        <Button onClick={autorizar} disabled={!aceito || submitting}>
+        <Button onClick={pedirAutorizacao} disabled={!aceito || submitting}>
           {submitting ? "Registrando aceite..." : "Aceito e autorizo →"}
         </Button>
         <Button variant="ghost" onClick={() => nav("/servidor/dashboard")} disabled={submitting}>
           Voltar ao inicio
         </Button>
       </div>
+
+      {show2FA ? (
+        <TwoFactorModal
+          acao="confirmar a pre-reserva da sua margem"
+          canal="ambos"
+          onCancel={() => setShow2FA(false)}
+          onConfirm={autorizar}
+        />
+      ) : null}
     </div>
   );
 }

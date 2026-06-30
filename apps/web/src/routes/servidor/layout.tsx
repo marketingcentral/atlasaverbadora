@@ -1,6 +1,7 @@
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { NotificationBell } from "../../components/NotificationBell";
 
 const NAV = [
   { key: "dashboard", label: "Início", href: "/servidor/dashboard" },
@@ -84,7 +85,8 @@ export function ServidorLayout() {
               })}
             </nav>
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <NotificationBell />
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
             </Button>
