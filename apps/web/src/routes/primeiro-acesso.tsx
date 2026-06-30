@@ -73,6 +73,10 @@ export function PrimeiroAcessoPage() {
       setError("A senha deve ter no minimo 8 caracteres.");
       return;
     }
+    if (!/[a-zA-Z]/.test(senha) || !/\d/.test(senha)) {
+      setError("A senha deve conter pelo menos uma letra e um numero.");
+      return;
+    }
     if (senha !== senha2) {
       setError("As senhas nao conferem.");
       return;

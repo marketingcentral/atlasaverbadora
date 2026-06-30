@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -21,6 +22,16 @@ export function ServidorLayout() {
   const location = useLocation();
   const { resolved, setMode } = useThemeMode();
   const active = location.pathname.split("/")[2] ?? "dashboard";
+
+  // Guard de rota: qualquer pagina sob o ServidorLayout exige matricula ativa.
+  // Sem ela, redireciona pra selecionar-matricula (que decide se mostra a tela
+  // ou se auto-seleciona/skipa). Antes so o dashboard fazia esse check —
+  // outras paginas (contratos, propostas, conta) renderizavam sem matricula.
+  useLayoutEffect(() => {
+    if (!window.localStorage.getItem(META_KEY)) {
+      nav("/servidor/selecionar-matricula", { replace: true });
+    }
+  }, [nav, location.pathname]);
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>

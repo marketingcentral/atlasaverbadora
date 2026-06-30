@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Card, Pill } from "@atlas/ui/web";
 
@@ -13,28 +13,42 @@ interface ContratoElegivel {
   tipoContrato: "Emprestimo" | "Refin";
 }
 
-const ELEGIVEIS: ContratoElegivel[] = [
-  {
-    id: "ADF-472600084",
-    banco: "Banco Y",
-    saldoDevedor: 18420.55,
-    parcela: 412.4,
-    parcelasRestantes: 32,
-    totalParcelas: 36,
-    taxaAm: 1.95,
-    tipoContrato: "Emprestimo",
-  },
-  {
-    id: "ADF-460690084",
-    banco: "Pan Credito",
-    saldoDevedor: 6210.32,
-    parcela: 320.1,
-    parcelasRestantes: 24,
-    totalParcelas: 24,
-    taxaAm: 1.99,
-    tipoContrato: "Emprestimo",
-  },
-];
+const META_KEY = "atlas:idMatricula:meta";
+
+interface MatriculaMeta {
+  idMatricula: string;
+  matricula: string;
+  prefeitura: string;
+}
+
+function readMeta(): MatriculaMeta | null {
+  try {
+    const raw = window.localStorage.getItem(META_KEY);
+    return raw ? (JSON.parse(raw) as MatriculaMeta) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Mock: contratos elegiveis por matricula (sao os ativos com taxa > taxa-destino).
+const ELEGIVEIS_POR_MATRICULA: Record<string, ContratoElegivel[]> = {
+  "MAT-852029100": [
+    {
+      id: "ADF-472600084", banco: "Banco Y", saldoDevedor: 18420.55, parcela: 412.4,
+      parcelasRestantes: 32, totalParcelas: 36, taxaAm: 1.95, tipoContrato: "Emprestimo",
+    },
+    {
+      id: "ADF-460690084", banco: "Pan Credito", saldoDevedor: 6210.32, parcela: 320.1,
+      parcelasRestantes: 24, totalParcelas: 24, taxaAm: 1.99, tipoContrato: "Emprestimo",
+    },
+  ],
+  "MAT-009821": [
+    {
+      id: "ADF-F0021", banco: "Banco Y", saldoDevedor: 9840.75, parcela: 412.4,
+      parcelasRestantes: 28, totalParcelas: 36, taxaAm: 1.85, tipoContrato: "Emprestimo",
+    },
+  ],
+};
 
 // Banco que aceitaria a portabilidade (mock).
 const BANCO_DESTINO = {
@@ -48,6 +62,20 @@ const fmtBRL = (n: number) =>
 export function ServidorPortabilidade() {
   const nav = useNavigate();
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [meta, setMeta] = useState<MatriculaMeta | null>(() => readMeta());
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === META_KEY) {
+        setMeta(readMeta());
+        setSelecionados(new Set());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  const ELEGIVEIS = meta ? ELEGIVEIS_POR_MATRICULA[meta.idMatricula] ?? [] : [];
 
   function toggle(id: string) {
     setSelecionados((s) => {
