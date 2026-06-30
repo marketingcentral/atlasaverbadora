@@ -7,6 +7,12 @@ import {
   STORAGE_KEY_ID,
   STORAGE_KEY_META,
 } from "../../lib/matricula-data";
+import {
+  formatRemaining,
+  getActiveLock,
+  setLock,
+  SIMULATION_LOCK_KEY,
+} from "../../lib/simulation-lock";
 
 const PARCELAS = [12, 24, 36, 48, 60, 72, 96];
 
@@ -20,15 +26,38 @@ export function ServidorSimular() {
   const taxaAm = useMemo(() => (Number(sp.get("taxa") ?? 1.79) / 100), [sp]);
 
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+  const [lockExpiresAt, setLockExpiresAt] = useState<number | null>(() =>
+    getActiveLock(readActiveMatricula()?.idMatricula ?? null),
+  );
+  const [now, setNow] = useState<number>(() => Date.now());
+
+  // Re-le ao trocar matricula (em outra aba).
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
-        setInfo(readActiveMatricula());
+        const novaInfo = readActiveMatricula();
+        setInfo(novaInfo);
+        setLockExpiresAt(getActiveLock(novaInfo?.idMatricula ?? null));
+      } else if (e.key === SIMULATION_LOCK_KEY) {
+        setLockExpiresAt(getActiveLock(info?.idMatricula ?? null));
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, []);
+  }, [info?.idMatricula]);
+
+  // Tick a cada segundo enquanto ha lock ativo.
+  useEffect(() => {
+    if (!lockExpiresAt) return;
+    const i = setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      if (t >= lockExpiresAt) {
+        setLockExpiresAt(null);
+      }
+    }, 1000);
+    return () => clearInterval(i);
+  }, [lockExpiresAt]);
 
   const margemEmprestimo = useMemo(() => {
     if (!info) return 0;
@@ -46,10 +75,14 @@ export function ServidorSimular() {
   const cet = ((total / (valor - iof)) ** (1 / parcelas) - 1) * 100;
 
   const excedeMargem = info ? parcela > margemEmprestimo : false;
-  const podeSolicitar = !!info && !excedeMargem && valor > 0 && parcelas > 0;
+  const locked = !!lockExpiresAt && lockExpiresAt > now;
+  const podeSolicitar = !!info && !excedeMargem && valor > 0 && parcelas > 0 && !locked;
 
   function solicitar() {
-    if (!podeSolicitar) return;
+    if (!podeSolicitar || !info) return;
+    // Cria o lock antes de navegar.
+    setLock(info.idMatricula);
+    setLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
     const params = new URLSearchParams({
       tipo: "novo",
       banco: "SCred Financeira",
@@ -59,6 +92,108 @@ export function ServidorSimular() {
       taxaAm: (taxaAm * 100).toFixed(2),
     });
     nav(`/servidor/termo?${params.toString()}`);
+  }
+
+  if (locked && lockExpiresAt) {
+    const restante = formatRemaining(lockExpiresAt - now);
+    const expiraEmFormatado = new Date(lockExpiresAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720, width: "100%", margin: "0 auto" }}>
+        <header>
+          <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+            Simular crédito
+          </span>
+          <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Aguardando próxima simulação</h1>
+        </header>
+
+        <Card style={{ padding: 28, textAlign: "center" }}>
+          <div
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: "50%",
+              background: "color-mix(in srgb, var(--gold-500) 20%, transparent)",
+              color: "var(--gold-500)",
+              display: "grid",
+              placeItems: "center",
+              fontSize: 36,
+              margin: "0 auto 12px",
+            }}
+          >
+            ⏳
+          </div>
+
+          <h2 style={{ margin: "0 0 6px" }}>Margem em pré-reserva</h2>
+          <p style={{ color: "var(--text-muted)", margin: 0, fontSize: ".95rem", maxWidth: 460, marginInline: "auto" }}>
+            {info ? (
+              <>
+                Sua margem da matricula <b>{info.matricula}</b> ({info.prefeitura}) esta travada por 48 horas apos a
+                ultima simulacao. Aguarde a liberacao para iniciar uma nova.
+              </>
+            ) : (
+              <>Sua margem esta travada por 48 horas. Aguarde a liberacao para iniciar uma nova simulacao.</>
+            )}
+          </p>
+
+          <div
+            style={{
+              marginTop: 28,
+              padding: "20px 24px",
+              borderRadius: 14,
+              background: "var(--bg-elev-2)",
+              border: "1px solid var(--border-strong)",
+              display: "inline-block",
+              minWidth: 280,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                color: "var(--text-muted)",
+                textTransform: "uppercase",
+              }}
+            >
+              Tempo restante
+            </div>
+            <div
+              style={{
+                marginTop: 6,
+                fontSize: "2.6rem",
+                fontWeight: 800,
+                fontFamily: "var(--font-mono)",
+                color: "var(--accent)",
+                letterSpacing: "0.02em",
+              }}
+            >
+              {restante}
+            </div>
+            <div style={{ marginTop: 6, fontSize: ".8rem", color: "var(--text-dim)" }}>
+              Libera em {expiraEmFormatado}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 24, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+            <Button variant="ghost" onClick={() => nav("/servidor/propostas")}>
+              Ver minhas propostas
+            </Button>
+            <Button variant="ghost" onClick={() => nav("/servidor/dashboard")}>
+              Voltar ao inicio
+            </Button>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 style={{ marginTop: 0 }}>Por que existe esse periodo?</h3>
+          <p style={{ color: "var(--text-muted)", fontSize: ".9rem", lineHeight: 1.6, margin: 0 }}>
+            Apos voce solicitar uma simulacao, a margem da matricula fica reservada para o banco responder em ate 48h.
+            Esse periodo garante que a margem nao seja comprometida em outra operacao enquanto a proposta esta em
+            analise. Caso o banco recuse ou voce nao formalize, a margem e liberada automaticamente.
+          </p>
+        </Card>
+      </div>
+    );
   }
 
   return (
@@ -171,6 +306,9 @@ export function ServidorSimular() {
           </Button>
           <Button variant="ghost" onClick={() => nav("/servidor/dashboard")}>Voltar</Button>
         </div>
+        <p style={{ marginTop: 12, fontSize: ".78rem", color: "var(--text-dim)", margin: "12px 0 0" }}>
+          Ao solicitar, sua margem fica travada por 48h enquanto o banco analisa.
+        </p>
       </Card>
     </div>
   );

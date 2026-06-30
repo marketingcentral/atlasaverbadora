@@ -8,6 +8,8 @@ export const STORAGE_KEYS = {
   idMatricula: "atlas:idMatricula",
   idMatriculaMeta: "atlas:idMatricula:meta",
   propostasUserCriadas: "atlas:propostas:userCriadas",
+  simulationLock: "atlas:simulationLock",
+  notificationsRead: "atlas:notifications:read",
 } as const;
 
 /** Limpa apenas o estado de matricula ativa (usado no fluxo de trocar). */
