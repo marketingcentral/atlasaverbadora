@@ -197,7 +197,7 @@ function MatriculaDropdown() {
   if (!meta) return null;
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <div ref={ref} style={{ position: "relative", zIndex: 30 }}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -256,15 +256,15 @@ function MatriculaDropdown() {
             top: "calc(100% + 6px)",
             left: 0,
             right: 0,
-            background: "var(--surface)",
-            border: "1px solid var(--border)",
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border-strong)",
             borderRadius: 12,
-            boxShadow: "0 8px 24px rgba(0,0,0,.25)",
-            padding: 12,
+            boxShadow: "0 12px 32px rgba(0,0,0,.45)",
+            padding: 14,
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            zIndex: 20,
+            zIndex: 50,
           }}
         >
           <div>
