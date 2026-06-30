@@ -10,6 +10,13 @@ import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, toggleWebhook, type WebhookEvent } from "./webhooks.js";
+import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
+import { deleteConvenioConfig, getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
+import { cancelPreReserva, countExpiringNext24h, getPreReserva, listPreReservas, summarizePreReservas, sweepExpired, type PreReservaStatus } from "./pre-reservas.js";
+import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
+import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
+import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
+import { deleteAverbadoraUser, disable2FA, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser } from "./perfis-admin.js";
 
 function requireAdmin(j: JwtClaims): void {
   if (j.role !== "averbadora") throw Errors.forbidden("Requer perfil averbadora");
@@ -166,6 +173,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(c.get("jwt"));
     const todosContratos = listContratos({});
     const totalVitrineMes = vitrine.reduce((acc, v) => acc + v.receitaMes, 0);
+    sweepExpired();
+    const preResumo = summarizePreReservas();
+    const folhasAbertas = folhas.filter((f) => f.status === "aberta").length;
+    const volumePorConvenio = todosContratos.reduce<Record<string, number>>((acc, c) => {
+      acc[c.convenio] = (acc[c.convenio] ?? 0) + c.valorFinanciado;
+      return acc;
+    }, {});
+    const volumePorBanco = todosContratos.reduce<Record<string, number>>((acc, c) => {
+      const banco = bancos.find((b) => b.id === c.bancoId)?.nome ?? "—";
+      acc[banco] = (acc[banco] ?? 0) + c.valorFinanciado;
+      return acc;
+    }, {});
     return c.json({
       kpis: {
         propostasHoje: todosContratos.length,
@@ -175,9 +194,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         prefeiturasAtivas: prefeituras.filter((p) => p.status === "ativo").length,
         servidoresCadastrados: prefeituras.reduce((a, p) => a + p.servidoresCount, 0),
         receitaVitrineMes: totalVitrineMes,
+        preReservasAtivas: preResumo.ativas,
+        preReservasExpirandoEm24h: countExpiringNext24h(),
+        margemTravada: preResumo.margemTotalTravada,
+        folhasAbertas,
       },
       topBancos: bancos.slice(0, 3).map((b) => ({ nome: b.nome, propostas: Math.floor(Math.random() * 500) + 100 })),
       topPrefeituras: prefeituras.slice(0, 3).map((p) => ({ nome: `${p.nome}/${p.uf}`, servidores: p.servidoresCount })),
+      volumePorConvenio: Object.entries(volumePorConvenio).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
+      volumePorBanco: Object.entries(volumePorBanco).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
     });
   })
 
@@ -747,6 +772,280 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     pushEvent("info", "admin.convenios.import", `${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
     return c.json(out);
   })
+  // ===== Convenios CRUD + Config (passos 5 e 13) =====
+  .post("/v1/admin/convenios", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z
+      .object({
+        id: z.string().optional(),
+        bancoId: z.number().int(),
+        prefeituraId: z.number().int(),
+        nome: z.string().min(2),
+        codigoVerba: z.string().min(1),
+        dataCorte: z.number().int().min(1).max(31),
+        diaRepasse: z.number().int().min(1).max(31),
+      })
+      .parse(await c.req.json());
+    const pref = prefeituras.find((p) => p.id === body.prefeituraId);
+    if (!pref) throw Errors.notFound("prefeitura");
+    if (!bancos.find((b) => b.id === body.bancoId)) throw Errors.notFound("banco");
+    if (body.id) {
+      const idx = CONVENIOS_MOCK.findIndex((c) => c.id === body.id);
+      if (idx < 0) throw Errors.notFound("convenio");
+      const current = CONVENIOS_MOCK[idx]!;
+      CONVENIOS_MOCK[idx] = { ...current, ...body, id: body.id, prefeitura: pref.nome, uf: pref.uf };
+      pushEvent("info", "admin.convenios", `Convenio "${CONVENIOS_MOCK[idx]!.nome}" atualizado`);
+      return c.json({ convenio: CONVENIOS_MOCK[idx] });
+    }
+    const id = `CONV-${String(CONVENIOS_MOCK.length + 1).padStart(3, "0")}`;
+    const novo = { ...body, id, prefeitura: pref.nome, uf: pref.uf };
+    CONVENIOS_MOCK.push(novo);
+    pushEvent("info", "admin.convenios", `Convenio "${novo.nome}" criado`);
+    return c.json({ convenio: novo });
+  })
+  .delete("/v1/admin/convenios/:id", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = c.req.param("id");
+    const idx = CONVENIOS_MOCK.findIndex((cv) => cv.id === id);
+    if (idx < 0) throw Errors.notFound("convenio");
+    const removido = CONVENIOS_MOCK.splice(idx, 1)[0]!;
+    deleteConvenioConfig(id);
+    pushEvent("warn", "admin.convenios", `Convenio "${removido.nome}" removido por user:${c.get("jwt").sub}`);
+    return c.body(null, 204);
+  })
+  .get("/v1/admin/convenios/:id/config", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = c.req.param("id");
+    if (!CONVENIOS_MOCK.find((cv) => cv.id === id)) throw Errors.notFound("convenio");
+    return c.json({ config: getConvenioConfig(id) ?? null });
+  })
+  .get("/v1/admin/convenios-configs", async (c) => {
+    requireAdmin(c.get("jwt"));
+    return c.json({ configs: listConvenioConfigs() });
+  })
+  .post("/v1/admin/convenios/:id/config", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = c.req.param("id");
+    if (!CONVENIOS_MOCK.find((cv) => cv.id === id)) throw Errors.notFound("convenio");
+    const body = z
+      .object({
+        prazoTravaHoras: z.number().int().min(1).max(720).default(48),
+        prazoPortabilidadeDU: z.number().int().min(1).max(30).default(7),
+        maxParcelas: z.number().int().min(1).max(120).default(72),
+        taxaMaxAm: z.number().min(0).max(20),
+        idadeMin: z.number().int().min(0).max(120).default(18),
+        idadeMax: z.number().int().min(1).max(120).default(80),
+        vinculosAceitos: z.array(z.enum(["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONISTA"])).min(1),
+        formatoImportacao: z.enum(["CSV", "EXCEL", "API"]),
+        regrasEspeciais: z.string().max(2000).default(""),
+        vigenciaInicio: z.string(),
+        vigenciaFim: z.string().optional(),
+        ativo: z.boolean().default(true),
+      })
+      .parse(await c.req.json());
+    const config = upsertConvenioConfig({ id, ...body });
+    appendAudit({ categoria: "convenio_config", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config do convenio ${id} atualizada (prazoTrava=${body.prazoTravaHoras}h, formato=${body.formatoImportacao}).` });
+    pushEvent("info", "admin.convenios.config", `Config do convenio ${id} salva por user:${c.get("jwt").sub}`);
+    return c.json({ config });
+  })
+
+  // ===== ID Único — config + preview/issue (passo 10) =====
+  .get("/v1/admin/id-unico/configs", async (c) => {
+    requireAdmin(c.get("jwt"));
+    return c.json({
+      configs: listIdUnicoConfigs().map((cfg) => ({
+        ...cfg,
+        prefeituraNome: prefeituras.find((p) => p.id === cfg.prefeituraId)?.nome ?? "?",
+        exemplo: previewIdUnico(cfg.prefeituraId),
+      })),
+    });
+  })
+  .post("/v1/admin/id-unico/configs", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z
+      .object({
+        prefeituraId: z.number().int(),
+        prefixo: z.string().regex(/^[A-Z0-9]{2,8}$/, "prefixo: 2-8 letras maiusculas/digitos"),
+        formato: z.enum(["SEQ", "SEQ_HASH", "YYYYMM_SEQ"] as const),
+        larguraSeq: z.number().int().min(3).max(10),
+        proximoSeq: z.number().int().min(1),
+        separador: z.string().max(2).default("-"),
+      })
+      .parse(await c.req.json());
+    if (!prefeituras.find((p) => p.id === body.prefeituraId)) throw Errors.notFound("prefeitura");
+    const cfg = upsertIdUnicoConfig(body);
+    appendAudit({ categoria: "id_unico", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config ID Unico prefeitura=${body.prefeituraId} prefixo=${body.prefixo} formato=${body.formato}.` });
+    pushEvent("info", "admin.id-unico", `Config ID-Unico prefeitura=${body.prefeituraId} salva`);
+    return c.json({ config: cfg, exemplo: previewIdUnico(cfg.prefeituraId) });
+  })
+  .post("/v1/admin/id-unico/issue", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({ prefeituraId: z.number().int() }).parse(await c.req.json());
+    if (!getIdUnicoConfig(body.prefeituraId)) throw Errors.notFound("id_unico_config");
+    const id = issueIdUnico(body.prefeituraId);
+    appendAudit({ categoria: "id_unico", acao: "id_emitido", idUnico: id, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `ID Unico ${id} emitido manualmente para prefeitura=${body.prefeituraId}.` });
+    return c.json({ idUnico: id });
+  })
+
+  // ===== Pre-reservas e travas (passo 8) =====
+  .get("/v1/admin/pre-reservas", async (c) => {
+    requireAdmin(c.get("jwt"));
+    sweepExpired();
+    const url = new URL(c.req.url);
+    const status = url.searchParams.get("status") as PreReservaStatus | null;
+    const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
+    const bancoId = Number(url.searchParams.get("banco_id"));
+    const list = listPreReservas({
+      status: status ?? undefined,
+      prefeituraId: Number.isFinite(prefeituraId) ? prefeituraId : undefined,
+      bancoId: Number.isFinite(bancoId) ? bancoId : undefined,
+    });
+    return c.json({ preReservas: list, resumo: summarizePreReservas() });
+  })
+  .post("/v1/admin/pre-reservas/:id/cancelar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = c.req.param("id");
+    const body = z.object({ motivo: z.string().min(3).max(200) }).parse(await c.req.json());
+    const existing = getPreReserva(id);
+    if (!existing) throw Errors.notFound("pre_reserva");
+    const r = cancelPreReserva(id, `averbadora:${c.get("jwt").sub}`, body.motivo);
+    if (!r) throw Errors.notFound("pre_reserva");
+    appendAudit({ categoria: "margem", acao: "pre_reserva_cancelada", propostaId: id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Pre-reserva ${id} cancelada manualmente. Motivo: ${body.motivo}. Margem R$ ${r.valorMargem.toFixed(2)} liberada.` });
+    pushEvent("warn", "admin.pre-reservas", `Pre-reserva ${id} cancelada por user:${c.get("jwt").sub}`);
+    return c.json({ preReserva: r });
+  })
+  .post("/v1/admin/pre-reservas/sweep", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const expiradas = sweepExpired();
+    for (const r of expiradas) {
+      appendAudit({ categoria: "margem", acao: "margem_liberada", propostaId: r.id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, detalhes: `Pre-reserva ${r.id} expirou por TTL. Margem R$ ${r.valorMargem.toFixed(2)} liberada automaticamente.` });
+    }
+    return c.json({ expiradas: expiradas.length });
+  })
+
+  // ===== Tombamento de contratos (passo 9) =====
+  .get("/v1/admin/tombamento/lotes", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const url = new URL(c.req.url);
+    const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
+    const competencia = url.searchParams.get("competencia") ?? undefined;
+    const lotes = listLotes({
+      prefeituraId: Number.isFinite(prefeituraId) ? prefeituraId : undefined,
+      competencia,
+    });
+    return c.json({ lotes });
+  })
+  .get("/v1/admin/tombamento/lotes/:id/linhas", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const linhas = listLinhas(c.req.param("id"));
+    return c.json({ linhas });
+  })
+  .post("/v1/admin/tombamento/importar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({
+      prefeituraId: z.number().int(),
+      competencia: z.string().regex(/^\d{6}$/, "competencia formato YYYYMM"),
+      csv: z.string().min(1),
+    }).parse(await c.req.json());
+    const pref = prefeituras.find((p) => p.id === body.prefeituraId);
+    if (!pref) throw Errors.notFound("prefeitura");
+    const result = importTombamento({
+      prefeituraId: body.prefeituraId,
+      prefeituraNome: pref.nome,
+      competencia: body.competencia,
+      recebidoPor: `averbadora:${c.get("jwt").sub}`,
+      csv: body.csv,
+    });
+    appendAudit({ categoria: "tombamento", acao: "lote_processado", detalhes: `Lote ${result.lote.id} (${pref.nome}/${body.competencia}): ${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.divergencias} divergencias, ${result.erros.length} erros.` });
+    pushEvent("info", "admin.tombamento", `Lote ${result.lote.id} processado por user:${c.get("jwt").sub}`);
+    return c.json(result);
+  })
+  .get("/v1/admin/tombamento/csv-template", () => csvResponse("tombamento-exemplo.csv", buildCsv(
+    ["cpfMasked", "matricula", "bancoNome", "adfBanco", "valorParcela", "parcelasRestantes", "saldoDevedor"],
+    [
+      { cpfMasked: "000.***.***-33", matricula: "M-9001", bancoNome: "SCred Financeira", adfBanco: "9000123", valorParcela: 320.5, parcelasRestantes: 70, saldoDevedor: 22435 },
+      { cpfMasked: "000.***.***-44", matricula: "M-9002", bancoNome: "Banco Y", adfBanco: "9000124", valorParcela: 180, parcelasRestantes: 58, saldoDevedor: 10440 },
+    ],
+  )))
+
+  // ===== Bate-de-carteira (passo 11) =====
+  .post("/v1/admin/bate-carteira", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({
+      bancoId: z.number().int(),
+      competencia: z.string().regex(/^\d{6}$/),
+      prefeituraId: z.number().int().optional(),
+      format: z.enum(["json", "csv"]).default("json"),
+    }).parse(await c.req.json());
+    const banco = bancos.find((b) => b.id === body.bancoId);
+    if (!banco) throw Errors.notFound("banco");
+    const resolver = (id: number) => bancos.find((b) => b.id === id)?.nome ?? "?";
+    const r = gerarBateCarteira({ bancoId: body.bancoId, competencia: body.competencia, prefeituraId: body.prefeituraId }, resolver);
+    appendAudit({ categoria: "tombamento", acao: "bate_carteira_gerado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Bate-de-carteira ${banco.nome}/${body.competencia}: ${r.totalLinhas} linhas, saldo R$ ${r.somaSaldoDevedor.toFixed(2)}.` });
+    if (body.format === "csv") {
+      return csvResponse(`bate-carteira-${banco.nome.replace(/\s+/g, "-")}-${body.competencia}.csv`, bateCarteiraCsv(r));
+    }
+    return c.json(r);
+  })
+
+  // ===== Auditoria (passo 12) =====
+  .get("/v1/admin/auditoria", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const url = new URL(c.req.url);
+    const categoria = url.searchParams.get("categoria") as AuditCategoria | null;
+    const cpf = url.searchParams.get("cpf") ?? undefined;
+    const matricula = url.searchParams.get("matricula") ?? undefined;
+    const propostaId = url.searchParams.get("proposta_id") ?? undefined;
+    const desde = url.searchParams.get("desde") ?? undefined;
+    const ate = url.searchParams.get("ate") ?? undefined;
+    const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
+    const entries = listAudit({ categoria: categoria ?? undefined, cpf, matricula, propostaId, desde, ate }, limit);
+    return c.json({ entries, categorias: auditCategorias() });
+  })
+
+  // ===== Perfis admin (passo 1: perfis + 2FA) =====
+  .get("/v1/admin/perfis", async (c) => {
+    requireAdmin(c.get("jwt"));
+    return c.json({ usuarios: listAverbadoraUsers(), perfis: perfilOptions() });
+  })
+  .post("/v1/admin/perfis", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({
+      id: z.number().int().optional(),
+      nome: z.string().min(2),
+      email: z.string().email(),
+      perfil: z.enum(["operador", "supervisor", "comercial", "financeiro", "auditoria"] as const),
+      ativo: z.boolean().default(true),
+      password: z.string().min(6).optional(),
+      twoFactorEnabled: z.boolean().optional(),
+    }).parse(await c.req.json());
+    const u = await upsertAverbadoraUser(body);
+    appendAudit({ categoria: "acesso", acao: body.id ? "usuario_atualizado" : "usuario_criado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora ${u.email} (perfil=${u.perfil}, 2FA=${u.twoFactorEnabled}) ${body.id ? "atualizado" : "criado"}.` });
+    return c.json({ usuario: u });
+  })
+  .post("/v1/admin/perfis/:id/2fa/rotate", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = Number(c.req.param("id"));
+    const r = rotateTotpSecret(id);
+    if (!r) throw Errors.notFound("usuario");
+    appendAudit({ categoria: "acesso", acao: "2fa_rotacionado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} rotacionado. Novo secret deve ser entregue uma unica vez.` });
+    return c.json(r);
+  })
+  .post("/v1/admin/perfis/:id/2fa/disable", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = Number(c.req.param("id"));
+    if (!disable2FA(id)) throw Errors.notFound("usuario");
+    appendAudit({ categoria: "acesso", acao: "2fa_desativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} desativado.` });
+    return c.json({ ok: true });
+  })
+  .delete("/v1/admin/perfis/:id", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = Number(c.req.param("id"));
+    if (!deleteAverbadoraUser(id)) throw Errors.notFound("usuario");
+    appendAudit({ categoria: "acesso", acao: "usuario_removido", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} removido.` });
+    return c.body(null, 204);
+  })
+
   .post("/v1/admin/servidores/importar", authRequired, async (c) => {
     requireAdmin(c.get("jwt"));
     const prefId = Number(c.req.query("prefeituraId"));
