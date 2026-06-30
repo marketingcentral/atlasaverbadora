@@ -20,7 +20,10 @@ export interface Notification {
   titulo: string;
   mensagem: string;
   quando: string;
+  /** Link interno (ex.: /servidor/propostas#PRO-9803). */
   href: string;
+  /** Link externo opcional (ex.: link do banco pra formalizar). Quando presente, abre em nova aba. */
+  externalLink?: string;
   lida: boolean;
 }
 
@@ -72,7 +75,8 @@ function tempoRelativo(criadaEm: string): string {
 }
 
 function notifFromProposta(p: Proposta): Notification | null {
-  const baseHref = "/servidor/propostas";
+  // Hash leva direto pro card na pagina de propostas (scroll + destaque).
+  const internalHref = `/servidor/propostas#${p.id}`;
   switch (p.estado) {
     case "em_analise":
       return {
@@ -81,7 +85,7 @@ function notifFromProposta(p: Proposta): Notification | null {
         titulo: `Proposta ${p.id} em analise`,
         mensagem: `O ${p.banco} esta avaliando sua pre-reserva. Voce sera avisado quando responder.`,
         quando: tempoRelativo(p.criadaEm),
-        href: baseHref,
+        href: internalHref,
         lida: false,
       };
     case "aprovada":
@@ -89,9 +93,12 @@ function notifFromProposta(p: Proposta): Notification | null {
         id: `proposta:${p.id}:aprovada`,
         type: "proposta_aprovada",
         titulo: `Proposta ${p.id} aprovada`,
-        mensagem: `O ${p.banco} aprovou. ${p.linkFormalizacao ? "Formalize pelo link oficial." : "Aguarde proxima etapa."}`,
+        mensagem: p.linkFormalizacao
+          ? `O ${p.banco} aprovou — clique para abrir a tela de formalizacao.`
+          : `O ${p.banco} aprovou. Aguarde proxima etapa.`,
         quando: tempoRelativo(p.criadaEm),
-        href: baseHref,
+        href: internalHref,
+        externalLink: p.linkFormalizacao,
         lida: false,
       };
     case "aguardando_formalizacao":
@@ -103,7 +110,8 @@ function notifFromProposta(p: Proposta): Notification | null {
           ? `Acesse o ${p.banco} para assinar. Trava expira em ${p.expiraEm}.`
           : `Acesse o ${p.banco} para assinar o contrato.`,
         quando: tempoRelativo(p.criadaEm),
-        href: baseHref,
+        href: internalHref,
+        externalLink: p.linkFormalizacao,
         lida: false,
       };
     case "recusada":
@@ -113,7 +121,7 @@ function notifFromProposta(p: Proposta): Notification | null {
         titulo: `Proposta ${p.id} recusada`,
         mensagem: p.motivoRecusa ?? `O ${p.banco} recusou sua pre-reserva.`,
         quando: tempoRelativo(p.criadaEm),
-        href: baseHref,
+        href: internalHref,
         lida: false,
       };
     case "cancelada":
@@ -123,7 +131,7 @@ function notifFromProposta(p: Proposta): Notification | null {
         titulo: `Proposta ${p.id} cancelada`,
         mensagem: `Sua pre-reserva foi cancelada e a margem voltou a ficar disponivel.`,
         quando: tempoRelativo(p.criadaEm),
-        href: baseHref,
+        href: internalHref,
         lida: false,
       };
     default:

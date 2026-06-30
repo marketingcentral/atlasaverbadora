@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Button, Card, Pill } from "@atlas/ui/web";
 import {
   readActiveIdMatricula,
@@ -20,12 +21,31 @@ const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 export function ServidorPropostas() {
+  const location = useLocation();
   const [idMatricula, setIdMatricula] = useState<string | null>(() => readActiveIdMatricula());
   const [propostas, setPropostas] = useState<Proposta[]>(() => getAllPropostasForMatricula(readActiveIdMatricula()));
+  const [highlightId, setHighlightId] = useState<string | null>(null);
 
   useEffect(() => {
     setPropostas(getAllPropostasForMatricula(idMatricula));
   }, [idMatricula]);
+
+  // Scroll + destaque quando a URL tem hash (#PRO-9803) — usado pelas
+  // notificacoes ao clicar.
+  useEffect(() => {
+    const hash = location.hash?.replace(/^#/, "");
+    if (!hash) return;
+    // Pequeno delay pra dar tempo do DOM renderizar os cards.
+    const t = setTimeout(() => {
+      const el = document.getElementById(`proposta-${hash}`);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setHighlightId(hash);
+      // Tira o destaque depois de 3s.
+      setTimeout(() => setHighlightId(null), 3000);
+    }, 100);
+    return () => clearTimeout(t);
+  }, [location.hash, propostas]);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -71,7 +91,12 @@ export function ServidorPropostas() {
       ) : (
         <div style={{ display: "grid", gap: 16 }}>
           {propostas.map((p) => (
-            <PropostaCard key={p.id} p={p} onCancelar={() => cancelar(p.id)} />
+            <PropostaCard
+              key={p.id}
+              p={p}
+              highlighted={highlightId === p.id}
+              onCancelar={() => cancelar(p.id)}
+            />
           ))}
         </div>
       )}
@@ -79,7 +104,7 @@ export function ServidorPropostas() {
   );
 }
 
-function PropostaCard({ p, onCancelar }: { p: Proposta; onCancelar: () => void }) {
+function PropostaCard({ p, highlighted, onCancelar }: { p: Proposta; highlighted?: boolean; onCancelar: () => void }) {
   const terminal = p.estado === "recusada" || p.estado === "expirada" || p.estado === "cancelada";
   const pillVariant: "aceita" | "pendente" | "expirado" | "averbado" =
     p.estado === "liberada" || p.estado === "formalizada"
@@ -91,7 +116,18 @@ function PropostaCard({ p, onCancelar }: { p: Proposta; onCancelar: () => void }
           : "pendente";
 
   return (
-    <Card>
+    <Card
+      id={`proposta-${p.id}`}
+      style={
+        highlighted
+          ? {
+              borderColor: "var(--gold-500)",
+              boxShadow: "0 0 0 3px color-mix(in srgb, var(--gold-500) 25%, transparent)",
+              transition: "border-color .3s, box-shadow .3s",
+            }
+          : { transition: "border-color .3s, box-shadow .3s" }
+      }
+    >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontWeight: 700 }}>{p.banco}</div>

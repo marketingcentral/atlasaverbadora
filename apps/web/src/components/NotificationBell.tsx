@@ -75,8 +75,13 @@ export function NotificationBell() {
   function abrirNotif(n: Notification) {
     markAsRead(n.id);
     setNotifs(buildNotifications());
-    if (n.href) nav(n.href);
     setOpen(false);
+    // Link externo (banco) abre em nova aba; navegacao interna leva pra
+    // pagina com hash pra scrollar ate o card especifico.
+    if (n.externalLink) {
+      window.open(n.externalLink, "_blank", "noopener,noreferrer");
+    }
+    if (n.href) nav(n.href);
   }
 
   function marcarTodasLidas() {
@@ -204,7 +209,10 @@ export function NotificationBell() {
                   <span style={{ fontSize: 20, flexShrink: 0 }}>{ICONS[n.type]}</span>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline" }}>
-                      <span style={{ fontWeight: n.lida ? 500 : 700, fontSize: ".9rem" }}>{n.titulo}</span>
+                      <span style={{ fontWeight: n.lida ? 500 : 700, fontSize: ".9rem" }}>
+                        {n.titulo}
+                        {n.externalLink ? <span style={{ color: "var(--accent)", marginLeft: 4 }}>↗</span> : null}
+                      </span>
                       <span style={{ fontSize: ".72rem", color: "var(--text-dim)", flexShrink: 0 }}>{n.quando}</span>
                     </div>
                     <div style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 2, lineHeight: 1.4 }}>
