@@ -10,6 +10,10 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Mask identifier when it looks like a CPF being typed (digits-first, no `@`).
+  // Email and other text logins stay visible.
+  const looksLikeCpf = identifier.length > 0 && !identifier.includes("@") && /^[\d.\-\s]/.test(identifier);
+
   async function submit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
@@ -47,6 +51,7 @@ export function LoginPage() {
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Input
             label="CPF ou e-mail"
+            type={looksLikeCpf ? "password" : "text"}
             value={identifier}
             onChange={(e) => setId(e.target.value)}
             placeholder="000.111.222-33 ou voce@empresa.com"
