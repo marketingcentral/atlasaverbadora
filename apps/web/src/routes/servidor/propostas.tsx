@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { Button, Card, Pill } from "@atlas/ui/web";
+import { Card, Pill } from "@atlas/ui/web";
 import {
   readActiveIdMatricula,
   STORAGE_KEY_ID,
@@ -11,8 +11,6 @@ import {
   ESTADOS_TIMELINE,
   PROPOSTAS_KEY,
   getAllPropostasForMatricula,
-  readUserPropostas,
-  writeUserPropostas,
   type EstadoProposta,
   type Proposta,
 } from "../../lib/propostas-data";
@@ -59,14 +57,6 @@ export function ServidorPropostas() {
     return () => window.removeEventListener("storage", onStorage);
   }, [idMatricula]);
 
-  function cancelar(id: string) {
-    if (!window.confirm("Cancelar pre-reserva? Sua margem voltara a ficar disponivel.")) return;
-    setPropostas((ps) => ps.map((p) => (p.id === id ? { ...p, estado: "cancelada" } : p)));
-    const list = readUserPropostas();
-    const next = list.map((p) => (p.id === id ? { ...p, estado: "cancelada" as EstadoProposta } : p));
-    writeUserPropostas(next);
-  }
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <header>
@@ -95,7 +85,6 @@ export function ServidorPropostas() {
               key={p.id}
               p={p}
               highlighted={highlightId === p.id}
-              onCancelar={() => cancelar(p.id)}
             />
           ))}
         </div>
@@ -104,7 +93,7 @@ export function ServidorPropostas() {
   );
 }
 
-function PropostaCard({ p, highlighted, onCancelar }: { p: Proposta; highlighted?: boolean; onCancelar: () => void }) {
+function PropostaCard({ p, highlighted }: { p: Proposta; highlighted?: boolean }) {
   const terminal = p.estado === "recusada" || p.estado === "expirada" || p.estado === "cancelada";
   const pillVariant: "aceita" | "pendente" | "expirado" | "averbado" =
     p.estado === "liberada" || p.estado === "formalizada"
@@ -158,35 +147,6 @@ function PropostaCard({ p, highlighted, onCancelar }: { p: Proposta; highlighted
           <Timeline atual={p.estado} />
         </div>
       ) : null}
-
-      {p.motivoRecusa ? (
-        <div
-          style={{
-            marginTop: 14, padding: "10px 14px", borderRadius: 10,
-            border: "1px solid var(--danger-500)",
-            background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
-            fontSize: ".88rem",
-          }}
-        >
-          <b>Motivo da recusa:</b> {p.motivoRecusa}
-        </div>
-      ) : null}
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 16 }}>
-        {(p.estado === "aprovada" || p.estado === "aguardando_formalizacao") && p.linkFormalizacao ? (
-          <Button
-            size="sm"
-            onClick={() => window.open(p.linkFormalizacao, "_blank", "noopener,noreferrer")}
-          >
-            Formalizar no banco →
-          </Button>
-        ) : null}
-        {!terminal && p.estado !== "formalizada" && p.estado !== "liberada" ? (
-          <Button size="sm" variant="ghost" onClick={onCancelar}>
-            Cancelar pre-reserva
-          </Button>
-        ) : null}
-      </div>
     </Card>
   );
 }
