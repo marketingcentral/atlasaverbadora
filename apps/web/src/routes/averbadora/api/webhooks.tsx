@@ -35,9 +35,12 @@ export function AverbadoraApiWebhooks() {
       qc.invalidateQueries({ queryKey: ["webhook-deliveries", id] });
     },
     onSuccess: (data) => {
-      const d = data.delivery;
-      if (d.status === "success") alert(`✓ Ping entregue — HTTP ${d.httpStatus}. Verifique seu n8n.`);
-      else alert(`✗ Falha ao entregar — ${d.error ?? "erro"}${d.httpStatus ? ` (HTTP ${d.httpStatus})` : ""}. Confira a URL e se o workflow está ativo.`);
+      const ds = data.deliveries ?? [];
+      const ok = ds.filter((d) => d.status === "success").length;
+      const lines = ds
+        .map((d) => `${d.status === "success" ? "✓" : "✗"} ${d.event}${d.httpStatus ? ` (HTTP ${d.httpStatus})` : ""}${d.error ? ` — ${d.error}` : ""}`)
+        .join("\n");
+      alert(`${ok}/${ds.length} eventos entregues ao n8n:\n\n${lines}\n\nVeja em Executions no n8n (uma execução por evento).`);
     },
     onError: (err) => alert(`Erro ao testar: ${(err as Error).message}`),
   });

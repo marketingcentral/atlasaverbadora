@@ -9,7 +9,7 @@ import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, ty
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, sendTestPing, toggleWebhook, type WebhookEvent } from "./webhooks.js";
+import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
 import { deleteConvenioConfig, getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import { cancelPreReserva, countExpiringNext24h, getPreReserva, listPreReservas, summarizePreReservas, sweepExpired, type PreReservaStatus } from "./pre-reservas.js";
@@ -658,16 +658,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const deliveries = await fireEvent(body.event, body.payload, { environment: body.environment });
     return c.json({ deliveries: deliveries.length });
   })
-  // Send a one-off test ping to a single webhook (ignores its event subscriptions).
+  // Test a webhook by delivering each event it is subscribed to (the exact ones
+  // selected), so they all appear in the receiver.
   .post("/v1/admin/webhooks/:id/test", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
-    const delivery = await sendTestPing(c.req.param("id"));
-    if (!delivery) throw Errors.notFound("webhook");
+    const deliveries = await testWebhookEvents(c.req.param("id"));
+    if (!deliveries) throw Errors.notFound("webhook");
     return c.json({
-      delivery: {
-        id: delivery.id, status: delivery.status, httpStatus: delivery.httpStatus,
-        attempt: delivery.attempt, error: delivery.error, deliveredAt: delivery.deliveredAt,
-      },
+      deliveries: deliveries.map((d) => ({
+        id: d.id, event: d.event, status: d.status, httpStatus: d.httpStatus,
+        attempt: d.attempt, error: d.error, deliveredAt: d.deliveredAt,
+      })),
     });
   })
 

@@ -242,14 +242,33 @@ export async function fireEvent(event: WebhookEvent, payload: unknown, filter?: 
   return Promise.all(targets.map((w) => deliver(w, event, payload)));
 }
 
-/** Send a one-off test ping to a single webhook, regardless of its event subscriptions. */
-export async function sendTestPing(webhookId: string): Promise<WebhookDelivery | null> {
+/** Representative sample payload per event family, so n8n receives realistic data. */
+function samplePayload(event: WebhookEvent): Record<string, unknown> {
+  const base = { ts: new Date().toISOString(), _sample: true };
+  const suffix = event.split(".")[1] ?? "";
+  if (event.startsWith("proposta")) return { ...base, propostaId: "PRO-9821", matricula: "852029100", valor: 25000, parcelas: 48, situacao: suffix };
+  if (event.startsWith("contrato")) return { ...base, adf: "9001234", matricula: "852029100", valorParcela: 750, situacao: suffix };
+  if (event.startsWith("folha")) return { ...base, competencia: "2026-06", prefeituraId: 1, status: suffix };
+  if (event.startsWith("servidor")) return { ...base, matricula: "852029100", motivo: suffix };
+  if (event.startsWith("portabilidade")) return { ...base, portabilidadeId: "PORT-001", adf: "9001234", situacao: suffix };
+  if (event.startsWith("comunicado")) return { ...base, comunicadoId: "COM-001", titulo: "Comunicado de teste" };
+  return { ...base, message: "Ping de teste do Atlas. Se você recebeu isto, o webhook está funcionando." };
+}
+
+/**
+ * Test a webhook by delivering EACH event it is subscribed to (the exact ones
+ * the user selected), so they appear individually in the receiver. Falls back
+ * to a single webhook.test ping when the webhook has no events.
+ */
+export async function testWebhookEvents(webhookId: string): Promise<WebhookDelivery[] | null> {
   const w = _endpoints.get(webhookId);
   if (!w) return null;
-  return deliver(w, "webhook.test", {
-    message: "Ping de teste do Atlas. Se você recebeu isto, o webhook está funcionando.",
-    ts: new Date().toISOString(),
-  });
+  const events: WebhookEvent[] = w.events.length ? w.events : ["webhook.test"];
+  const out: WebhookDelivery[] = [];
+  for (const ev of events) {
+    out.push(await deliver(w, ev, samplePayload(ev)));
+  }
+  return out;
 }
 
 // Lazy seed — runs on first request (never at module/global scope, where Workers

@@ -799,7 +799,7 @@ export class AtlasClient {
     fireWebhook: (body: { event: string; environment?: "production" | "sandbox"; payload?: Record<string, unknown> }) =>
       this.request<{ deliveries: number }>("/v1/admin/webhooks/fire", { method: "POST", body }),
     testWebhook: (id: string) =>
-      this.request<{ delivery: { id: string; status: "pending" | "success" | "failed"; httpStatus?: number; attempt: number; error?: string; deliveredAt?: string } }>(
+      this.request<{ deliveries: { id: string; event: string; status: "pending" | "success" | "failed"; httpStatus?: number; attempt: number; error?: string; deliveredAt?: string }[] }>(
         `/v1/admin/webhooks/${id}/test`,
         { method: "POST" },
       ),
