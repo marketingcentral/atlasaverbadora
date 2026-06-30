@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button, Card, Input } from "@atlas/ui/web";
 import { atlas, storeRole } from "../lib/sdk";
 
@@ -21,7 +21,9 @@ export function LoginPage() {
     try {
       const res = await atlas.login({ identifier, password });
       storeRole(res.role);
-      nav(`/${res.role}/dashboard`, { replace: true });
+      // Servidor: pass through matricula selection (skipped automatically when only one).
+      const target = res.role === "servidor" ? "/servidor/selecionar-matricula" : `/${res.role}/dashboard`;
+      nav(target, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha no login");
     } finally {
@@ -72,6 +74,10 @@ export function LoginPage() {
           <Button type="submit" disabled={loading}>
             {loading ? "Entrando..." : "Entrar"}
           </Button>
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: ".88rem" }}>
+            <Link to="/esqueci-senha" style={{ color: "var(--text-muted)" }}>Esqueci minha senha</Link>
+            <Link to="/primeiro-acesso" style={{ color: "var(--accent)", fontWeight: 600 }}>Primeiro acesso</Link>
+          </div>
         </form>
         <div style={{ marginTop: 20, fontSize: ".82rem", color: "var(--text-dim)", lineHeight: 1.5 }}>
           <b>Sandbox:</b><br />

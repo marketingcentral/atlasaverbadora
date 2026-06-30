@@ -1,7 +1,10 @@
 import { createBrowserRouter, Navigate, Outlet } from "react-router-dom";
 import { LoginPage } from "./routes/login";
+import { EsqueciSenhaPage } from "./routes/esqueci-senha";
+import { PrimeiroAcessoPage } from "./routes/primeiro-acesso";
 import { ServidorDashboard } from "./routes/servidor/dashboard";
 import { ServidorLayout } from "./routes/servidor/layout";
+import { ServidorSelecionarMatricula } from "./routes/servidor/selecionar-matricula";
 import { ServidorMarketplace } from "./routes/servidor/marketplace";
 import { ServidorSimular } from "./routes/servidor/simular";
 import { ServidorPropostas } from "./routes/servidor/propostas";
@@ -65,12 +68,16 @@ function RequireAuth({ role }: { role: "servidor" | "banco" | "averbadora" | "pr
 export const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   { path: "/", element: <Navigate to="/login" replace /> },
   { path: "/login", element: <LoginPage /> },
+  { path: "/esqueci-senha", element: <EsqueciSenhaPage /> },
+  { path: "/primeiro-acesso", element: <PrimeiroAcessoPage /> },
 
   // Servidor (marketplace completo)
   {
     path: "/servidor",
     element: <RequireAuth role="servidor" />,
     children: [
+      // Standalone fullscreen page (no ServidorLayout): matricula selector.
+      { path: "selecionar-matricula", element: <ServidorSelecionarMatricula /> },
       {
         element: <ServidorLayout />,
         children: [
