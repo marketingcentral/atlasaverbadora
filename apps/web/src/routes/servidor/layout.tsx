@@ -112,11 +112,6 @@ export function ServidorLayout() {
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
             </Button>
-            {meta ? (
-              <Button variant="ghost" size="sm" onClick={trocarMatricula}>
-                Trocar matricula
-              </Button>
-            ) : null}
             <Button
               variant="ghost"
               size="sm"
@@ -131,6 +126,11 @@ export function ServidorLayout() {
             >
               Sair
             </Button>
+            {meta ? (
+              <Button variant="ghost" size="sm" onClick={trocarMatricula}>
+                Trocar matricula
+              </Button>
+            ) : null}
           </div>
         </div>
       </header>
