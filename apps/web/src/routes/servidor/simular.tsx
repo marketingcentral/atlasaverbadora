@@ -1,24 +1,40 @@
-import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
-import { atlas } from "../../lib/sdk";
+import {
+  MatriculaInfo,
+  readActiveMatricula,
+  STORAGE_KEY_ID,
+  STORAGE_KEY_META,
+} from "../../lib/matricula-data";
 
 const PARCELAS = [12, 24, 36, 48, 60, 72, 96];
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 export function ServidorSimular() {
+  const nav = useNavigate();
   const [sp] = useSearchParams();
   const [valor, setValor] = useState<number>(Number(sp.get("valor") ?? 8500));
   const [parcelas, setParcelas] = useState<number>(Number(sp.get("parcelas") ?? 36));
   const taxaAm = useMemo(() => (Number(sp.get("taxa") ?? 1.79) / 100), [sp]);
 
-  const margem = useQuery({ queryKey: ["margem"], queryFn: () => atlas.getMyMargem() });
+  const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setInfo(readActiveMatricula());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   const margemEmprestimo = useMemo(() => {
-    const t = margem.data?.margens_por_tipo.find((m) => m.tipo === "EMPRESTIMO");
-    return t?.disponivel ?? margem.data?.margem.disponivel ?? 0;
-  }, [margem.data]);
+    if (!info) return 0;
+    const t = info.margem.margens_por_tipo.find((m) => m.tipo === "EMPRESTIMO");
+    return t?.disponivel ?? info.margem.margem.disponivel ?? 0;
+  }, [info]);
 
   const parcela = useMemo(() => {
     if (valor <= 0 || parcelas <= 0) return 0;
@@ -29,8 +45,21 @@ export function ServidorSimular() {
   const total = parcela * parcelas;
   const cet = ((total / (valor - iof)) ** (1 / parcelas) - 1) * 100;
 
-  const excedeMargem = margem.data ? parcela > margemEmprestimo : false;
-  const podeSolicitar = !excedeMargem && !margem.isLoading && valor > 0 && parcelas > 0;
+  const excedeMargem = info ? parcela > margemEmprestimo : false;
+  const podeSolicitar = !!info && !excedeMargem && valor > 0 && parcelas > 0;
+
+  function solicitar() {
+    if (!podeSolicitar) return;
+    const params = new URLSearchParams({
+      tipo: "novo",
+      banco: "SCred Financeira",
+      valor: String(Math.round(valor)),
+      parcelas: String(parcelas),
+      parcela: parcela.toFixed(2),
+      taxaAm: (taxaAm * 100).toFixed(2),
+    });
+    nav(`/servidor/termo?${params.toString()}`);
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720, width: "100%", margin: "0 auto" }}>
@@ -39,10 +68,15 @@ export function ServidorSimular() {
           Simular crédito
         </span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Quanto cabe no seu bolso?</h1>
-        <p style={{ color: "var(--text-muted)" }}>Ajuste valor e parcelas para encontrar a melhor opção.</p>
+        <p style={{ color: "var(--text-muted)" }}>
+          {info ? (
+            <>Simulando para a matricula <b>{info.matricula}</b> ({info.prefeitura}). </>
+          ) : null}
+          Ajuste valor e parcelas para encontrar a melhor opção.
+        </p>
       </header>
 
-      {margem.data ? (
+      {info ? (
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
             <div>
@@ -132,16 +166,10 @@ export function ServidorSimular() {
         ) : null}
 
         <div style={{ marginTop: 20, display: "flex", gap: 12 }}>
-          <Button
-            disabled={!podeSolicitar}
-            onClick={() => {
-              if (!podeSolicitar) return;
-              alert("Em produção: cria proposta em estado 'criada' e dispara fanout aos bancos elegíveis.");
-            }}
-          >
+          <Button disabled={!podeSolicitar} onClick={solicitar}>
             Solicitar agora →
           </Button>
-          <Button variant="ghost" onClick={() => window.history.back()}>Voltar</Button>
+          <Button variant="ghost" onClick={() => nav("/servidor/dashboard")}>Voltar</Button>
         </div>
       </Card>
     </div>
