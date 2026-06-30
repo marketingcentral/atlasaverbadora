@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Button, Card, MargemCard, Pill } from "@atlas/ui/web";
@@ -30,9 +30,9 @@ export function ServidorDashboard() {
   const margem = useQuery({ queryKey: ["margem"], queryFn: () => atlas.getMyMargem() });
 
   // Garante que sempre exista uma matricula ativa antes de renderizar o
-  // dashboard. Sem isso, o dropdown some e o usuario nao tem como voltar
-  // pra tela de selecao.
-  useEffect(() => {
+  // dashboard. useLayoutEffect roda antes da pintura — evita flash do estado
+  // sem matricula antes do redirect.
+  useLayoutEffect(() => {
     if (!window.localStorage.getItem(META_KEY)) {
       nav("/servidor/selecionar-matricula", { replace: true });
     }

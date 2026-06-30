@@ -152,15 +152,26 @@ export function ServidorPortabilidade() {
             <KV label="Saldo a quitar" v={fmtBRL(totalSaldo)} />
             <KV label="Parcela atual (soma)" v={fmtBRL(totalParcelaAtual)} />
             <KV label="Nova parcela" v={fmtBRL(novaParcela)} accent />
-            <KV
-              label="Economia / parcela"
-              v={economia > 0 ? `- ${fmtBRL(economia)}` : "—"}
-              accent={economia > 0}
-            />
+            {economia > 0 ? (
+              <KV label="Economia / parcela" v={`- ${fmtBRL(economia)}`} accent />
+            ) : (
+              <KV
+                label="Diferenca"
+                v={`+ ${fmtBRL(Math.abs(economia))}`}
+                muted
+              />
+            )}
           </div>
           <p style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 12, marginBottom: 16 }}>
             Estimativa em {novoPrazo} parcelas com a taxa do {BANCO_DESTINO.nome}. O valor final pode variar apos a
             analise do banco.
+            {economia <= 0 ? (
+              <>
+                {" "}
+                <b>Atencao:</b> nesta simulacao a parcela nova ficou maior que a soma das atuais. A portabilidade pode
+                ainda valer a pena se o objetivo for alongar prazo ou consolidar contratos.
+              </>
+            ) : null}
           </p>
           <Button onClick={consolidar}>Consolidar e ir para o termo →</Button>
         </Card>
@@ -169,13 +180,19 @@ export function ServidorPortabilidade() {
   );
 }
 
-function KV({ label, v, accent }: { label: string; v: string; accent?: boolean }) {
+function KV({ label, v, accent, muted }: { label: string; v: string; accent?: boolean; muted?: boolean }) {
   return (
     <div>
       <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
         {label}
       </div>
-      <div style={{ marginTop: 4, color: accent ? "var(--emerald-500)" : "var(--text)", fontWeight: accent ? 700 : 500 }}>
+      <div
+        style={{
+          marginTop: 4,
+          color: accent ? "var(--emerald-500)" : muted ? "var(--text-muted)" : "var(--text)",
+          fontWeight: accent ? 700 : 500,
+        }}
+      >
         {v}
       </div>
     </div>

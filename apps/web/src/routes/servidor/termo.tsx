@@ -17,18 +17,28 @@ const PRAZOS: Record<Tipo, { horas?: number; diasUteis?: number; label: string }
   refinanciamento: { diasUteis: 7, label: "7 dias uteis" },
 };
 
+const PROPOSTAS_KEY = "atlas:propostas:userCriadas";
+
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+
+// Number(...) | default — converte string para number; se invalida (NaN), usa o default.
+function num(raw: string | null, fallback: number): number {
+  if (raw == null) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 export function ServidorTermo() {
   const nav = useNavigate();
   const [search] = useSearchParams();
-  const tipo = (search.get("tipo") ?? "novo") as Tipo;
+  const rawTipo = search.get("tipo") ?? "novo";
+  const tipo: Tipo = rawTipo === "portabilidade" || rawTipo === "refinanciamento" ? rawTipo : "novo";
   const banco = search.get("banco") ?? "SCred Financeira";
-  const valor = Number(search.get("valor") ?? 25000);
-  const parcelas = Number(search.get("parcelas") ?? 48);
-  const parcela = Number(search.get("parcela") ?? 750);
-  const taxaAm = Number(search.get("taxaAm") ?? 1.8);
+  const valor = num(search.get("valor"), 25000);
+  const parcelas = num(search.get("parcelas"), 48);
+  const parcela = num(search.get("parcela"), 750);
+  const taxaAm = num(search.get("taxaAm"), 1.8);
 
   const [aceito, setAceito] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -45,13 +55,32 @@ export function ServidorTermo() {
   async function autorizar() {
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 1200));
-    setDone({
-      propostaId,
-      quando: new Date(),
-      // Mock: IP e device viriam do servidor (X-Forwarded-For + User-Agent).
-      ip: "189.41." + Math.floor(Math.random() * 200) + "." + Math.floor(Math.random() * 200),
-      device: navigator.userAgent.includes("Mobi") ? "Smartphone (web)" : "Desktop (web)",
-    });
+    const quando = new Date();
+    const ip = "189.41." + Math.floor(Math.random() * 200) + "." + Math.floor(Math.random() * 200);
+    const device = navigator.userAgent.includes("Mobi") ? "Smartphone (web)" : "Desktop (web)";
+
+    // Persiste no localStorage para aparecer em /servidor/propostas.
+    try {
+      const raw = window.localStorage.getItem(PROPOSTAS_KEY);
+      const list = raw ? (JSON.parse(raw) as unknown[]) : [];
+      const novaProposta = {
+        id: propostaId,
+        banco,
+        estado: "em_analise" as const,
+        valor,
+        parcelas,
+        parcela,
+        taxaAm,
+        tipo,
+        criadaEm: quando.toISOString(),
+        expiraEm: new Date(quando.getTime() + (tipo === "novo" ? 48 : 7 * 24) * 60 * 60 * 1000).toISOString(),
+      };
+      window.localStorage.setItem(PROPOSTAS_KEY, JSON.stringify([novaProposta, ...list]));
+    } catch {
+      // Modo privado / quota cheia — segue mesmo assim.
+    }
+
+    setDone({ propostaId, quando, ip, device });
     setSubmitting(false);
   }
 
@@ -180,8 +209,8 @@ export function ServidorTermo() {
         <Button onClick={autorizar} disabled={!aceito || submitting}>
           {submitting ? "Registrando aceite..." : "Aceito e autorizo →"}
         </Button>
-        <Button variant="ghost" onClick={() => nav(-1)} disabled={submitting}>
-          Voltar
+        <Button variant="ghost" onClick={() => nav("/servidor/dashboard")} disabled={submitting}>
+          Voltar ao inicio
         </Button>
       </div>
     </div>

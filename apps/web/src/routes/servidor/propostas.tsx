@@ -1,5 +1,49 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Card, Pill } from "@atlas/ui/web";
+
+const PROPOSTAS_KEY = "atlas:propostas:userCriadas";
+
+interface StoredProposta {
+  id: string;
+  banco: string;
+  estado: Estado;
+  valor: number;
+  parcelas: number;
+  parcela: number;
+  taxaAm: number;
+  tipo: "novo" | "portabilidade" | "refinanciamento";
+  criadaEm: string;
+  expiraEm?: string;
+}
+
+const fmtDateTime = (iso: string) => {
+  try {
+    return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+  } catch {
+    return iso;
+  }
+};
+
+function readUserPropostas(): Proposta[] {
+  try {
+    const raw = window.localStorage.getItem(PROPOSTAS_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw) as StoredProposta[];
+    return list.map((p) => ({
+      id: p.id,
+      banco: p.banco,
+      estado: p.estado,
+      valor: p.valor,
+      parcelas: p.parcelas,
+      parcela: p.parcela,
+      taxaAm: p.taxaAm,
+      criadaEm: fmtDateTime(p.criadaEm),
+      expiraEm: p.expiraEm ? fmtDateTime(p.expiraEm) : undefined,
+    }));
+  } catch {
+    return [];
+  }
+}
 
 type Estado =
   | "em_analise"
@@ -101,11 +145,29 @@ const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 export function ServidorPropostas() {
-  const [propostas, setPropostas] = useState<Proposta[]>(PROPOSTAS_INICIAIS);
+  const [propostas, setPropostas] = useState<Proposta[]>(() => [
+    ...readUserPropostas(),
+    ...PROPOSTAS_INICIAIS,
+  ]);
+
+  // Re-le do localStorage ao montar caso voltemos da tela de termo.
+  useEffect(() => {
+    setPropostas([...readUserPropostas(), ...PROPOSTAS_INICIAIS]);
+  }, []);
 
   function cancelar(id: string) {
     if (!window.confirm("Cancelar pre-reserva? Sua margem voltara a ficar disponivel.")) return;
     setPropostas((ps) => ps.map((p) => (p.id === id ? { ...p, estado: "cancelada" } : p)));
+    // Persiste a mudanca pras propostas que vieram do localStorage.
+    try {
+      const raw = window.localStorage.getItem(PROPOSTAS_KEY);
+      if (!raw) return;
+      const list = JSON.parse(raw) as StoredProposta[];
+      const next = list.map((p) => (p.id === id ? { ...p, estado: "cancelada" as Estado } : p));
+      window.localStorage.setItem(PROPOSTAS_KEY, JSON.stringify(next));
+    } catch {
+      // ignore
+    }
   }
 
   return (
