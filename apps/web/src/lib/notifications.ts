@@ -82,8 +82,8 @@ function notifFromProposta(p: Proposta): Notification | null {
       return {
         id: `proposta:${p.id}:em_analise`,
         type: "proposta_em_analise",
-        titulo: `Proposta ${p.id} em analise`,
-        mensagem: `O ${p.banco} esta avaliando sua pre-reserva. Voce sera avisado quando responder.`,
+        titulo: `Proposta ${p.id} em análise`,
+        mensagem: `O ${p.banco} está avaliando sua pré-reserva. Você será avisado quando responder.`,
         quando: tempoRelativo(p.criadaEm),
         href: internalHref,
         lida: false,
@@ -94,8 +94,8 @@ function notifFromProposta(p: Proposta): Notification | null {
         type: "proposta_aprovada",
         titulo: `Proposta ${p.id} aprovada`,
         mensagem: p.linkFormalizacao
-          ? `O ${p.banco} aprovou — clique para abrir a tela de formalizacao.`
-          : `O ${p.banco} aprovou. Aguarde proxima etapa.`,
+          ? `O ${p.banco} aprovou — clique para abrir a tela de formalização.`
+          : `O ${p.banco} aprovou. Aguarde próxima etapa.`,
         quando: tempoRelativo(p.criadaEm),
         href: internalHref,
         externalLink: p.linkFormalizacao,
@@ -105,7 +105,7 @@ function notifFromProposta(p: Proposta): Notification | null {
       return {
         id: `proposta:${p.id}:aguardando`,
         type: "proposta_aguardando_formalizacao",
-        titulo: `Aguardando formalizacao da ${p.id}`,
+        titulo: `Aguardando formalização da ${p.id}`,
         mensagem: p.expiraEm
           ? `Acesse o ${p.banco} para assinar. Trava expira em ${fmtDateTime(p.expiraEm)}.`
           : `Acesse o ${p.banco} para assinar o contrato.`,
@@ -119,7 +119,7 @@ function notifFromProposta(p: Proposta): Notification | null {
         id: `proposta:${p.id}:recusada`,
         type: "proposta_recusada",
         titulo: `Proposta ${p.id} recusada`,
-        mensagem: p.motivoRecusa ?? `O ${p.banco} recusou sua pre-reserva.`,
+        mensagem: p.motivoRecusa ?? `O ${p.banco} recusou sua pré-reserva.`,
         quando: tempoRelativo(p.criadaEm),
         href: internalHref,
         lida: false,
@@ -129,7 +129,7 @@ function notifFromProposta(p: Proposta): Notification | null {
         id: `proposta:${p.id}:cancelada`,
         type: "proposta_cancelada",
         titulo: `Proposta ${p.id} cancelada`,
-        mensagem: `Sua pre-reserva foi cancelada e a margem voltou a ficar disponivel.`,
+        mensagem: `Sua pré-reserva foi cancelada e a margem voltou a ficar disponível.`,
         quando: tempoRelativo(p.criadaEm),
         href: internalHref,
         lida: false,

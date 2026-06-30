@@ -103,7 +103,7 @@ export function NotificationBell() {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        aria-label={`Notificacoes (${unread} nao lidas)`}
+        aria-label={`Notificações (${unread} não lidas)`}
         aria-haspopup="menu"
         aria-expanded={open}
         style={{
@@ -169,9 +169,13 @@ export function NotificationBell() {
               alignItems: "center",
               justifyContent: "space-between",
               borderBottom: "1px solid var(--border)",
+              position: "sticky",
+              top: 0,
+              background: "var(--bg-elev)",
+              zIndex: 1,
             }}
           >
-            <span style={{ fontWeight: 700, fontSize: ".95rem" }}>Notificacoes</span>
+            <span style={{ fontWeight: 700, fontSize: ".95rem" }}>Notificações</span>
             {unread > 0 ? (
               <button
                 type="button"
@@ -193,7 +197,7 @@ export function NotificationBell() {
           <div style={{ maxHeight: 460, overflowY: "auto" }}>
             {notifs.length === 0 ? (
               <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: ".88rem" }}>
-                Nenhuma notificacao para esta matricula.
+                Nenhuma notificação para esta matrícula.
               </div>
             ) : (
               notifs.map((n) => (
