@@ -41,16 +41,15 @@ export function LoginPage() {
           </span>
           <div>
             <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Atlas Averbadora</div>
-            <div style={{ fontSize: ".82rem", color: "var(--text-dim)" }}>Entre com seu CPF</div>
+            <div style={{ fontSize: ".82rem", color: "var(--text-dim)" }}>Entre com seu CPF (servidor) ou e-mail (banco / averbadora / prefeitura)</div>
           </div>
         </div>
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Input
-            label="CPF"
+            label="CPF ou e-mail"
             value={identifier}
             onChange={(e) => setId(e.target.value)}
-            placeholder="000.111.222-33"
-            inputMode="numeric"
+            placeholder="000.111.222-33 ou voce@empresa.com"
             autoComplete="username"
             required
           />
@@ -72,9 +71,9 @@ export function LoginPage() {
         <div style={{ marginTop: 20, fontSize: ".82rem", color: "var(--text-dim)", lineHeight: 1.5 }}>
           <b>Sandbox:</b><br />
           Servidor: <code style={{ fontFamily: "var(--font-mono)" }}>00011122233</code> / <code style={{ fontFamily: "var(--font-mono)" }}>teste123</code><br />
-          Banco: <code style={{ fontFamily: "var(--font-mono)" }}>11111111111</code> / <code style={{ fontFamily: "var(--font-mono)" }}>teste123</code><br />
-          Averbadora: <code style={{ fontFamily: "var(--font-mono)" }}>22222222222</code> / <code style={{ fontFamily: "var(--font-mono)" }}>teste123</code><br />
-          Prefeitura: <code style={{ fontFamily: "var(--font-mono)" }}>33333333333</code> / <code style={{ fontFamily: "var(--font-mono)" }}>teste123</code>
+          Banco: <code style={{ fontFamily: "var(--font-mono)" }}>banco@atlas.test</code> / <code style={{ fontFamily: "var(--font-mono)" }}>teste123</code><br />
+          Averbadora: <code style={{ fontFamily: "var(--font-mono)" }}>admin@atlas.test</code> / <code style={{ fontFamily: "var(--font-mono)" }}>teste123</code><br />
+          Prefeitura: <code style={{ fontFamily: "var(--font-mono)" }}>prefeitura@atlas.test</code> / <code style={{ fontFamily: "var(--font-mono)" }}>teste123</code>
         </div>
       </Card>
     </div>
