@@ -147,11 +147,8 @@ function MatriculaBadge({ meta }: { meta: MatriculaMeta }) {
           background: "var(--emerald-500)",
         }}
       />
-      <span style={{ fontWeight: 600, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <span style={{ fontWeight: 600, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {meta.prefeitura}
-      </span>
-      <span style={{ color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-        {meta.matricula}
       </span>
     </div>
   );
