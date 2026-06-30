@@ -209,6 +209,13 @@ export function AverbadoraApiDocs() {
   const layer = LAYERS.find((l) => l.key === layerKey)!;
   const [section, setSection] = useState<string>(layer.sections[0]!.key);
   const [search, setSearch] = useState("");
+  // Shared API token used by every "Tente agora" on the page. Persisted so it
+  // survives reloads and layer switches.
+  const [token, setToken] = useState<string>(() => localStorage.getItem("atlas:try-token") ?? "");
+  function updateToken(v: string) {
+    setToken(v);
+    localStorage.setItem("atlas:try-token", v);
+  }
 
   const current = layer.sections.find((s) => s.key === section) ?? layer.sections[0]!;
 
@@ -280,6 +287,30 @@ export function AverbadoraApiDocs() {
         })}
       </div>
 
+      {/* Barra de autenticação — token compartilhado por todos os "Tente agora" */}
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>API token para testar</span>
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              Cole um token <code>atl_*</code> da camada <b>{layer.label}</b>. Crie em <a href="/averbadora/api/tokens" style={{ color: "var(--accent)" }}>API → Tokens</a> (audience <code>{layer.key}</code>).
+            </span>
+          </div>
+          <span style={{ fontSize: 12, fontWeight: 600, color: token ? "var(--emerald, #10b981)" : "var(--text-muted)" }}>
+            {token ? "● token definido" : "○ sem token"}
+          </span>
+        </div>
+        <input
+          value={token}
+          onChange={(e) => updateToken(e.target.value)}
+          placeholder="atl_test_… ou atl_live_…"
+          style={{ ...inp, width: "100%", marginTop: 10, fontFamily: "var(--font-mono)" }}
+        />
+        <p style={{ fontSize: 11, color: "var(--text-muted)", margin: "8px 0 0" }}>
+          ⚠️ Não use o <b>secret do webhook</b> (<code>whsec_…</code>) aqui — ele serve só para validar a assinatura das entregas, não para autenticar na API.
+        </p>
+      </Card>
+
       {/* Busca global de endpoints na camada */}
       <div style={{ position: "relative" }}>
         <input
@@ -303,7 +334,7 @@ export function AverbadoraApiDocs() {
             {searchHits.map(({ section: sec, endpoint: e }, i) => (
               <div key={`${e.method}-${e.path}-${i}`}>
                 <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4, textTransform: "uppercase", letterSpacing: ".06em" }}>{sec}</div>
-                <EndpointCard endpoint={e} />
+                <EndpointCard endpoint={e} token={token} />
               </div>
             ))}
             {searchHits.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Nada encontrado. Tente outro termo.</p> : null}
@@ -322,7 +353,7 @@ export function AverbadoraApiDocs() {
             <p style={{ marginTop: 0, color: "var(--text-muted)", fontSize: 14 }}>{current.description}</p>
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               {current.endpoints.map((e, i) => (
-                <EndpointCard key={`${e.method}-${e.path}-${i}`} endpoint={e} />
+                <EndpointCard key={`${e.method}-${e.path}-${i}`} endpoint={e} token={token} />
               ))}
             </div>
           </Card>
@@ -364,9 +395,8 @@ function BaseUrlBadge() {
   );
 }
 
-function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
+function EndpointCard({ endpoint, token }: { endpoint: Endpoint; token: string }) {
   const [open, setOpen] = useState(false);
-  const [token, setToken] = useState<string>(() => localStorage.getItem("atlas:try-token") ?? "");
   const [pathParam, setPathParam] = useState<string>(endpoint.examplePathParam ?? "");
   const [body, setBody] = useState<string>(endpoint.exampleBody ? JSON.stringify(endpoint.exampleBody, null, 2) : "");
   const [filterValues, setFilterValues] = useState<Record<string, string>>(() =>
@@ -396,7 +426,6 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
     setLoading(true);
     setResponse(null);
     try {
-      localStorage.setItem("atlas:try-token", token);
       const res = await fetch(`${API_BASE}${finalPath}`, {
         method: endpoint.method,
         headers: { "Content-Type": "application/json", Authorization: token ? `Bearer ${token}` : "" },
@@ -435,10 +464,11 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
       </button>
       {open ? (
         <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>Token (atl_test_* ou atl_live_*)</span>
-            <input value={token} onChange={(e) => setToken(e.target.value)} placeholder="atl_test_..." style={inp} />
-          </label>
+          {!token ? (
+            <div style={{ fontSize: 12, color: "var(--text-muted)", padding: "8px 10px", border: "1px dashed var(--border-strong)", borderRadius: 8 }}>
+              Defina um API token na barra <b>“API token para testar”</b> no topo desta página para usar o “Tente agora”.
+            </div>
+          ) : null}
           {endpoint.examplePathParam ? (
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>Parâmetro de path</span>
@@ -491,6 +521,16 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
                   {response.status === 0 ? "ERRO" : response.status}
                 </Pill>
               </div>
+              {response.status === 401 ? (
+                <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 6 }}>
+                  401 = token ausente ou inválido. Confira se colou um <code>atl_*</code> válido na barra do topo — o secret do webhook (<code>whsec_…</code>) não funciona aqui.
+                </div>
+              ) : null}
+              {response.status === 403 ? (
+                <div style={{ fontSize: 12, color: "#f59e0b", marginBottom: 6 }}>
+                  403 = token de camada errada ou sem escopo. Use um token da camada desta API e com o escopo exigido pelo endpoint.
+                </div>
+              ) : null}
               <pre style={preStyle}>{response.body}</pre>
             </div>
           ) : null}
