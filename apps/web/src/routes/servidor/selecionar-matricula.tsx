@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 
@@ -40,10 +40,14 @@ const META_KEY = "atlas:idMatricula:meta";
 
 export function ServidorSelecionarMatricula() {
   const nav = useNavigate();
+  const [search] = useSearchParams();
+  // ?trocar=1 vem do dropdown do dashboard quando o usuario quer trocar
+  // explicitamente — nesse caso nao fazemos auto-skip mesmo se ja houver
+  // matricula salva.
+  const forceShow = search.get("trocar") === "1";
 
-  // Auto-skip: se ja escolheu, vai direto pro dashboard.
-  // Se so tem 1 matricula, escolhe sozinho.
   useEffect(() => {
+    if (forceShow) return;
     const already = window.localStorage.getItem(STORAGE_KEY);
     if (already && MATRICULAS_MOCK.some((m) => m.idMatricula === already)) {
       nav("/servidor/dashboard", { replace: true });
@@ -55,7 +59,7 @@ export function ServidorSelecionarMatricula() {
       window.localStorage.setItem(META_KEY, JSON.stringify(m));
       nav("/servidor/dashboard", { replace: true });
     }
-  }, [nav]);
+  }, [nav, forceShow]);
 
   function escolher(opt: MatriculaOption) {
     window.localStorage.setItem(STORAGE_KEY, opt.idMatricula);

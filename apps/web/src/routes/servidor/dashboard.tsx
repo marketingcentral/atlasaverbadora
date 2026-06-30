@@ -179,10 +179,10 @@ function MatriculaDropdown() {
   }, [open]);
 
   function trocar() {
-    window.localStorage.removeItem("atlas:idMatricula");
-    window.localStorage.removeItem(META_KEY);
+    // Don't clear localStorage here — only on actual switch or logout.
+    // The selector screen treats `?trocar=1` as a signal to skip the auto-redirect.
     setOpen(false);
-    nav("/servidor/selecionar-matricula");
+    nav("/servidor/selecionar-matricula?trocar=1");
   }
 
   if (!meta) return null;
