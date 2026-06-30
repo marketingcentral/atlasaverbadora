@@ -154,7 +154,7 @@ export function NotificationBell() {
             right: 0,
             width: 380,
             maxWidth: "calc(100vw - 32px)",
-            background: "var(--surface)",
+            background: "var(--surface-solid)",
             border: "1px solid var(--border)",
             borderRadius: 12,
             boxShadow: "0 8px 24px rgba(0,0,0,.25)",
@@ -171,7 +171,7 @@ export function NotificationBell() {
               borderBottom: "1px solid var(--border)",
               position: "sticky",
               top: 0,
-              background: "var(--surface)",
+              background: "var(--surface-solid)",
               zIndex: 1,
             }}
           >
