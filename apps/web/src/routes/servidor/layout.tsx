@@ -109,14 +109,14 @@ export function ServidorLayout() {
             </nav>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
+              {resolved === "dark" ? "Tema claro" : "Tema escuro"}
+            </Button>
             {meta ? (
               <Button variant="ghost" size="sm" onClick={trocarMatricula}>
                 Trocar matricula
               </Button>
             ) : null}
-            <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
-              {resolved === "dark" ? "Tema claro" : "Tema escuro"}
-            </Button>
             <Button
               variant="ghost"
               size="sm"
