@@ -11,10 +11,16 @@ interface MatriculaOption {
   uf: string;
   cargo: string;
   vinculo: string;
+  nome: string;
+  email: string;
+  telefone: string;
+  endereco: string;
   ativa: boolean;
 }
 
-// Mock: acumulacao de cargos — mesma pessoa em duas prefeituras.
+// Mock: cada matricula carrega seus proprios dados cadastrais. Mesmo CPF,
+// mas cargos/contextos diferentes em prefeituras diferentes — o switcher
+// no dashboard troca todo o contexto.
 const MATRICULAS_MOCK: MatriculaOption[] = [
   {
     idMatricula: "MAT-852029100",
@@ -23,6 +29,10 @@ const MATRICULAS_MOCK: MatriculaOption[] = [
     uf: "SC",
     cargo: "Analista Administrativo",
     vinculo: "Estatutario",
+    nome: "Ana Carolina Silva",
+    email: "ana.carolina@palhoca.sc.gov.br",
+    telefone: "(48) 99812-3210",
+    endereco: "Rua das Acacias, 145 — Palhoca/SC, 88130-XXX",
     ativa: true,
   },
   {
@@ -32,6 +42,10 @@ const MATRICULAS_MOCK: MatriculaOption[] = [
     uf: "SC",
     cargo: "Professor II",
     vinculo: "Estatutario",
+    nome: "Ana C. Silva Pereira",
+    email: "ana.silva@edu.pmf.sc.gov.br",
+    telefone: "(48) 98445-7720",
+    endereco: "Av. Beira-Mar Norte, 2401 ap 504 — Florianopolis/SC, 88010-XXX",
     ativa: true,
   },
 ];

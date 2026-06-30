@@ -12,6 +12,10 @@ interface MatriculaMeta {
   uf: string;
   cargo: string;
   vinculo: string;
+  nome?: string;
+  email?: string;
+  telefone?: string;
+  endereco?: string;
 }
 
 const META_KEY = "atlas:idMatricula:meta";
@@ -25,22 +29,10 @@ function readMeta(): MatriculaMeta | null {
   }
 }
 
-// Original values used as the source of truth when the user cancels the edit.
-const ORIGINAL_EMAIL = "ana.carolina@palhoca.sc.gov.br";
-const ORIGINAL_TEL = "(48) 99812-3210";
-
 export function ServidorConta() {
   const nav = useNavigate();
   const { mode, setMode } = useThemeMode();
   const profile = useQuery({ queryKey: ["me"], queryFn: () => atlas.getMyProfile() });
-
-  const [savedEmail, setSavedEmail] = useState(ORIGINAL_EMAIL);
-  const [savedTel, setSavedTel] = useState(ORIGINAL_TEL);
-  const [draftEmail, setDraftEmail] = useState(ORIGINAL_EMAIL);
-  const [draftTel, setDraftTel] = useState(ORIGINAL_TEL);
-  const [editing, setEditing] = useState(false);
-  const [showSelfie, setShowSelfie] = useState(false);
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
 
   // Re-le meta no mount E quando o storage muda (ex.: troca de matricula via dropdown do dashboard).
   const [matriculaMeta, setMatriculaMeta] = useState<MatriculaMeta | null>(() => readMeta());
@@ -51,6 +43,28 @@ export function ServidorConta() {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
+
+  // Email/telefone iniciais vem da matricula ativa — quando trocar, reseta pros valores da nova.
+  const initialEmail = matriculaMeta?.email ?? "—";
+  const initialTel = matriculaMeta?.telefone ?? "—";
+
+  const [savedEmail, setSavedEmail] = useState(initialEmail);
+  const [savedTel, setSavedTel] = useState(initialTel);
+  const [draftEmail, setDraftEmail] = useState(initialEmail);
+  const [draftTel, setDraftTel] = useState(initialTel);
+  const [editing, setEditing] = useState(false);
+  const [showSelfie, setShowSelfie] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+
+  // Quando troca matricula, reseta email/tel para os da nova (e fecha edicao em aberto).
+  useEffect(() => {
+    setSavedEmail(matriculaMeta?.email ?? "—");
+    setSavedTel(matriculaMeta?.telefone ?? "—");
+    setDraftEmail(matriculaMeta?.email ?? "—");
+    setDraftTel(matriculaMeta?.telefone ?? "—");
+    setEditing(false);
+    setSavedAt(null);
+  }, [matriculaMeta?.idMatricula]);
 
   function comecarEdicao() {
     setDraftEmail(savedEmail);
@@ -78,12 +92,12 @@ export function ServidorConta() {
     setSavedAt(new Date());
   }
 
-  const nome = profile.data?.nome ?? "Servidor";
+  const nome = matriculaMeta?.nome ?? profile.data?.nome ?? "Servidor";
   const cpfMasked = "***.***.222-33";
-  const endereco = "Rua das Acacias, 145 — Palhoca/SC, 88130-XXX";
-  const cargo = matriculaMeta?.cargo ?? "Analista Administrativo";
+  const endereco = matriculaMeta?.endereco ?? "—";
+  const cargo = matriculaMeta?.cargo ?? "—";
   const matricula = matriculaMeta?.matricula ?? profile.data?.matricula ?? "—";
-  const prefeitura = matriculaMeta?.prefeitura ?? "Prefeitura de Palhoca";
+  const prefeitura = matriculaMeta?.prefeitura ?? "—";
   const vinculo = matriculaMeta?.vinculo ?? profile.data?.vinculo ?? "—";
 
   return (

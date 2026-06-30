@@ -2,6 +2,23 @@ import { useEffect, useState } from "react";
 import { Button, Card, Pill } from "@atlas/ui/web";
 
 const PROPOSTAS_KEY = "atlas:propostas:userCriadas";
+const META_KEY = "atlas:idMatricula:meta";
+
+interface MatriculaMeta {
+  idMatricula: string;
+  matricula: string;
+  prefeitura: string;
+}
+
+function readActiveIdMatricula(): string | null {
+  try {
+    const raw = window.localStorage.getItem(META_KEY);
+    if (!raw) return null;
+    return (JSON.parse(raw) as MatriculaMeta).idMatricula;
+  } catch {
+    return null;
+  }
+}
 
 interface StoredProposta {
   id: string;
@@ -14,6 +31,7 @@ interface StoredProposta {
   tipo: "novo" | "portabilidade" | "refinanciamento";
   criadaEm: string;
   expiraEm?: string;
+  idMatricula?: string;
 }
 
 const fmtDateTime = (iso: string) => {
@@ -24,22 +42,25 @@ const fmtDateTime = (iso: string) => {
   }
 };
 
-function readUserPropostas(): Proposta[] {
+function readUserPropostas(idMatricula: string | null): Proposta[] {
   try {
     const raw = window.localStorage.getItem(PROPOSTAS_KEY);
     if (!raw) return [];
     const list = JSON.parse(raw) as StoredProposta[];
-    return list.map((p) => ({
-      id: p.id,
-      banco: p.banco,
-      estado: p.estado,
-      valor: p.valor,
-      parcelas: p.parcelas,
-      parcela: p.parcela,
-      taxaAm: p.taxaAm,
-      criadaEm: fmtDateTime(p.criadaEm),
-      expiraEm: p.expiraEm ? fmtDateTime(p.expiraEm) : undefined,
-    }));
+    return list
+      .filter((p) => !idMatricula || !p.idMatricula || p.idMatricula === idMatricula)
+      .map((p) => ({
+        id: p.id,
+        banco: p.banco,
+        estado: p.estado,
+        valor: p.valor,
+        parcelas: p.parcelas,
+        parcela: p.parcela,
+        taxaAm: p.taxaAm,
+        criadaEm: fmtDateTime(p.criadaEm),
+        expiraEm: p.expiraEm ? fmtDateTime(p.expiraEm) : undefined,
+        idMatricula: p.idMatricula,
+      }));
   } catch {
     return [];
   }
@@ -67,6 +88,7 @@ interface Proposta {
   expiraEm?: string;
   linkFormalizacao?: string;
   motivoRecusa?: string;
+  idMatricula?: string;
 }
 
 const PROPOSTAS_INICIAIS: Proposta[] = [
@@ -81,6 +103,7 @@ const PROPOSTAS_INICIAIS: Proposta[] = [
     criadaEm: "29/06/2026 14:22",
     expiraEm: "01/07/2026 14:22",
     linkFormalizacao: "https://scred.test/formalizar/PRO-9821",
+    idMatricula: "MAT-852029100",
   },
   {
     id: "PRO-9805",
@@ -92,6 +115,7 @@ const PROPOSTAS_INICIAIS: Proposta[] = [
     taxaAm: 1.72,
     criadaEm: "30/06/2026 09:10",
     expiraEm: "02/07/2026 09:10",
+    idMatricula: "MAT-852029100",
   },
   {
     id: "PRO-9803",
@@ -104,6 +128,7 @@ const PROPOSTAS_INICIAIS: Proposta[] = [
     criadaEm: "30/06/2026 11:00",
     expiraEm: "01/07/2026 11:00",
     linkFormalizacao: "https://pan.test/contrato/PRO-9803",
+    idMatricula: "MAT-009821",
   },
   {
     id: "PRO-9742",
@@ -114,6 +139,7 @@ const PROPOSTAS_INICIAIS: Proposta[] = [
     parcela: 320.1,
     taxaAm: 1.99,
     criadaEm: "20/06/2026 16:00",
+    idMatricula: "MAT-852029100",
   },
   {
     id: "PRO-9701",
@@ -125,6 +151,7 @@ const PROPOSTAS_INICIAIS: Proposta[] = [
     taxaAm: 1.72,
     criadaEm: "15/06/2026 10:30",
     motivoRecusa: "Comprometimento de renda acima do limite do convenio.",
+    idMatricula: "MAT-009821",
   },
 ];
 
@@ -144,15 +171,29 @@ const TIMELINE: Estado[] = ["em_analise", "aprovada", "aguardando_formalizacao",
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
-export function ServidorPropostas() {
-  const [propostas, setPropostas] = useState<Proposta[]>(() => [
-    ...readUserPropostas(),
-    ...PROPOSTAS_INICIAIS,
-  ]);
+function buildLista(idMatricula: string | null): Proposta[] {
+  const filteredIniciais = idMatricula
+    ? PROPOSTAS_INICIAIS.filter((p) => !p.idMatricula || p.idMatricula === idMatricula)
+    : PROPOSTAS_INICIAIS;
+  return [...readUserPropostas(idMatricula), ...filteredIniciais];
+}
 
-  // Re-le do localStorage ao montar caso voltemos da tela de termo.
+export function ServidorPropostas() {
+  const [idMatricula, setIdMatricula] = useState<string | null>(() => readActiveIdMatricula());
+  const [propostas, setPropostas] = useState<Proposta[]>(() => buildLista(readActiveIdMatricula()));
+
+  // Re-le do localStorage ao montar e quando matricula muda.
   useEffect(() => {
-    setPropostas([...readUserPropostas(), ...PROPOSTAS_INICIAIS]);
+    setPropostas(buildLista(idMatricula));
+  }, [idMatricula]);
+
+  // Reage a troca de matricula em outra aba.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === META_KEY) setIdMatricula(readActiveIdMatricula());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   function cancelar(id: string) {

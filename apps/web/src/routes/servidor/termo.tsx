@@ -19,6 +19,17 @@ const PRAZOS: Record<Tipo, { horas?: number; diasUteis?: number; label: string }
 };
 
 const PROPOSTAS_KEY = "atlas:propostas:userCriadas";
+const META_KEY = "atlas:idMatricula:meta";
+
+function readActiveIdMatricula(): string | null {
+  try {
+    const raw = window.localStorage.getItem(META_KEY);
+    if (!raw) return null;
+    return (JSON.parse(raw) as { idMatricula: string }).idMatricula;
+  } catch {
+    return null;
+  }
+}
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -82,6 +93,7 @@ export function ServidorTermo() {
         tipo,
         criadaEm: quando.toISOString(),
         expiraEm: new Date(quando.getTime() + (tipo === "novo" ? 48 : 7 * 24) * 60 * 60 * 1000).toISOString(),
+        idMatricula: readActiveIdMatricula() ?? undefined,
       };
       window.localStorage.setItem(PROPOSTAS_KEY, JSON.stringify([novaProposta, ...list]));
     } catch {

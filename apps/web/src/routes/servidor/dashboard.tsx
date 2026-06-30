@@ -10,6 +10,10 @@ interface MatriculaMeta {
   uf: string;
   cargo: string;
   vinculo?: string;
+  nome?: string;
+  email?: string;
+  telefone?: string;
+  endereco?: string;
 }
 
 interface ContratoAtivoMock {
@@ -134,7 +138,7 @@ export function ServidorDashboard() {
     );
   }
 
-  const nome = "Ana Carolina Silva"; // mesmo titular em ambas matriculas (acumulacao de cargos)
+  const nome = meta.nome ?? "Servidor";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 960, margin: "0 auto", width: "100%" }}>
