@@ -167,6 +167,180 @@ export interface AdminConvenio {
   prefeituraNome: string;
 }
 
+export interface AdminConvenioInput {
+  id?: string;
+  bancoId: number;
+  prefeituraId: number;
+  nome: string;
+  codigoVerba: string;
+  dataCorte: number;
+  diaRepasse: number;
+}
+
+export type FormatoImportacao = "CSV" | "EXCEL" | "API";
+export type VinculoAceito = "CLT" | "ESTATUTARIO" | "COMISSIONADO" | "APOSENTADO" | "PENSIONISTA";
+
+export interface AdminConvenioConfig {
+  id: string;
+  prazoTravaHoras: number;
+  prazoPortabilidadeDU: number;
+  maxParcelas: number;
+  taxaMaxAm: number;
+  idadeMin: number;
+  idadeMax: number;
+  vinculosAceitos: VinculoAceito[];
+  formatoImportacao: FormatoImportacao;
+  regrasEspeciais: string;
+  vigenciaInicio: string;
+  vigenciaFim?: string;
+  ativo: boolean;
+  atualizadoEm: string;
+}
+
+export type IdUnicoFormato = "SEQ" | "SEQ_HASH" | "YYYYMM_SEQ";
+export interface AdminIdUnicoConfig {
+  prefeituraId: number;
+  prefeituraNome: string;
+  prefixo: string;
+  formato: IdUnicoFormato;
+  larguraSeq: number;
+  proximoSeq: number;
+  separador: string;
+  atualizadoEm: string;
+  exemplo: string;
+}
+
+export type PreReservaStatus = "ativa" | "confirmada" | "expirada" | "cancelada";
+export type OperacaoTipo = "EMPRESTIMO" | "REFIN" | "PORTABILIDADE" | "COMPOSTA";
+
+export interface AdminPreReserva {
+  id: string;
+  idUnico: string;
+  bancoId: number;
+  bancoNome: string;
+  prefeituraId: number;
+  prefeituraNome: string;
+  convenioId: string;
+  convenioNome: string;
+  servidorCpfMasked: string;
+  servidorNome: string;
+  matricula: string;
+  tipoOperacao: OperacaoTipo;
+  valorMargem: number;
+  valorParcela: number;
+  parcelas: number;
+  criadoEm: string;
+  expiraEm: string;
+  status: PreReservaStatus;
+  finalizadoEm?: string;
+  finalizadoPor?: string;
+  motivoFinalizacao?: string;
+}
+
+export interface AdminPreReservaResumo {
+  ativas: number;
+  expirandoEm24h: number;
+  confirmadasHoje: number;
+  expiradasHoje: number;
+  margemTotalTravada: number;
+}
+
+export type TombamentoStatus = "processando" | "conciliado" | "divergente" | "rejeitado";
+export interface AdminTombamentoLote {
+  id: string;
+  prefeituraId: number;
+  prefeituraNome: string;
+  competencia: string;
+  status: TombamentoStatus;
+  totalLinhas: number;
+  inseridos: number;
+  atualizados: number;
+  divergencias: number;
+  recebidoEm: string;
+  processadoEm?: string;
+  recebidoPor: string;
+  observacao?: string;
+}
+
+export interface AdminTombamentoLinha {
+  loteId: string;
+  cpfMasked: string;
+  matricula: string;
+  bancoNome: string;
+  adfBanco: string;
+  idUnico: string;
+  valorParcela: number;
+  parcelasRestantes: number;
+  saldoDevedor: number;
+  reconciliacao: "ok" | "divergente" | "novo";
+  detalheReconciliacao?: string;
+}
+
+export interface AdminBateCarteiraLinha {
+  competencia: string;
+  bancoId: number;
+  bancoNome: string;
+  prefeituraId: number;
+  prefeituraNome: string;
+  cpfMasked: string;
+  matricula: string;
+  idUnico: string;
+  adfBanco?: string;
+  valorParcela: number;
+  parcelasRestantes?: number;
+  saldoDevedor?: number;
+  origem: "tombamento" | "pre_reserva_confirmada";
+  status: string;
+  data: string;
+}
+
+export interface AdminBateCarteiraResultado {
+  bancoId: number;
+  bancoNome: string;
+  competencia: string;
+  totalLinhas: number;
+  somaSaldoDevedor: number;
+  somaValorParcela: number;
+  linhas: AdminBateCarteiraLinha[];
+  geradoEm: string;
+}
+
+export type AuditCategoria =
+  | "pre_reserva" | "termo_aceite" | "biometria" | "dados_pessoais"
+  | "margem" | "tombamento" | "id_unico" | "convenio_config" | "acesso";
+
+export interface AdminAuditEntry {
+  id: string;
+  ts: string;
+  trace_id: string;
+  categoria: AuditCategoria;
+  acao: string;
+  cpf?: string;
+  matricula?: string;
+  propostaId?: string;
+  idUnico?: string;
+  ip?: string;
+  userAgent?: string;
+  deviceId?: string;
+  termoAceito?: string;
+  userId?: string;
+  userRole?: string;
+  detalhes: string;
+}
+
+export type AverbadoraPerfil = "operador" | "supervisor" | "comercial" | "financeiro" | "auditoria";
+
+export interface AdminAverbadoraUser {
+  id: number;
+  nome: string;
+  email: string;
+  perfil: AverbadoraPerfil;
+  ativo: boolean;
+  twoFactorEnabled: boolean;
+  criadoEm: string;
+  ultimoLogin?: string;
+}
+
 export interface AdminServidor {
   id: number;
   nome: string;
@@ -529,6 +703,65 @@ export class AtlasClient {
     resetPrefeituraPassword: (id: number, password: string) =>
       this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/reset-password`, { method: "POST", body: { password } }),
     listConvenios: () => this.request<{ convenios: AdminConvenio[] }>("/v1/admin/convenios"),
+    upsertConvenio: (body: AdminConvenioInput) =>
+      this.request<{ convenio: AdminConvenio }>("/v1/admin/convenios", { method: "POST", body }),
+    deleteConvenio: (id: string) =>
+      this.request<void>(`/v1/admin/convenios/${id}`, { method: "DELETE" }),
+    getConvenioConfig: (id: string) =>
+      this.request<{ config: AdminConvenioConfig | null }>(`/v1/admin/convenios/${id}/config`),
+    listConveniosConfigs: () =>
+      this.request<{ configs: AdminConvenioConfig[] }>("/v1/admin/convenios-configs"),
+    upsertConvenioConfig: (id: string, body: Omit<AdminConvenioConfig, "id" | "atualizadoEm">) =>
+      this.request<{ config: AdminConvenioConfig }>(`/v1/admin/convenios/${id}/config`, { method: "POST", body }),
+
+    // ID único
+    listIdUnicoConfigs: () =>
+      this.request<{ configs: AdminIdUnicoConfig[] }>("/v1/admin/id-unico/configs"),
+    upsertIdUnicoConfig: (body: Omit<AdminIdUnicoConfig, "atualizadoEm" | "exemplo" | "prefeituraNome">) =>
+      this.request<{ config: AdminIdUnicoConfig; exemplo: string }>("/v1/admin/id-unico/configs", { method: "POST", body }),
+    issueIdUnico: (prefeituraId: number) =>
+      this.request<{ idUnico: string }>("/v1/admin/id-unico/issue", { method: "POST", body: { prefeituraId } }),
+
+    // Pré-reservas
+    listPreReservas: (q?: { status?: PreReservaStatus; prefeitura_id?: number; banco_id?: number }) =>
+      this.request<{ preReservas: AdminPreReserva[]; resumo: AdminPreReservaResumo }>("/v1/admin/pre-reservas", { query: q ?? {} }),
+    cancelarPreReserva: (id: string, motivo: string) =>
+      this.request<{ preReserva: AdminPreReserva }>(`/v1/admin/pre-reservas/${id}/cancelar`, { method: "POST", body: { motivo } }),
+    sweepPreReservas: () =>
+      this.request<{ expiradas: number }>("/v1/admin/pre-reservas/sweep", { method: "POST" }),
+
+    // Tombamento
+    listTombamentoLotes: (q?: { prefeitura_id?: number; competencia?: string }) =>
+      this.request<{ lotes: AdminTombamentoLote[] }>("/v1/admin/tombamento/lotes", { query: q ?? {} }),
+    listTombamentoLinhas: (loteId: string) =>
+      this.request<{ linhas: AdminTombamentoLinha[] }>(`/v1/admin/tombamento/lotes/${loteId}/linhas`),
+    importarTombamento: (body: { prefeituraId: number; competencia: string; csv: string }) =>
+      this.request<{ lote: AdminTombamentoLote; inseridos: number; atualizados: number; divergencias: number; erros: { line: number; message: string }[] }>(
+        "/v1/admin/tombamento/importar",
+        { method: "POST", body },
+      ),
+    tombamentoCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/admin/tombamento/csv-template`,
+
+    // Bate-de-carteira
+    bateCarteira: (body: { bancoId: number; competencia: string; prefeituraId?: number; format?: "json" | "csv" }) =>
+      this.request<AdminBateCarteiraResultado>("/v1/admin/bate-carteira", { method: "POST", body }),
+    bateCarteiraCsvUrl: (): string => `${this.opts.baseUrl}/v1/admin/bate-carteira`,
+
+    // Auditoria
+    listAuditoria: (q?: { categoria?: AuditCategoria; cpf?: string; matricula?: string; proposta_id?: string; desde?: string; ate?: string; limit?: number }) =>
+      this.request<{ entries: AdminAuditEntry[]; categorias: { value: AuditCategoria; label: string }[] }>("/v1/admin/auditoria", { query: q ?? {} }),
+
+    // Perfis admin
+    listPerfisAdmin: () =>
+      this.request<{ usuarios: AdminAverbadoraUser[]; perfis: { value: AverbadoraPerfil; label: string; descricao: string }[] }>("/v1/admin/perfis"),
+    upsertPerfilAdmin: (body: { id?: number; nome: string; email: string; perfil: AverbadoraPerfil; ativo: boolean; password?: string; twoFactorEnabled?: boolean }) =>
+      this.request<{ usuario: AdminAverbadoraUser }>("/v1/admin/perfis", { method: "POST", body }),
+    rotate2FA: (id: number) =>
+      this.request<{ secret: string; otpauthUrl: string }>(`/v1/admin/perfis/${id}/2fa/rotate`, { method: "POST" }),
+    disable2FA: (id: number) =>
+      this.request<{ ok: boolean }>(`/v1/admin/perfis/${id}/2fa/disable`, { method: "POST" }),
+    deletePerfilAdmin: (id: number) =>
+      this.request<void>(`/v1/admin/perfis/${id}`, { method: "DELETE" }),
     listServidores: (q?: { prefeitura_id?: number; status?: string }) =>
       this.request<{ servidores: AdminServidor[]; total: number }>("/v1/admin/servidores", { query: q ?? {} }),
     updateServidor: (matricula: string, body: AdminServidorUpdate) =>
