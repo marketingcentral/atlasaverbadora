@@ -37,7 +37,7 @@ export function ServidorLayout() {
           backdropFilter: "blur(12px)",
           position: "sticky",
           top: 0,
-          zIndex: 10,
+          zIndex: 200,
         }}
       >
         <div
