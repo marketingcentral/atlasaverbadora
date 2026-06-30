@@ -18,14 +18,23 @@ import {
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
+// Estados visiveis em /propostas — pedido do usuario.
+const ESTADOS_VISIVEIS: EstadoProposta[] = ["em_analise", "expirada"];
+
+function filtrarVisiveis(list: Proposta[]): Proposta[] {
+  return list.filter((p) => ESTADOS_VISIVEIS.includes(p.estado));
+}
+
 export function ServidorPropostas() {
   const location = useLocation();
   const [idMatricula, setIdMatricula] = useState<string | null>(() => readActiveIdMatricula());
-  const [propostas, setPropostas] = useState<Proposta[]>(() => getAllPropostasForMatricula(readActiveIdMatricula()));
+  const [propostas, setPropostas] = useState<Proposta[]>(() =>
+    filtrarVisiveis(getAllPropostasForMatricula(readActiveIdMatricula())),
+  );
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
   useEffect(() => {
-    setPropostas(getAllPropostasForMatricula(idMatricula));
+    setPropostas(filtrarVisiveis(getAllPropostasForMatricula(idMatricula)));
   }, [idMatricula]);
 
   // Scroll + destaque quando a URL tem hash (#PRO-9803) — usado pelas
@@ -50,7 +59,7 @@ export function ServidorPropostas() {
       if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
         setIdMatricula(readActiveIdMatricula());
       } else if (e.key === PROPOSTAS_KEY) {
-        setPropostas(getAllPropostasForMatricula(idMatricula));
+        setPropostas(filtrarVisiveis(getAllPropostasForMatricula(idMatricula)));
       }
     };
     window.addEventListener("storage", onStorage);
