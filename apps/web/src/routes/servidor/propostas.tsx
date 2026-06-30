@@ -10,6 +10,7 @@ import {
   ESTADO_LABEL,
   ESTADOS_TIMELINE,
   PROPOSTAS_KEY,
+  fmtDateTime,
   getAllPropostasForMatricula,
   type EstadoProposta,
   type Proposta,
@@ -140,7 +141,7 @@ function PropostaCard({ p, highlighted }: { p: Proposta; highlighted?: boolean }
         <div>
           <div style={{ fontWeight: 700 }}>{p.banco}</div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-            {p.id} · criada em {p.criadaEm}
+            {p.id} · criada em {fmtDateTime(p.criadaEm)}
           </div>
         </div>
         <Pill variant={pillVariant}>{ESTADO_LABEL[p.estado]}</Pill>
@@ -158,7 +159,7 @@ function PropostaCard({ p, highlighted }: { p: Proposta; highlighted?: boolean }
         <KV label="Valor liberado" v={fmtBRL(p.valor)} accent />
         <KV label="Parcelas" v={`${p.parcelas}x de ${fmtBRL(p.parcela)}`} />
         <KV label="Taxa mensal" v={`${p.taxaAm.toFixed(2)}%`} />
-        {p.expiraEm && !terminal ? <KV label="Trava ate" v={p.expiraEm} /> : null}
+        {p.expiraEm && !terminal ? <KV label="Trava ate" v={fmtDateTime(p.expiraEm)} /> : null}
       </div>
 
       {!terminal ? (

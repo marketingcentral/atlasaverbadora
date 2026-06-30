@@ -52,6 +52,10 @@ export const ESTADOS_TIMELINE: EstadoProposta[] = [
   "liberada",
 ];
 
+// Datas em ISO — necessario pra tempoRelativo() das notificacoes funcionar
+// e ticar em tempo real. As telas formatam quando precisam exibir.
+const HOJE = "2026-06-30";
+
 export const PROPOSTAS_INICIAIS: Proposta[] = [
   {
     id: "PRO-9821",
@@ -61,8 +65,8 @@ export const PROPOSTAS_INICIAIS: Proposta[] = [
     parcelas: 48,
     parcela: 750,
     taxaAm: 1.65,
-    criadaEm: "29/06/2026 14:22",
-    expiraEm: "01/07/2026 14:22",
+    criadaEm: "2026-06-29T14:22:00",
+    expiraEm: "2026-07-01T14:22:00",
     linkFormalizacao: "https://scred.test/formalizar/PRO-9821",
     idMatricula: "MAT-852029100",
   },
@@ -74,8 +78,8 @@ export const PROPOSTAS_INICIAIS: Proposta[] = [
     parcelas: 36,
     parcela: 412.4,
     taxaAm: 1.72,
-    criadaEm: "30/06/2026 09:10",
-    expiraEm: "02/07/2026 09:10",
+    criadaEm: `${HOJE}T09:10:00`,
+    expiraEm: "2026-07-02T09:10:00",
     idMatricula: "MAT-852029100",
   },
   {
@@ -86,8 +90,8 @@ export const PROPOSTAS_INICIAIS: Proposta[] = [
     parcelas: 24,
     parcela: 380.5,
     taxaAm: 1.88,
-    criadaEm: "30/06/2026 11:00",
-    expiraEm: "01/07/2026 11:00",
+    criadaEm: `${HOJE}T11:00:00`,
+    expiraEm: "2026-07-01T11:00:00",
     linkFormalizacao: "https://pan.test/contrato/PRO-9803",
     idMatricula: "MAT-009821",
   },
@@ -99,7 +103,7 @@ export const PROPOSTAS_INICIAIS: Proposta[] = [
     parcelas: 24,
     parcela: 320.1,
     taxaAm: 1.99,
-    criadaEm: "20/06/2026 16:00",
+    criadaEm: "2026-06-20T16:00:00",
     idMatricula: "MAT-852029100",
   },
   {
@@ -110,13 +114,14 @@ export const PROPOSTAS_INICIAIS: Proposta[] = [
     parcelas: 60,
     parcela: 380,
     taxaAm: 1.72,
-    criadaEm: "15/06/2026 10:30",
+    criadaEm: "2026-06-15T10:30:00",
     motivoRecusa: "Comprometimento de renda acima do limite do convenio.",
     idMatricula: "MAT-009821",
   },
 ];
 
-function fmtDateTime(iso: string): string {
+/** Formata ISO em "DD/MM/YYYY HH:MM" para exibicao nas telas. */
+export function fmtDateTime(iso: string): string {
   try {
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return iso;
@@ -144,13 +149,13 @@ export function writeUserPropostas(list: StoredProposta[]): void {
   }
 }
 
-/** Combina propostas iniciais + criadas pelo usuario, filtra pela matricula. */
+/**
+ * Combina propostas iniciais + criadas pelo usuario, filtra pela matricula.
+ * `criadaEm` e `expiraEm` ficam em ISO (raw) — telas devem formatar com
+ * `fmtDateTime` para exibir, e notificacoes usam tempoRelativo().
+ */
 export function getAllPropostasForMatricula(idMatricula: string | null): Proposta[] {
-  const user = readUserPropostas().map((p) => ({
-    ...p,
-    criadaEm: fmtDateTime(p.criadaEm),
-    expiraEm: p.expiraEm ? fmtDateTime(p.expiraEm) : undefined,
-  }));
+  const user = readUserPropostas();
   const iniciais = idMatricula
     ? PROPOSTAS_INICIAIS.filter((p) => !p.idMatricula || p.idMatricula === idMatricula)
     : PROPOSTAS_INICIAIS;

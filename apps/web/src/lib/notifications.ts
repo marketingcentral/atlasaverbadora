@@ -2,7 +2,7 @@
 // lista propria — calcula on-the-fly. So persiste o estado lida/nao-lida
 // por ID em localStorage.
 
-import { getAllPropostasForMatricula, type Proposta } from "./propostas-data";
+import { fmtDateTime, getAllPropostasForMatricula, type Proposta } from "./propostas-data";
 import { readActiveIdMatricula } from "./matricula-data";
 
 export type NotifType =
@@ -107,7 +107,7 @@ function notifFromProposta(p: Proposta): Notification | null {
         type: "proposta_aguardando_formalizacao",
         titulo: `Aguardando formalizacao da ${p.id}`,
         mensagem: p.expiraEm
-          ? `Acesse o ${p.banco} para assinar. Trava expira em ${p.expiraEm}.`
+          ? `Acesse o ${p.banco} para assinar. Trava expira em ${fmtDateTime(p.expiraEm)}.`
           : `Acesse o ${p.banco} para assinar o contrato.`,
         quando: tempoRelativo(p.criadaEm),
         href: internalHref,

@@ -54,6 +54,15 @@ export function NotificationBell() {
     if (open) setNotifs(buildNotifications());
   }, [open]);
 
+  // Tick periodico — recalcula a cada 30s pra atualizar os "ha Xmin/Xh"
+  // sem precisar refresh, e pra captar mudancas de estado.
+  useEffect(() => {
+    const i = setInterval(() => {
+      setNotifs(buildNotifications());
+    }, 30000);
+    return () => clearInterval(i);
+  }, []);
+
   const unread = notifs.filter((n) => !n.lida).length;
 
   useEffect(() => {
