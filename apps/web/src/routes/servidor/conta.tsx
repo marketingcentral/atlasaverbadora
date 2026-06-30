@@ -1,52 +1,34 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Input, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { clearAtlasState } from "../../lib/session";
-
-interface MatriculaMeta {
-  idMatricula: string;
-  matricula: string;
-  prefeitura: string;
-  uf: string;
-  cargo: string;
-  vinculo: string;
-  nome?: string;
-  email?: string;
-  telefone?: string;
-  endereco?: string;
-}
-
-const META_KEY = "atlas:idMatricula:meta";
-
-function readMeta(): MatriculaMeta | null {
-  try {
-    const raw = window.localStorage.getItem(META_KEY);
-    return raw ? (JSON.parse(raw) as MatriculaMeta) : null;
-  } catch {
-    return null;
-  }
-}
+import {
+  MatriculaInfo,
+  readActiveMatricula,
+  STORAGE_KEY_ID,
+  STORAGE_KEY_META,
+} from "../../lib/matricula-data";
 
 export function ServidorConta() {
   const nav = useNavigate();
   const { mode, setMode } = useThemeMode();
-  const profile = useQuery({ queryKey: ["me"], queryFn: () => atlas.getMyProfile() });
 
-  // Re-le meta no mount E quando o storage muda (ex.: troca de matricula via dropdown do dashboard).
-  const [matriculaMeta, setMatriculaMeta] = useState<MatriculaMeta | null>(() => readMeta());
+  // Re-le da fonte central de verdade no mount E quando outra aba muda o storage.
+  const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === META_KEY) setMatriculaMeta(readMeta());
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setInfo(readActiveMatricula());
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   // Email/telefone iniciais vem da matricula ativa — quando trocar, reseta pros valores da nova.
-  const initialEmail = matriculaMeta?.email ?? "—";
-  const initialTel = matriculaMeta?.telefone ?? "—";
+  const initialEmail = info?.email ?? "—";
+  const initialTel = info?.telefone ?? "—";
 
   const [savedEmail, setSavedEmail] = useState(initialEmail);
   const [savedTel, setSavedTel] = useState(initialTel);
@@ -58,13 +40,13 @@ export function ServidorConta() {
 
   // Quando troca matricula, reseta email/tel para os da nova (e fecha edicao em aberto).
   useEffect(() => {
-    setSavedEmail(matriculaMeta?.email ?? "—");
-    setSavedTel(matriculaMeta?.telefone ?? "—");
-    setDraftEmail(matriculaMeta?.email ?? "—");
-    setDraftTel(matriculaMeta?.telefone ?? "—");
+    setSavedEmail(info?.email ?? "—");
+    setSavedTel(info?.telefone ?? "—");
+    setDraftEmail(info?.email ?? "—");
+    setDraftTel(info?.telefone ?? "—");
     setEditing(false);
     setSavedAt(null);
-  }, [matriculaMeta?.idMatricula]);
+  }, [info?.idMatricula]);
 
   function comecarEdicao() {
     setDraftEmail(savedEmail);
@@ -92,13 +74,13 @@ export function ServidorConta() {
     setSavedAt(new Date());
   }
 
-  const nome = matriculaMeta?.nome ?? profile.data?.nome ?? "Servidor";
+  const nome = info?.nome ?? "Servidor";
   const cpfMasked = "***.***.222-33";
-  const endereco = matriculaMeta?.endereco ?? "—";
-  const cargo = matriculaMeta?.cargo ?? "—";
-  const matricula = matriculaMeta?.matricula ?? profile.data?.matricula ?? "—";
-  const prefeitura = matriculaMeta?.prefeitura ?? "—";
-  const vinculo = matriculaMeta?.vinculo ?? profile.data?.vinculo ?? "—";
+  const endereco = info?.endereco ?? "—";
+  const cargo = info?.cargo ?? "—";
+  const matricula = info?.matricula ?? "—";
+  const prefeitura = info?.prefeitura ?? "—";
+  const vinculo = info?.vinculo ?? "—";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720, margin: "0 auto", width: "100%" }}>

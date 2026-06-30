@@ -3,82 +3,33 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { clearAtlasState } from "../../lib/session";
-
-interface MatriculaOption {
-  idMatricula: string;
-  matricula: string;
-  prefeitura: string;
-  uf: string;
-  cargo: string;
-  vinculo: string;
-  nome: string;
-  email: string;
-  telefone: string;
-  endereco: string;
-  ativa: boolean;
-}
-
-// Mock: cada matricula carrega seus proprios dados cadastrais. Mesmo CPF,
-// mas cargos/contextos diferentes em prefeituras diferentes — o switcher
-// no dashboard troca todo o contexto.
-const MATRICULAS_MOCK: MatriculaOption[] = [
-  {
-    idMatricula: "MAT-852029100",
-    matricula: "852029100",
-    prefeitura: "Prefeitura de Palhoca",
-    uf: "SC",
-    cargo: "Analista Administrativo",
-    vinculo: "Estatutario",
-    nome: "Ana Carolina Silva",
-    email: "ana.carolina@palhoca.sc.gov.br",
-    telefone: "(48) 99812-3210",
-    endereco: "Rua das Acacias, 145 — Palhoca/SC, 88130-XXX",
-    ativa: true,
-  },
-  {
-    idMatricula: "MAT-009821",
-    matricula: "M-009821",
-    prefeitura: "Prefeitura de Florianopolis",
-    uf: "SC",
-    cargo: "Professor II",
-    vinculo: "Estatutario",
-    nome: "Ana C. Silva Pereira",
-    email: "ana.silva@edu.pmf.sc.gov.br",
-    telefone: "(48) 98445-7720",
-    endereco: "Av. Beira-Mar Norte, 2401 ap 504 — Florianopolis/SC, 88010-XXX",
-    ativa: true,
-  },
-];
-
-const STORAGE_KEY = "atlas:idMatricula";
-const META_KEY = "atlas:idMatricula:meta";
+import {
+  MATRICULAS,
+  STORAGE_KEY_ID,
+  readActiveIdMatricula,
+  setActiveMatricula,
+} from "../../lib/matricula-data";
 
 export function ServidorSelecionarMatricula() {
   const nav = useNavigate();
   const [search] = useSearchParams();
-  // ?trocar=1 vem do dropdown do dashboard quando o usuario quer trocar
-  // explicitamente — nesse caso nao fazemos auto-skip mesmo se ja houver
-  // matricula salva.
   const forceShow = search.get("trocar") === "1";
 
   useEffect(() => {
     if (forceShow) return;
-    const already = window.localStorage.getItem(STORAGE_KEY);
-    if (already && MATRICULAS_MOCK.some((m) => m.idMatricula === already)) {
+    const already = readActiveIdMatricula();
+    if (already && MATRICULAS.some((m) => m.idMatricula === already)) {
       nav("/servidor/dashboard", { replace: true });
       return;
     }
-    if (MATRICULAS_MOCK.length === 1) {
-      const m = MATRICULAS_MOCK[0]!;
-      window.localStorage.setItem(STORAGE_KEY, m.idMatricula);
-      window.localStorage.setItem(META_KEY, JSON.stringify(m));
+    if (MATRICULAS.length === 1) {
+      setActiveMatricula(MATRICULAS[0]!.idMatricula);
       nav("/servidor/dashboard", { replace: true });
     }
   }, [nav, forceShow]);
 
-  function escolher(opt: MatriculaOption) {
-    window.localStorage.setItem(STORAGE_KEY, opt.idMatricula);
-    window.localStorage.setItem(META_KEY, JSON.stringify(opt));
+  function escolher(idMatricula: string) {
+    setActiveMatricula(idMatricula);
     nav("/servidor/dashboard", { replace: true });
   }
 
@@ -114,8 +65,7 @@ export function ServidorSelecionarMatricula() {
           <div style={{ fontWeight: 700 }}>Atlas</div>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {/* So mostra "Voltar" se existe matricula salva (senao voltaria pro login que redireciona pra ca, loop). */}
-          {window.localStorage.getItem(STORAGE_KEY) ? (
+          {window.localStorage.getItem(STORAGE_KEY_ID) ? (
             <Button variant="ghost" size="sm" onClick={() => nav("/servidor/dashboard")}>
               ← Voltar
             </Button>
@@ -137,7 +87,7 @@ export function ServidorSelecionarMatricula() {
         </p>
 
         <div style={{ display: "grid", gap: 16, marginTop: 24 }}>
-          {MATRICULAS_MOCK.map((m) => (
+          {MATRICULAS.map((m) => (
             <Card key={m.idMatricula} style={{ padding: 20 }}>
               <div
                 style={{
@@ -150,7 +100,7 @@ export function ServidorSelecionarMatricula() {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>{m.prefeitura}</div>
                   <div style={{ color: "var(--text-muted)", fontSize: ".9rem", marginTop: 4 }}>
-                    {m.cargo} · {m.vinculo}
+                    {m.nome} · {m.cargo}
                   </div>
                   <div
                     style={{
@@ -178,7 +128,7 @@ export function ServidorSelecionarMatricula() {
                   >
                     {m.ativa ? "Ativa" : "Inativa"}
                   </span>
-                  <Button size="sm" onClick={() => escolher(m)}>
+                  <Button size="sm" onClick={() => escolher(m.idMatricula)}>
                     Entrar →
                   </Button>
                 </div>

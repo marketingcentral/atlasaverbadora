@@ -1,85 +1,31 @@
 import { useEffect, useState } from "react";
 import { Button, Card, Pill, Tabs } from "@atlas/ui/web";
-
-interface Contrato {
-  id: string;
-  banco: string;
-  parcela: number;
-  parcelasPagas: number;
-  total: number;
-  status: "Averbado" | "Em dia" | "Quitado";
-  proximaParcela: string;
-  taxaAm: number;
-  valorFinanciado: number;
-  pdfUrl: string;
-}
-
-const META_KEY = "atlas:idMatricula:meta";
-
-// Mock: contratos por idMatricula. Em prod virao do GET /v1/servidores/me/contratos?idMatricula=...
-const CONTRATOS_POR_MATRICULA: Record<string, Contrato[]> = {
-  "MAT-852029100": [
-    {
-      id: "ADF-S0003", banco: "SCred Financeira", parcela: 1176.37, parcelasPagas: 3, total: 60,
-      status: "Averbado", proximaParcela: "05/07/2026", taxaAm: 1.65, valorFinanciado: 48000,
-      pdfUrl: "https://atlas.io/mock/contrato-ADF-S0003.pdf",
-    },
-    {
-      id: "ADF-S0002", banco: "SCred Financeira", parcela: 1773.79, parcelasPagas: 4, total: 48,
-      status: "Em dia", proximaParcela: "05/07/2026", taxaAm: 1.72, valorFinanciado: 65000,
-      pdfUrl: "https://atlas.io/mock/contrato-ADF-S0002.pdf",
-    },
-    {
-      id: "ADF-C0001", banco: "Banco Y", parcela: 1163.43, parcelasPagas: 36, total: 36,
-      status: "Quitado", proximaParcela: "—", taxaAm: 1.95, valorFinanciado: 30000,
-      pdfUrl: "https://atlas.io/mock/contrato-ADF-C0001.pdf",
-    },
-  ],
-  "MAT-009821": [
-    {
-      id: "ADF-F0021", banco: "Banco Y", parcela: 412.4, parcelasPagas: 8, total: 36,
-      status: "Averbado", proximaParcela: "08/07/2026", taxaAm: 1.85, valorFinanciado: 12000,
-      pdfUrl: "https://atlas.io/mock/contrato-ADF-F0021.pdf",
-    },
-    {
-      id: "ADF-F0007", banco: "Pan Credito", parcela: 280.15, parcelasPagas: 18, total: 18,
-      status: "Quitado", proximaParcela: "—", taxaAm: 2.05, valorFinanciado: 4500,
-      pdfUrl: "https://atlas.io/mock/contrato-ADF-F0007.pdf",
-    },
-  ],
-};
-
-interface MatriculaMeta {
-  idMatricula: string;
-  matricula: string;
-  prefeitura: string;
-}
-
-function readMeta(): MatriculaMeta | null {
-  try {
-    const raw = window.localStorage.getItem(META_KEY);
-    return raw ? (JSON.parse(raw) as MatriculaMeta) : null;
-  } catch {
-    return null;
-  }
-}
+import {
+  ContratoMock as Contrato,
+  MatriculaInfo,
+  readActiveMatricula,
+  STORAGE_KEY_ID,
+  STORAGE_KEY_META,
+} from "../../lib/matricula-data";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 export function ServidorContratos() {
   const [tab, setTab] = useState<"todos" | "ativos" | "quitados">("todos");
   const [downloading, setDownloading] = useState<string | null>(null);
-  const [meta, setMeta] = useState<MatriculaMeta | null>(() => readMeta());
+  const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === META_KEY) setMeta(readMeta());
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setInfo(readActiveMatricula());
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const contratos = meta ? CONTRATOS_POR_MATRICULA[meta.idMatricula] ?? [] : [];
+  const contratos: Contrato[] = info?.contratos ?? [];
 
   const filtered = contratos.filter((c) => {
     if (tab === "ativos") return c.status !== "Quitado";
@@ -103,7 +49,7 @@ export function ServidorContratos() {
         </span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Contratos ativos e histórico</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6, fontSize: ".9rem" }}>
-          {meta ? <>Contratos da matricula <b>{meta.matricula}</b> ({meta.prefeitura}).{" "}</> : null}
+          {info ? <>Contratos da matricula <b>{info.matricula}</b> ({info.prefeitura}).{" "}</> : null}
           Quitacao antecipada nao e feita pelo Atlas — contate diretamente o banco credor.
         </p>
       </header>

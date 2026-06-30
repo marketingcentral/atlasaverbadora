@@ -10,6 +10,16 @@ export const STORAGE_KEYS = {
   propostasUserCriadas: "atlas:propostas:userCriadas",
 } as const;
 
+/** Limpa apenas o estado de matricula ativa (usado no fluxo de trocar). */
+export function clearActiveMatricula(): void {
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.idMatricula);
+    window.localStorage.removeItem(STORAGE_KEYS.idMatriculaMeta);
+  } catch {
+    // ignore
+  }
+}
+
 /** Apaga tudo do localStorage do Atlas. Usado no logout. */
 export function clearAtlasState(): void {
   for (const key of Object.values(STORAGE_KEYS)) {

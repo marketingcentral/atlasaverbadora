@@ -1,24 +1,12 @@
 import { useEffect, useState } from "react";
 import { Button, Card, Pill } from "@atlas/ui/web";
+import {
+  readActiveIdMatricula,
+  STORAGE_KEY_ID,
+  STORAGE_KEY_META,
+} from "../../lib/matricula-data";
 
 const PROPOSTAS_KEY = "atlas:propostas:userCriadas";
-const META_KEY = "atlas:idMatricula:meta";
-
-interface MatriculaMeta {
-  idMatricula: string;
-  matricula: string;
-  prefeitura: string;
-}
-
-function readActiveIdMatricula(): string | null {
-  try {
-    const raw = window.localStorage.getItem(META_KEY);
-    if (!raw) return null;
-    return (JSON.parse(raw) as MatriculaMeta).idMatricula;
-  } catch {
-    return null;
-  }
-}
 
 interface StoredProposta {
   id: string;
@@ -190,7 +178,9 @@ export function ServidorPropostas() {
   // Reage a troca de matricula em outra aba.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === META_KEY) setIdMatricula(readActiveIdMatricula());
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setIdMatricula(readActiveIdMatricula());
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);

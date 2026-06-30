@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
 import { TwoFactorModal } from "../../components/TwoFactorModal";
+import { readActiveIdMatricula } from "../../lib/matricula-data";
 
 type Tipo = "novo" | "portabilidade" | "refinanciamento";
 
@@ -19,17 +20,6 @@ const PRAZOS: Record<Tipo, { horas?: number; diasUteis?: number; label: string }
 };
 
 const PROPOSTAS_KEY = "atlas:propostas:userCriadas";
-const META_KEY = "atlas:idMatricula:meta";
-
-function readActiveIdMatricula(): string | null {
-  try {
-    const raw = window.localStorage.getItem(META_KEY);
-    if (!raw) return null;
-    return (JSON.parse(raw) as { idMatricula: string }).idMatricula;
-  } catch {
-    return null;
-  }
-}
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
