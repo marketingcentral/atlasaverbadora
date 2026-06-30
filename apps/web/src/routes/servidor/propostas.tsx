@@ -19,10 +19,20 @@ const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 // Estados visiveis em /propostas — pedido do usuario.
+// Mostra apenas a primeira proposta em_analise + todas as expiradas.
 const ESTADOS_VISIVEIS: EstadoProposta[] = ["em_analise", "expirada"];
 
 function filtrarVisiveis(list: Proposta[]): Proposta[] {
-  return list.filter((p) => ESTADOS_VISIVEIS.includes(p.estado));
+  const filtradas = list.filter((p) => ESTADOS_VISIVEIS.includes(p.estado));
+  let viuEmAnalise = false;
+  return filtradas.filter((p) => {
+    if (p.estado === "em_analise") {
+      if (viuEmAnalise) return false;
+      viuEmAnalise = true;
+      return true;
+    }
+    return true; // expirada sempre passa
+  });
 }
 
 export function ServidorPropostas() {
