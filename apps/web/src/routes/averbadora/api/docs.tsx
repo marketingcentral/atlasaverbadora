@@ -5,6 +5,17 @@ const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? ""
 
 type Method = "GET" | "POST" | "PATCH" | "DELETE";
 
+interface QueryFilter {
+  name: string;
+  label: string;
+  type: "text" | "enum";
+  options?: string[];
+  placeholder?: string;
+  /** Prefilled value used when you hit "Tente agora". */
+  example?: string;
+  hint?: string;
+}
+
 interface Endpoint {
   method: Method;
   path: string;
@@ -12,6 +23,8 @@ interface Endpoint {
   scope: string;
   exampleBody?: unknown;
   examplePathParam?: string;
+  /** Query-string filters this endpoint understands (rendered as inputs in "Tente agora"). */
+  filters?: QueryFilter[];
 }
 
 interface Section {
@@ -43,14 +56,36 @@ const LAYERS: Layer[] = [
       {
         key: "banco-margem", label: "Margem & Convênios", description: "Convênios do banco e consulta de margem de colaboradores.",
         endpoints: [
-          { method: "GET", path: "/v1/external/banco/convenios", summary: "Convênios do banco", scope: "banco:read" },
-          { method: "GET", path: "/v1/external/banco/margem?cpf=00011122233", summary: "Margem por CPF ou matrícula", scope: "banco:read" },
+          {
+            method: "GET", path: "/v1/external/banco/convenios", summary: "Convênios do banco", scope: "banco:read",
+            filters: [
+              { name: "uf", label: "UF", type: "text", placeholder: "SC", hint: "Sigla do estado" },
+              { name: "cidade", label: "Cidade", type: "text", placeholder: "Palhoça", example: "Palhoça", hint: "Nome da prefeitura (parcial, sem acento ok)" },
+              { name: "q", label: "Busca", type: "text", placeholder: "delta", hint: "Nome ou código de verba" },
+            ],
+          },
+          {
+            method: "GET", path: "/v1/external/banco/margem", summary: "Margem por CPF ou matrícula", scope: "banco:read",
+            filters: [
+              { name: "cpf", label: "CPF", type: "text", placeholder: "00011122233", example: "00011122233", hint: "Só dígitos" },
+              { name: "matricula", label: "Matrícula", type: "text", placeholder: "852029100" },
+            ],
+          },
         ],
       },
       {
         key: "banco-contratos", label: "Contratos", description: "Listar, detalhar, averbar/reservar e operar contratos.",
         endpoints: [
-          { method: "GET", path: "/v1/external/banco/contratos", summary: "Listar contratos do banco", scope: "banco:read" },
+          {
+            method: "GET", path: "/v1/external/banco/contratos", summary: "Listar contratos do banco", scope: "banco:read",
+            filters: [
+              { name: "situacao", label: "Situação", type: "text", placeholder: "ativo", hint: "ex.: ativo, quitado, cancelado, reservado" },
+              { name: "tipo_contrato", label: "Tipo", type: "text", placeholder: "EMPRESTIMO" },
+              { name: "convenio_id", label: "Convênio", type: "text", placeholder: "CONV-001" },
+              { name: "matricula", label: "Matrícula", type: "text", placeholder: "852029100" },
+              { name: "q", label: "Busca", type: "text", placeholder: "nome, matrícula ou ADF" },
+            ],
+          },
           { method: "GET", path: "/v1/external/banco/contratos/{adf}", summary: "Detalhe + parcelas", scope: "banco:read", examplePathParam: "9000000" },
           { method: "POST", path: "/v1/external/banco/contratos/averbar", summary: "Averbar / reservar contrato", scope: "banco:write", exampleBody: { matricula: "852029100", convenio_id: "CONV-001", tipo_contrato: "EMPRESTIMO", valor_financiado: 10000, parcelas: 48, taxa_am: 0.0179, reserva: false } },
           { method: "POST", path: "/v1/external/banco/contratos/{adf}/acao", summary: "Quitar / suspender / cancelar / alongar", scope: "banco:write", examplePathParam: "9000000", exampleBody: { acao: "quitar", motivo: "Liquidação antecipada" } },
@@ -111,22 +146,56 @@ const LAYERS: Layer[] = [
       {
         key: "avb-bancos", label: "Bancos", description: "Listar e criar/atualizar bancos parceiros.",
         endpoints: [
-          { method: "GET", path: "/v1/external/averbadora/bancos", summary: "Listar bancos", scope: "averbadora:read" },
+          {
+            method: "GET", path: "/v1/external/averbadora/bancos", summary: "Listar bancos (filtrável por cidade/UF)", scope: "averbadora:read",
+            filters: [
+              { name: "cidade", label: "Cidade", type: "text", placeholder: "Palhoça", example: "Palhoça", hint: "Bancos com convênio nessa cidade" },
+              { name: "uf", label: "UF", type: "text", placeholder: "SC", hint: "Bancos com convênio nessa UF" },
+              { name: "status", label: "Status", type: "enum", options: ["", "ativo", "pausado", "inativo"] },
+              { name: "adapter", label: "Adapter", type: "enum", options: ["", "sandbox", "ifractal"] },
+              { name: "q", label: "Busca", type: "text", placeholder: "nome do banco" },
+            ],
+          },
           { method: "POST", path: "/v1/external/averbadora/bancos", summary: "Criar/atualizar banco", scope: "averbadora:write", exampleBody: { nome: "Novo Banco S.A.", status: "ativo", adapter: "sandbox", contatoEmail: "ti@novo.com.br" } },
         ],
       },
       {
         key: "avb-pref", label: "Prefeituras & Convênios", description: "Gestão de prefeituras e leitura de convênios.",
         endpoints: [
-          { method: "GET", path: "/v1/external/averbadora/prefeituras", summary: "Listar prefeituras", scope: "averbadora:read" },
+          {
+            method: "GET", path: "/v1/external/averbadora/prefeituras", summary: "Listar prefeituras (filtrável)", scope: "averbadora:read",
+            filters: [
+              { name: "cidade", label: "Cidade", type: "text", placeholder: "Florianópolis", hint: "Nome do município (parcial)" },
+              { name: "uf", label: "UF", type: "text", placeholder: "SC" },
+              { name: "status", label: "Status", type: "enum", options: ["", "ativo", "pausado"] },
+              { name: "modo", label: "Integração", type: "enum", options: ["", "REST", "SOAP", "CSV", "MANUAL"] },
+            ],
+          },
           { method: "POST", path: "/v1/external/averbadora/prefeituras", summary: "Criar/atualizar prefeitura", scope: "averbadora:write", exampleBody: { nome: "Itajaí", uf: "SC", municipioIbge: 4208203, modoIntegracao: "REST" } },
-          { method: "GET", path: "/v1/external/averbadora/convenios", summary: "Listar convênios", scope: "averbadora:read" },
+          {
+            method: "GET", path: "/v1/external/averbadora/convenios", summary: "Listar convênios (filtrável)", scope: "averbadora:read",
+            filters: [
+              { name: "cidade", label: "Cidade", type: "text", placeholder: "Joinville", hint: "Prefeitura do convênio" },
+              { name: "uf", label: "UF", type: "text", placeholder: "SC" },
+              { name: "banco_id", label: "Banco (id)", type: "text", placeholder: "1" },
+              { name: "prefeitura_id", label: "Prefeitura (id)", type: "text", placeholder: "1" },
+              { name: "q", label: "Busca", type: "text", placeholder: "nome ou verba" },
+            ],
+          },
         ],
       },
       {
         key: "avb-srv", label: "Servidores & Eventos", description: "Consultar servidores e disparar eventos para webhooks.",
         endpoints: [
-          { method: "GET", path: "/v1/external/averbadora/servidores?q=", summary: "Buscar servidores", scope: "averbadora:read" },
+          {
+            method: "GET", path: "/v1/external/averbadora/servidores", summary: "Buscar servidores (filtrável)", scope: "averbadora:read",
+            filters: [
+              { name: "q", label: "Busca", type: "text", placeholder: "nome, CPF ou matrícula", example: "ADRIANA" },
+              { name: "vinculo", label: "Vínculo", type: "text", placeholder: "ESTATUTARIO" },
+              { name: "situacao", label: "Situação funcional", type: "text", placeholder: "TRABALHANDO" },
+              { name: "convenio_id", label: "Convênio", type: "text", placeholder: "CONV-001" },
+            ],
+          },
           { method: "GET", path: "/v1/external/averbadora/webhooks", summary: "Todos os webhooks", scope: "averbadora:webhooks" },
           { method: "POST", path: "/v1/external/averbadora/eventos/disparar", summary: "Disparar evento", scope: "averbadora:webhooks", exampleBody: { event: "contrato.averbado", payload: { adf: "9000000" } } },
         ],
@@ -139,8 +208,26 @@ export function AverbadoraApiDocs() {
   const [layerKey, setLayerKey] = useState<Layer["key"]>("banco");
   const layer = LAYERS.find((l) => l.key === layerKey)!;
   const [section, setSection] = useState<string>(layer.sections[0]!.key);
+  const [search, setSearch] = useState("");
 
   const current = layer.sections.find((s) => s.key === section) ?? layer.sections[0]!;
+
+  // When the search box is non-empty, flatten every endpoint of the current
+  // layer and match by method, path, summary, scope or filter names.
+  const searchHits = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return null;
+    const hits: { section: string; endpoint: Endpoint }[] = [];
+    for (const s of layer.sections) {
+      for (const e of s.endpoints) {
+        const hay = [e.method, e.path, e.summary, e.scope, ...(e.filters ?? []).map((f) => `${f.name} ${f.label}`)]
+          .join(" ")
+          .toLowerCase();
+        if (hay.includes(q)) hits.push({ section: s.label, endpoint: e });
+      }
+    }
+    return hits;
+  }, [search, layer]);
 
   function switchLayer(k: Layer["key"]) {
     setLayerKey(k);
@@ -193,21 +280,54 @@ export function AverbadoraApiDocs() {
         })}
       </div>
 
-      <Tabs
-        variant="pills"
-        activeKey={section}
-        onChange={setSection}
-        tabs={layer.sections.map((s) => ({ key: s.key, label: s.label }))}
-      />
+      {/* Busca global de endpoints na camada */}
+      <div style={{ position: "relative" }}>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`Buscar endpoint na camada ${layer.label} (path, descrição, filtro…)`}
+          style={{ ...inp, width: "100%", paddingLeft: 34 }}
+        />
+        <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", fontSize: 14 }}>⌕</span>
+        {search ? (
+          <button type="button" onClick={() => setSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}>×</button>
+        ) : null}
+      </div>
 
-      <Card>
-        <p style={{ marginTop: 0, color: "var(--text-muted)", fontSize: 14 }}>{current.description}</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-          {current.endpoints.map((e, i) => (
-            <EndpointCard key={`${e.method}-${e.path}-${i}`} endpoint={e} />
-          ))}
-        </div>
-      </Card>
+      {searchHits ? (
+        <Card>
+          <p style={{ marginTop: 0, color: "var(--text-muted)", fontSize: 14 }}>
+            {searchHits.length} endpoint{searchHits.length === 1 ? "" : "s"} para <b>“{search}”</b> na camada {layer.label}.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {searchHits.map(({ section: sec, endpoint: e }, i) => (
+              <div key={`${e.method}-${e.path}-${i}`}>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", marginBottom: 4, textTransform: "uppercase", letterSpacing: ".06em" }}>{sec}</div>
+                <EndpointCard endpoint={e} />
+              </div>
+            ))}
+            {searchHits.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Nada encontrado. Tente outro termo.</p> : null}
+          </div>
+        </Card>
+      ) : (
+        <>
+          <Tabs
+            variant="pills"
+            activeKey={section}
+            onChange={setSection}
+            tabs={layer.sections.map((s) => ({ key: s.key, label: s.label }))}
+          />
+
+          <Card>
+            <p style={{ marginTop: 0, color: "var(--text-muted)", fontSize: 14 }}>{current.description}</p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {current.endpoints.map((e, i) => (
+                <EndpointCard key={`${e.method}-${e.path}-${i}`} endpoint={e} />
+              ))}
+            </div>
+          </Card>
+        </>
+      )}
 
       <Card>
         <h3 style={{ marginTop: 0 }}>Autenticação</h3>
@@ -249,14 +369,28 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
   const [token, setToken] = useState<string>(() => localStorage.getItem("atlas:try-token") ?? "");
   const [pathParam, setPathParam] = useState<string>(endpoint.examplePathParam ?? "");
   const [body, setBody] = useState<string>(endpoint.exampleBody ? JSON.stringify(endpoint.exampleBody, null, 2) : "");
+  const [filterValues, setFilterValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries((endpoint.filters ?? []).map((f) => [f.name, f.example ?? ""])),
+  );
   const [loading, setLoading] = useState(false);
   const [response, setResponse] = useState<{ status: number; body: string } | null>(null);
 
   const finalPath = useMemo(() => {
     let p = endpoint.path;
     if (endpoint.examplePathParam && pathParam) p = p.replace(/\{[^}]+\}/, pathParam);
-    return p;
-  }, [endpoint, pathParam]);
+    const qs = new URLSearchParams();
+    for (const f of endpoint.filters ?? []) {
+      const v = filterValues[f.name]?.trim();
+      if (v) qs.set(f.name, v);
+    }
+    const query = qs.toString();
+    return query ? `${p}?${query}` : p;
+  }, [endpoint, pathParam, filterValues]);
+
+  const activeFilterCount = useMemo(
+    () => (endpoint.filters ?? []).filter((f) => filterValues[f.name]?.trim()).length,
+    [endpoint.filters, filterValues],
+  );
 
   async function run() {
     setLoading(true);
@@ -291,6 +425,11 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
         <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 11, padding: "3px 8px", borderRadius: 4, background: methodColor[endpoint.method], color: "white", minWidth: 52, textAlign: "center" }}>{endpoint.method}</span>
         <code style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 13 }}>{endpoint.path}</code>
         <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{endpoint.summary}</span>
+        {endpoint.filters?.length ? (
+          <span title={`${endpoint.filters.length} filtros disponíveis`} style={{ fontSize: 11, fontWeight: 600, color: "var(--accent)", border: "1px solid var(--accent)", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+            ⚲ {activeFilterCount > 0 ? `${activeFilterCount} ativo${activeFilterCount > 1 ? "s" : ""}` : `${endpoint.filters.length} filtros`}
+          </span>
+        ) : null}
         <Pill variant="aceita">{endpoint.scope}</Pill>
         <span style={{ fontSize: 10, opacity: 0.6 }}>{open ? "▾" : "▸"}</span>
       </button>
@@ -305,6 +444,34 @@ function EndpointCard({ endpoint }: { endpoint: Endpoint }) {
               <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>Parâmetro de path</span>
               <input value={pathParam} onChange={(e) => setPathParam(e.target.value)} style={inp} />
             </label>
+          ) : null}
+          {endpoint.filters?.length ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, border: "1px solid var(--border)", borderRadius: 8, padding: 12, background: "var(--bg-elev-2)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>Filtros (query string)</span>
+                {activeFilterCount > 0 ? (
+                  <button type="button" onClick={() => setFilterValues(Object.fromEntries((endpoint.filters ?? []).map((f) => [f.name, ""])))}
+                    style={{ fontSize: 11, color: "var(--text-muted)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline" }}>
+                    limpar
+                  </button>
+                ) : null}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+                {endpoint.filters.map((f) => (
+                  <label key={f.name} style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{f.label} <code style={{ fontSize: 10, color: "var(--text-muted)" }}>{f.name}</code></span>
+                    {f.type === "enum" ? (
+                      <select value={filterValues[f.name] ?? ""} onChange={(e) => setFilterValues((v) => ({ ...v, [f.name]: e.target.value }))} style={inp}>
+                        {(f.options ?? []).map((o) => <option key={o} value={o}>{o === "" ? "— todos —" : o}</option>)}
+                      </select>
+                    ) : (
+                      <input value={filterValues[f.name] ?? ""} onChange={(e) => setFilterValues((v) => ({ ...v, [f.name]: e.target.value }))} placeholder={f.placeholder} style={inp} />
+                    )}
+                    {f.hint ? <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{f.hint}</span> : null}
+                  </label>
+                ))}
+              </div>
+            </div>
           ) : null}
           {["POST", "PATCH"].includes(endpoint.method) && endpoint.exampleBody ? (
             <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>

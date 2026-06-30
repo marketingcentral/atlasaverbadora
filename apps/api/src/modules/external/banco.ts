@@ -13,6 +13,7 @@ import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoParcelas, 
 import {
   WEBHOOK_EVENTS, createWebhook, listDeliveries, listWebhooks, removeWebhook, toggleWebhook, type WebhookEvent,
 } from "../admin/webhooks.js";
+import { qparam, norm, textIncludes, appliedFilters } from "./_filters.js";
 
 const meta = (t: { environment: "production" | "sandbox"; partnerId: number }) => ({ ambiente: t.environment, banco_id: t.partnerId });
 
@@ -23,13 +24,25 @@ export const externalBancoRoutes = new Hono<{ Bindings: Env }>()
   })
 
   // Convênios do banco
+  // Filtros: ?uf, ?cidade (nome da prefeitura), ?q (nome/codigo de verba).
   .get("/v1/external/banco/convenios", apiTokenAuth(["banco:read"], "banco"), (c) => {
     const t = c.get("apiToken");
-    const data = CONVENIOS_MOCK.filter((cv) => cv.bancoId === t.partnerId).map((cv) => ({
+    const uf = qparam(c, "uf");
+    const cidade = qparam(c, "cidade");
+    const q = qparam(c, "q");
+    const doBanco = CONVENIOS_MOCK.filter((cv) => cv.bancoId === t.partnerId);
+    let rows = doBanco;
+    if (uf) rows = rows.filter((cv) => norm(cv.uf) === norm(uf));
+    if (cidade) rows = rows.filter((cv) => textIncludes(cv.prefeitura, cidade));
+    if (q) rows = rows.filter((cv) => textIncludes(cv.nome, q) || textIncludes(cv.codigoVerba, q));
+    const data = rows.map((cv) => ({
       id: cv.id, nome: cv.nome, prefeitura: cv.prefeitura, uf: cv.uf,
       codigo_verba: cv.codigoVerba, data_corte: cv.dataCorte, dia_repasse: cv.diaRepasse,
     }));
-    return c.json({ _meta: meta(t), data });
+    return c.json({
+      _meta: { ...meta(t), total: doBanco.length, retornados: data.length, filtros: appliedFilters({ uf, cidade, q }) },
+      data,
+    });
   })
 
   // Consultar margem de um colaborador (por CPF ou matrícula)
@@ -59,15 +72,32 @@ export const externalBancoRoutes = new Hono<{ Bindings: Env }>()
     });
   })
 
-  // Listar contratos do banco
+  // Listar contratos do banco.
+  // Filtros: ?situacao, ?tipo_contrato, ?convenio_id, ?matricula, ?q (nome/matricula/adf).
   .get("/v1/external/banco/contratos", apiTokenAuth(["banco:read"], "banco"), (c) => {
     const t = c.get("apiToken");
-    const data = listContratos().filter((x) => x.bancoId === t.partnerId).map((x) => ({
+    const situacao = qparam(c, "situacao");
+    const tipo = qparam(c, "tipo_contrato");
+    const convenioId = qparam(c, "convenio_id");
+    const matricula = qparam(c, "matricula");
+    const q = qparam(c, "q");
+    const doBanco = listContratos().filter((x) => x.bancoId === t.partnerId);
+    let rows = listContratos({
+      convenioId,
+      matricula,
+      situacao: situacao ? [situacao] : undefined,
+    }).filter((x) => x.bancoId === t.partnerId);
+    if (tipo) rows = rows.filter((x) => norm(x.tipoContrato) === norm(tipo));
+    if (q) rows = rows.filter((x) => textIncludes(x.nome, q) || x.matricula.includes(q) || x.adf.includes(q));
+    const data = rows.map((x) => ({
       adf: x.adf, matricula: x.matricula, nome: x.nome, situacao: x.situacao,
       tipo_contrato: x.tipoContrato, valor_parcela: x.valorParcela, total_parcelas: x.totalParcelas,
       data_lancamento: x.lancamento,
     }));
-    return c.json({ _meta: meta(t), data });
+    return c.json({
+      _meta: { ...meta(t), total: doBanco.length, retornados: data.length, filtros: appliedFilters({ situacao, tipo_contrato: tipo, convenio_id: convenioId, matricula, q }) },
+      data,
+    });
   })
 
   .get("/v1/external/banco/contratos/:adf", apiTokenAuth(["banco:read"], "banco"), (c) => {
