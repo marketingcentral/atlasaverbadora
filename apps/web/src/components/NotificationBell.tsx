@@ -99,7 +99,7 @@ export function NotificationBell() {
   }
 
   return (
-    <div ref={ref} style={{ position: "relative" }}>
+    <div ref={ref} style={{ position: "relative", zIndex: 100 }}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -154,11 +154,11 @@ export function NotificationBell() {
             right: 0,
             width: 380,
             maxWidth: "calc(100vw - 32px)",
-            background: "var(--bg-elev)",
+            background: "var(--surface)",
             border: "1px solid var(--border-strong)",
             borderRadius: 12,
-            boxShadow: "0 12px 32px rgba(0,0,0,.45)",
-            zIndex: 100,
+            boxShadow: "0 12px 32px rgba(0,0,0,.55)",
+            zIndex: 200,
             overflow: "hidden",
           }}
         >
@@ -171,7 +171,7 @@ export function NotificationBell() {
               borderBottom: "1px solid var(--border)",
               position: "sticky",
               top: 0,
-              background: "var(--bg-elev)",
+              background: "var(--surface)",
               zIndex: 1,
             }}
           >
