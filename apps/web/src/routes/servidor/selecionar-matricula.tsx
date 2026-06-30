@@ -1,5 +1,7 @@
+import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
+import { atlas } from "../../lib/sdk";
 
 interface MatriculaOption {
   idMatricula: string;
@@ -34,14 +36,40 @@ const MATRICULAS_MOCK: MatriculaOption[] = [
 ];
 
 const STORAGE_KEY = "atlas:idMatricula";
+const META_KEY = "atlas:idMatricula:meta";
 
 export function ServidorSelecionarMatricula() {
   const nav = useNavigate();
 
+  // Auto-skip: se ja escolheu, vai direto pro dashboard.
+  // Se so tem 1 matricula, escolhe sozinho.
+  useEffect(() => {
+    const already = window.localStorage.getItem(STORAGE_KEY);
+    if (already && MATRICULAS_MOCK.some((m) => m.idMatricula === already)) {
+      nav("/servidor/dashboard", { replace: true });
+      return;
+    }
+    if (MATRICULAS_MOCK.length === 1) {
+      const m = MATRICULAS_MOCK[0]!;
+      window.localStorage.setItem(STORAGE_KEY, m.idMatricula);
+      window.localStorage.setItem(META_KEY, JSON.stringify(m));
+      nav("/servidor/dashboard", { replace: true });
+    }
+  }, [nav]);
+
   function escolher(opt: MatriculaOption) {
     window.localStorage.setItem(STORAGE_KEY, opt.idMatricula);
-    window.localStorage.setItem(`${STORAGE_KEY}:meta`, JSON.stringify(opt));
+    window.localStorage.setItem(META_KEY, JSON.stringify(opt));
     nav("/servidor/dashboard", { replace: true });
+  }
+
+  async function sair() {
+    await atlas.logout().catch(() => undefined);
+    window.localStorage.removeItem("atlas:role");
+    window.localStorage.removeItem("atlas:tokens");
+    window.localStorage.removeItem(STORAGE_KEY);
+    window.localStorage.removeItem(META_KEY);
+    nav("/login", { replace: true });
   }
 
   return (
@@ -52,20 +80,26 @@ export function ServidorSelecionarMatricula() {
           padding: "20px 24px",
           display: "flex",
           alignItems: "center",
+          justifyContent: "space-between",
           gap: 12,
         }}
       >
-        <span
-          style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: "linear-gradient(135deg, var(--gold-500), var(--gold-400) 40%, var(--emerald-500))",
-            display: "grid", placeItems: "center", color: "var(--navy-900)", fontWeight: 800,
-            boxShadow: "var(--shadow-gold)",
-          }}
-        >
-          A
-        </span>
-        <div style={{ fontWeight: 700 }}>Atlas</div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span
+            style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: "linear-gradient(135deg, var(--gold-500), var(--gold-400) 40%, var(--emerald-500))",
+              display: "grid", placeItems: "center", color: "var(--navy-900)", fontWeight: 800,
+              boxShadow: "var(--shadow-gold)",
+            }}
+          >
+            A
+          </span>
+          <div style={{ fontWeight: 700 }}>Atlas</div>
+        </div>
+        <Button variant="ghost" size="sm" onClick={sair}>
+          Sair
+        </Button>
       </header>
 
       <main style={{ flex: 1, padding: "48px 24px", maxWidth: 720, width: "100%", margin: "0 auto" }}>
@@ -75,27 +109,46 @@ export function ServidorSelecionarMatricula() {
         </h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6 }}>
           Como voce tem cargos em mais de uma prefeitura (acumulacao de cargos), escolha qual deseja visualizar agora.
-          Voce pode trocar a qualquer momento pelo topo da tela.
+          Voce pode trocar a qualquer momento pelo menu da sua Conta.
         </p>
 
         <div style={{ display: "grid", gap: 16, marginTop: 24 }}>
           {MATRICULAS_MOCK.map((m) => (
             <Card key={m.idMatricula} style={{ padding: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
-                <div>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr auto",
+                  gap: 16,
+                  alignItems: "start",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: "1.05rem" }}>{m.prefeitura}</div>
                   <div style={{ color: "var(--text-muted)", fontSize: ".9rem", marginTop: 4 }}>
                     {m.cargo} · {m.vinculo}
                   </div>
-                  <div style={{ color: "var(--text-muted)", fontSize: ".82rem", marginTop: 8, fontFamily: "var(--font-mono)" }}>
+                  <div
+                    style={{
+                      color: "var(--text-muted)",
+                      fontSize: ".82rem",
+                      marginTop: 8,
+                      fontFamily: "var(--font-mono)",
+                    }}
+                  >
                     Matricula <b style={{ color: "var(--text)" }}>{m.matricula}</b> · {m.uf}
                   </div>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 10 }}>
                   <span
                     style={{
-                      padding: "4px 10px", borderRadius: 999, fontSize: ".75rem", fontWeight: 700,
-                      background: m.ativa ? "color-mix(in srgb, var(--emerald-500) 20%, transparent)" : "var(--bg-elev-2)",
+                      padding: "4px 10px",
+                      borderRadius: 999,
+                      fontSize: ".75rem",
+                      fontWeight: 700,
+                      background: m.ativa
+                        ? "color-mix(in srgb, var(--emerald-500) 20%, transparent)"
+                        : "var(--bg-elev-2)",
                       color: m.ativa ? "var(--emerald-500)" : "var(--text-muted)",
                     }}
                   >
@@ -112,9 +165,14 @@ export function ServidorSelecionarMatricula() {
 
         <div
           style={{
-            marginTop: 24, padding: 14, borderRadius: 10,
-            background: "var(--bg-elev-2)", border: "1px solid var(--border)",
-            color: "var(--text-muted)", fontSize: ".85rem", lineHeight: 1.6,
+            marginTop: 24,
+            padding: 14,
+            borderRadius: 10,
+            background: "var(--bg-elev-2)",
+            border: "1px solid var(--border)",
+            color: "var(--text-muted)",
+            fontSize: ".85rem",
+            lineHeight: 1.6,
           }}
         >
           <b>Acumulacao legal de cargos.</b> Cada matricula tem sua propria margem consignavel, contratos e folha de

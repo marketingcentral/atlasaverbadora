@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, Card, Input } from "@atlas/ui/web";
 
@@ -87,6 +87,13 @@ export function PrimeiroAcessoPage() {
     setLoading(false);
   }
 
+  // Auto-redirect ao login 4s depois do "ok".
+  useEffect(() => {
+    if (step !== "ok") return;
+    const t = setTimeout(() => nav("/login"), 4000);
+    return () => clearTimeout(t);
+  }, [step, nav]);
+
   return (
     <div className="auth-shell">
       <Card style={{ background: "var(--surface)", maxWidth: 520 }}>
@@ -149,10 +156,11 @@ export function PrimeiroAcessoPage() {
               <Input
                 label="Codigo de verificacao"
                 value={codigo}
-                onChange={(e) => setCodigo(e.target.value)}
+                onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 placeholder="000000"
                 inputMode="numeric"
                 autoComplete="one-time-code"
+                maxLength={6}
                 required
               />
               {error ? <ErrorBox>{error}</ErrorBox> : null}
@@ -252,7 +260,10 @@ export function PrimeiroAcessoPage() {
               <p style={{ color: "var(--text-muted)", margin: 0 }}>
                 Voce ja pode entrar com seu CPF e a senha que acabou de criar.
               </p>
-              <Button onClick={() => nav("/login")}>Ir para o login →</Button>
+              <p style={{ color: "var(--text-dim)", fontSize: ".82rem", margin: 0 }}>
+                Redirecionando em alguns segundos…
+              </p>
+              <Button onClick={() => nav("/login")}>Ir para o login agora →</Button>
             </div>
           ) : null}
 

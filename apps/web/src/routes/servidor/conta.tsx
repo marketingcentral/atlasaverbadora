@@ -1,39 +1,86 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Input, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+
+interface MatriculaMeta {
+  idMatricula: string;
+  matricula: string;
+  prefeitura: string;
+  uf: string;
+  cargo: string;
+  vinculo: string;
+}
+
+const META_KEY = "atlas:idMatricula:meta";
+
+// Original values used as the source of truth when the user cancels the edit.
+const ORIGINAL_EMAIL = "ana.carolina@palhoca.sc.gov.br";
+const ORIGINAL_TEL = "(48) 99812-3210";
 
 export function ServidorConta() {
   const nav = useNavigate();
   const { mode, setMode } = useThemeMode();
   const profile = useQuery({ queryKey: ["me"], queryFn: () => atlas.getMyProfile() });
 
-  // Editable fields kept in local state; reset to profile when it loads.
-  const [email, setEmail] = useState("ana.carolina@palhoca.sc.gov.br");
-  const [telefone, setTelefone] = useState("(48) 99812-3210");
+  const [savedEmail, setSavedEmail] = useState(ORIGINAL_EMAIL);
+  const [savedTel, setSavedTel] = useState(ORIGINAL_TEL);
+  const [draftEmail, setDraftEmail] = useState(ORIGINAL_EMAIL);
+  const [draftTel, setDraftTel] = useState(ORIGINAL_TEL);
   const [editing, setEditing] = useState(false);
   const [showSelfie, setShowSelfie] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+
+  // Read selected matricula meta from the selection screen.
+  const matriculaMeta: MatriculaMeta | null = (() => {
+    try {
+      const raw = window.localStorage.getItem(META_KEY);
+      return raw ? (JSON.parse(raw) as MatriculaMeta) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  function comecarEdicao() {
+    setDraftEmail(savedEmail);
+    setDraftTel(savedTel);
+    setEditing(true);
+  }
+
+  function cancelarEdicao() {
+    setDraftEmail(savedEmail);
+    setDraftTel(savedTel);
+    setEditing(false);
+  }
 
   function abrirConfirmacao() {
     setShowSelfie(true);
   }
 
   async function confirmarSelfie() {
-    // Mock: pretend liveness check ran for 1.5s and passed.
+    // Mock: pretend liveness check ran and passed.
     await new Promise((r) => setTimeout(r, 1500));
+    setSavedEmail(draftEmail);
+    setSavedTel(draftTel);
     setShowSelfie(false);
     setEditing(false);
     setSavedAt(new Date());
   }
 
+  function trocarMatricula() {
+    window.localStorage.removeItem("atlas:idMatricula");
+    window.localStorage.removeItem(META_KEY);
+    nav("/servidor/selecionar-matricula");
+  }
+
   const nome = profile.data?.nome ?? "Servidor";
   const cpfMasked = "***.***.222-33";
   const endereco = "Rua das Acacias, 145 — Palhoca/SC, 88130-XXX";
-  const cargo = "Analista Administrativo";
-  const matricula = profile.data?.matricula ?? "—";
-  const prefeitura = "Prefeitura de Palhoca";
+  const cargo = matriculaMeta?.cargo ?? "Analista Administrativo";
+  const matricula = matriculaMeta?.matricula ?? profile.data?.matricula ?? "—";
+  const prefeitura = matriculaMeta?.prefeitura ?? "Prefeitura de Palhoca";
+  const vinculo = matriculaMeta?.vinculo ?? profile.data?.vinculo ?? "—";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720, margin: "0 auto", width: "100%" }}>
@@ -45,12 +92,17 @@ export function ServidorConta() {
       </header>
 
       <Card>
-        <h3 style={{ marginTop: 0, marginBottom: 16 }}>Dados cadastrais</h3>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <h3 style={{ margin: 0 }}>Dados cadastrais</h3>
+          <Button size="sm" variant="ghost" onClick={trocarMatricula}>
+            Trocar matricula
+          </Button>
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
           <ReadField label="Nome" value={nome} />
           <ReadField label="CPF" value={cpfMasked} />
           <ReadField label="Cargo" value={cargo} />
-          <ReadField label="Vinculo" value={profile.data?.vinculo ?? "—"} />
+          <ReadField label="Vinculo" value={vinculo} />
           <ReadField label="Matricula" value={matricula} />
           <ReadField label="Prefeitura" value={prefeitura} />
           <ReadField label="Endereco" value={endereco} full />
@@ -64,7 +116,7 @@ export function ServidorConta() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <h3 style={{ margin: 0 }}>Contato</h3>
           {!editing ? (
-            <Button size="sm" variant="ghost" onClick={() => setEditing(true)}>
+            <Button size="sm" variant="ghost" onClick={comecarEdicao}>
               Editar
             </Button>
           ) : null}
@@ -72,11 +124,16 @@ export function ServidorConta() {
 
         {editing ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Input label="E-mail" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            <Input label="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
+            <Input label="E-mail" type="email" value={draftEmail} onChange={(e) => setDraftEmail(e.target.value)} />
+            <Input label="Telefone" value={draftTel} onChange={(e) => setDraftTel(e.target.value)} />
             <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <Button onClick={abrirConfirmacao}>Salvar alteracoes</Button>
-              <Button variant="ghost" onClick={() => setEditing(false)}>Cancelar</Button>
+              <Button
+                onClick={abrirConfirmacao}
+                disabled={draftEmail === savedEmail && draftTel === savedTel}
+              >
+                Salvar alteracoes
+              </Button>
+              <Button variant="ghost" onClick={cancelarEdicao}>Cancelar</Button>
             </div>
             <p style={{ fontSize: ".82rem", color: "var(--text-muted)", margin: 0 }}>
               Por seguranca, vamos pedir uma selfie (liveness) antes de salvar.
@@ -84,8 +141,8 @@ export function ServidorConta() {
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
-            <ReadField label="E-mail" value={email} />
-            <ReadField label="Telefone" value={telefone} />
+            <ReadField label="E-mail" value={savedEmail} />
+            <ReadField label="Telefone" value={savedTel} />
           </div>
         )}
 
@@ -130,7 +187,7 @@ export function ServidorConta() {
             window.localStorage.removeItem("atlas:role");
             window.localStorage.removeItem("atlas:tokens");
             window.localStorage.removeItem("atlas:idMatricula");
-            window.localStorage.removeItem("atlas:idMatricula:meta");
+            window.localStorage.removeItem(META_KEY);
             nav("/login");
           }}
         >
@@ -156,6 +213,16 @@ function ReadField({ label, value, full }: { label: string; value: string; full?
 
 function SelfieModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => Promise<void> }) {
   const [running, setRunning] = useState(false);
+
+  // Close on Escape (unless verification is mid-flight).
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !running) onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose, running]);
+
   return (
     <div
       role="dialog"
