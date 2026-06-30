@@ -49,7 +49,13 @@ Monorepo pnpm + Turborepo:
 **Depois de concluir cada alteracao solicitada pelo usuario:**
 1. `git add <arquivos-especificos>` (nunca `git add .` / `-A`)
 2. `git commit -m` com Conventional Commits + escopo (regra 8 acima)
-3. `git push origin main`
+3. **Pre-push (obrigatorio — anti-sobrescrita):**
+   - `git fetch origin main --quiet`
+   - `git rev-list --count HEAD..origin/main` — se for `> 0`, `origin/main` recebeu commits novos enquanto voce trabalhava. **PARAR e perguntar ao usuario** antes de qualquer rebase/merge/push. Nunca resolver sozinho.
+   - `git rev-list --left-right --count origin/main...HEAD` confirma a divergencia (ahead/behind).
+4. `git push origin main` — **somente** se o passo 3 confirmar que estamos `ahead-only` (behind = 0).
+5. **Nunca usar** `git push --force`, `--force-with-lease`, `git reset --hard origin/...`, ou `git rebase` sem autorizacao explicita do usuario na mesma mensagem.
+6. Se o push retornar `non-fast-forward` ou `rejected`, **parar e perguntar** — nao tentar resolver com pull/rebase automatico.
 
 Se o `git push` travar pedindo credencial do Git Credential Manager, **avise o usuario e pare** — nao ficar tentando em loop. Nao commitar arquivos sensiveis (`.dev.vars`, `env`, segredos) — confira `.gitignore` antes.
 
