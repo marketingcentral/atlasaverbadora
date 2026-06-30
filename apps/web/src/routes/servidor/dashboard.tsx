@@ -1,7 +1,19 @@
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Card, MargemCard, Pill } from "@atlas/ui/web";
+import { Button, Card, MargemCard, Pill } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+
+interface MatriculaMeta {
+  idMatricula: string;
+  matricula: string;
+  prefeitura: string;
+  uf: string;
+  cargo: string;
+  vinculo?: string;
+}
+
+const META_KEY = "atlas:idMatricula:meta";
 
 // Mock: contratos ativos para preview na home. Em prod virao do GET /v1/servidores/me/contratos.
 const CONTRATOS_ATIVOS = [
@@ -43,6 +55,8 @@ export function ServidorDashboard() {
           Matricula <b>{profile.data?.matricula}</b> · {profile.data?.vinculo}
         </p>
       </div>
+
+      <MatriculaDropdown />
 
       {margem.data ? <MargemCard data={margem.data} /> : null}
 
@@ -140,6 +154,136 @@ export function ServidorDashboard() {
       </Card>
     </div>
   );
+}
+
+function MatriculaDropdown() {
+  const nav = useNavigate();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const meta = readMeta();
+
+  useEffect(() => {
+    if (!open) return;
+    const onClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onClickOutside);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClickOutside);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  function trocar() {
+    window.localStorage.removeItem("atlas:idMatricula");
+    window.localStorage.removeItem(META_KEY);
+    setOpen(false);
+    nav("/servidor/selecionar-matricula");
+  }
+
+  if (!meta) return null;
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "12px 16px",
+          borderRadius: 12,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          cursor: "pointer",
+          color: "var(--text)",
+          textAlign: "left",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <span
+            style={{
+              display: "inline-block",
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: "var(--emerald-500)",
+              flexShrink: 0,
+            }}
+          />
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
+              Matricula ativa
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
+              <span style={{ fontWeight: 700, fontSize: ".98rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {meta.prefeitura}
+              </span>
+              <span style={{ color: "var(--text-muted)", fontSize: ".82rem", fontFamily: "var(--font-mono)" }}>
+                {meta.matricula}
+              </span>
+            </div>
+          </div>
+        </div>
+        <span style={{ color: "var(--text-muted)", fontSize: ".9rem", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+          ▾
+        </span>
+      </button>
+
+      {open ? (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 6px)",
+            left: 0,
+            right: 0,
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            boxShadow: "0 8px 24px rgba(0,0,0,.25)",
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            zIndex: 20,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
+              Detalhes
+            </div>
+            <div style={{ marginTop: 6, fontSize: ".88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+              {meta.cargo} · {meta.uf}<br />
+              <span style={{ fontFamily: "var(--font-mono)" }}>Mat. {meta.matricula}</span>
+            </div>
+          </div>
+          <div style={{ height: 1, background: "var(--border)" }} />
+          <Button size="sm" variant="ghost" onClick={trocar}>
+            Trocar matricula →
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function readMeta(): MatriculaMeta | null {
+  try {
+    const raw = window.localStorage.getItem(META_KEY);
+    return raw ? (JSON.parse(raw) as MatriculaMeta) : null;
+  } catch {
+    return null;
+  }
 }
 
 function AtalhoCard({

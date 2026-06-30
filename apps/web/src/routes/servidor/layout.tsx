@@ -36,12 +36,6 @@ export function ServidorLayout() {
     setMeta(readMeta());
   }, [location.pathname]);
 
-  function trocarMatricula() {
-    window.localStorage.removeItem("atlas:idMatricula");
-    window.localStorage.removeItem(META_KEY);
-    nav("/servidor/selecionar-matricula");
-  }
-
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>
       <header
@@ -126,11 +120,6 @@ export function ServidorLayout() {
             >
               Sair
             </Button>
-            {meta ? (
-              <Button variant="ghost" size="sm" onClick={trocarMatricula}>
-                Trocar matricula
-              </Button>
-            ) : null}
           </div>
         </div>
       </header>
