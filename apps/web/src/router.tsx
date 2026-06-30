@@ -24,6 +24,12 @@ import { AdminVitrine } from "./routes/averbadora/vitrine";
 import { AverbadoraApiDocs } from "./routes/averbadora/api/docs";
 import { AverbadoraApiTokens } from "./routes/averbadora/api/tokens";
 import { AverbadoraApiWebhooks } from "./routes/averbadora/api/webhooks";
+import { AdminPreReservas } from "./routes/averbadora/pre-reservas";
+import { AdminTombamento } from "./routes/averbadora/tombamento";
+import { AdminIdUnico } from "./routes/averbadora/id-unico";
+import { AdminBateCarteira } from "./routes/averbadora/bate-carteira";
+import { AdminAuditoria } from "./routes/averbadora/auditoria";
+import { AdminPerfis } from "./routes/averbadora/perfis";
 import { PrefeituraLayout } from "./routes/prefeitura/layout";
 import { PrefeituraDashboard } from "./routes/prefeitura/dashboard";
 import { PrefeituraServidores } from "./routes/prefeitura/servidores";
@@ -143,6 +149,12 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "convenios", element: <AdminConvenios /> },
           { path: "servidores", element: <AdminServidores /> },
           { path: "folhas", element: <AdminFolhas /> },
+          { path: "pre-reservas", element: <AdminPreReservas /> },
+          { path: "tombamento", element: <AdminTombamento /> },
+          { path: "id-unico", element: <AdminIdUnico /> },
+          { path: "bate-carteira", element: <AdminBateCarteira /> },
+          { path: "auditoria", element: <AdminAuditoria /> },
+          { path: "perfis", element: <AdminPerfis /> },
           { path: "comunicados", element: <AdminComunicados /> },
           { path: "health", element: <AdminHealth /> },
           { path: "logs", element: <AdminLogs /> },
