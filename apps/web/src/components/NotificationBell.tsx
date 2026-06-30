@@ -155,10 +155,10 @@ export function NotificationBell() {
             width: 380,
             maxWidth: "calc(100vw - 32px)",
             background: "var(--surface)",
-            border: "1px solid var(--border-strong)",
+            border: "1px solid var(--border)",
             borderRadius: 12,
-            boxShadow: "0 12px 32px rgba(0,0,0,.55)",
-            zIndex: 200,
+            boxShadow: "0 8px 24px rgba(0,0,0,.25)",
+            zIndex: 100,
             overflow: "hidden",
           }}
         >
