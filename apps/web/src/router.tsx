@@ -5,6 +5,8 @@ import { PrimeiroAcessoPage } from "./routes/primeiro-acesso";
 import { ServidorDashboard } from "./routes/servidor/dashboard";
 import { ServidorLayout } from "./routes/servidor/layout";
 import { ServidorSelecionarMatricula } from "./routes/servidor/selecionar-matricula";
+import { ServidorPortabilidade } from "./routes/servidor/portabilidade";
+import { ServidorTermo } from "./routes/servidor/termo";
 import { ServidorMarketplace } from "./routes/servidor/marketplace";
 import { ServidorSimular } from "./routes/servidor/simular";
 import { ServidorPropostas } from "./routes/servidor/propostas";
@@ -91,6 +93,8 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "dashboard", element: <ServidorDashboard /> },
           { path: "marketplace", element: <ServidorMarketplace /> },
           { path: "simular", element: <ServidorSimular /> },
+          { path: "portabilidade", element: <ServidorPortabilidade /> },
+          { path: "termo", element: <ServidorTermo /> },
           { path: "propostas", element: <ServidorPropostas /> },
           { path: "contratos", element: <ServidorContratos /> },
           { path: "conta", element: <ServidorConta /> },
