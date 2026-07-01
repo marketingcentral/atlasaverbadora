@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, DataTable, FilterBar, SelectField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
@@ -11,11 +11,21 @@ export function BancoRelatorioConsignacoes() {
   const [tipo, setTipo] = useState<string>("");
   const [inicio, setInicio] = useState<string>("");
   const [fim, setFim] = useState<string>("");
+  const [search, setSearch] = useState("");
 
   const data = useQuery({
     queryKey: ["banco", "rel", "consig", tipo, inicio, fim],
     queryFn: () => atlas.banco.relatorioConsignacoes({ tipo: tipo || undefined, inicio: inicio || undefined, fim: fim || undefined }),
   });
+
+  const linhasFiltradas = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const base = data.data?.linhas ?? [];
+    if (!q) return base;
+    return base.filter((l) =>
+      `${l.adf} ${l.matricula} ${l.nome} ${l.tipoContrato} ${l.situacao}`.toLowerCase().includes(q),
+    );
+  }, [data.data?.linhas, search]);
 
   const columns: Column<BancoContratoFull>[] = [
     { key: "adf", header: "ADF", mono: true },
@@ -47,7 +57,7 @@ export function BancoRelatorioConsignacoes() {
               data.data &&
               downloadCsv(
                 "consignacoes.csv",
-                data.data.linhas.map((l) => ({
+                linhasFiltradas.map((l) => ({
                   adf: l.adf,
                   matricula: l.matricula,
                   nome: l.nome,
@@ -66,10 +76,13 @@ export function BancoRelatorioConsignacoes() {
       </header>
 
       <FilterBar
+        searchValue={search}
+        onSearchChange={setSearch}
         onReset={() => {
           setTipo("");
           setInicio("");
           setFim("");
+          setSearch("");
         }}
       >
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
@@ -89,7 +102,7 @@ export function BancoRelatorioConsignacoes() {
         </div>
       </FilterBar>
 
-      <DataTable columns={columns} rows={data.data?.linhas ?? []} rowKey={(r) => r.adf} loading={data.isLoading} />
+      <DataTable columns={columns} rows={linhasFiltradas} rowKey={(r) => r.adf} loading={data.isLoading} />
     </div>
   );
 }

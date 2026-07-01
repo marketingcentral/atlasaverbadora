@@ -18,8 +18,11 @@ const ALL_FIELDS = [
   { value: "situacao", label: "Situação" },
 ];
 
+const DEFAULT_SELECTED = new Set(["adf", "nome", "valorFinanciado", "situacao"]);
+
 export function BancoRelatorioGerador() {
-  const [selected, setSelected] = useState<Set<string>>(new Set(["adf", "nome", "valorFinanciado", "situacao"]));
+  const [selected, setSelected] = useState<Set<string>>(new Set(DEFAULT_SELECTED));
+  const [search, setSearch] = useState("");
   const all = useQuery({ queryKey: ["banco", "rel", "consig", "all"], queryFn: () => atlas.banco.relatorioConsignacoes() });
 
   const cols: Column<Record<string, unknown>>[] = useMemo(
@@ -37,7 +40,20 @@ export function BancoRelatorioGerador() {
     [selected],
   );
 
-  const rows = (all.data?.linhas ?? []) as unknown as Record<string, unknown>[];
+  const allRows = (all.data?.linhas ?? []) as unknown as Record<string, unknown>[];
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allRows;
+    return allRows.filter((r) => {
+      const hay = `${r.adf ?? ""} ${r.matricula ?? ""} ${r.nome ?? ""} ${r.tipoContrato ?? ""} ${r.situacao ?? ""}`.toLowerCase();
+      return hay.includes(q);
+    });
+  }, [allRows, search]);
+
+  const resetarFiltros = () => {
+    setSelected(new Set(DEFAULT_SELECTED));
+    setSearch("");
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -65,7 +81,11 @@ export function BancoRelatorioGerador() {
         </Button>
       </header>
 
-      <FilterBar onReset={() => setSelected(new Set(["adf", "nome", "valorFinanciado", "situacao"]))}>
+      <FilterBar
+        searchValue={search}
+        onSearchChange={setSearch}
+        onReset={resetarFiltros}
+      >
         <FilterCheckboxGroup options={ALL_FIELDS} selected={selected} onChange={setSelected} />
       </FilterBar>
 
