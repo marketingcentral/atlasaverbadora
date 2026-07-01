@@ -188,20 +188,57 @@ export interface LinhaConciliacao {
   status: ConciliacaoStatus;
 }
 
-/** Simula o processamento da folha: a maioria concilia; alguns divergem. */
+// Hash deterministico pra variar resultados por competencia + contrato.
+function hashSeed(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+// Converte "YYYY-MM" em Date (primeiro dia do mes).
+function competenciaToDate(comp: string): Date | null {
+  const m = comp.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, 1);
+}
+
+/**
+ * Simula o processamento da folha para uma competencia especifica.
+ * - Contratos averbados APOS a competencia nao aparecem (nao existiam ainda).
+ * - Contratos quitados nao entram na conciliacao.
+ * - Status conciliado/divergente/nao_encontrado varia por competencia via hash
+ *   deterministico (mesmo mes/ano sempre da o mesmo resultado, meses
+ *   diferentes dao resultados diferentes).
+ */
 export function baterCarteira(competencia: string): { competencia: string; linhas: LinhaConciliacao[] } {
+  const compDate = competenciaToDate(competencia);
   const linhas = getCarteira()
     .filter((c) => c.status !== "quitado")
+    .filter((c) => {
+      if (!compDate) return true;
+      // So inclui contratos averbados ATE a competencia
+      const avDate = new Date(c.averbadoEm);
+      return avDate <= new Date(compDate.getFullYear(), compDate.getMonth() + 1, 0); // ultimo dia do mes
+    })
     .map<LinhaConciliacao>((c) => {
-      // Regra mock: inadimplente -> nao encontrado na folha; um id especifico diverge.
+      const seed = hashSeed(c.idUnico + "|" + competencia);
       let status: ConciliacaoStatus = "conciliado";
       let valorFolha = c.valorParcela;
       if (c.status === "inadimplente") {
+        // Inadimplente sempre nao aparece na folha
         status = "nao_encontrado";
         valorFolha = 0;
-      } else if (c.idUnico.endsWith("55")) {
+      } else if (seed % 11 === 0) {
+        // ~9% divergente por competencia (valor da folha != valor banco)
         status = "divergente";
-        valorFolha = Math.round((c.valorParcela - 12.4) * 100) / 100;
+        const delta = ((seed % 40) + 5) / 10; // R$ 0.50 a R$ 4.40
+        valorFolha = Math.round((c.valorParcela - delta * 3) * 100) / 100;
+      } else if (seed % 23 === 0) {
+        // ~4% nao encontrado por competencia
+        status = "nao_encontrado";
+        valorFolha = 0;
       }
       return {
         idUnico: c.idUnico,
