@@ -95,6 +95,28 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     codigoIbge: 4211900,
   },
   {
+    // Segunda matricula da Adriana — acumulacao legal de cargos (Professora em
+    // Palhoca + Auxiliar em Florianopolis). MESMO CPF, matricula/prefeitura
+    // diferentes. Serve pra demo do fluxo de trocar matricula no app do servidor.
+    cpf: "00011122233",
+    cpfMasked: "***.***.***-33",
+    matricula: "764521800",
+    idMatricula: "MAT-764521800",
+    nome: "ADRIANA MARQUES DA SILVA",
+    dataAdmissao: "05/09/2020",
+    dataNascimento: "1985-03-12",
+    vinculo: "ESTATUTARIO",
+    origem: "PREFEITURA DE FLORIANOPOLIS",
+    situacaoFuncional: "TRABALHANDO",
+    salarioLiquido: 3980,
+    idConvenio: "CONV-002",
+    cargo: "Auxiliar Administrativa",
+    endereco: "Rua das Palmeiras, 320 - Centro, Palhoca/SC",
+    email: "adriana.silva@palhoca.sc.gov.br",
+    telefone: "48991012233",
+    codigoIbge: 4205407,
+  },
+  {
     cpf: "00011122234",
     cpfMasked: "***.***.***-34",
     matricula: "843796302",
