@@ -21,6 +21,6 @@ export type {
   AdminWebhook, AdminWebhookInput, AdminWebhookDelivery,
   ApiEnvironment, ApiAudience, ApiPartnerType, ApiScope,
   CsvImportOutcome,
-  PrefeituraServidor, PrefeituraFolha, PrefeituraConvenio, PrefeituraContrato,
+  PrefeituraServidor, PrefeituraFolha, PrefeituraConvenio, PrefeituraContrato, PrefeituraAdf, PrefeituraPerfil,
 } from "./client.js";
 export { ApiHttpError } from "./errors.js";

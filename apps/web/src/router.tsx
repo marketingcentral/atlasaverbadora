@@ -38,6 +38,11 @@ import { PrefeituraServidores } from "./routes/prefeitura/servidores";
 import { PrefeituraContratos } from "./routes/prefeitura/contratos";
 import { PrefeituraConvenios } from "./routes/prefeitura/convenios";
 import { PrefeituraFolhas } from "./routes/prefeitura/folhas";
+import { PrefeituraTombamento } from "./routes/prefeitura/tombamento";
+import { PrefeituraAdf } from "./routes/prefeitura/adf";
+import { PrefeituraRelatorios } from "./routes/prefeitura/relatorios";
+import { PrefeituraAnuencia } from "./routes/prefeitura/anuencia";
+import { PrefeituraPerfis } from "./routes/prefeitura/perfis";
 import { PrefeituraComunicados } from "./routes/prefeitura/comunicados";
 import { BancoLayout } from "./routes/banco/layout";
 import { BancoVisaoGeral } from "./routes/banco/visao-geral";
@@ -199,6 +204,11 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "contratos", element: <PrefeituraContratos /> },
           { path: "convenios", element: <PrefeituraConvenios /> },
           { path: "folhas", element: <PrefeituraFolhas /> },
+          { path: "tombamento", element: <PrefeituraTombamento /> },
+          { path: "adf", element: <PrefeituraAdf /> },
+          { path: "relatorios", element: <PrefeituraRelatorios /> },
+          { path: "anuencia", element: <PrefeituraAnuencia /> },
+          { path: "perfis", element: <PrefeituraPerfis /> },
           { path: "comunicados", element: <PrefeituraComunicados /> },
         ],
       },

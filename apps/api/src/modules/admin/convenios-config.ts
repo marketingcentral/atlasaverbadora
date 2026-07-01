@@ -17,6 +17,8 @@ export interface ConvenioConfig {
   /** Min/Max age range (years) accepted for new contracts. */
   idadeMin: number;
   idadeMax: number;
+  /** Maximum share of net salary that can be committed to consignado (default 0.35). */
+  maxComprometimentoPct?: number;
   /** Accepted bind types. */
   vinculosAceitos: ("CLT" | "ESTATUTARIO" | "COMISSIONADO" | "APOSENTADO" | "PENSIONISTA")[];
   /** Import format used by the prefeitura for this convenio. */

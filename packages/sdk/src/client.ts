@@ -463,6 +463,38 @@ export interface PrefeituraServidor {
   situacaoFuncional: string;
   salarioLiquido: number;
   idConvenio: string;
+  cargo?: string;
+  endereco?: string;
+  email?: string;
+  telefone?: string;
+  codigoIbge?: number | null;
+  margemTotal?: number;
+  margemDisponivel?: number;
+  contratos?: number;
+}
+export interface PrefeituraAdf {
+  id: string;
+  competencia: string;
+  adf: string;
+  idUnico: string;
+  cpfMasked: string;
+  matricula: string;
+  nome: string;
+  bancoNome: string;
+  valorParcela: number;
+  totalParcelas: number;
+  status: "recebida" | "aplicada" | "falha";
+  motivo?: string;
+}
+export interface PrefeituraPerfil {
+  id: number;
+  prefeituraId: number;
+  nome: string;
+  email: string;
+  area: "rh" | "financeiro" | "gestor";
+  ativo: boolean;
+  twofaEnabled: boolean;
+  hasTotp: boolean;
 }
 export interface PrefeituraFolha {
   id: string;
@@ -811,23 +843,81 @@ export class AtlasClient {
       `${this.opts.baseUrl}/v1/admin/${entity}/csv-template`,
   };
 
-  // ============ Prefeitura (portal read-only) ============
+  // ============ Prefeitura (portal completo) ============
   readonly prefeitura = {
     me: () => this.request<{ prefeitura: { id: number; nome: string; uf: string; municipioIbge: number; status: string } }>("/v1/prefeitura/me"),
     dashboard: () =>
       this.request<{
         prefeitura: { id: number; nome: string; uf: string };
         kpis: {
-          servidores: number; contratosAverbados: number; convenios: number; bancosAtuantes: number;
-          margemTotal: number; margemComprometida: number; margemDisponivel: number; percentualUso: number;
+          servidores: number; servidoresAtivos: number; contratosAverbados: number; convenios: number; bancosAtuantes: number;
+          descontosMes: number; margemTotal: number; margemComprometida: number; margemDisponivel: number; percentualUso: number;
         };
+        folhaAtual: { competencia: string; status: string; dataCorte: string; dataRepasse: string | null } | null;
+        pendencias: { folhasAbertas: number; servidoresSemConvenio: number; anuenciaPendente: number };
         folhas: { competencia: string; dataCorte: string; dataRepasse: string | null; status: string }[];
       }>("/v1/prefeitura/dashboard"),
-    servidores: (q?: string) =>
-      this.request<{ servidores: PrefeituraServidor[]; total: number }>("/v1/prefeitura/servidores", { query: q ? { q } : {} }),
-    folhas: () => this.request<{ folhas: PrefeituraFolha[] }>("/v1/prefeitura/folhas"),
-    convenios: () => this.request<{ convenios: PrefeituraConvenio[] }>("/v1/prefeitura/convenios"),
+
+    // Servidores (passos 3 e 6)
+    servidores: (query?: { q?: string; vinculo?: string; situacao?: string }) =>
+      this.request<{ servidores: PrefeituraServidor[]; total: number }>("/v1/prefeitura/servidores", { query: query ?? {} }),
+    importarServidores: (csv: string) => this.request<CsvImportOutcome>("/v1/prefeitura/servidores/importar", { method: "POST", body: { csv } }),
+    editarServidor: (matricula: string, patch: Partial<{ nome: string; cargo: string; endereco: string; matriculaNova: string; vinculo: string; email: string; telefone: string; codigoIbge: number }>) =>
+      this.request<{ servidor: PrefeituraServidor }>(`/v1/prefeitura/servidores/${matricula}`, { method: "PATCH", body: patch }),
+    servidoresCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/servidores/csv-template`,
+
+    // Folha (passo 4)
+    folhas: () => this.request<{ folhas: (PrefeituraFolha & { movimentacoes: number })[] }>("/v1/prefeitura/folhas"),
+    abrirFolha: (body: { competencia: string; dataCorte: string; dataRepasse?: string }) =>
+      this.request<{ folha: PrefeituraFolha }>("/v1/prefeitura/folhas", { method: "POST", body }),
+    atualizarFolha: (id: string, body: Partial<{ status: "aberta" | "fechada" | "consolidada"; dataCorte: string; dataRepasse: string | null }>) =>
+      this.request<{ folha: PrefeituraFolha }>(`/v1/prefeitura/folhas/${id}`, { method: "PATCH", body }),
+    movimentacoes: (folhaId: string) =>
+      this.request<{ movimentacoes: { id: string; tipo: string; matricula: string; nome: string; detalhe: string; criadoEm: string }[] }>(`/v1/prefeitura/folhas/${folhaId}/movimentacoes`),
+    enviarMovimentacao: (folhaId: string, csv: string) =>
+      this.request<CsvImportOutcome>(`/v1/prefeitura/folhas/${folhaId}/movimentacao`, { method: "POST", body: { csv } }),
+    movimentacaoCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/folhas/movimentacao/csv-template`,
+
+    // Convênios + config (passo 5)
+    convenios: () => this.request<{ convenios: (PrefeituraConvenio & { prazoTravaHoras: number; prazoPortabilidadeDU: number; prefixo: string; formatoImportacao: string })[]; prefixo: string }>("/v1/prefeitura/convenios"),
+    convenioConfig: (id: string) =>
+      this.request<{ convenio: { id: string; nome: string; bancoNome: string }; config: { prazoTravaHoras: number; prazoPortabilidadeDU: number; maxComprometimentoPct: number; vinculosAceitos: string[]; formatoImportacao: string; regrasEspeciais: string; prefixo: string } }>(`/v1/prefeitura/convenios/${id}/config`),
+    salvarConvenioConfig: (id: string, body: { prazoTravaHoras: number; prazoPortabilidadeDU: number; maxComprometimentoPct: number; vinculosAceitos: string[]; formatoImportacao: string; regrasEspeciais: string; prefixo: string }) =>
+      this.request<{ config: unknown; prefixo: string }>(`/v1/prefeitura/convenios/${id}/config`, { method: "PUT", body }),
+
+    // Contratos + tombamento (passo 7)
     contratos: () => this.request<{ contratos: PrefeituraContrato[]; total: number }>("/v1/prefeitura/contratos"),
+    tombamentoLotes: () => this.request<{ lotes: { id: string; competencia: string; prefeitura: string; totalLinhas: number; inseridos: number; atualizados: number; divergencias: number; recebidoEm: string }[] }>("/v1/prefeitura/tombamento/lotes"),
+    tombamentoLinhas: (loteId: string) => this.request<{ linhas: unknown[] }>(`/v1/prefeitura/tombamento/lotes/${loteId}/linhas`),
+    importarTombamento: (csv: string, competencia: string) => this.request<{ lote: { id: string }; inseridos: number; atualizados: number; divergencias: number; erros: { line: number; message: string }[] }>("/v1/prefeitura/tombamento/importar", { method: "POST", body: { csv }, query: { competencia } }),
+    tombamentoCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/tombamento/csv-template`,
+
+    // ADF / descontos em folha (passo 8)
+    adfCompetencias: () => this.request<{ competencias: { competencia: string; total: number; aplicadas: number; falhas: number }[]; competenciaAtual: string }>("/v1/prefeitura/adf/competencias"),
+    adf: (competencia?: string) => this.request<{ adfs: PrefeituraAdf[] }>("/v1/prefeitura/adf", { query: competencia ? { competencia } : {} }),
+    adfCsvUrl: (competencia: string): string => `${this.opts.baseUrl}/v1/prefeitura/adf/${competencia}/download.csv`,
+    adfPdfUrl: (competencia: string): string => `${this.opts.baseUrl}/v1/prefeitura/adf/${competencia}/lote.pdf`,
+    confirmarAdf: (ids: string[]) => this.request<{ aplicadas: number }>("/v1/prefeitura/adf/confirmar", { method: "POST", body: { ids } }),
+    reportarFalhaAdf: (ids: string[], motivo: string) => this.request<{ falhas: number }>("/v1/prefeitura/adf/falha", { method: "POST", body: { ids, motivo } }),
+
+    // Relatórios (passo 9)
+    relServidoresPorVinculo: () => this.request<{ dados: { vinculo: string; total: number }[] }>("/v1/prefeitura/relatorios/servidores-por-vinculo"),
+    relMargemMedia: () => this.request<{ servidores: number; margemMediaTotal: number; margemMediaDisponivel: number; percentualUsoMedio: number }>("/v1/prefeitura/relatorios/margem-media"),
+    relContratosPorBanco: () => this.request<{ dados: { banco: string; contratos: number; valorParcela: number }[] }>("/v1/prefeitura/relatorios/contratos-por-banco"),
+    relInconsistencias: () => this.request<{ inconsistencias: { matricula: string; nome: string; problema: string }[]; total: number }>("/v1/prefeitura/relatorios/inconsistencias"),
+
+    // Anuência (passo 10)
+    anuencia: () => this.request<{ versaoAtual: string; termo: string; vigente: { id: string; versao: string; aceitoPor: string; aceitoEm: string } | null; historico: { id: string; versao: string; aceitoPor: string; aceitoEm: string; ip?: string }[] }>("/v1/prefeitura/anuencia"),
+    aceitarAnuencia: (aceitoPor: string) => this.request<{ anuencia: { id: string } }>("/v1/prefeitura/anuencia", { method: "POST", body: { aceito: true, aceitoPor } }),
+
+    // Perfis + 2FA (passo 1)
+    perfis: () => this.request<{ perfis: PrefeituraPerfil[]; areas: { value: string; label: string }[] }>("/v1/prefeitura/perfis"),
+    salvarPerfil: (body: { id?: number; nome: string; email: string; area: string; ativo?: boolean }) =>
+      this.request<{ perfil: PrefeituraPerfil }>("/v1/prefeitura/perfis", { method: "POST", body }),
+    excluirPerfil: (id: number) => this.request<void>(`/v1/prefeitura/perfis/${id}`, { method: "DELETE" }),
+    rotate2fa: (id: number) => this.request<{ secret: string; otpauthUrl: string }>(`/v1/prefeitura/perfis/${id}/2fa/rotate`, { method: "POST" }),
+    disable2fa: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/2fa/disable`, { method: "POST" }),
+
     comunicados: () => this.request<{ comunicados: { id: string; titulo: string; corpo: string; linkLabel?: string; linkHref?: string }[] }>("/v1/prefeitura/comunicados"),
   };
 

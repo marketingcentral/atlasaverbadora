@@ -66,6 +66,10 @@ export interface ServidorBuscaMock {
   idConvenio: string;
   email?: string;
   telefone?: string;
+  /** Managed by the prefeitura (source of truth for HR data). */
+  cargo?: string;
+  endereco?: string;
+  codigoIbge?: number;
   /** SHA-256 hex da senha. Nunca retornar plaintext. Login do servidor é o próprio CPF. */
   passwordHash?: string;
 }

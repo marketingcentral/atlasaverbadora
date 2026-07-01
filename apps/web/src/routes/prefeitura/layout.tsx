@@ -6,9 +6,14 @@ import { atlas } from "../../lib/sdk";
 const NAV = [
   { key: "dashboard", label: "Painel", href: "/prefeitura/dashboard", icon: "◉" },
   { key: "servidores", label: "Servidores", href: "/prefeitura/servidores", icon: "◎" },
-  { key: "contratos", label: "Contratos averbados", href: "/prefeitura/contratos", icon: "▤" },
-  { key: "convenios", label: "Convênios", href: "/prefeitura/convenios", icon: "▣" },
   { key: "folhas", label: "Folhas", href: "/prefeitura/folhas", icon: "▥" },
+  { key: "convenios", label: "Convênios", href: "/prefeitura/convenios", icon: "▣" },
+  { key: "contratos", label: "Contratos averbados", href: "/prefeitura/contratos", icon: "▤" },
+  { key: "tombamento", label: "Tombamento", href: "/prefeitura/tombamento", icon: "▦" },
+  { key: "adf", label: "ADF / Descontos", href: "/prefeitura/adf", icon: "▧" },
+  { key: "relatorios", label: "Relatórios", href: "/prefeitura/relatorios", icon: "▨" },
+  { key: "anuencia", label: "Anuência de dados", href: "/prefeitura/anuencia", icon: "✓" },
+  { key: "perfis", label: "Usuários e acessos", href: "/prefeitura/perfis", icon: "◐" },
   { key: "comunicados", label: "Comunicados", href: "/prefeitura/comunicados", icon: "❐" },
 ];
 
