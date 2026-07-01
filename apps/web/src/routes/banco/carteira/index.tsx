@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Button, DataTable, Pill, SelectField, type Column } from "@atlas/ui/web";
 import { downloadCsv, downloadJson } from "../../../lib/csv";
 import {
-  BANCO_CONVENIOS,
+  getBancoConvenios,
   PRODUTO_LABEL,
   fmtBRL,
   getBancoPerfil,
@@ -132,7 +132,7 @@ export function BancoCarteira() {
           label="Convênio"
           value={convenio}
           onChange={(e) => setConvenio(e.target.value)}
-          options={[{ value: "", label: "Todos" }, ...BANCO_CONVENIOS.map((c) => ({ value: c, label: c }))]}
+          options={[{ value: "", label: "Todos" }, ...getBancoConvenios().map((c) => ({ value: c, label: c }))]}
         />
         <SelectField
           label="Produto"

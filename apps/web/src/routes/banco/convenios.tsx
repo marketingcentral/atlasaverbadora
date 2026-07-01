@@ -1,19 +1,36 @@
-import { fmtBRL } from "../../lib/banco-propostas";
+import { useState } from "react";
+import { Button, Card, Input } from "@atlas/ui/web";
+import { addBancoConvenio, fmtBRL, getBancoPerfil } from "../../lib/banco-propostas";
 import { getConveniosDoBanco } from "../../lib/banco-carteira";
 
 export function BancoConvenios() {
+  const perfil = getBancoPerfil();
+  const [tick, setTick] = useState(0);
+  const [openModal, setOpenModal] = useState(false);
   const convenios = getConveniosDoBanco();
+  void tick; // re-render trigger after add
+
+  const podeCadastrar = perfil.perms.aprovacao;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <header>
-        <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Convênios
-        </span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Prefeituras conveniadas</h1>
-        <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 680 }}>
-          Convênios do seu banco dentro da Atlas. Cada banco enxerga apenas os próprios convênios — sem visibilidade dos demais.
-        </p>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
+        <div>
+          <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+            Convênios
+          </span>
+          <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Prefeituras conveniadas</h1>
+          <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 680 }}>
+            Convênios do seu banco dentro da Atlas. Cada banco enxerga apenas os próprios convênios — sem visibilidade dos demais.
+          </p>
+        </div>
+        {podeCadastrar ? (
+          <Button onClick={() => setOpenModal(true)}>+ Cadastrar novo convênio</Button>
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--text-dim)", maxWidth: 240, textAlign: "right" }}>
+            Cadastro disponível para perfis com permissão de aprovação.
+          </div>
+        )}
       </header>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
@@ -32,6 +49,17 @@ export function BancoConvenios() {
           </div>
         ))}
       </div>
+
+      {openModal ? (
+        <CadastrarConvenioModal
+          existentes={convenios.map((c) => c.nome)}
+          onCancel={() => setOpenModal(false)}
+          onSuccess={() => {
+            setOpenModal(false);
+            setTick((t) => t + 1);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -41,6 +69,122 @@ function Row({ label, value, accent }: { label: string; value: string; accent?: 
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
       <span style={{ color: "var(--text-muted)" }}>{label}</span>
       <span style={{ fontWeight: 600, color: accent ?? "var(--text)" }}>{value}</span>
+    </div>
+  );
+}
+
+interface CadastrarProps {
+  existentes: string[];
+  onCancel: () => void;
+  onSuccess: () => void;
+}
+
+function CadastrarConvenioModal({ existentes, onCancel, onSuccess }: CadastrarProps) {
+  const [nome, setNome] = useState("");
+  const [cnpj, setCnpj] = useState("");
+  const [contato, setContato] = useState("");
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  function submit() {
+    setError(null);
+    const trimmed = nome.trim();
+    if (!trimmed) {
+      setError("Informe o nome do convênio.");
+      return;
+    }
+    if (existentes.some((e) => e.toLowerCase() === trimmed.toLowerCase())) {
+      setError("Este convênio já está cadastrado.");
+      return;
+    }
+    setSubmitting(true);
+    const ok = addBancoConvenio(trimmed);
+    setSubmitting(false);
+    if (!ok) {
+      setError("Não foi possível cadastrar. Tente outro nome.");
+      return;
+    }
+    onSuccess();
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Cadastrar novo convênio"
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "color-mix(in srgb, var(--navy-900) 70%, transparent)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 200,
+        padding: 16,
+      }}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) onCancel();
+      }}
+    >
+      <Card style={{ maxWidth: 480, width: "100%" }}>
+        <h3 style={{ margin: "0 0 4px" }}>Cadastrar novo convênio</h3>
+        <p style={{ margin: "0 0 16px", fontSize: ".88rem", color: "var(--text-muted)" }}>
+          Assim que aprovado pela Atlas, o convênio aparece nos filtros de fila, carteira e conciliação.
+        </p>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Input
+            label="Nome do convênio *"
+            value={nome}
+            onChange={(e) => setNome(e.target.value)}
+            placeholder="Prefeitura de Florianópolis"
+            autoFocus
+          />
+          <Input
+            label="CNPJ do órgão"
+            value={cnpj}
+            onChange={(e) => setCnpj(e.target.value)}
+            placeholder="00.000.000/0001-00"
+          />
+          <Input
+            label="Responsável pelo convênio"
+            value={contato}
+            onChange={(e) => setContato(e.target.value)}
+            placeholder="Nome do gestor de RH/folha"
+          />
+          <Input
+            label="E-mail de contato"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            placeholder="folha@prefeitura.sc.gov.br"
+          />
+        </div>
+
+        {error ? (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "1px solid var(--danger-500)",
+              background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+              fontSize: ".88rem",
+            }}
+          >
+            {error}
+          </div>
+        ) : null}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+          <Button variant="ghost" onClick={onCancel} disabled={submitting}>
+            Cancelar
+          </Button>
+          <Button onClick={submit} disabled={submitting || !nome.trim()}>
+            {submitting ? "Cadastrando…" : "Cadastrar"}
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }

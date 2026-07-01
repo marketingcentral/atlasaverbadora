@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DataTable, IconButton, Pill, SelectField, type Column } from "@atlas/ui/web";
 import {
-  BANCO_CONVENIOS,
+  getBancoConvenios,
   PRODUTO_LABEL,
   STATUS_LABEL,
   fmtBRL,
@@ -138,7 +138,7 @@ export function BancoPropostas() {
           label="Convênio"
           value={convenio}
           onChange={(e) => setConvenio(e.target.value)}
-          options={[{ value: "", label: "Todos" }, ...BANCO_CONVENIOS.map((c) => ({ value: c, label: c }))]}
+          options={[{ value: "", label: "Todos" }, ...getBancoConvenios().map((c) => ({ value: c, label: c }))]}
         />
         <SelectField
           label="Produto"

@@ -4,7 +4,7 @@
 // atingido o status "averbada" no fluxo (lib/banco-propostas).
 
 import { STORAGE_KEYS } from "./session";
-import { BANCO_CONVENIOS, PRODUTO_LABEL, getAllPropostas, type BancoProduto } from "./banco-propostas";
+import { getBancoConvenios, PRODUTO_LABEL, getAllPropostas, type BancoProduto } from "./banco-propostas";
 
 export type ContratoStatus = "em_dia" | "quitado" | "inadimplente";
 
@@ -267,7 +267,7 @@ export interface ConvenioResumo {
 
 export function getConveniosDoBanco(): ConvenioResumo[] {
   const carteira = getCarteira();
-  return BANCO_CONVENIOS.map((nome) => {
+  return getBancoConvenios().map((nome) => {
     const doConv = carteira.filter((c) => c.convenio === nome && c.status !== "quitado");
     return {
       nome,

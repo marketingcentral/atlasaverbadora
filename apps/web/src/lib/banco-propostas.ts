@@ -149,12 +149,44 @@ export const PRODUTO_LABEL: Record<BancoProduto, string> = {
   portabilidade: "Portabilidade",
 };
 
-/** Convenios que o banco enxerga na Atlas (Passo 11) — apenas os seus. */
-export const BANCO_CONVENIOS = [
+/** Convenios seed que o banco enxerga na Atlas (Passo 11) — apenas os seus. */
+const BANCO_CONVENIOS_SEED = [
   "Prefeitura de Palhoça",
   "Prefeitura de Biguaçu",
   "Prefeitura de São José",
 ];
+
+/** Combina seed + convenios cadastrados via UI (persistidos em localStorage). */
+export function getBancoConvenios(): string[] {
+  let extras: string[] = [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.bancoConvenios);
+    if (raw) extras = JSON.parse(raw) as string[];
+  } catch {
+    // ignore
+  }
+  const dedup = new Set<string>([...BANCO_CONVENIOS_SEED, ...extras]);
+  return [...dedup];
+}
+
+/** Cadastra um novo convenio. Retorna false se ja existir. */
+export function addBancoConvenio(nome: string): boolean {
+  const trimmed = nome.trim();
+  if (!trimmed) return false;
+  const existentes = getBancoConvenios();
+  if (existentes.some((c) => c.toLowerCase() === trimmed.toLowerCase())) return false;
+  const extras = existentes.filter((c) => !BANCO_CONVENIOS_SEED.includes(c));
+  extras.push(trimmed);
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.bancoConvenios, JSON.stringify(extras));
+  } catch {
+    // ignore
+  }
+  return true;
+}
+
+/** @deprecated use getBancoConvenios() para incluir os cadastrados via UI. */
+export const BANCO_CONVENIOS = BANCO_CONVENIOS_SEED;
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export function fmtBRL(n: number): string {
