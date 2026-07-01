@@ -107,7 +107,7 @@ export function LoginPage() {
       {pending ? (
         <TwoFactorModal
           acao="acessar o portal do banco"
-          canal="ambos"
+          canal="email"
           onCancel={() => setPending(null)}
           onConfirm={on2FAConfirm}
         />
