@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, FormActions, Pill, SelectField, TextareaField, TextField } from "@atlas/ui/web";
+import { Button, FormActions, Pill, TextareaField } from "@atlas/ui/web";
 import {
   PRODUTO_LABEL,
   STATUS_LABEL,
@@ -219,23 +219,23 @@ function NextStep({
   if (s === "recebida" || s === "em_analise" || s === "mais_info") {
     return (
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Button variant="success" onClick={onAprovar}>Aprovar com link de formalização</Button>
+        <Button variant="success" onClick={onAprovar}>Aprovar proposta</Button>
         <Button variant="ghost" onClick={onMaisInfo}>Solicitar mais informações</Button>
         <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
         <span style={{ fontSize: 12, color: "var(--text-dim)", marginLeft: "auto" }}>
-          Aprovar avança para o envio do link de formalização.
+          Aprovar libera o upload do contrato assinado (CCB).
         </span>
       </div>
     );
   }
 
-  // Passo 6 — envio do link de formalizacao
+  // Passo 6 — upload de contrato assinado (CCB)
   if (s === "aprovada") {
     return (
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Button variant="primary" onClick={onEnviarLink}>Enviar link de formalização</Button>
+        <Button variant="primary" onClick={onEnviarLink}>Upload de contrato</Button>
         <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          V1: o banco usa a própria esteira e o servidor recebe o link por e-mail/SMS. V2 (roadmap): formalização in-app via API.
+          Faça o upload da CCB assinada (PDF). Após o upload, confirme a averbação para tornar a margem efetiva.
         </span>
       </div>
     );
@@ -339,32 +339,107 @@ function Metric({ label, value, warn }: { label: string; value: string; warn?: b
 }
 
 function EnvioModal({ proposta, onClose, onDone }: { proposta: BancoProposta; onClose: () => void; onDone: () => void }) {
-  const [canal, setCanal] = useState<"email" | "sms">(proposta.canalEnvio ?? "email");
-  const [link, setLink] = useState(proposta.linkFormalizacao ?? `https://formaliza.bancodelta.com.br/ccb/${proposta.idUnico}`);
-  const enviar = () => {
-    patchProposta(proposta.idUnico, { status: "aguardando_formalizacao", canalEnvio: canal, linkFormalizacao: link.trim() });
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  async function enviar() {
+    if (!arquivo) {
+      setErro("Selecione o arquivo do contrato (CCB) antes de enviar.");
+      return;
+    }
+    setErro(null);
+    setEnviando(true);
+    // Mock: em prod faria upload para R2/S3 e receberia URL assinada.
+    await new Promise((r) => setTimeout(r, 800));
+    const ccbUrl = `https://atlas.io/mock/ccb/${proposta.idUnico}.pdf`;
+    // Contrato ja assinado -> transiciona direto para "formalizada" (pula
+    // "aguardando_formalizacao" que fazia sentido no fluxo antigo de envio
+    // de link para o servidor assinar).
+    patchProposta(proposta.idUnico, { status: "formalizada", ccbUrl });
+    setEnviando(false);
     onDone();
-  };
+  }
+
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    if (f && f.type && f.type !== "application/pdf") {
+      setErro("Apenas arquivos PDF sao aceitos.");
+      setArquivo(null);
+      return;
+    }
+    setErro(null);
+    setArquivo(f);
+  }
+
   return (
     <div onClick={onClose} style={modalBackdrop}>
       <div onClick={(e) => e.stopPropagation()} style={modalCard}>
-        <h3 style={{ margin: 0 }}>Enviar link de formalização</h3>
+        <h3 style={{ margin: 0 }}>Upload de contrato</h3>
         <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
           {proposta.nome} · <code>{proposta.idUnico}</code>
         </div>
-        <SelectField
-          label="Canal de envio"
-          value={canal}
-          onChange={(e) => setCanal(e.target.value as "email" | "sms")}
-          options={[
-            { value: "email", label: "E-mail" },
-            { value: "sms", label: "SMS" },
-          ]}
-        />
-        <TextField label="Link de formalização / CCB" value={link} onChange={(e) => setLink(e.target.value)} required />
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
+          Anexe a CCB assinada em PDF. Apos o upload, a proposta passa para o status <strong>formalizada</strong> e voce
+          podera confirmar a averbacao.
+        </div>
+
+        <label
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            padding: 20,
+            marginTop: 8,
+            border: "2px dashed var(--border-strong)",
+            borderRadius: 12,
+            background: "var(--bg-elev-2)",
+            cursor: "pointer",
+            alignItems: "center",
+            textAlign: "center",
+          }}
+        >
+          <span style={{ fontSize: 24 }}>📄</span>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>
+            {arquivo ? arquivo.name : "Clique para selecionar o arquivo (PDF)"}
+          </span>
+          {arquivo ? (
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              {(arquivo.size / 1024).toFixed(0)} KB
+            </span>
+          ) : (
+            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Ou arraste e solte aqui</span>
+          )}
+          <input
+            type="file"
+            accept="application/pdf,.pdf"
+            style={{ display: "none" }}
+            onChange={onFileChange}
+          />
+        </label>
+
+        {erro ? (
+          <div
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+              border: "1px solid var(--danger-500)",
+              fontSize: 13,
+              color: "var(--danger-500)",
+            }}
+          >
+            {erro}
+          </div>
+        ) : null}
+
         <FormActions>
-          <Button variant="ghost" type="button" onClick={onClose}>Voltar</Button>
-          <Button type="button" disabled={link.trim().length < 8} onClick={enviar}>Enviar link</Button>
+          <Button variant="ghost" type="button" onClick={onClose} disabled={enviando}>
+            Voltar
+          </Button>
+          <Button type="button" disabled={!arquivo || enviando} onClick={enviar}>
+            {enviando ? "Enviando..." : "Fazer upload"}
+          </Button>
         </FormActions>
       </div>
     </div>
