@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Button, FormActions, Pill, TextareaField } from "@atlas/ui/web";
+import { Button, FormActions, Pill, SelectField, TextareaField, TextField } from "@atlas/ui/web";
 import {
   PRODUTO_LABEL,
   STATUS_LABEL,
@@ -20,7 +20,7 @@ export function BancoPropostaDetalhe() {
   const [version, setVersion] = useState(0);
   const proposta = getProposta(id);
   const perfil = getBancoPerfil();
-  const [modal, setModal] = useState<null | "recusar" | "mais_info">(null);
+  const [modal, setModal] = useState<null | "recusar" | "mais_info" | "envio">(null);
 
   if (!proposta) {
     return (
@@ -35,10 +35,20 @@ export function BancoPropostaDetalhe() {
 
   const refresh = () => setVersion((v) => v + 1);
   const trava = travaInfo(proposta);
-  const podeDecidir = ["recebida", "em_analise", "mais_info"].includes(proposta.status);
 
   const aprovar = () => {
     patchProposta(proposta.idUnico, { status: "aprovada" });
+    refresh();
+  };
+  const registrarFormalizacao = () => {
+    patchProposta(proposta.idUnico, {
+      status: "formalizada",
+      ccbUrl: proposta.ccbUrl ?? `https://formaliza.bancodelta.com.br/ccb/${proposta.idUnico}.pdf`,
+    });
+    refresh();
+  };
+  const confirmarAverbacao = () => {
+    patchProposta(proposta.idUnico, { status: "averbada" });
     refresh();
   };
 
@@ -116,31 +126,30 @@ export function BancoPropostaDetalhe() {
         )}
       </InfoCard>
 
-      {/* Acoes (Passo 4) — gateadas pelo perfil do operador */}
+      {/* Analise de risco interna ao banco (Passo 5) */}
+      {proposta.risco ? <RiscoPanel risco={proposta.risco} /> : null}
+
+      {/* Proximo passo — dirigido por status (Passos 4, 6, 7) */}
       <div
         style={{
-          display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center",
+          display: "flex", flexDirection: "column", gap: 12,
           padding: 16, background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12,
         }}
       >
-        {!podeDecidir ? (
-          <span style={{ color: "var(--text-muted)", fontSize: 14 }}>
-            Esta proposta já está em <strong>{STATUS_LABEL[proposta.status]}</strong> — sem ações de decisão pendentes.
-          </span>
-        ) : !perfil.perms.aprovacao ? (
-          <span style={{ color: "var(--text-muted)", fontSize: 14 }}>
-            Seu perfil <strong>{perfil.nome}</strong> tem apenas permissão de consulta. Ações de decisão indisponíveis.
-          </span>
-        ) : (
-          <>
-            <Button variant="success" onClick={aprovar}>Aprovar com link de formalização</Button>
-            <Button variant="ghost" onClick={() => setModal("mais_info")}>Solicitar mais informações</Button>
-            <Button variant="ghost" onClick={() => setModal("recusar")}>Recusar</Button>
-            <span style={{ fontSize: 12, color: "var(--text-dim)", marginLeft: "auto" }}>
-              Aprovar avança para o envio do link de formalização (próxima etapa).
-            </span>
-          </>
-        )}
+        <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>
+          Próximo passo
+        </div>
+        <NextStep
+          proposta={proposta}
+          podeAgir={perfil.perms.aprovacao}
+          perfilNome={perfil.nome}
+          onAprovar={aprovar}
+          onEnviarLink={() => setModal("envio")}
+          onRegistrarFormalizacao={registrarFormalizacao}
+          onConfirmarAverbacao={confirmarAverbacao}
+          onMaisInfo={() => setModal("mais_info")}
+          onRecusar={() => setModal("recusar")}
+        />
       </div>
 
       {proposta.motivoRecusa ? (
@@ -150,7 +159,16 @@ export function BancoPropostaDetalhe() {
         <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Observação / info solicitada: {proposta.observacao}</div>
       ) : null}
 
-      {modal ? (
+      {modal === "envio" ? (
+        <EnvioModal
+          proposta={proposta}
+          onClose={() => setModal(null)}
+          onDone={() => {
+            setModal(null);
+            refresh();
+          }}
+        />
+      ) : modal ? (
         <DecisaoModal
           proposta={proposta}
           tipo={modal}
@@ -161,6 +179,194 @@ export function BancoPropostaDetalhe() {
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function NextStep({
+  proposta,
+  podeAgir,
+  perfilNome,
+  onAprovar,
+  onEnviarLink,
+  onRegistrarFormalizacao,
+  onConfirmarAverbacao,
+  onMaisInfo,
+  onRecusar,
+}: {
+  proposta: BancoProposta;
+  podeAgir: boolean;
+  perfilNome: string;
+  onAprovar: () => void;
+  onEnviarLink: () => void;
+  onRegistrarFormalizacao: () => void;
+  onConfirmarAverbacao: () => void;
+  onMaisInfo: () => void;
+  onRecusar: () => void;
+}) {
+  const s = proposta.status;
+  const acionavel = ["recebida", "em_analise", "mais_info", "aprovada", "aguardando_formalizacao", "formalizada"].includes(s);
+
+  if (acionavel && !podeAgir) {
+    return (
+      <span style={{ color: "var(--text-muted)", fontSize: 14 }}>
+        Seu perfil <strong>{perfilNome}</strong> tem apenas permissão de consulta. Ações indisponíveis nesta etapa.
+      </span>
+    );
+  }
+
+  // Passo 4 — decisao inicial
+  if (s === "recebida" || s === "em_analise" || s === "mais_info") {
+    return (
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <Button variant="success" onClick={onAprovar}>Aprovar com link de formalização</Button>
+        <Button variant="ghost" onClick={onMaisInfo}>Solicitar mais informações</Button>
+        <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
+        <span style={{ fontSize: 12, color: "var(--text-dim)", marginLeft: "auto" }}>
+          Aprovar avança para o envio do link de formalização.
+        </span>
+      </div>
+    );
+  }
+
+  // Passo 6 — envio do link de formalizacao
+  if (s === "aprovada") {
+    return (
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <Button variant="primary" onClick={onEnviarLink}>Enviar link de formalização</Button>
+        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          V1: o banco usa a própria esteira e o servidor recebe o link por e-mail/SMS. V2 (roadmap): formalização in-app via API.
+        </span>
+      </div>
+    );
+  }
+
+  // Passo 6 → aguardando assinatura do servidor
+  if (s === "aguardando_formalizacao") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
+          Link enviado{proposta.canalEnvio ? ` por ${proposta.canalEnvio === "email" ? "e-mail" : "SMS"}` : ""}. Aguardando
+          assinatura da CCB pelo servidor.
+        </div>
+        {proposta.linkFormalizacao ? (
+          <a href={proposta.linkFormalizacao} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
+            {proposta.linkFormalizacao}
+          </a>
+        ) : null}
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Button variant="success" onClick={onRegistrarFormalizacao}>Registrar formalização (CCB assinada)</Button>
+          <Button variant="ghost" onClick={onEnviarLink}>Reenviar link</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Passo 7 — confirmacao de averbacao e liberacao
+  if (s === "formalizada") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
+          CCB assinada. Confirme a averbação para tornar a margem <strong>efetiva</strong> e liberar o recurso ao servidor.
+        </div>
+        {proposta.ccbUrl ? (
+          <a href={proposta.ccbUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
+            Ver CCB (PDF)
+          </a>
+        ) : null}
+        <div>
+          <Button variant="primary" onClick={onConfirmarAverbacao}>Confirmar averbação e liberação</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Passo 7 — concluido
+  if (s === "averbada") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 14, color: "var(--success)" }}>
+          ✓ Averbação confirmada. Margem efetiva para o banco e recurso liberado ao servidor.
+        </div>
+        {proposta.ccbUrl ? (
+          <a href={proposta.ccbUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
+            Ver CCB (PDF)
+          </a>
+        ) : null}
+      </div>
+    );
+  }
+
+  // recusada / expirada
+  return (
+    <span style={{ color: "var(--text-muted)", fontSize: 14 }}>
+      Proposta em <strong>{STATUS_LABEL[s]}</strong> — sem próximos passos.
+    </span>
+  );
+}
+
+function RiscoPanel({ risco }: { risco: NonNullable<BancoProposta["risco"]> }) {
+  const recCor = risco.recomendacao === "aprovar" ? "var(--success)" : risco.recomendacao === "negar" ? "var(--danger-500)" : "var(--gold-500)";
+  const recLabel = risco.recomendacao === "aprovar" ? "Aprovar" : risco.recomendacao === "negar" ? "Negar" : "Revisar";
+  return (
+    <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>
+          Análise de risco (interna do banco)
+        </div>
+        <span style={{ fontSize: 13, fontWeight: 700, color: recCor }}>Recomendação: {recLabel}</span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+        <Metric label="Score interno" value={`${risco.scoreInterno}`} />
+        <Metric label="Serasa" value={`${risco.bureauSerasa}`} />
+        <Metric label="SPC" value={risco.bureauSpc === "sem_restricao" ? "Sem restrição" : "Com restrição"} warn={risco.bureauSpc === "com_restricao"} />
+        <Metric label="Comprom. de renda" value={`${(risco.comprometimentoRenda * 100).toFixed(0)}%`} warn={risco.comprometimentoRenda > 0.4} />
+      </div>
+      <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)" }}>
+        A averbadora não faz análise de crédito — ela apenas garante a identificação do servidor. O risco é integralmente do banco.
+      </div>
+    </div>
+  );
+}
+
+function Metric({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div style={{ background: "var(--bg-elev-2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
+      <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4, color: warn ? "var(--gold-500)" : "var(--text)" }}>{value}</div>
+    </div>
+  );
+}
+
+function EnvioModal({ proposta, onClose, onDone }: { proposta: BancoProposta; onClose: () => void; onDone: () => void }) {
+  const [canal, setCanal] = useState<"email" | "sms">(proposta.canalEnvio ?? "email");
+  const [link, setLink] = useState(proposta.linkFormalizacao ?? `https://formaliza.bancodelta.com.br/ccb/${proposta.idUnico}`);
+  const enviar = () => {
+    patchProposta(proposta.idUnico, { status: "aguardando_formalizacao", canalEnvio: canal, linkFormalizacao: link.trim() });
+    onDone();
+  };
+  return (
+    <div onClick={onClose} style={modalBackdrop}>
+      <div onClick={(e) => e.stopPropagation()} style={modalCard}>
+        <h3 style={{ margin: 0 }}>Enviar link de formalização</h3>
+        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          {proposta.nome} · <code>{proposta.idUnico}</code>
+        </div>
+        <SelectField
+          label="Canal de envio"
+          value={canal}
+          onChange={(e) => setCanal(e.target.value as "email" | "sms")}
+          options={[
+            { value: "email", label: "E-mail" },
+            { value: "sms", label: "SMS" },
+          ]}
+        />
+        <TextField label="Link de formalização / CCB" value={link} onChange={(e) => setLink(e.target.value)} required />
+        <FormActions>
+          <Button variant="ghost" type="button" onClick={onClose}>Voltar</Button>
+          <Button type="button" disabled={link.trim().length < 8} onClick={enviar}>Enviar link</Button>
+        </FormActions>
+      </div>
     </div>
   );
 }
