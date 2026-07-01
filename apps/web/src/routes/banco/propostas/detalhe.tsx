@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, FormActions, Pill, TextareaField } from "@atlas/ui/web";
+import { TwoFactorModal } from "../../../components/TwoFactorModal";
 import {
   PRODUTO_LABEL,
   STATUS_LABEL,
@@ -21,6 +22,7 @@ export function BancoPropostaDetalhe() {
   const proposta = getProposta(id);
   const perfil = getBancoPerfil();
   const [modal, setModal] = useState<null | "recusar" | "mais_info" | "envio">(null);
+  const [pendingAverbacao, setPendingAverbacao] = useState(false);
 
   if (!proposta) {
     return (
@@ -47,8 +49,14 @@ export function BancoPropostaDetalhe() {
     });
     refresh();
   };
+  // Confirmacao de averbacao e acao sensivel (libera recurso ao servidor e
+  // torna a margem efetiva). Exige 2FA antes de aplicar o patch.
   const confirmarAverbacao = () => {
+    setPendingAverbacao(true);
+  };
+  const executarConfirmacao = async () => {
     patchProposta(proposta.idUnico, { status: "averbada" });
+    setPendingAverbacao(false);
     refresh();
   };
 
@@ -177,6 +185,15 @@ export function BancoPropostaDetalhe() {
             setModal(null);
             refresh();
           }}
+        />
+      ) : null}
+
+      {pendingAverbacao ? (
+        <TwoFactorModal
+          acao="confirmar a averbacao e liberar o recurso ao servidor"
+          canal="ambos"
+          onCancel={() => setPendingAverbacao(false)}
+          onConfirm={executarConfirmacao}
         />
       ) : null}
     </div>
