@@ -36,17 +36,16 @@ export function PrefeituraAnuencia() {
         </div>
         <p style={{ color: "var(--text-muted)", fontSize: 14, marginTop: 12, lineHeight: 1.6 }}>{q.data?.termo}</p>
 
-        {!vigente ? (
-          <div style={{ marginTop: 12, display: "grid", gap: 10, maxWidth: 480 }}>
-            <input style={inp} placeholder="Nome do responsável (RH/Gestor)" value={aceitoPor} onChange={(e) => setAceitoPor(e.target.value)} />
-            <label style={{ display: "flex", gap: 8, fontSize: 13, cursor: "pointer" }}>
-              <input type="checkbox" checked={check} onChange={(e) => setCheck(e.target.checked)} />
-              Li e autorizo o uso da base conforme o termo acima (LGPD).
-            </label>
-            <div><Button onClick={() => aceitar.mutate()} disabled={!check || aceitoPor.length < 2 || aceitar.isPending}>{aceitar.isPending ? "Registrando…" : "Registrar anuência"}</Button></div>
-            {aceitar.isError ? <p style={{ color: "#ef4444", fontSize: 13 }}>{(aceitar.error as Error).message}</p> : null}
-          </div>
-        ) : null}
+        <div style={{ marginTop: 12, display: "grid", gap: 10, maxWidth: 480 }}>
+          {vigente ? <span style={{ fontSize: 12, color: "var(--text-muted)" }}>Já há uma anuência vigente. Você pode registrar uma nova confirmação (fica no histórico).</span> : null}
+          <input style={inp} placeholder="Nome do responsável (RH/Gestor)" value={aceitoPor} onChange={(e) => setAceitoPor(e.target.value)} />
+          <label style={{ display: "flex", gap: 8, fontSize: 13, cursor: "pointer" }}>
+            <input type="checkbox" checked={check} onChange={(e) => setCheck(e.target.checked)} />
+            Li e autorizo o uso da base conforme o termo acima (LGPD).
+          </label>
+          <div><Button onClick={() => aceitar.mutate()} disabled={!check || aceitoPor.length < 2 || aceitar.isPending}>{aceitar.isPending ? "Registrando…" : vigente ? "Registrar nova confirmação" : "Registrar anuência"}</Button></div>
+          {aceitar.isError ? <p style={{ color: "#ef4444", fontSize: 13 }}>{(aceitar.error as Error).message}</p> : null}
+        </div>
       </Card>
 
       <Card>

@@ -99,6 +99,35 @@ function miniPdf(title: string, lines: string[]): Uint8Array {
 
 const VINCULOS = ["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONISTA"] as const;
 
+// CSV templates são públicos (arquivos de exemplo, sem dados reais) — assim o
+// link de download simples (<a href download>) funciona sem header de auth.
+export const prefeituraPublicRoutes = new Hono<{ Bindings: Env }>()
+  .get("/v1/prefeitura/servidores/csv-template", () => {
+    const csv = buildCsv(
+      ["nome", "cpf", "email", "telefone", "matricula", "cargo", "vinculo", "endereco", "codigoIbge", "salarioLiquido", "idConvenio"],
+      [{ nome: "MARIA DA SILVA", cpf: "00099988877", email: "maria@ex.com", telefone: "48999990000", matricula: "900123", cargo: "Professora", vinculo: "ESTATUTARIO", endereco: "Rua A, 100 - Centro", codigoIbge: 4211900, salarioLiquido: 4200, idConvenio: "CONV-001" }],
+    );
+    return csvResp("servidores-modelo.csv", csv);
+  })
+  .get("/v1/prefeitura/folhas/movimentacao/csv-template", () => {
+    const csv = buildCsv(
+      ["tipo", "matricula", "cpf", "nome", "cargoNovo", "salarioNovo", "detalhe"],
+      [
+        { tipo: "promocao", matricula: "852029100", cpf: "", nome: "", cargoNovo: "Coordenadora", salarioNovo: 5200, detalhe: "Promoção por antiguidade" },
+        { tipo: "demissao", matricula: "843796302", cpf: "", nome: "", cargoNovo: "", salarioNovo: "", detalhe: "Exoneração" },
+        { tipo: "admissao", matricula: "900500", cpf: "00055566677", nome: "NOVO SERVIDOR", cargoNovo: "Auxiliar", salarioNovo: 2800, detalhe: "Admissão" },
+      ],
+    );
+    return csvResp("movimentacao-modelo.csv", csv);
+  })
+  .get("/v1/prefeitura/tombamento/csv-template", () => {
+    const csv = buildCsv(
+      ["cpfMasked", "matricula", "bancoNome", "adfBanco", "valorParcela", "parcelasRestantes", "saldoDevedor"],
+      [{ cpfMasked: "***.***.***-33", matricula: "852029100", bancoNome: "SCred Financeira", adfBanco: "9000123", valorParcela: 520, parcelasRestantes: 44, saldoDevedor: 18000 }],
+    );
+    return csvResp("tombamento-modelo.csv", csv);
+  });
+
 export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims } }>()
   .use("/v1/prefeitura/*", authRequired)
 
@@ -184,14 +213,6 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 3 — Cadastro inicial da base de servidores (CSV) =====
-  .get("/v1/prefeitura/servidores/csv-template", (c) => {
-    requirePrefeitura(c.get("jwt"));
-    const csv = buildCsv(
-      ["nome", "cpf", "email", "telefone", "matricula", "cargo", "vinculo", "endereco", "codigoIbge", "salarioLiquido", "idConvenio"],
-      [{ nome: "MARIA DA SILVA", cpf: "00099988877", email: "maria@ex.com", telefone: "48999990000", matricula: "900123", cargo: "Professora", vinculo: "ESTATUTARIO", endereco: "Rua A, 100 - Centro", codigoIbge: 4211900, salarioLiquido: 4200, idConvenio: "CONV-001" }],
-    );
-    return csvResp("servidores-modelo.csv", csv);
-  })
   .post("/v1/prefeitura/servidores/importar", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const p = prefeituras.find((x) => x.id === id)!;
@@ -308,18 +329,6 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requirePrefeitura(c.get("jwt"));
     return c.json({ movimentacoes: listMovimentacoes(c.req.param("id")) });
   })
-  .get("/v1/prefeitura/folhas/movimentacao/csv-template", (c) => {
-    requirePrefeitura(c.get("jwt"));
-    const csv = buildCsv(
-      ["tipo", "matricula", "cpf", "nome", "cargoNovo", "salarioNovo", "detalhe"],
-      [
-        { tipo: "promocao", matricula: "852029100", cpf: "", nome: "", cargoNovo: "Coordenadora", salarioNovo: 5200, detalhe: "Promoção por antiguidade" },
-        { tipo: "demissao", matricula: "843796302", cpf: "", nome: "", cargoNovo: "", salarioNovo: "", detalhe: "Exoneração" },
-        { tipo: "admissao", matricula: "900500", cpf: "00055566677", nome: "NOVO SERVIDOR", cargoNovo: "Auxiliar", salarioNovo: 2800, detalhe: "Admissão" },
-      ],
-    );
-    return csvResp("movimentacao-modelo.csv", csv);
-  })
   .post("/v1/prefeitura/folhas/:id/movimentacao", async (c) => {
     const pid = requirePrefeitura(c.get("jwt"));
     const f = folhas.find((x) => x.id === c.req.param("id") && x.prefeituraId === pid);
@@ -433,14 +442,6 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/prefeitura/tombamento/lotes/:id/linhas", (c) => {
     requirePrefeitura(c.get("jwt"));
     return c.json({ linhas: listLinhas(c.req.param("id")) });
-  })
-  .get("/v1/prefeitura/tombamento/csv-template", (c) => {
-    requirePrefeitura(c.get("jwt"));
-    const csv = buildCsv(
-      ["matricula", "cpf", "banco", "contratoBanco", "saldoDevedor", "parcela", "parcelasPagas", "parcelasTotais", "situacao"],
-      [{ matricula: "852029100", cpf: "00011122233", banco: "SCred Financeira", contratoBanco: "9000001", saldoDevedor: 12000, parcela: 420, parcelasPagas: 6, parcelasTotais: 48, situacao: "ativo" }],
-    );
-    return csvResp("tombamento-modelo.csv", csv);
   })
   .post("/v1/prefeitura/tombamento/importar", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));

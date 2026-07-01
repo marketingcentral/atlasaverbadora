@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraAdf } from "@atlas/sdk";
-import { PageHeader } from "./_ui";
+import { PageHeader, downloadAuthed } from "./_ui";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
@@ -50,8 +50,8 @@ export function PrefeituraAdf() {
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
           {competencia ? <>
-            <a href={atlas.prefeitura.adfCsvUrl(competencia)} target="_blank" rel="noreferrer"><Button size="sm" variant="ghost">Baixar CSV</Button></a>
-            <a href={atlas.prefeitura.adfPdfUrl(competencia)} target="_blank" rel="noreferrer"><Button size="sm" variant="ghost">Baixar PDF</Button></a>
+            <Button size="sm" variant="ghost" onClick={() => downloadAuthed(atlas.prefeitura.adfCsvUrl(competencia), `adf-${competencia}.csv`)}>Baixar CSV</Button>
+            <Button size="sm" variant="ghost" onClick={() => downloadAuthed(atlas.prefeitura.adfPdfUrl(competencia), `adf-lote-${competencia}.pdf`)}>Baixar PDF</Button>
           </> : null}
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{rows.length} ADFs · total parcelas {fmtBRL(totalParcelas)}</span>

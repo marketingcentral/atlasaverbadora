@@ -5,7 +5,7 @@ import { servidoresRoutes } from "./modules/servidores/index.js";
 import { portalBancoRoutes } from "./modules/portal-banco/index.js";
 import { adminRoutes, csvTemplateRoutes } from "./modules/admin/index.js";
 import { externalRoutes } from "./modules/external/index.js";
-import { prefeituraRoutes } from "./modules/prefeitura/index.js";
+import { prefeituraRoutes, prefeituraPublicRoutes } from "./modules/prefeitura/index.js";
 import { errorHandler } from "./middleware/error.js";
 import { loggerMiddleware } from "./middleware/logger.js";
 import { corsMiddleware } from "./middleware/cors.js";
@@ -21,6 +21,7 @@ app.onError(errorHandler);
 app.route("/", healthRoutes);
 // Public CSV templates: must be mounted BEFORE the rate-limited / authenticated areas.
 app.route("/", csvTemplateRoutes);
+app.route("/", prefeituraPublicRoutes);
 app.use("/v1/*", rateLimit({ scope: "global", max: 600, perSeconds: 60 }));
 app.route("/", authRoutes);
 app.route("/", servidoresRoutes);

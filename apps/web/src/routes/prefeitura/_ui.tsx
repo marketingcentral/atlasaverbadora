@@ -1,6 +1,23 @@
 import type { CSSProperties, ReactNode } from "react";
 
 export const inp: CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text)", fontSize: 14, width: "100%" };
+
+/** Download a protected endpoint attaching the stored JWT (a plain <a> can't send headers). */
+export async function downloadAuthed(url: string, filename: string): Promise<void> {
+  const raw = typeof window !== "undefined" ? window.localStorage.getItem("atlas:tokens") : null;
+  const token = raw ? (JSON.parse(raw) as { access_token?: string }).access_token : null;
+  const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) { alert(`Erro ao baixar (HTTP ${res.status}).`); return; }
+  const blob = await res.blob();
+  const objUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objUrl);
+}
 export const selStyle: CSSProperties = { ...inp, cursor: "pointer" };
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
