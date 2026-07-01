@@ -625,6 +625,26 @@ export class AtlasClient {
     return this.request<{ matriculas: T[] }>("/v1/servidores/me/matriculas");
   }
 
+  // ============ Servidor (marketplace + demais consultas do proprio servidor) ============
+  readonly servidor = {
+    /** Marketplace de ofertas — derivado das tabelas de emprestimo publicadas pelos bancos. */
+    ofertas: () =>
+      this.request<{
+        ofertas: {
+          id: string;
+          bancoNome: string;
+          convenioId: string;
+          convenio: string;
+          cidade: string;
+          taxaMinAm: number;
+          taxaMaxAm: number;
+          prazoMaxMeses: number;
+          vigenciaInicio: string;
+          vigenciaFim: string | null;
+        }[];
+      }>("/v1/servidores/me/ofertas"),
+  };
+
   // ============ Portal Banco ============
   readonly banco = {
     convenios: () => this.request<{ convenios: { id: string; nome: string; prefeitura: string; uf: string }[]; activeId: string }>("/v1/portal/banco/convenios"),

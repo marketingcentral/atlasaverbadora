@@ -7,6 +7,7 @@ import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras } from "../admin/index.js";
 import { listContratos } from "../portal-banco/store.js";
+import { listTabelas } from "../portal-banco/cadastros.js";
 
 // Dev shadow data — mirrors the SERVIDORES_BUSCA_MOCK identities (source of truth used
 // by todos os outros perfis), para o servidor ver os MESMOS dados.
@@ -190,6 +191,40 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
     const matriculas = entries.map((e) => buildMatriculaInfo(e));
     return c.json({ matriculas });
+  })
+  // Marketplace de ofertas do servidor — deriva das tabelas de emprestimo
+  // publicadas pelos bancos parceiros. So retorna tabelas ativas e dentro
+  // da vigencia. Cada card do marketplace corresponde a uma tabela vigente.
+  .get("/v1/servidores/me/ofertas", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const hoje = new Date().toISOString().slice(0, 10);
+    const tabelas = listTabelas().filter((t) => {
+      if (!t.ativo) return false;
+      if (t.vigenciaInicio > hoje) return false;
+      if (t.vigenciaFim && t.vigenciaFim < hoje) return false;
+      return true;
+    });
+    return c.json({
+      ofertas: tabelas.map((t) => {
+        // "CASTRO / DELTA GLOBAL" -> banco = "DELTA GLOBAL", cidade = "CASTRO"
+        const [cidade = "", banco = ""] = t.convenio.split("/").map((p) => p.trim());
+        return {
+          id: t.id,
+          bancoNome: banco || t.convenio,
+          convenioId: t.convenioId,
+          convenio: t.convenio,
+          cidade,
+          taxaMinAm: t.taxaMinAm,
+          taxaMaxAm: t.taxaMaxAm,
+          prazoMaxMeses: t.prazoMaxMeses,
+          vigenciaInicio: t.vigenciaInicio,
+          vigenciaFim: t.vigenciaFim ?? null,
+        };
+      }),
+    });
   })
   .get("/v1/servidores/:id", async (c) => {
     const j = c.get("jwt");
