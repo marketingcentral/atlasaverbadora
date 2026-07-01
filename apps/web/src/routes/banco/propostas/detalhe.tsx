@@ -232,16 +232,15 @@ function NextStep({
     );
   }
 
-  // Passo 4 — decisao inicial
+  // Passo 4 — decisao inicial: banco aprova via upload do contrato assinado
+  // (skip do state "aprovada"; upload -> "formalizada" direto no fluxo novo).
   if (s === "recebida" || s === "em_analise" || s === "mais_info") {
     return (
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Button variant="success" onClick={onAprovar}>Aprovar proposta</Button>
-        <Button variant="ghost" onClick={onMaisInfo}>Solicitar mais informações</Button>
-        <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
-        <span style={{ fontSize: 12, color: "var(--text-dim)", marginLeft: "auto" }}>
-          Aprovar libera o upload do contrato assinado (CCB).
-        </span>
+        <Button variant="primary" onClick={onEnviarLink}>Fazer upload de contrato</Button>
+        <div style={{ marginLeft: "auto" }}>
+          <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
+        </div>
       </div>
     );
   }
