@@ -41,6 +41,8 @@ import { PrefeituraFolhas } from "./routes/prefeitura/folhas";
 import { PrefeituraComunicados } from "./routes/prefeitura/comunicados";
 import { BancoLayout } from "./routes/banco/layout";
 import { BancoVisaoGeral } from "./routes/banco/visao-geral";
+import { BancoPropostas } from "./routes/banco/propostas/index";
+import { BancoPropostaDetalhe } from "./routes/banco/propostas/detalhe";
 import { BancoMargemContratacaoBusca } from "./routes/banco/margem-contratacao/index";
 import { BancoMargemContratacaoFicha } from "./routes/banco/margem-contratacao/ficha";
 import { OperacaoForm } from "./routes/banco/margem-contratacao/OperacaoForm";
@@ -114,6 +116,9 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { index: true, element: <Navigate to="visao-geral" replace /> },
           { path: "dashboard", element: <Navigate to="../visao-geral" replace /> },
           { path: "visao-geral", element: <BancoVisaoGeral /> },
+
+          { path: "propostas", element: <BancoPropostas /> },
+          { path: "propostas/:id", element: <BancoPropostaDetalhe /> },
 
           { path: "cadastros/tabela-emprestimos", element: <BancoTabelaEmprestimosLista /> },
           { path: "cadastros/tabela-emprestimos/novo", element: <BancoTabelaEmprestimosForm /> },

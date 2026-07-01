@@ -5,6 +5,7 @@ import { atlas } from "../../lib/sdk";
 
 const NAV = [
   { key: "visao-geral", label: "Visão Geral", href: "/banco/visao-geral", icon: "◉" },
+  { key: "propostas", label: "Minhas Propostas", href: "/banco/propostas", icon: "◈" },
   {
     key: "cadastros",
     label: "Cadastros",

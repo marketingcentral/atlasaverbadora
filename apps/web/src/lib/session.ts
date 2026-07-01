@@ -10,6 +10,7 @@ export const STORAGE_KEYS = {
   propostasUserCriadas: "atlas:propostas:userCriadas",
   simulationLock: "atlas:simulationLock",
   notificationsRead: "atlas:notifications:read",
+  bancoPropostas: "atlas:banco:propostas",
 } as const;
 
 /** Limpa apenas o estado de matricula ativa (usado no fluxo de trocar). */
