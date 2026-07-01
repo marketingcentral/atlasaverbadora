@@ -2,6 +2,12 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, Card, Input } from "@atlas/ui/web";
 import { atlas, storeRole } from "../lib/sdk";
+import { TwoFactorModal } from "../components/TwoFactorModal";
+
+type PendingLogin = {
+  role: "servidor" | "banco" | "averbadora" | "prefeitura";
+  target: string;
+};
 
 export function LoginPage() {
   const nav = useNavigate();
@@ -9,6 +15,7 @@ export function LoginPage() {
   const [password, setPwd] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<PendingLogin | null>(null);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -16,15 +23,29 @@ export function LoginPage() {
     setError(null);
     try {
       const res = await atlas.login({ identifier, password });
-      storeRole(res.role);
-      // Servidor: pass through matricula selection (skipped automatically when only one).
       const target = res.role === "servidor" ? "/servidor/selecionar-matricula" : `/${res.role}/dashboard`;
+      // Banco exige 2FA obrigatorio (spec passo 1). Servidor tem biometria no
+      // mobile; averbadora e prefeitura seguem direto neste mockup.
+      if (res.role === "banco") {
+        // storeRole so ocorre APOS validar 2FA.
+        setPending({ role: res.role, target });
+        setLoading(false);
+        return;
+      }
+      storeRole(res.role);
       nav(target, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha no login");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function on2FAConfirm() {
+    if (!pending) return;
+    storeRole(pending.role);
+    nav(pending.target, { replace: true });
+    setPending(null);
   }
 
   return (
@@ -82,6 +103,15 @@ export function LoginPage() {
           Prefeitura: <code style={{ fontFamily: "var(--font-mono)" }}>prefeitura@atlas.test</code> / <code style={{ fontFamily: "var(--font-mono)" }}>teste123</code>
         </div>
       </Card>
+
+      {pending ? (
+        <TwoFactorModal
+          acao="acessar o portal do banco"
+          canal="ambos"
+          onCancel={() => setPending(null)}
+          onConfirm={on2FAConfirm}
+        />
+      ) : null}
     </div>
   );
 }
