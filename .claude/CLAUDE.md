@@ -44,6 +44,9 @@ Monorepo pnpm + Turborepo:
 8. **Conventional commits** com escopo de pacote: `feat(api): ...`, `fix(web): ...`, `chore(ui): ...`, `docs(specs): ...`
 
 ## Workflow Git (obrigatorio)
+> **REGRA DE OURO (sempre, sem excecao): `git fetch origin main` IMEDIATAMENTE antes de CADA `git push`.**
+> So pushar se `git rev-list --count HEAD..origin/main` == 0 (ahead-only). Se houver commits novos, rebasear por cima (`git rebase origin/main`) — apos confirmar que nao ha conflito de arquivos — e refazer o fetch+check antes de pushar. Ha sessoes paralelas trabalhando no mesmo `main`; esta regra evita colisao/sobrescrita. Vale para toda e qualquer alteracao, por menor que seja.
+
 **Antes de qualquer alteracao:** o hook `UserPromptSubmit` em `.claude/settings.json` ja roda `git fetch origin main --quiet` automaticamente — nao desligue. Se `main` divergir de `origin/main` apos o fetch, parar e perguntar ao usuario antes de editar.
 
 **Depois de concluir cada alteracao solicitada pelo usuario:**

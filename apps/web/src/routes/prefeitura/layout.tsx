@@ -51,7 +51,7 @@ export function PrefeituraLayout() {
       }
       topbarSlot={
         <>
-          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Portal somente leitura</div>
+          <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Portal da prefeitura</div>
           <div style={{ display: "flex", gap: 10 }}>
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
