@@ -191,7 +191,7 @@ export function BancoPropostaDetalhe() {
       {pendingAverbacao ? (
         <TwoFactorModal
           acao="confirmar a averbacao e liberar o recurso ao servidor"
-          canal="ambos"
+          canal="email"
           onCancel={() => setPendingAverbacao(false)}
           onConfirm={executarConfirmacao}
         />
