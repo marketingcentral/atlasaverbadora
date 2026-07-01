@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Button, DataTable, Pill, SelectField, type Column } from "@atlas/ui/web";
 import { buildSimplePdf, downloadPdf } from "../../lib/pdf";
 import { fmtBRL, fmtDateTime, getBancoPerfil } from "../../lib/banco-propostas";
@@ -10,13 +10,13 @@ export function BancoAdf() {
   const perfil = getBancoPerfil();
   const [version, setVersion] = useState(0);
   const [filtro, setFiltro] = useState<FiltroAdf>("todas");
-  const todosContratos = getCarteira();
+  // getCarteira() le do localStorage a cada render; nao ha ganho em memoizar
+  // porque a referencia do array mudaria a cada chamada. Filtro inline.
   void version;
-
-  const contratos = useMemo(() => {
-    if (filtro === "todas") return todosContratos;
-    return todosContratos.filter((c) => (filtro === "geradas" ? !!getAdf(c.idUnico) : !getAdf(c.idUnico)));
-  }, [todosContratos, filtro, version]);
+  const todosContratos = getCarteira();
+  const contratos = filtro === "todas"
+    ? todosContratos
+    : todosContratos.filter((c) => (filtro === "geradas" ? !!getAdf(c.idUnico) : !getAdf(c.idUnico)));
 
   const baixar = (c: Contrato) => {
     const adf = gerarAdf(c.idUnico);
@@ -45,11 +45,12 @@ export function BancoAdf() {
     downloadPdf(`${adf.numero}.pdf`, pdf);
   };
 
-  const contadores = useMemo(() => {
-    const geradas = todosContratos.filter((c) => getAdf(c.idUnico)).length;
-    const pendentes = todosContratos.length - geradas;
-    return { geradas, pendentes, total: todosContratos.length };
-  }, [todosContratos, version]);
+  const geradasCount = todosContratos.filter((c) => getAdf(c.idUnico)).length;
+  const contadores = {
+    geradas: geradasCount,
+    pendentes: todosContratos.length - geradasCount,
+    total: todosContratos.length,
+  };
 
   const columns: Column<Contrato>[] = [
     { key: "idUnico", header: "ID único", mono: true },
