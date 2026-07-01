@@ -89,7 +89,14 @@ export function BancoBateCarteira() {
         <TextField label="Competência (AAAA-MM)" value={competencia} onChange={(e) => setCompetencia(e.target.value)} />
         <Button onClick={() => setRodado(baterCarteira(competencia))}>Rodar conciliação</Button>
         {rodado && perfil.perms.exportacao ? (
-          <Button variant="ghost" onClick={exportar}>Exportar relatório (CSV)</Button>
+          <Button
+            variant="ghost"
+            onClick={exportar}
+            disabled={rodado.linhas.length === 0}
+            title={rodado.linhas.length === 0 ? "Nada a exportar nesta competência" : "Baixar CSV"}
+          >
+            Exportar relatório (CSV) {rodado.linhas.length > 0 ? `(${rodado.linhas.length})` : ""}
+          </Button>
         ) : null}
       </div>
 
