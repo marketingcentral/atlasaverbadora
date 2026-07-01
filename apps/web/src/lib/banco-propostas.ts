@@ -377,8 +377,20 @@ const SEED: Seed[] = [
 
 type Overlay = Record<string, Partial<BancoProposta>>;
 
+// Bump quando o SEED muda de forma que overlays antigos ficam inconsistentes
+// (mudanca de status inicial, novos idUnico, etc). Ao subir a versao,
+// readOverlay() detecta a divergencia e limpa o overlay armazenado.
+const SEED_VERSION = 2;
+const SEED_VERSION_KEY = "atlas:banco:propostas:_version";
+
 function readOverlay(): Overlay {
   try {
+    const storedVersion = Number(window.localStorage.getItem(SEED_VERSION_KEY) ?? 0);
+    if (storedVersion !== SEED_VERSION) {
+      window.localStorage.removeItem(STORAGE_KEYS.bancoPropostas);
+      window.localStorage.setItem(SEED_VERSION_KEY, String(SEED_VERSION));
+      return {};
+    }
     const raw = window.localStorage.getItem(STORAGE_KEYS.bancoPropostas);
     return raw ? (JSON.parse(raw) as Overlay) : {};
   } catch {
