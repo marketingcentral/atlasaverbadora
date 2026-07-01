@@ -16,6 +16,10 @@ const NAV = [
     ],
   },
   { key: "margem-contratacao", label: "Margem / Contratação", href: "/banco/margem-contratacao", icon: "▤" },
+  { key: "carteira", label: "Meus Contratos", href: "/banco/carteira", icon: "▥" },
+  { key: "adf", label: "ADF", href: "/banco/adf", icon: "▤" },
+  { key: "bate-carteira", label: "Bate de Carteira", href: "/banco/bate-carteira", icon: "▦" },
+  { key: "convenios", label: "Convênios", href: "/banco/convenios", icon: "◈" },
   { key: "gerenciador-contratos", label: "Gerenciador de Contratos", href: "/banco/gerenciador-contratos", icon: "▥" },
   {
     key: "relatorios",

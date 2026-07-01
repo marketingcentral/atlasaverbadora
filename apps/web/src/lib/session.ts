@@ -11,6 +11,7 @@ export const STORAGE_KEYS = {
   simulationLock: "atlas:simulationLock",
   notificationsRead: "atlas:notifications:read",
   bancoPropostas: "atlas:banco:propostas",
+  bancoAdf: "atlas:banco:adf",
 } as const;
 
 /** Limpa apenas o estado de matricula ativa (usado no fluxo de trocar). */
