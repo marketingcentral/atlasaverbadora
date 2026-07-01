@@ -169,7 +169,7 @@ export function getBancoConvenios(): string[] {
   return [...dedup];
 }
 
-/** Cadastra um novo convenio. Retorna false se ja existir. */
+/** Cadastra um novo convenio. Retorna false se ja existir ou se a persistencia falhou. */
 export function addBancoConvenio(nome: string): boolean {
   const trimmed = nome.trim();
   if (!trimmed) return false;
@@ -179,14 +179,11 @@ export function addBancoConvenio(nome: string): boolean {
   extras.push(trimmed);
   try {
     window.localStorage.setItem(STORAGE_KEYS.bancoConvenios, JSON.stringify(extras));
+    return true;
   } catch {
-    // ignore
+    return false;
   }
-  return true;
 }
-
-/** @deprecated use getBancoConvenios() para incluir os cadastrados via UI. */
-export const BANCO_CONVENIOS = BANCO_CONVENIOS_SEED;
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export function fmtBRL(n: number): string {

@@ -53,6 +53,7 @@ export function ServidorPropostas() {
   useEffect(() => {
     const hash = location.hash?.replace(/^#/, "");
     if (!hash) return;
+    let highlightTimer: ReturnType<typeof setTimeout> | undefined;
     // Pequeno delay pra dar tempo do DOM renderizar os cards.
     const t = setTimeout(() => {
       const el = document.getElementById(`proposta-${hash}`);
@@ -60,9 +61,12 @@ export function ServidorPropostas() {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       setHighlightId(hash);
       // Tira o destaque depois de 3s.
-      setTimeout(() => setHighlightId(null), 3000);
+      highlightTimer = setTimeout(() => setHighlightId(null), 3000);
     }, 100);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      if (highlightTimer) clearTimeout(highlightTimer);
+    };
   }, [location.hash, propostas]);
 
   useEffect(() => {

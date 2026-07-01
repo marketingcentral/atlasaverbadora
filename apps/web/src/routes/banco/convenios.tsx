@@ -97,7 +97,7 @@ function CadastrarConvenioModal({ existentes, onCancel, onSuccess }: CadastrarPr
     const ok = addBancoConvenio(trimmed);
     setSubmitting(false);
     if (!ok) {
-      setError("Não foi possível cadastrar. Tente outro nome.");
+      setError("Não foi possível salvar. Verifique o armazenamento do navegador e tente novamente.");
       return;
     }
     onSuccess();
