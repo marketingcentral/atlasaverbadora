@@ -85,8 +85,8 @@ async function resolvePrefeituraByCredentials(
  * Replace with real DB-backed lookup + Argon2 comparison once `users` is populated.
  */
 const DEV_USERS = [
-  { id: 1, identifier: "00011122233", password: "teste123", role: "servidor", nome: "Ana Carolina Silva", servidor_id: 1 },
-  { id: 2, identifier: "00011122234", password: "teste123", role: "servidor", nome: "Joao da Silva Neves", servidor_id: 2 },
+  { id: 1, identifier: "00011122233", password: "teste123", role: "servidor", nome: "ADRIANA MARQUES DA SILVA", servidor_id: 1 },
+  { id: 2, identifier: "00011122234", password: "teste123", role: "servidor", nome: "FERNANDA KELLI TOMAZONI", servidor_id: 2 },
   { id: 100, identifier: "banco@atlas.test", password: "teste123", role: "banco", nome: "Operador Banco SCred", banco_id: 1 },
   { id: 200, identifier: "admin@atlas.test", password: "teste123", role: "averbadora", nome: "Admin Atlas" },
   { id: 300, identifier: "prefeitura@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Palhoca", prefeitura_id: 1 },

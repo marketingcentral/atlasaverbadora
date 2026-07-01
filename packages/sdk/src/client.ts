@@ -620,6 +620,11 @@ export class AtlasClient {
     });
   }
 
+  /** All matrículas of the logged-in servidor, each with full data (margem, contratos, elegíveis). */
+  async getMyMatriculas<T = unknown>(): Promise<{ matriculas: T[] }> {
+    return this.request<{ matriculas: T[] }>("/v1/servidores/me/matriculas");
+  }
+
   // ============ Portal Banco ============
   readonly banco = {
     convenios: () => this.request<{ convenios: { id: string; nome: string; prefeitura: string; uf: string }[]; activeId: string }>("/v1/portal/banco/convenios"),

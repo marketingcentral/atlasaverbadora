@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -6,6 +6,7 @@ import { clearAtlasState } from "../../lib/session";
 import {
   MATRICULAS,
   STORAGE_KEY_ID,
+  hydrateMatriculas,
   readActiveIdMatricula,
   setActiveMatricula,
 } from "../../lib/matricula-data";
@@ -15,18 +16,31 @@ export function ServidorSelecionarMatricula() {
   const [search] = useSearchParams();
   const forceShow = search.get("trocar") === "1";
 
+  const [ready, setReady] = useState(MATRICULAS.length > 0);
+
   useEffect(() => {
-    if (forceShow) return;
-    const already = readActiveIdMatricula();
-    if (already && MATRICULAS.some((m) => m.idMatricula === already)) {
-      nav("/servidor/dashboard", { replace: true });
-      return;
-    }
-    if (MATRICULAS.length === 1) {
-      setActiveMatricula(MATRICULAS[0]!.idMatricula);
-      nav("/servidor/dashboard", { replace: true });
-    }
+    let cancelled = false;
+    // Hidrata as matriculas reais do backend antes de decidir o fluxo.
+    hydrateMatriculas().then(() => {
+      if (cancelled) return;
+      if (!forceShow) {
+        const already = readActiveIdMatricula();
+        if (already && MATRICULAS.some((m) => m.idMatricula === already)) {
+          nav("/servidor/dashboard", { replace: true });
+          return;
+        }
+        if (MATRICULAS.length === 1) {
+          setActiveMatricula(MATRICULAS[0]!.idMatricula);
+          nav("/servidor/dashboard", { replace: true });
+          return;
+        }
+      }
+      setReady(true);
+    });
+    return () => { cancelled = true; };
   }, [nav, forceShow]);
+
+  void ready;
 
   function escolher(idMatricula: string) {
     setActiveMatricula(idMatricula);

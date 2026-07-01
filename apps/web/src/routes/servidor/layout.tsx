@@ -1,9 +1,9 @@
-import { useLayoutEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { clearAtlasState } from "../../lib/session";
-import { readActiveIdMatricula } from "../../lib/matricula-data";
+import { readActiveIdMatricula, hydrateMatriculas } from "../../lib/matricula-data";
 import { NotificationBell } from "../../components/NotificationBell";
 
 const NAV = [
@@ -27,6 +27,11 @@ export function ServidorLayout() {
       nav("/servidor/selecionar-matricula", { replace: true });
     }
   }, [nav, location.pathname]);
+
+  // Refresca as matriculas do backend ao entrar no app (dados reais + consistentes).
+  useEffect(() => {
+    void hydrateMatriculas();
+  }, []);
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", background: "var(--bg)" }}>

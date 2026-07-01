@@ -5,12 +5,69 @@ import { Errors } from "../../_shared/errors.js";
 import { getBankAdapter } from "../../integrations/index.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
+import { bancos, prefeituras } from "../admin/index.js";
+import { listContratos } from "../portal-banco/store.js";
 
-// Dev shadow data — same identities as DEV_USERS in auth module, mirrored from sandbox adapter.
+// Dev shadow data — mirrors the SERVIDORES_BUSCA_MOCK identities (source of truth used
+// by todos os outros perfis), para o servidor ver os MESMOS dados.
 const DEV_SERVIDORES = [
-  { id: 1, nome: "Ana Carolina Silva", cpf: "00011122233", matricula: "M-009821", prefeitura_id: 1, vinculo: "ESTATUTARIO" as const, situacao_funcional: "ATIVO" as const, status: "ativo" as const, idConvenio: "CONV-001", idMatricula: "MAT-231401", salarioLiquido: 4620 },
-  { id: 2, nome: "Joao da Silva Neves", cpf: "00011122234", matricula: "M-009822", prefeitura_id: 2, vinculo: "ESTATUTARIO" as const, situacao_funcional: "ATIVO" as const, status: "ativo" as const, idConvenio: "CONV-002", idMatricula: "MAT-231402", salarioLiquido: 3820 },
+  { id: 1, nome: "ADRIANA MARQUES DA SILVA", cpf: "00011122233", matricula: "852029100", prefeitura_id: 1, vinculo: "ESTATUTARIO" as const, situacao_funcional: "ATIVO" as const, status: "ativo" as const, idConvenio: "CONV-001", idMatricula: "MAT-852029100", salarioLiquido: 4620 },
+  { id: 2, nome: "FERNANDA KELLI TOMAZONI", cpf: "00011122234", matricula: "843796302", prefeitura_id: 2, vinculo: "ESTATUTARIO" as const, situacao_funcional: "ATIVO" as const, status: "ativo" as const, idConvenio: "CONV-002", idMatricula: "MAT-843796302", salarioLiquido: 5320 },
 ];
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const bancoNome = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
+
+function mapContratoStatus(situacao: string): "Averbado" | "Em dia" | "Quitado" {
+  const s = situacao.toLowerCase();
+  if (s.includes("quitad")) return "Quitado";
+  if (s.includes("averb") || s.includes("aguard")) return "Averbado";
+  return "Em dia";
+}
+
+/**
+ * Builds the full MatriculaInfo the servidor app consumes, from the real base
+ * (SERVIDORES_BUSCA_MOCK + listContratos) — same source of truth as os outros perfis.
+ */
+function buildMatriculaInfo(e: ServidorBuscaMock) {
+  const conv = CONVENIOS_MOCK.find((cv) => cv.id === e.idConvenio);
+  const prefId = conv?.prefeituraId ?? 1;
+  const pref = prefeituras.find((p) => p.id === prefId);
+  const servidorId = Number(e.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
+  const contratos = listContratos({ matricula: e.matricula });
+  const ativos = contratos.filter((ct) => !["cancelado", "quitado"].includes(ct.situacao.toLowerCase()));
+  const comprometido = ativos.reduce((a, ct) => a + ct.valorParcela, 0);
+  const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
+    tipo,
+    total: round2(margemTotal(e.salarioLiquido, tipo)),
+    disponivel: round2(margemDisponivel(e.salarioLiquido, tipo === "EMPRESTIMO" ? comprometido : 0, tipo)),
+  }));
+  const emp = margens.find((m) => m.tipo === "EMPRESTIMO")!;
+  const contratosMock = contratos.map((ct) => ({
+    id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
+    total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: ct.folhaUltimoDesconto || "—",
+    taxaAm: ct.taxaAm, valorFinanciado: round2(ct.valorFinanciado), pdfUrl: `/v1/portal/banco/contratos/${ct.adf}/comprovante.pdf`,
+  }));
+  const elegiveis = ativos.map((ct) => ({
+    id: ct.adf, banco: bancoNome(ct.bancoId), saldoDevedor: round2(ct.saldoDevedor), parcela: round2(ct.valorParcela),
+    parcelasRestantes: ct.totalParcelas - ct.parcelasPagas, totalParcelas: ct.totalParcelas, taxaAm: ct.taxaAm,
+    tipoContrato: (ct.tipoContrato === "REFIN" ? "Refin" : "Emprestimo") as "Emprestimo" | "Refin",
+  }));
+  return {
+    idMatricula: e.idMatricula, matricula: e.matricula,
+    prefeitura: pref ? `Prefeitura de ${pref.nome}` : e.origem, prefeitura_id: prefId, servidor_id: servidorId,
+    uf: pref?.uf ?? "SC", cargo: e.cargo ?? "—", vinculo: (["ESTATUTARIO", "CLT", "COMISSIONADO"].includes(e.vinculo) ? e.vinculo : "ESTATUTARIO") as "ESTATUTARIO" | "CLT" | "COMISSIONADO",
+    nome: e.nome, email: e.email ?? "", telefone: e.telefone ?? "", endereco: e.endereco ?? "", ativa: true,
+    margem: {
+      servidor_id: servidorId, matricula: e.matricula, prefeitura_id: prefId,
+      margem: { salario_base: e.salarioLiquido, comprometido: round2(comprometido), disponivel: emp.disponivel, percentual_uso: percentualUso(e.salarioLiquido, comprometido, "EMPRESTIMO") },
+      margens_por_tipo: margens,
+      fonte: { tipo: "folha_prefeitura" as const, sincronizado_em: new Date().toISOString(), cache_status: "MISS" as const },
+    },
+    contratos: contratosMock,
+    elegiveisPortabilidade: elegiveis,
+  };
+}
 
 interface ResolvedServidor {
   id: number;
@@ -123,6 +180,16 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       },
       _meta: { trace_id: c.get("trace_id"), duracao_ms: Date.now() - startedAt },
     });
+  })
+  // Todas as matrículas do servidor logado, com MatriculaInfo completo (dados reais).
+  .get("/v1/servidores/me/matriculas", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
+    const matriculas = entries.map((e) => buildMatriculaInfo(e));
+    return c.json({ matriculas });
   })
   .get("/v1/servidores/:id", async (c) => {
     const j = c.get("jwt");
