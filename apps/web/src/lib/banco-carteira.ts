@@ -263,17 +263,26 @@ export interface ConvenioResumo {
   contratosAtivos: number;
   volumeAtivo: number;
   inadimplentes: number;
+  quitados: number;
+  ticketMedio: number;
+  matriculasUnicas: number;
 }
 
 export function getConveniosDoBanco(): ConvenioResumo[] {
   const carteira = getCarteira();
   return getBancoConvenios().map((nome) => {
-    const doConv = carteira.filter((c) => c.convenio === nome && c.status !== "quitado");
+    const doConv = carteira.filter((c) => c.convenio === nome);
+    const ativos = doConv.filter((c) => c.status !== "quitado");
+    const volumeAtivo = ativos.reduce((sum, c) => sum + c.valor, 0);
+    const matriculas = new Set(ativos.map((c) => c.matricula));
     return {
       nome,
-      contratosAtivos: doConv.length,
-      volumeAtivo: doConv.reduce((sum, c) => sum + c.valor, 0),
-      inadimplentes: doConv.filter((c) => c.status === "inadimplente").length,
+      contratosAtivos: ativos.length,
+      volumeAtivo,
+      inadimplentes: ativos.filter((c) => c.status === "inadimplente").length,
+      quitados: doConv.filter((c) => c.status === "quitado").length,
+      ticketMedio: ativos.length > 0 ? volumeAtivo / ativos.length : 0,
+      matriculasUnicas: matriculas.size,
     };
   });
 }

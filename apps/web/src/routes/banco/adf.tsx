@@ -1,28 +1,55 @@
-import { useState } from "react";
-import { Button, DataTable, Pill, type Column } from "@atlas/ui/web";
-import { downloadJson } from "../../lib/csv";
+import { useMemo, useState } from "react";
+import { Button, DataTable, Pill, SelectField, type Column } from "@atlas/ui/web";
+import { buildSimplePdf, downloadPdf } from "../../lib/pdf";
 import { fmtBRL, fmtDateTime, getBancoPerfil } from "../../lib/banco-propostas";
 import { gerarAdf, getAdf, getCarteira, type Contrato } from "../../lib/banco-carteira";
+
+type FiltroAdf = "todas" | "geradas" | "pendentes";
 
 export function BancoAdf() {
   const perfil = getBancoPerfil();
   const [version, setVersion] = useState(0);
-  const contratos = getCarteira();
+  const [filtro, setFiltro] = useState<FiltroAdf>("todas");
+  const todosContratos = getCarteira();
   void version;
+
+  const contratos = useMemo(() => {
+    if (filtro === "todas") return todosContratos;
+    return todosContratos.filter((c) => (filtro === "geradas" ? !!getAdf(c.idUnico) : !getAdf(c.idUnico)));
+  }, [todosContratos, filtro, version]);
 
   const baixar = (c: Contrato) => {
     const adf = gerarAdf(c.idUnico);
     setVersion((v) => v + 1);
-    downloadJson(`${adf.numero}.json`, {
-      documento: "Autorização de Desconto em Folha",
-      numero: adf.numero,
-      idUnicoOperacao: c.idUnico, // ID único fornecido pela averbadora — chave da ADF
-      convenio: c.convenio,
-      servidor: { nome: c.nome, cpf: c.cpfMasked, matricula: c.matricula },
-      operacao: { valor: c.valor, parcelas: c.parcelas, valorParcela: c.valorParcela },
-      geradaEm: adf.geradaEm,
-    });
+    // PDF oficial (Courier + Courier-Bold, gerado no cliente sem dependencias).
+    const pdf = buildSimplePdf("AUTORIZACAO DE DESCONTO EM FOLHA (ADF)", [
+      { text: `Numero: ${adf.numero}`, bold: true },
+      `ID unico da operacao: ${c.idUnico}`,
+      `Gerada em: ${fmtDateTime(adf.geradaEm)}`,
+      "",
+      { text: "SERVIDOR", bold: true },
+      `Nome: ${c.nome}`,
+      `CPF: ${c.cpfMasked}`,
+      `Matricula: ${c.matricula}`,
+      `Convenio: ${c.convenio}`,
+      "",
+      { text: "OPERACAO", bold: true },
+      `Valor total: ${fmtBRL(c.valor).replace(/\s/g, " ")}`,
+      `Parcelas: ${c.parcelas}x de ${fmtBRL(c.valorParcela).replace(/\s/g, " ")}`,
+      `CCB: ${c.ccbUrl}`,
+      "",
+      "Este documento autoriza o desconto em folha das parcelas descritas",
+      "acima, conforme convenio vigente entre o banco e a prefeitura.",
+      "A conformidade da averbacao e responsabilidade da Atlas Averbadora.",
+    ]);
+    downloadPdf(`${adf.numero}.pdf`, pdf);
   };
+
+  const contadores = useMemo(() => {
+    const geradas = todosContratos.filter((c) => getAdf(c.idUnico)).length;
+    const pendentes = todosContratos.length - geradas;
+    return { geradas, pendentes, total: todosContratos.length };
+  }, [todosContratos, version]);
 
   const columns: Column<Contrato>[] = [
     { key: "idUnico", header: "ID único", mono: true },
@@ -64,9 +91,22 @@ export function BancoAdf() {
         <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>ADF — Autorização de Desconto em Folha</h1>
         <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 680 }}>
           Cada operação averbada gera e armazena sua ADF. O documento carrega o <strong>ID único da operação</strong>,
-          fornecido pela averbadora.
+          fornecido pela averbadora. A ADF é baixada em PDF oficial.
         </p>
       </header>
+
+      <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
+        <SelectField
+          label="Situação"
+          value={filtro}
+          onChange={(e) => setFiltro(e.target.value as FiltroAdf)}
+          options={[
+            { value: "todas", label: `Todas (${contadores.total})` },
+            { value: "geradas", label: `Geradas (${contadores.geradas})` },
+            { value: "pendentes", label: `Pendentes (${contadores.pendentes})` },
+          ]}
+        />
+      </div>
 
       <DataTable
         columns={columns}

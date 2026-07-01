@@ -28,19 +28,27 @@ export function BancoConvenios() {
         </p>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
         {convenios.map((c) => (
           <div key={c.nome} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 18 }}>
             <h2 style={{ margin: "0 0 12px", fontSize: "1.1rem" }}>{c.nome}</h2>
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14 }}>
               <Row label="Contratos ativos" value={`${c.contratosAtivos}`} />
+              <Row label="Matrículas únicas" value={`${c.matriculasUnicas}`} />
               <Row label="Volume ativo" value={fmtBRL(c.volumeAtivo)} />
+              <Row label="Ticket médio" value={fmtBRL(c.ticketMedio)} />
+              <Row label="Quitados (histórico)" value={`${c.quitados}`} />
               <Row
                 label="Inadimplentes"
                 value={`${c.inadimplentes}`}
                 accent={c.inadimplentes > 0 ? "var(--gold-500)" : undefined}
               />
             </div>
+            {c.contratosAtivos === 0 ? (
+              <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", fontStyle: "italic" }}>
+                Sem operações averbadas neste convênio ainda.
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
