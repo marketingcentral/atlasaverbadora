@@ -355,6 +355,9 @@ export interface AdminServidor {
   status: "ativo" | "bloqueado" | "arquivado";
   email: string;
   telefone: string;
+  cargo?: string;
+  endereco?: string;
+  codigoIbge?: number | null;
   /** true se o servidor já tem senha cadastrada; o plaintext nunca é retornado. */
   hasPassword: boolean;
 }

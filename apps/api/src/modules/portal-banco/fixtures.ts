@@ -88,6 +88,11 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     situacaoFuncional: "TRABALHANDO",
     salarioLiquido: 4620,
     idConvenio: "CONV-001",
+    cargo: "Professora II",
+    endereco: "Rua das Palmeiras, 320 - Centro, Palhoca/SC",
+    email: "adriana.silva@palhoca.sc.gov.br",
+    telefone: "48991012233",
+    codigoIbge: 4211900,
   },
   {
     cpf: "00011122234",
@@ -102,6 +107,11 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     situacaoFuncional: "TRABALHANDO",
     salarioLiquido: 5320,
     idConvenio: "CONV-002",
+    cargo: "Enfermeira",
+    endereco: "Av. Beira Mar Norte, 1500 - Centro, Florianopolis/SC",
+    email: "fernanda.tomazoni@floripa.sc.gov.br",
+    telefone: "48991022234",
+    codigoIbge: 4205407,
   },
   {
     cpf: "00011122235",
@@ -116,6 +126,11 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     situacaoFuncional: "TRABALHANDO",
     salarioLiquido: 3820,
     idConvenio: "CONV-003",
+    cargo: "Auxiliar Administrativo",
+    endereco: "Rua XV de Novembro, 88 - Centro, Joinville/SC",
+    email: "suzana.dallarmi@joinville.sc.gov.br",
+    telefone: "47991032235",
+    codigoIbge: 4209102,
   },
 ];
 
@@ -135,7 +150,7 @@ export interface ContratoMock {
 }
 
 export const CONTRATOS_MOCK: ContratoMock[] = [
-  { adf: "472600084", situacao: "Aguardando Confirmação do Deferimento", lancamento: "19/06/2026", expiracao: "26/06/2026", cpfMasked: "***.***.***-32", matricula: "843796302", nome: "FERNANDA KELLI TOMAZONI", tipoContrato: "EMPRESTIMO", totalParcelas: 96, valorParcela: 240.18, convenio: "FLORIPA / DELTA GLOBAL", convenioId: "CONV-002" },
-  { adf: "461050084", situacao: "Ativo", lancamento: "25/03/2026", expiracao: null, cpfMasked: "***.***.***-01", matricula: "56571701", nome: "SUZANA DALLARMI", tipoContrato: "EMPRESTIMO", totalParcelas: 84, valorParcela: 312.50, convenio: "JOINVILLE / DELTA GLOBAL", convenioId: "CONV-003" },
+  { adf: "472600084", situacao: "Aguardando Confirmação do Deferimento", lancamento: "19/06/2026", expiracao: "26/06/2026", cpfMasked: "***.***.***-34", matricula: "843796302", nome: "FERNANDA KELLI TOMAZONI", tipoContrato: "EMPRESTIMO", totalParcelas: 96, valorParcela: 240.18, convenio: "FLORIPA / DELTA GLOBAL", convenioId: "CONV-002" },
+  { adf: "461050084", situacao: "Ativo", lancamento: "25/03/2026", expiracao: null, cpfMasked: "***.***.***-35", matricula: "56571701", nome: "SUZANA DALLARMI", tipoContrato: "EMPRESTIMO", totalParcelas: 84, valorParcela: 312.50, convenio: "JOINVILLE / DELTA GLOBAL", convenioId: "CONV-003" },
   { adf: "460690084", situacao: "Ativo", lancamento: "18/03/2026", expiracao: null, cpfMasked: "***.***.***-33", matricula: "852029100", nome: "ADRIANA MARQUES DA SILVA", tipoContrato: "EMPRESTIMO", totalParcelas: 120, valorParcela: 15.48, convenio: "CASTRO / DELTA GLOBAL", convenioId: "CONV-001" },
 ];

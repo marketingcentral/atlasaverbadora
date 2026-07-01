@@ -34,6 +34,7 @@ export function AdminServidores() {
     { key: "nome", header: "Nome" },
     { key: "matricula", header: "Matrícula" },
     { key: "cpf", header: "CPF", mono: true, render: (s) => fmtCpf(s.cpf) },
+    { key: "cargo", header: "Cargo", render: (s) => s.cargo || "—" },
     { key: "origem", header: "Origem" },
     { key: "vinculo", header: "Vínculo" },
     { key: "situacaoFuncional", header: "Situação funcional" },

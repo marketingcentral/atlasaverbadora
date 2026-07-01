@@ -402,6 +402,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       status: servidorStatusOverride.get(s.matricula) ?? ("ativo" as ServidorStatus),
       email: s.email ?? "",
       telefone: s.telefone ?? "",
+      cargo: s.cargo ?? "",
+      endereco: s.endereco ?? "",
+      codigoIbge: s.codigoIbge ?? null,
       hasPassword: !!s.passwordHash,
     }));
     if (prefeituraId) {
