@@ -5,6 +5,10 @@ import { atlas } from "../../lib/sdk";
 import type { AdminServidor, AdminServidorUpdate, CsvImportOutcome } from "@atlas/sdk";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+const fmtCpf = (cpf: string) => {
+  const d = (cpf ?? "").replace(/\D/g, "");
+  return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : (cpf || "—");
+};
 
 export function AdminServidores() {
   const qc = useQueryClient();
@@ -20,7 +24,7 @@ export function AdminServidores() {
   });
 
   const filtered = (data.data?.servidores ?? []).filter((s) =>
-    search ? `${s.nome} ${s.matricula} ${s.cpfMasked}`.toLowerCase().includes(search.toLowerCase()) : true,
+    search ? `${s.nome} ${s.matricula} ${s.cpf} ${s.cpfMasked}`.toLowerCase().includes(search.toLowerCase()) : true,
   );
 
   const prefSelecionada = (prefeituras.data?.prefeituras ?? []).find((p) => String(p.id) === prefId);
@@ -29,7 +33,7 @@ export function AdminServidores() {
   const columns: Column<AdminServidor>[] = [
     { key: "nome", header: "Nome" },
     { key: "matricula", header: "Matrícula" },
-    { key: "cpfMasked", header: "CPF", mono: true },
+    { key: "cpf", header: "CPF", mono: true, render: (s) => fmtCpf(s.cpf) },
     { key: "origem", header: "Origem" },
     { key: "vinculo", header: "Vínculo" },
     { key: "situacaoFuncional", header: "Situação funcional" },

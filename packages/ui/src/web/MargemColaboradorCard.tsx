@@ -16,8 +16,14 @@ interface Props {
   onClose?: () => void;
 }
 
+function fmtCpf(cpf: string): string {
+  const d = (cpf ?? "").replace(/\D/g, "");
+  return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : cpf;
+}
+
 export function MargemColaboradorCard({ ficha, onClose }: Props) {
-  const [revealCpf, setRevealCpf] = useState(false);
+  // Operadores do banco veem o CPF completo por padrao (dado autorizado via convenio).
+  const [revealCpf, setRevealCpf] = useState(true);
   return (
     <article
       style={{
@@ -33,7 +39,7 @@ export function MargemColaboradorCard({ ficha, onClose }: Props) {
           label="CPF"
           value={
             <span style={{ display: "inline-flex", gap: 8, alignItems: "center", fontFamily: "var(--font-mono)" }}>
-              {revealCpf ? ficha.cpf : ficha.cpfMasked}
+              {revealCpf ? fmtCpf(ficha.cpf) : ficha.cpfMasked}
               <button
                 type="button"
                 onClick={() => setRevealCpf((v) => !v)}
