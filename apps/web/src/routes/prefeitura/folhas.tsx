@@ -75,7 +75,7 @@ function NovaFolha({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button onClick={() => save.mutate()} disabled={save.isPending || !competencia || !dataCorte}>{save.isPending ? "Abrindo…" : "Abrir folha"}</Button>
       </div>
-      {save.isError ? <p style={{ color: "#ef4444", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
+      {save.isError ? <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
     </Modal>
   );
 }

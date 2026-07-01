@@ -75,7 +75,7 @@ function PerfilModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button onClick={() => save.mutate()} disabled={save.isPending || !nome || !email}>{save.isPending ? "Salvando…" : "Criar"}</Button>
       </div>
-      {save.isError ? <p style={{ color: "#ef4444", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
+      {save.isError ? <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
     </Modal>
   );
 }

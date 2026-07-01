@@ -50,7 +50,7 @@ export function PrefeituraRelatorios() {
 
       <Card>
         <span style={eyebrow}>Inconsistências ({inc.data?.total ?? 0})</span>
-        <DataTable columns={[{ key: "matricula", header: "Matrícula", mono: true }, { key: "nome", header: "Servidor" }, { key: "problema", header: "Problema", render: (r: { problema: string }) => <span style={{ color: "#ef4444" }}>{r.problema}</span> }] as Column<{ matricula: string; nome: string; problema: string }>[]} rows={inc.data?.inconsistencias ?? []} rowKey={(r) => `${r.matricula}-${r.problema}`} loading={inc.isLoading} emptyState="Nenhuma inconsistência." />
+        <DataTable columns={[{ key: "matricula", header: "Matrícula", mono: true }, { key: "nome", header: "Servidor" }, { key: "problema", header: "Problema", render: (r: { problema: string }) => <span style={{ color: "var(--danger-500)" }}>{r.problema}</span> }] as Column<{ matricula: string; nome: string; problema: string }>[]} rows={inc.data?.inconsistencias ?? []} rowKey={(r) => `${r.matricula}-${r.problema}`} loading={inc.isLoading} emptyState="Nenhuma inconsistência." />
       </Card>
     </div>
   );

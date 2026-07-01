@@ -240,7 +240,7 @@ function TokenModal({ scopesByAudience, onClose, onCreated }: { scopesByAudience
             {create.isPending ? "Criando…" : "Criar token"}
           </Button>
         </div>
-        {create.isError ? <p style={{ color: "#ef4444", marginTop: 12, fontSize: 13 }}>{(create.error as Error).message}</p> : null}
+        {create.isError ? <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>{(create.error as Error).message}</p> : null}
       </div>
     </div>
   );

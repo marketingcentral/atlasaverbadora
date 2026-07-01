@@ -44,7 +44,7 @@ export function PrefeituraAnuencia() {
             Li e autorizo o uso da base conforme o termo acima (LGPD).
           </label>
           <div><Button onClick={() => aceitar.mutate()} disabled={!check || aceitoPor.length < 2 || aceitar.isPending}>{aceitar.isPending ? "Registrando…" : vigente ? "Registrar nova confirmação" : "Registrar anuência"}</Button></div>
-          {aceitar.isError ? <p style={{ color: "#ef4444", fontSize: 13 }}>{(aceitar.error as Error).message}</p> : null}
+          {aceitar.isError ? <p style={{ color: "var(--danger-500)", fontSize: 13 }}>{(aceitar.error as Error).message}</p> : null}
         </div>
       </Card>
 

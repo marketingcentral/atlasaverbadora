@@ -126,7 +126,7 @@ function DeliveriesPanel({ id, onClose }: { id: string; onClose: () => void }) {
     { key: "status", header: "Status", render: (d) => <Pill variant={d.status === "success" ? "emdia" : d.status === "failed" ? "expirado" : "pendente"}>{d.status}</Pill> },
     { key: "httpStatus", header: "HTTP", render: (d) => d.httpStatus ?? "—" },
     { key: "attempt", header: "Tent.", render: (d) => d.attempt ?? "—" },
-    { key: "error", header: "Erro", render: (d) => d.error ? <span style={{ fontSize: 11, color: "#ef4444" }}>{d.error}</span> : "—" },
+    { key: "error", header: "Erro", render: (d) => d.error ? <span style={{ fontSize: 11, color: "var(--danger-500)" }}>{d.error}</span> : "—" },
     { key: "preview", header: "Payload", render: (d) => <code style={{ fontSize: 11, color: "var(--text-muted)" }}>{d.payloadPreview}</code> },
   ];
   return (
@@ -196,7 +196,7 @@ function WebhookModal({ events, onClose, onCreated }: { events: readonly string[
             {create.isPending ? "Criando…" : "Criar webhook"}
           </Button>
         </div>
-        {create.isError ? <p style={{ color: "#ef4444", marginTop: 12, fontSize: 13 }}>{(create.error as Error).message}</p> : null}
+        {create.isError ? <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>{(create.error as Error).message}</p> : null}
       </div>
     </div>
   );

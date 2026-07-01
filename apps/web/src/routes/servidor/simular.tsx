@@ -287,14 +287,14 @@ export function ServidorSimular() {
               marginTop: 18,
               padding: "12px 14px",
               borderRadius: 10,
-              border: "1px solid color-mix(in srgb, #ef4444 60%, transparent)",
-              background: "color-mix(in srgb, #ef4444 10%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--danger-500) 60%, transparent)",
+              background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
               color: "var(--text)",
               fontSize: 13,
               lineHeight: 1.5,
             }}
           >
-            <b style={{ color: "#ef4444" }}>Parcela acima da sua margem disponível.</b><br />
+            <b style={{ color: "var(--danger-500)" }}>Parcela acima da sua margem disponível.</b><br />
             A parcela calculada ({fmtBRL(parcela)}) ultrapassa o limite de {fmtBRL(margemEmprestimo)} consignável.
             Reduza o valor ou aumente o número de parcelas.
           </div>
@@ -315,7 +315,7 @@ export function ServidorSimular() {
 }
 
 function Metric({ label, valor, accent, danger }: { label: string; valor: string; accent?: boolean; danger?: boolean }) {
-  const color = danger ? "#ef4444" : accent ? "var(--emerald-500)" : "var(--text)";
+  const color = danger ? "var(--danger-500)" : accent ? "var(--emerald-500)" : "var(--text)";
   return (
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>{label}</div>

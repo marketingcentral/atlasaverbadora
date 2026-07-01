@@ -17,7 +17,7 @@ export function PrefeituraTombamento() {
     { key: "totalLinhas", header: "Linhas", align: "right" },
     { key: "inseridos", header: "Inseridos", align: "right" },
     { key: "atualizados", header: "Atualizados", align: "right" },
-    { key: "divergencias", header: "Divergências", align: "right", render: (l) => <span style={{ color: l.divergencias ? "#ef4444" : "var(--text-muted)" }}>{l.divergencias}</span> },
+    { key: "divergencias", header: "Divergências", align: "right", render: (l) => <span style={{ color: l.divergencias ? "var(--danger-500)" : "var(--text-muted)" }}>{l.divergencias}</span> },
     { key: "recebidoEm", header: "Recebido", render: (l) => new Date(l.recebidoEm).toLocaleString("pt-BR") },
   ];
 

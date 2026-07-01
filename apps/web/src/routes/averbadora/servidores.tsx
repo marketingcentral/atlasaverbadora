@@ -197,7 +197,7 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServidor; on
           </FormGrid>
         </div>
 
-        {save.isError ? <p style={{ color: "#ef4444", fontSize: 13, marginTop: 12 }}>{(save.error as Error).message}</p> : null}
+        {save.isError ? <p style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 12 }}>{(save.error as Error).message}</p> : null}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
@@ -276,17 +276,17 @@ function ImportModal({
         </details>
 
         {importMut.isError ? (
-          <p style={{ color: "#ef4444", fontSize: 13, marginTop: 12 }}>{(importMut.error as Error).message}</p>
+          <p style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 12 }}>{(importMut.error as Error).message}</p>
         ) : null}
 
         {result ? (
           <div style={{ marginTop: 14, padding: 12, background: "var(--bg-elev-2)", borderRadius: 8, fontSize: 13 }}>
             <div>
               <b>{result.inserted}</b> inseridos · <b>{result.updated}</b> atualizados
-              {result.errors.length > 0 ? <> · <span style={{ color: "#ef4444" }}>{result.errors.length} erros</span></> : null}
+              {result.errors.length > 0 ? <> · <span style={{ color: "var(--danger-500)" }}>{result.errors.length} erros</span></> : null}
             </div>
             {result.errors.length > 0 ? (
-              <ul style={{ marginTop: 8, paddingLeft: 16, color: "#ef4444", fontSize: 12 }}>
+              <ul style={{ marginTop: 8, paddingLeft: 16, color: "var(--danger-500)", fontSize: 12 }}>
                 {result.errors.slice(0, 8).map((er, i) => (
                   <li key={i}>Linha {er.line}: {er.message}</li>
                 ))}

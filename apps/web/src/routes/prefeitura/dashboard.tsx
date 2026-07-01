@@ -10,7 +10,7 @@ export function PrefeituraDashboard() {
   const q = useQuery({ queryKey: ["prefeitura", "dashboard"], queryFn: () => atlas.prefeitura.dashboard() });
 
   if (q.isLoading) return <Card><span style={{ color: "var(--text-muted)" }}>Carregando…</span></Card>;
-  if (q.error || !q.data) return <Card><span style={{ color: "#ef4444" }}>Erro ao carregar painel.</span></Card>;
+  if (q.error || !q.data) return <Card><span style={{ color: "var(--danger-500)" }}>Erro ao carregar painel.</span></Card>;
 
   const { kpis, folhas, prefeitura, folhaAtual, pendencias } = q.data;
   const totalPend = pendencias.folhasAbertas + pendencias.servidoresSemConvenio + pendencias.anuenciaPendente;
@@ -25,7 +25,7 @@ export function PrefeituraDashboard() {
 
       {totalPend > 0 ? (
         <Card style={{ borderColor: "color-mix(in srgb, var(--gold-500) 55%, transparent)", background: "color-mix(in srgb, var(--gold-500) 8%, transparent)" }}>
-          <span className="eyebrow" style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", color: "var(--gold-600, #b45309)", textTransform: "uppercase" }}>Pendências de upload</span>
+          <span className="eyebrow" style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", color: "var(--gold-600)", textTransform: "uppercase" }}>Pendências de upload</span>
           <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginTop: 10, fontSize: 14 }}>
             {pendencias.folhasAbertas > 0 ? <button style={linkBtn} onClick={() => nav("/prefeitura/folhas")}>● {pendencias.folhasAbertas} folha(s) aberta(s)</button> : null}
             {pendencias.servidoresSemConvenio > 0 ? <button style={linkBtn} onClick={() => nav("/prefeitura/servidores")}>● {pendencias.servidoresSemConvenio} servidor(es) sem convênio</button> : null}
@@ -53,12 +53,12 @@ export function PrefeituraDashboard() {
         <span className="eyebrow" style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", color: "var(--text-dim)", textTransform: "uppercase" }}>Margem consignável agregada</span>
         <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", marginTop: 12 }}>
           <Metric label="Total" valor={fmtBRL(kpis.margemTotal)} />
-          <Metric label="Comprometida" valor={fmtBRL(kpis.margemComprometida)} cor="#ef4444" />
+          <Metric label="Comprometida" valor={fmtBRL(kpis.margemComprometida)} cor="var(--danger-500)" />
           <Metric label="Disponível" valor={fmtBRL(kpis.margemDisponivel)} cor="var(--emerald-500)" />
           <Metric label="% de uso" valor={`${(kpis.percentualUso * 100).toFixed(1)}%`} />
         </div>
         <div style={{ marginTop: 14, height: 8, background: "var(--bg-elev-2)", borderRadius: 4, overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${Math.min(kpis.percentualUso * 100, 100)}%`, background: "linear-gradient(90deg, var(--gold-500), #ef4444)" }} />
+          <div style={{ height: "100%", width: `${Math.min(kpis.percentualUso * 100, 100)}%`, background: "linear-gradient(90deg, var(--gold-500), var(--danger-500))" }} />
         </div>
       </Card>
 

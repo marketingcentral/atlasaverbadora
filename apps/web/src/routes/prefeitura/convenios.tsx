@@ -82,7 +82,7 @@ function ConfigModal({ id, onClose, onSaved }: { id: string; onClose: () => void
             <Button variant="ghost" onClick={onClose}>Cancelar</Button>
             <Button onClick={() => save.mutate()} disabled={save.isPending || f.vinculosAceitos.length === 0 || f.prefixo.length < 2}>{save.isPending ? "Salvando…" : "Salvar config"}</Button>
           </div>
-          {save.isError ? <p style={{ color: "#ef4444", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
+          {save.isError ? <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
         </>
       )}
     </Modal>

@@ -25,7 +25,7 @@ export function PrefeituraServidores() {
     { key: "cargo", header: "Cargo", render: (s) => s.cargo || "—" },
     { key: "vinculo", header: "Vínculo" },
     { key: "situacaoFuncional", header: "Situação", render: (s) => <Pill variant={/desligado|aposentad/i.test(s.situacaoFuncional) ? "expirado" : "averbado"}>{s.situacaoFuncional}</Pill> },
-    { key: "idConvenio", header: "Convênio", render: (s) => s.idConvenio || <span style={{ color: "#ef4444" }}>sem convênio</span> },
+    { key: "idConvenio", header: "Convênio", render: (s) => s.idConvenio || <span style={{ color: "var(--danger-500)" }}>sem convênio</span> },
     { key: "margemDisponivel", header: "Margem disp.", align: "right", render: (s) => fmtBRL(s.margemDisponivel ?? 0) },
     { key: "acoes", header: "", render: (s) => <IconButton onClick={() => setEditing(s)}>Editar</IconButton> },
   ];
@@ -97,7 +97,7 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServido
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button onClick={() => save.mutate()} disabled={save.isPending}>{save.isPending ? "Salvando…" : "Salvar"}</Button>
       </div>
-      {save.isError ? <p style={{ color: "#ef4444", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
+      {save.isError ? <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
     </Modal>
   );
 }
