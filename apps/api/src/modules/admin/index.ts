@@ -538,7 +538,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       };
       pushEvent("info", "admin", `Banco "${bancos[idx]!.nome}" atualizado${password ? " (senha trocada)" : ""}`);
       await persistBanco(c.env, bancos[idx]!);
-      await syncBancoAccess(c.env, bancos[idx]!); // status ativo↔inativo → retoma/pausa tokens+webhooks
+      const casc = await syncBancoAccess(c.env, bancos[idx]!); // status ativo↔inativo → retoma/pausa tokens+webhooks
+      if (casc.tokens || casc.webhooks) {
+        const verbo = bancos[idx]!.status === "ativo" ? "reativados" : "pausados";
+        pushEvent("info", "admin.bancos.cascata", `Banco "${bancos[idx]!.nome}" ${bancos[idx]!.status}: ${casc.tokens} token(s) e ${casc.webhooks} webhook(s) ${verbo} junto.`);
+      }
       return c.json({ banco: sanitizeBanco(bancos[idx]!) });
     }
     const novo: BancoAdmin = {
@@ -909,7 +913,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
     const env = c.req.query("environment") as ApiEnvironment | undefined;
     const aud = c.req.query("audience") as ApiAudience | undefined;
-    const tokens = await listTokens(kv, { ...(env ? { environment: env } : {}), ...(aud ? { audience: aud } : {}) });
+    const raw = await listTokens(kv, { ...(env ? { environment: env } : {}), ...(aud ? { audience: aud } : {}) });
+    // Overlay imediato do pause: o status exibido segue o status do banco dono
+    // (fonte de verdade), sem esperar o TTL de leitura do KV. Banco pausado →
+    // token aparece "Pausado"; banco ativo → limpa pausedAt eventualmente stale.
+    const tokens = raw.map((t) => {
+      if (t.audience !== "banco") return t;
+      const banco = bancos.find((b) => b.id === t.partnerId);
+      if (!banco) return t;
+      if (banco.status !== "ativo") return { ...t, pausedAt: t.pausedAt ?? new Date().toISOString() };
+      const { pausedAt: _drop, ...rest } = t;
+      return rest;
+    });
     return c.json({ tokens, scopesByAudience: SCOPES_BY_AUDIENCE });
   })
   .post("/v1/admin/api-tokens", authRequired, async (c) => {
@@ -940,7 +955,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/webhooks", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
     const env = c.req.query("environment") as ApiEnvironment | undefined;
-    return c.json({ webhooks: listWebhooks(env ? { environment: env } : undefined), events: WEBHOOK_EVENTS });
+    // Overlay do pause: webhook de banco pausado aparece inativo, seguindo o
+    // status do banco (fonte de verdade), independente do estado em memória
+    // deste isolate.
+    const webhooks = listWebhooks(env ? { environment: env } : undefined).map((w) => {
+      if (w.audience !== "banco") return w;
+      const banco = bancos.find((b) => b.id === w.partnerId);
+      return banco && banco.status !== "ativo" ? { ...w, active: false } : w;
+    });
+    return c.json({ webhooks, events: WEBHOOK_EVENTS });
   })
   .post("/v1/admin/webhooks", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
