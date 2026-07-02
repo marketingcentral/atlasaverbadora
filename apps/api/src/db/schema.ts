@@ -29,6 +29,9 @@ export const prefeituras = pgTable("prefeituras", {
   modoIntegracao: varchar("modo_integracao", { length: 16 }).notNull().default("MANUAL"),
   status: varchar("status", { length: 16 }).notNull().default("ativo"),
   ultimaSincronizacao: timestamp("ultima_sincronizacao", { withTimezone: true }),
+  // Campos extras do admin (loginEmail, passwordHash, servidoresCount). Coluna
+  // adicionada em runtime via ensureSchema() por ainda não haver migração dedicada.
+  config: jsonb("config").$type<Record<string, unknown>>().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -43,6 +46,10 @@ export const servidores = pgTable("servidores", {
   status: servidorStatusEnum("status").notNull().default("ativo"),
   dataNascimento: timestamp("data_nascimento", { mode: "string" }),
   salarioBase: numeric("salario_base", { precision: 12, scale: 2 }),
+  // Snapshot completo do ServidorBuscaMock (idMatricula, origem, idConvenio, cargo,
+  // endereco, email, telefone, codigoIbge, cpfMasked, dataAdmissao, passwordHash).
+  // Coluna adicionada em runtime via ensureSchema().
+  data: jsonb("data").$type<Record<string, unknown>>().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   cpfMatIdx: uniqueIndex("servidores_cpf_matricula_uq").on(t.cpf, t.matricula),

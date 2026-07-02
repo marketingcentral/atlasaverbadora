@@ -8,7 +8,7 @@ import { listContratos } from "../portal-banco/store.js";
 import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { loadBancos, seedBancosIfEmpty, upsertBanco } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, loadServidores, seedServidoresIfEmpty, upsertServidor } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
@@ -121,6 +121,50 @@ export const prefeituras: PrefeituraAdmin[] = [
   { id: 2, nome: "Florianopolis", uf: "SC", municipioIbge: 4205407, modoIntegracao: "SOAP", status: "ativo", servidoresCount: 1100, ultimaSincronizacao: "2026-06-22T03:21:00Z" },
   { id: 3, nome: "Joinville", uf: "SC", municipioIbge: 4209102, modoIntegracao: "CSV", status: "ativo", servidoresCount: 480, ultimaSincronizacao: "2026-06-21T22:00:00Z" },
 ];
+
+const PREFEITURAS_SEED: PrefeituraAdmin[] = prefeituras.map((p) => ({ ...p }));
+const SERVIDORES_SEED = SERVIDORES_BUSCA_MOCK.map((s) => ({ ...s }));
+
+let _prefeiturasLoad: Promise<void> | null = null;
+export function ensurePrefeiturasLoaded(env: Env): Promise<void> {
+  if (_prefeiturasLoad) return _prefeiturasLoad;
+  _prefeiturasLoad = (async () => {
+    try {
+      await ensureSchema(env);
+      await seedPrefeiturasIfEmpty(env, PREFEITURAS_SEED);
+      const loaded = await loadPrefeituras(env);
+      if (loaded.length) { prefeituras.length = 0; prefeituras.push(...loaded); }
+    } catch (e) {
+      _prefeiturasLoad = null;
+      pushEvent("warn", "db.prefeituras.hydrate_failed", `Falha ao hidratar prefeituras: ${(e as Error).message}. Usando fixtures.`);
+    }
+  })();
+  return _prefeiturasLoad;
+}
+async function persistPrefeitura(env: Env, p: PrefeituraAdmin): Promise<void> {
+  try { await upsertPrefeitura(env, p); } catch (e) { pushEvent("warn", "db.prefeituras.write_failed", `Falha ao persistir prefeitura ${p.id}: ${(e as Error).message}`); }
+}
+
+// Servidores dependem de prefeituras (FK) — hidratar depois delas.
+let _servidoresLoad: Promise<void> | null = null;
+export function ensureServidoresLoaded(env: Env): Promise<void> {
+  if (_servidoresLoad) return _servidoresLoad;
+  _servidoresLoad = (async () => {
+    try {
+      await ensurePrefeiturasLoaded(env);
+      await seedServidoresIfEmpty(env, SERVIDORES_SEED);
+      const loaded = await loadServidores(env);
+      if (loaded.length) { SERVIDORES_BUSCA_MOCK.length = 0; SERVIDORES_BUSCA_MOCK.push(...loaded); }
+    } catch (e) {
+      _servidoresLoad = null;
+      pushEvent("warn", "db.servidores.hydrate_failed", `Falha ao hidratar servidores: ${(e as Error).message}. Usando fixtures.`);
+    }
+  })();
+  return _servidoresLoad;
+}
+async function persistServidor(env: Env, s: typeof SERVIDORES_BUSCA_MOCK[number]): Promise<void> {
+  try { await upsertServidor(env, s); } catch (e) { pushEvent("warn", "db.servidores.write_failed", `Falha ao persistir servidor ${s.matricula}: ${(e as Error).message}`); }
+}
 
 export const folhas: FolhaAdmin[] = [
   { id: "F-2026-06-1", prefeituraId: 1, prefeitura: "Palhoca", competencia: "202606", dataCorte: "2026-06-15", dataRepasse: "2026-07-05", status: "fechada" },
@@ -268,18 +312,23 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const db = getDb(c.env);
     try {
       const meta = await db.execute(sql`SELECT current_database() AS db, version() AS pg_version, now() AS server_time`);
-      // Uma única query agregada — count por tabela via pg_class.reltuples + UNION ALL para counts exatos.
-      const counts = await db.execute(sql`
-        SELECT relname AS table, n_live_tup::int AS n
-        FROM pg_stat_user_tables
-        WHERE schemaname = 'public'
-        ORDER BY relname
-      `);
-      const list = (counts as unknown as { table: string; n: number }[]).map((r) => ({ table: r.table, rows: r.n }));
+      // Contagem REAL (count(*)) dos módulos persistidos — n_live_tup é estimativa e engana.
+      let seedError: string | null = null;
+      try {
+        await ensureSchema(c.env);
+        await seedPrefeiturasIfEmpty(c.env, PREFEITURAS_SEED);
+        await seedServidoresIfEmpty(c.env, SERVIDORES_SEED);
+        await seedBancosIfEmpty(c.env, BANCOS_SEED);
+      } catch (e) { seedError = (e as Error).message; }
+      const real = (await db.execute(sql`SELECT
+        (SELECT count(*) FROM bancos)::int AS bancos,
+        (SELECT count(*) FROM prefeituras)::int AS prefeituras,
+        (SELECT count(*) FROM servidores)::int AS servidores`)) as unknown as Record<string, number>[];
       return c.json({
         transport: c.env.HYPERDRIVE ? "hyperdrive" : "direct",
         meta: (meta as unknown as { db: string; pg_version: string; server_time: string }[])[0],
-        tables: list,
+        counts: real[0],
+        seedError,
         latency_ms: Date.now() - started,
       });
     } catch (err) {
@@ -354,6 +403,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await persistBanco(c.env, b);
     return c.json({ banco: sanitizeBanco(b) });
   })
+  .delete("/v1/admin/bancos/:id", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = Number(c.req.param("id"));
+    const idx = bancos.findIndex((b) => b.id === id);
+    if (idx < 0) throw Errors.notFound("banco");
+    const removed = bancos.splice(idx, 1)[0]!;
+    try { await deleteBancoRow(c.env, id); } catch (e) { pushEvent("warn", "db.bancos.delete_failed", `Falha ao apagar banco ${id} no Postgres: ${(e as Error).message}`); }
+    pushEvent("warn", "admin.bancos.delete", `Banco "${removed.nome}" removido por user:${c.get("jwt").sub}`);
+    return c.body(null, 204);
+  })
 
   .get("/v1/admin/prefeituras", async (c) => {
     requireAdmin(c.get("jwt"));
@@ -392,6 +451,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         passwordHash: password ? await sha256Hex(password) : current.passwordHash,
       };
       pushEvent("info", "admin", `Prefeitura "${prefeituras[idx]!.nome}" atualizada${password ? " (senha trocada)" : ""}`);
+      await persistPrefeitura(c.env, prefeituras[idx]!);
       return c.json({ prefeitura: sanitizePrefeitura(prefeituras[idx]!) });
     }
     const novo: PrefeituraAdmin = {
@@ -402,6 +462,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     };
     prefeituras.push(novo);
     pushEvent("info", "admin", `Prefeitura "${novo.nome}/${novo.uf}" criada${password ? " com credencial de acesso" : ""}`);
+    await persistPrefeitura(c.env, novo);
     return c.json({ prefeitura: sanitizePrefeitura(novo) });
   })
   .post("/v1/admin/prefeituras/:id/sincronizar", async (c) => {
@@ -410,6 +471,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!p) throw Errors.notFound("prefeitura");
     p.ultimaSincronizacao = new Date().toISOString();
     pushEvent("info", "cron", `Folha ${p.nome} sincronizada manualmente`);
+    await persistPrefeitura(c.env, p);
     return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
   .post("/v1/admin/prefeituras/:id/reset-password", async (c) => {
@@ -419,6 +481,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ password: z.string().min(6) }).parse(await c.req.json());
     p.passwordHash = await sha256Hex(body.password);
     pushEvent("warn", "admin.prefeituras.reset-password", `Senha da prefeitura "${p.nome}" trocada por user:${c.get("jwt").sub}`);
+    await persistPrefeitura(c.env, p);
     return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
 
@@ -509,6 +572,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (body.telefone !== undefined) changed.push("telefone");
     if (body.password) changed.push("senha");
     pushEvent("info", "admin.servidores.update", `Servidor matricula=${matricula} atualizado (${changed.join(",")}) por user:${c.get("jwt").sub}`);
+    await persistServidor(c.env, s);
     return c.json({
       servidor: {
         id: Number(s.idMatricula.replace(/\D/g, "").slice(-5)),
@@ -802,6 +866,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       else { prefeituras.push(p); out.inserted++; }
       out.rows.push(p);
     }
+    for (const p of out.rows) await persistPrefeitura(c.env, p);
     pushEvent("info", "admin.prefeituras.import", `${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
     return c.json(out);
   })
@@ -1164,6 +1229,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       else { SERVIDORES_BUSCA_MOCK.push(s); out.inserted++; }
       out.rows.push(s);
     });
+    for (const s of out.rows) await persistServidor(c.env, s);
     pushEvent("info", "admin.servidores.import", `prefeitura=${pref.nome}: ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
     return c.json(out);
   });
