@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, CsvImportPanel, DataTable, FilterBar, IconButton, Pill, type Column } from "@atlas/ui/web";
+import { Button, CsvImportPanel, DataTable, FilterBar, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraServidor } from "@atlas/sdk";
 import { Modal, Field, inp, selStyle } from "./_ui";
@@ -27,7 +27,16 @@ export function PrefeituraServidores() {
     { key: "situacaoFuncional", header: "Situação", render: (s) => <Pill variant={/desligado|aposentad/i.test(s.situacaoFuncional) ? "expirado" : "averbado"}>{s.situacaoFuncional}</Pill> },
     { key: "idConvenio", header: "Convênio", render: (s) => s.idConvenio || <span style={{ color: "var(--danger-500)" }}>sem convênio</span> },
     { key: "margemDisponivel", header: "Margem disp.", align: "right", render: (s) => fmtBRL(s.margemDisponivel ?? 0) },
-    { key: "acoes", header: "", render: (s) => <IconButton onClick={() => setEditing(s)}>Editar</IconButton> },
+    {
+      key: "acoes",
+      header: "",
+      align: "right",
+      render: (s) => (
+        <Button size="sm" variant="ghost" onClick={() => setEditing(s)} title={`Editar ${s.nome}`}>
+          ✎ Editar
+        </Button>
+      ),
+    },
   ];
 
   return (
