@@ -71,33 +71,80 @@ function maskCpf(cpf11: string): string {
 let _tblSeq = 100;
 let _userSeq = 999000;
 
-export function listTabelas(): TabelaEmprestimo[] {
+// Sincronizacao com Postgres: no primeiro acesso apos boot do isolate,
+// carregamos as tabelas persistidas. Se o DB estiver vazio, seed inicial.
+// Mutacoes fazem write-through (memoria + DB) pra sobreviver a redeploys
+// e serem visiveis por outros isolates. Se o DB estiver indisponivel, cai
+// pro comportamento in-memory (nao quebra a demo).
+import type { Env } from "../../env.js";
+import { ensureSchema, loadTabelas, upsertTabelaRow, deleteTabelaRow, seedTabelasIfEmpty } from "../../db/repos.js";
+
+let _tabelasHydrated = false;
+let _hydrationPromise: Promise<void> | null = null;
+
+async function hydrateTabelas(env: Env): Promise<void> {
+  if (_tabelasHydrated) return;
+  if (!_hydrationPromise) {
+    _hydrationPromise = (async () => {
+      try {
+        await ensureSchema(env);
+        await seedTabelasIfEmpty(env, _tabelas as unknown as { id: string; [k: string]: unknown }[]);
+        const rows = await loadTabelas(env);
+        if (rows.length > 0) {
+          _tabelas.length = 0;
+          _tabelas.push(...(rows as unknown as TabelaEmprestimo[]));
+          // Alinha o seq com o maior sufixo numerico existente pra evitar colisao.
+          const maxSeq = rows.reduce((acc, r) => {
+            const m = /TBL-(\d+)/.exec(r.id);
+            return m ? Math.max(acc, Number(m[1])) : acc;
+          }, 100);
+          _tblSeq = Math.max(_tblSeq, maxSeq + 1);
+        }
+        _tabelasHydrated = true;
+      } catch {
+        // Sem DB configurado — segue in-memory (comportamento legado).
+        _tabelasHydrated = true;
+      }
+    })();
+  }
+  return _hydrationPromise;
+}
+
+export async function listTabelas(env: Env): Promise<TabelaEmprestimo[]> {
+  await hydrateTabelas(env);
   return [..._tabelas];
 }
-export function getTabela(id: string): TabelaEmprestimo | undefined {
+export async function getTabela(env: Env, id: string): Promise<TabelaEmprestimo | undefined> {
+  await hydrateTabelas(env);
   return _tabelas.find((t) => t.id === id);
 }
-export function upsertTabela(input: Omit<TabelaEmprestimo, "id" | "criadoEm"> & { id?: string }): TabelaEmprestimo {
+export async function upsertTabela(env: Env, input: Omit<TabelaEmprestimo, "id" | "criadoEm"> & { id?: string }): Promise<TabelaEmprestimo> {
+  await hydrateTabelas(env);
+  let saved: TabelaEmprestimo;
   if (input.id) {
     const idx = _tabelas.findIndex((t) => t.id === input.id);
     if (idx >= 0) {
-      const updated = { ..._tabelas[idx]!, ...input } as TabelaEmprestimo;
-      _tabelas[idx] = updated;
-      return updated;
+      saved = { ..._tabelas[idx]!, ...input } as TabelaEmprestimo;
+      _tabelas[idx] = saved;
+      await upsertTabelaRow(env, saved as unknown as { id: string; [k: string]: unknown }).catch(() => undefined);
+      return saved;
     }
   }
-  const novo: TabelaEmprestimo = {
+  saved = {
     id: `TBL-${String(_tblSeq++).padStart(3, "0")}`,
     criadoEm: new Date().toISOString().slice(0, 10),
     ...input,
   };
-  _tabelas.push(novo);
-  return novo;
+  _tabelas.push(saved);
+  await upsertTabelaRow(env, saved as unknown as { id: string; [k: string]: unknown }).catch(() => undefined);
+  return saved;
 }
-export function removerTabela(id: string): boolean {
+export async function removerTabela(env: Env, id: string): Promise<boolean> {
+  await hydrateTabelas(env);
   const idx = _tabelas.findIndex((t) => t.id === id);
   if (idx < 0) return false;
   _tabelas.splice(idx, 1);
+  await deleteTabelaRow(env, id).catch(() => undefined);
   return true;
 }
 

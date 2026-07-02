@@ -283,11 +283,11 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   // --------- Cadastros: Tabela de Emprestimos ----------
   .get("/v1/portal/banco/cadastros/tabela-emprestimos", async (c) => {
     requireBancoRole(c.get("jwt"));
-    return c.json({ tabelas: listTabelas() });
+    return c.json({ tabelas: await listTabelas(c.env) });
   })
   .get("/v1/portal/banco/cadastros/tabela-emprestimos/:id", async (c) => {
     requireBancoRole(c.get("jwt"));
-    const t = getTabela(c.req.param("id"));
+    const t = await getTabela(c.env, c.req.param("id"));
     if (!t) throw Errors.notFound("tabela");
     return c.json({ tabela: t });
   })
@@ -306,11 +306,11 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         ativo: z.boolean().default(true),
       })
       .parse(await c.req.json());
-    return c.json({ tabela: upsertTabela(body) });
+    return c.json({ tabela: await upsertTabela(c.env, body) });
   })
   .delete("/v1/portal/banco/cadastros/tabela-emprestimos/:id", async (c) => {
     requireBancoRole(c.get("jwt"));
-    if (!removerTabela(c.req.param("id"))) throw Errors.notFound("tabela");
+    if (!(await removerTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
     return c.body(null, 204);
   })
 

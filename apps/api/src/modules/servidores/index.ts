@@ -201,7 +201,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     const hoje = new Date().toISOString().slice(0, 10);
-    const tabelas = listTabelas().filter((t) => {
+    const tabelas = (await listTabelas(c.env)).filter((t) => {
       if (!t.ativo) return false;
       if (t.vigenciaInicio > hoje) return false;
       if (t.vigenciaFim && t.vigenciaFim < hoje) return false;

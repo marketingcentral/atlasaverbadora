@@ -26,6 +26,14 @@ export function ensureSchema(env: Env): Promise<void> {
     const db = getDb(env);
     await db.execute(sql`ALTER TABLE prefeituras ADD COLUMN IF NOT EXISTS config jsonb DEFAULT '{}'::jsonb`);
     await db.execute(sql`ALTER TABLE servidores ADD COLUMN IF NOT EXISTS data jsonb DEFAULT '{}'::jsonb`);
+    // Tabela dedicada pras tabelas de emprestimo do portal do banco. Chave e
+    // o id string ("TBL-001" etc). Dados completos em jsonb pra facilitar
+    // evolucao sem migracoes.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS portal_banco_tabelas (
+      id text PRIMARY KEY,
+      data jsonb NOT NULL,
+      updated_at timestamptz DEFAULT now()
+    )`);
   })().catch((e) => { _schemaEnsured = null; throw e; });
   return _schemaEnsured;
 }
@@ -153,6 +161,39 @@ export async function seedServidoresIfEmpty(env: Env, seed: ServidorBuscaMock[])
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM servidores`)) as unknown as { n: number }[];
   if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
   for (const s of seed) await upsertServidor(env, s);
+  return true;
+}
+
+// ============================================================
+// Portal Banco — Tabelas de Emprestimo
+// ============================================================
+// Storage jsonb generico. O TabelaEmprestimo do modulo portal-banco define
+// o formato — importado por 'any' pra evitar dependencia circular repos ->
+// modules -> repos.
+
+interface TabelaLike { id: string; [k: string]: unknown }
+
+export async function loadTabelas(env: Env): Promise<TabelaLike[]> {
+  const rows = await getDb(env).execute<{ data: TabelaLike }>(sql`SELECT data FROM portal_banco_tabelas ORDER BY id`);
+  return rows.map((r) => r.data);
+}
+
+export async function upsertTabelaRow(env: Env, t: TabelaLike): Promise<void> {
+  await getDb(env).execute(sql`
+    INSERT INTO portal_banco_tabelas (id, data, updated_at)
+    VALUES (${t.id}, ${t as unknown as Record<string, unknown>}::jsonb, now())
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
+}
+
+export async function deleteTabelaRow(env: Env, id: string): Promise<void> {
+  await getDb(env).execute(sql`DELETE FROM portal_banco_tabelas WHERE id = ${id}`);
+}
+
+export async function seedTabelasIfEmpty(env: Env, seed: TabelaLike[]): Promise<boolean> {
+  const db = getDb(env);
+  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM portal_banco_tabelas`)) as unknown as { n: number }[];
+  if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
+  for (const t of seed) await upsertTabelaRow(env, t);
   return true;
 }
 
