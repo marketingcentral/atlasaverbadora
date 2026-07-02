@@ -7,6 +7,7 @@ import {
   STORAGE_KEY_ID,
   STORAGE_KEY_META,
 } from "../../lib/matricula-data";
+import { buildSimplePdf, downloadPdf } from "../../lib/pdf";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
@@ -35,10 +36,35 @@ export function ServidorContratos() {
 
   async function baixarPdf(c: Contrato) {
     setDownloading(c.id);
-    // Mock: pretend to generate signed URL (~700ms) before opening.
+    // Mock: pretend to sign the URL server-side.
     await new Promise((r) => setTimeout(r, 700));
+    // Gera o comprovante em PDF localmente — Courier + Courier-Bold, sem
+    // dependencias. Substitui o mock antigo que apontava pra URL relativa
+    // (/v1/portal/banco/...) resolvida no host errado e sem JWT.
+    const valorTotal = c.parcela * c.total;
+    const pdf = buildSimplePdf("COMPROVANTE DE CONTRATO CONSIGNADO", [
+      { text: `Contrato: ${c.id}`, bold: true },
+      `Banco credor: ${c.banco}`,
+      `Situacao: ${c.status}`,
+      "",
+      { text: "SERVIDOR", bold: true },
+      `Nome: ${info?.nome ?? "—"}`,
+      `Matricula: ${info?.matricula ?? "—"}`,
+      `Orgao: ${info?.prefeitura ?? "—"}`,
+      "",
+      { text: "OPERACAO", bold: true },
+      `Valor financiado: ${fmtBRL(c.valorFinanciado)}`,
+      `Taxa a.m.: ${(c.taxaAm * 100).toFixed(2)}%`,
+      `Parcela: ${fmtBRL(c.parcela)}`,
+      `Parcelas pagas: ${c.parcelasPagas} de ${c.total}`,
+      `Valor total contratado: ${fmtBRL(valorTotal).replace(/\s/g, " ")}`,
+      `Proxima parcela: ${c.proximaParcela}`,
+      "",
+      "Este comprovante e uma copia do contrato para conferencia.",
+      "Para quitacao antecipada ou renegociacao, contate diretamente o banco credor.",
+    ]);
+    downloadPdf(`contrato-${c.id}.pdf`, pdf);
     setDownloading(null);
-    window.open(c.pdfUrl, "_blank", "noopener,noreferrer");
   }
 
   return (
