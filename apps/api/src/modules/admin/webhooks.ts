@@ -139,6 +139,8 @@ export function getWebhook(id: string): WebhookEndpoint | null {
   return _endpoints.get(id) ?? null;
 }
 
+/** Liga/desliga um webhook específico (self-service do banco na API externa).
+ *  Soft — reversível, nunca apaga. */
 export function toggleWebhook(id: string): WebhookEndpoint | null {
   const w = _endpoints.get(id);
   if (!w) return null;
@@ -146,17 +148,31 @@ export function toggleWebhook(id: string): WebhookEndpoint | null {
   return w;
 }
 
-export function removeWebhook(id: string): boolean {
-  _secrets.delete(id);
-  return _endpoints.delete(id);
-}
-
-/** Desativa (não apaga) o webhook — para de receber eventos mas o registro fica. */
+/** Desativa (soft) um webhook específico — para de receber eventos, registro fica. */
 export function deactivateWebhook(id: string): WebhookEndpoint | null {
   const w = _endpoints.get(id);
   if (!w) return null;
   w.active = false;
   return w;
+}
+
+/**
+ * Pausa/retoma em cascata todos os webhooks de um parceiro conforme o status do
+ * banco. `active=false` = pausado (para de receber eventos), mas o registro
+ * NUNCA é apagado. Chamado quando o banco é desativado/reativado. Retorna
+ * quantos webhooks mudaram de estado.
+ */
+export function setWebhooksPausedForPartner(audience: ApiAudience, partnerId: number, paused: boolean): number {
+  ensureSeeded();
+  const shouldActive = !paused;
+  let changed = 0;
+  for (const w of _endpoints.values()) {
+    if (w.audience !== audience || w.partnerId !== partnerId) continue;
+    if (w.active === shouldActive) continue;
+    w.active = shouldActive;
+    changed++;
+  }
+  return changed;
 }
 
 export function listDeliveries(webhookId?: string, limit = 50): WebhookDelivery[] {

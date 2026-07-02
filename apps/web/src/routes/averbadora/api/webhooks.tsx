@@ -18,10 +18,6 @@ export function AverbadoraApiWebhooks() {
 
   const events = q.data?.events ?? [];
 
-  const toggle = useMutation({
-    mutationFn: (id: string) => atlas.admin.toggleWebhook(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-webhooks"] }),
-  });
   const [testingId, setTestingId] = useState<string | null>(null);
   const test = useMutation({
     mutationFn: (id: string) => atlas.admin.testWebhook(id),
@@ -48,7 +44,7 @@ export function AverbadoraApiWebhooks() {
     { key: "env", header: "Ambiente", render: (w) => <Pill variant={w.environment === "production" ? "averbado" : "pendente"}>{w.environment}</Pill> },
     { key: "partner", header: "Camada", render: (w) => (w.audience === "averbadora" ? "averbadora" : `${w.audience} #${w.partnerId}`) },
     { key: "events", header: "Eventos", render: (w) => <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{w.events.length} subscritos</span> },
-    { key: "active", header: "Status", render: (w) => <Pill variant={w.active ? "emdia" : "expirado"}>{w.active ? "Ativo" : "Pausado"}</Pill> },
+    { key: "active", header: "Status", render: (w) => <span title={w.active ? undefined : "Pausado porque o banco dono está pausado"}><Pill variant={w.active ? "emdia" : "expirado"}>{w.active ? "Ativo" : "Pausado"}</Pill></span> },
     {
       key: "actions",
       header: "",
@@ -59,7 +55,6 @@ export function AverbadoraApiWebhooks() {
             {testingId === w.id ? "Testando…" : "▶ Testar"}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(w.id)}>📄 Entregas</Button>
-          <Button size="sm" variant="ghost" onClick={() => toggle.mutate(w.id)}>{w.active ? "⏸ Desativar" : "▶ Reativar"}</Button>
         </div>
       ),
     },
@@ -73,6 +68,7 @@ export function AverbadoraApiWebhooks() {
           <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Webhooks</h1>
           <p style={{ color: "var(--text-muted)", marginTop: 4 }}>
             URLs HTTPS dos parceiros receberão eventos da averbadora assinados com HMAC-SHA256.
+            Webhooks não são apagados: quando o banco dono é pausado, os webhooks dele pausam automaticamente e voltam ao reativar o banco.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Pill, DataTable, type Column, IconButton } from "@atlas/ui/web";
+import { Button, Card, Pill, DataTable, type Column } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import type { AdminApiToken, ApiAudience, ApiEnvironment, ApiScope } from "@atlas/sdk";
 
@@ -37,11 +37,6 @@ export function AverbadoraApiTokens() {
   });
 
   const scopesByAudience = q.data?.scopesByAudience ?? SCOPES_FALLBACK;
-
-  const del = useMutation({
-    mutationFn: (id: string) => atlas.admin.deleteApiToken(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["api-tokens"] }),
-  });
 
   const rows = q.data?.tokens ?? [];
 
@@ -92,20 +87,12 @@ export function AverbadoraApiTokens() {
     { key: "scopes", header: "Escopos", render: (t) => <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{t.scopes.length}</span> },
     { key: "lastUsedAt", header: "Último uso", render: (t) => t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString("pt-BR") : "—" },
     {
-      key: "actions",
-      header: "",
+      key: "status",
+      header: "Status",
       render: (t) => (
-        <IconButton
-          danger
-          title="Revogar token"
-          onClick={() => {
-            if (confirm(`Revogar o token "${t.name}"?\n\nEle deixa de autenticar imediatamente, mas o registro fica no histórico (nada é apagado de fato).`)) {
-              del.mutate(t.id);
-            }
-          }}
-        >
-          ⦸
-        </IconButton>
+        <span title={t.pausedAt ? "Pausado porque o banco dono está pausado" : undefined}>
+          <Pill variant={t.pausedAt ? "expirado" : "emdia"}>{t.pausedAt ? "Pausado" : "Ativo"}</Pill>
+        </span>
       ),
     },
   ];
@@ -118,6 +105,7 @@ export function AverbadoraApiTokens() {
           <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Tokens de acesso</h1>
           <p style={{ color: "var(--text-muted)", marginTop: 4 }}>
             Cada token pertence a uma camada (Banco / Servidor / Averbadora) e consome <code>/v1/external/&lt;camada&gt;/*</code>. Plaintext exibido apenas na criação.
+            Tokens não são revogados nem apagados: quando o banco dono é pausado, os tokens dele pausam automaticamente e voltam ao reativar o banco.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>

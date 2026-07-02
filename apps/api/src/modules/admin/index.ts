@@ -5,13 +5,13 @@ import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
-import { createToken, revokeToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
+import { createToken, setTokensPausedForPartner, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { WEBHOOK_EVENTS, createWebhook, deactivateWebhook, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
+import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import { cancelPreReserva, countExpiringNext24h, getPreReserva, listPreReservas, summarizePreReservas, sweepExpired, type PreReservaStatus } from "./pre-reservas.js";
@@ -160,6 +160,19 @@ export function ensureBancosLoaded(env: Env): Promise<void> {
 /** Write-through best-effort: persiste o banco no Postgres sem quebrar a request. */
 async function persistBanco(env: Env, b: BancoAdmin): Promise<void> {
   try { await upsertBanco(env, b); } catch (e) { pushEvent("warn", "db.bancos.write_failed", `Falha ao persistir banco ${b.id}: ${(e as Error).message}`); }
+}
+
+/**
+ * Cascade de acesso: os tokens/webhooks de um banco seguem o status dele.
+ * Banco pausado (status != "ativo") → tokens/webhooks pausam (param de
+ * autenticar/entregar). Banco ativo → retomam. Nunca revoga nem apaga nada.
+ */
+async function syncBancoAccess(env: Env, b: BancoAdmin): Promise<{ tokens: number; webhooks: number }> {
+  const paused = b.status !== "ativo";
+  let tokens = 0;
+  if (env.KV_CACHE) tokens = await setTokensPausedForPartner(env.KV_CACHE, "banco", b.id, paused).catch(() => 0);
+  const webhooks = setWebhooksPausedForPartner("banco", b.id, paused);
+  return { tokens, webhooks };
 }
 
 export const prefeituras: PrefeituraAdmin[] = [
@@ -525,6 +538,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       };
       pushEvent("info", "admin", `Banco "${bancos[idx]!.nome}" atualizado${password ? " (senha trocada)" : ""}`);
       await persistBanco(c.env, bancos[idx]!);
+      await syncBancoAccess(c.env, bancos[idx]!); // status ativo↔inativo → retoma/pausa tokens+webhooks
       return c.json({ banco: sanitizeBanco(bancos[idx]!) });
     }
     const novo: BancoAdmin = {
@@ -583,8 +597,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!b) throw Errors.notFound("banco");
     b.status = "inativo";
     await persistBanco(c.env, b);
+    const casc = await syncBancoAccess(c.env, b); // pausa tokens/webhooks do banco em cascata
     appendAudit({ categoria: "acesso", acao: "banco_desativado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${b.nome}" (id=${id}) desativado.` });
-    pushEvent("info", "admin.bancos.desativar", `Banco "${b.nome}" desativado por user:${j.sub}`);
+    pushEvent("info", "admin.bancos.desativar", `Banco "${b.nome}" desativado por user:${j.sub} — ${casc.tokens} token(s) e ${casc.webhooks} webhook(s) pausados junto.`);
     return c.json({ banco: sanitizeBanco(b) });
   })
 
@@ -917,15 +932,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
     return c.json({ token, plaintext, warning: "Guarde o plaintext agora. Nao sera exibido novamente." }, 201);
   })
-  // Nunca apaga — REVOGA (para de autenticar, registro fica no histórico).
-  .delete("/v1/admin/api-tokens/:id", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
-    const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
-    const t = await revokeToken(kv, c.req.param("id"));
-    if (!t) throw Errors.notFound("token");
-    pushEvent("info", "admin.api-tokens.revoke", `Token ${c.req.param("id")} revogado por user:${j.sub}`);
-    return c.body(null, 204);
-  })
+  // Tokens NÃO são revogados nem apagados. Eles pausam/retomam automaticamente
+  // em cascata com o status do banco dono (ver syncBancoAccess). Não há rota de
+  // revogação/exclusão individual.
 
   // ===== Webhooks (admin) =====
   .get("/v1/admin/webhooks", authRequired, async (c) => {
@@ -952,20 +961,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
     return c.json({ webhook, secret, warning: "Guarde o secret agora." }, 201);
   })
-  .patch("/v1/admin/webhooks/:id/toggle", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
-    const w = toggleWebhook(c.req.param("id"));
-    if (!w) throw Errors.notFound("webhook");
-    return c.json({ webhook: w });
-  })
-  // Nunca apaga — DESATIVA (active=false). Reativável pelo toggle.
-  .delete("/v1/admin/webhooks/:id", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
-    const w = deactivateWebhook(c.req.param("id"));
-    if (!w) throw Errors.notFound("webhook");
-    pushEvent("info", "admin.webhooks.desativar", `Webhook ${c.req.param("id")} desativado por user:${j.sub}`);
-    return c.body(null, 204);
-  })
+  // Webhooks NÃO são apagados nem pausados manualmente. Pausam/retomam em
+  // cascata com o status do banco dono (ver syncBancoAccess). Sem rota de
+  // toggle/exclusão individual.
   .get("/v1/admin/webhooks/:id/deliveries", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
     return c.json({ deliveries: listDeliveries(c.req.param("id")) });

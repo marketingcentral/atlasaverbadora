@@ -11,7 +11,7 @@ import { calcCET, margemDisponivel, margemTotal } from "@atlas/domain";
 import { CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoParcelas, listContratos } from "../portal-banco/store.js";
 import {
-  WEBHOOK_EVENTS, createWebhook, listDeliveries, listWebhooks, removeWebhook, toggleWebhook, type WebhookEvent,
+  WEBHOOK_EVENTS, createWebhook, listDeliveries, listWebhooks, deactivateWebhook, toggleWebhook, type WebhookEvent,
 } from "../admin/webhooks.js";
 import { qparam, norm, textIncludes, appliedFilters } from "./_filters.js";
 
@@ -180,8 +180,9 @@ export const externalBancoRoutes = new Hono<{ Bindings: Env }>()
     if (!w) throw Errors.notFound("webhook");
     return c.json({ data: { id: w.id, active: w.active } });
   })
+  // Nunca apaga — DESATIVA (soft). O registro fica; pode ser reativado pelo toggle.
   .delete("/v1/external/banco/webhooks/:id", apiTokenAuth(["banco:webhooks"], "banco"), (c) => {
-    if (!removeWebhook(c.req.param("id"))) throw Errors.notFound("webhook");
+    if (!deactivateWebhook(c.req.param("id"))) throw Errors.notFound("webhook");
     return c.body(null, 204);
   })
   .get("/v1/external/banco/webhooks/:id/deliveries", apiTokenAuth(["banco:webhooks"], "banco"), (c) => {

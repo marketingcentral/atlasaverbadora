@@ -35,7 +35,9 @@ export interface ApiToken {
   createdAt: string;
   createdBy: string;
   lastUsedAt?: string;
-  revokedAt?: string;
+  /** Definido enquanto o banco dono está pausado (status != ativo). Nunca é
+   *  apagado/revogado — só pausa de autenticar. Volta a null quando o banco reativa. */
+  pausedAt?: string;
 }
 
 const K_ID = (id: string) => `apitok:i:${id}`;
@@ -103,21 +105,27 @@ export async function listTokens(kv: KVNamespace, filter?: { environment?: ApiEn
   return all;
 }
 
-/** Hard delete: remove id key + hash index. Irreversível. (Preferir revokeToken.) */
-export async function deleteToken(kv: KVNamespace, id: string): Promise<boolean> {
-  const t = await kv.get<ApiToken>(K_ID(id), "json");
-  if (!t) return false;
-  await kv.delete(K_HASH(t.hash));
-  await kv.delete(K_ID(id));
-  return true;
-}
-
-/** Revoga (desativa) o token sem apagar o registro — para de autenticar mas fica no histórico. */
-export async function revokeToken(kv: KVNamespace, id: string): Promise<ApiToken | null> {
-  const t = await kv.get<ApiToken>(K_ID(id), "json");
-  if (!t) return null;
-  if (!t.revokedAt) { t.revokedAt = new Date().toISOString(); await kv.put(K_ID(id), JSON.stringify(t)); }
-  return t;
+/**
+ * Pausa/retoma TODOS os tokens de um parceiro em cascata com o status do banco.
+ * Nunca revoga nem apaga — só liga/desliga `pausedAt` (o token para/volta a
+ * autenticar). Chamado quando o banco é desativado/reativado. Retorna quantos
+ * tokens mudaram de estado.
+ */
+export async function setTokensPausedForPartner(kv: KVNamespace, audience: ApiAudience, partnerId: number, paused: boolean): Promise<number> {
+  await ensureSeeded(kv);
+  const list = await kv.list({ prefix: "apitok:i:" });
+  let changed = 0;
+  for (const k of list.keys) {
+    const t = await kv.get<ApiToken>(k.name, "json");
+    if (!t || t.audience !== audience || t.partnerId !== partnerId) continue;
+    const isPaused = !!t.pausedAt;
+    if (paused === isPaused) continue;
+    if (paused) t.pausedAt = new Date().toISOString();
+    else delete t.pausedAt;
+    await kv.put(k.name, JSON.stringify(t));
+    changed++;
+  }
+  return changed;
 }
 
 /** Lookup by plaintext bearer header value. */
@@ -128,7 +136,7 @@ export async function resolveByPlaintext(kv: KVNamespace, plaintext: string): Pr
   const id = await kv.get(K_HASH(hash));
   if (!id) return null;
   const t = await kv.get<ApiToken>(K_ID(id), "json");
-  if (!t || t.revokedAt) return null;
+  if (!t || t.pausedAt) return null; // banco pausado → token não autentica (reversível)
   return t;
 }
 

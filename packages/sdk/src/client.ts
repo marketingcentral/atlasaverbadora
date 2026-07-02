@@ -432,7 +432,8 @@ export interface AdminApiToken {
   createdAt: string;
   createdBy: string;
   lastUsedAt?: string;
-  revokedAt?: string;
+  /** Definido enquanto o banco dono está pausado. Token não autentica, mas não é revogado — volta ao reativar o banco. */
+  pausedAt?: string;
 }
 
 export interface AdminApiTokenInput {
@@ -870,18 +871,14 @@ export class AtlasClient {
       this.request<{ tokens: AdminApiToken[]; scopesByAudience: Record<ApiAudience, ApiScope[]> }>("/v1/admin/api-tokens", { query: filter ?? {} }),
     createApiToken: (body: AdminApiTokenInput) =>
       this.request<{ token: AdminApiToken; plaintext: string; warning: string }>("/v1/admin/api-tokens", { method: "POST", body }),
-    deleteApiToken: (id: string) =>
-      this.request<void>(`/v1/admin/api-tokens/${id}`, { method: "DELETE" }),
+    // Tokens não são revogados/apagados: pausam junto do banco dono (cascade).
 
     // === Webhooks ===
     listWebhooks: (environment?: "production" | "sandbox") =>
       this.request<{ webhooks: AdminWebhook[]; events: readonly string[] }>("/v1/admin/webhooks", { query: environment ? { environment } : {} }),
     createWebhook: (body: AdminWebhookInput) =>
       this.request<{ webhook: AdminWebhook; secret: string; warning: string }>("/v1/admin/webhooks", { method: "POST", body }),
-    toggleWebhook: (id: string) =>
-      this.request<{ webhook: AdminWebhook }>(`/v1/admin/webhooks/${id}/toggle`, { method: "PATCH" }),
-    deleteWebhook: (id: string) =>
-      this.request<void>(`/v1/admin/webhooks/${id}`, { method: "DELETE" }),
+    // Webhooks não são apagados/pausados manualmente: seguem o status do banco dono (cascade).
     webhookDeliveries: (id: string) =>
       this.request<{ deliveries: AdminWebhookDelivery[] }>(`/v1/admin/webhooks/${id}/deliveries`),
     fireWebhook: (body: { event: string; environment?: "production" | "sandbox"; payload?: Record<string, unknown> }) =>
