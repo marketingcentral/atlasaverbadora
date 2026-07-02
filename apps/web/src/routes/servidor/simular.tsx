@@ -18,12 +18,19 @@ const PARCELAS = [12, 24, 36, 48, 60, 72, 96];
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
+// Number(...) | default — descarta NaN, Infinity e valores <= 0.
+function num(raw: string | null, fallback: number): number {
+  if (raw == null) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 export function ServidorSimular() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
-  const [valor, setValor] = useState<number>(Number(sp.get("valor") ?? 8500));
-  const [parcelas, setParcelas] = useState<number>(Number(sp.get("parcelas") ?? 36));
-  const taxaAm = useMemo(() => (Number(sp.get("taxa") ?? 1.79) / 100), [sp]);
+  const [valor, setValor] = useState<number>(num(sp.get("valor"), 8500));
+  const [parcelas, setParcelas] = useState<number>(num(sp.get("parcelas"), 36));
+  const taxaAm = useMemo(() => num(sp.get("taxa"), 1.79) / 100, [sp]);
 
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
   const [lockExpiresAt, setLockExpiresAt] = useState<number | null>(() =>
