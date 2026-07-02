@@ -308,4 +308,4 @@ function ImportModal({
 }
 
 const backdrop: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "grid", placeItems: "center", zIndex: 100, padding: 24 };
-const modal: React.CSSProperties = { background: "var(--surface)", borderRadius: 12, padding: 24, maxWidth: 600, width: "100%", border: "1px solid var(--border)" };
+const modal: React.CSSProperties = { background: "var(--surface-solid)", borderRadius: 12, padding: 24, maxWidth: 600, width: "100%", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-lg)" };
