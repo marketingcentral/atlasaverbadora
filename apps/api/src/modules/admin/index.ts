@@ -8,7 +8,8 @@ import { listContratos } from "../portal-banco/store.js";
 import { createToken, revokeToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs } from "../../db/repos.js";
+import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { WEBHOOK_EVENTS, createWebhook, deactivateWebhook, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
@@ -235,18 +236,33 @@ export function perfilDoSource(source: string): LogPerfil {
   if (source.startsWith("servidor")) return "servidor";
   return "sistema";
 }
-const _events: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string; perfil: LogPerfil }[] = [];
-const pushEvent = (level: "info" | "warn" | "error", source: string, message: string, trace_id = randomTrace()) => {
-  _events.unshift({ ts: new Date().toISOString(), level, trace_id, message, source, perfil: perfilDoSource(source) });
+type LogEntry = { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string; perfil: LogPerfil };
+const _events: LogEntry[] = [];
+const pushEvent = (level: "info" | "warn" | "error", source: string, message: string, trace_id = randomTrace()): LogEntry => {
+  const entry: LogEntry = { ts: new Date().toISOString(), level, trace_id, message, source, perfil: perfilDoSource(source) };
+  _events.unshift(entry);
   if (_events.length > 400) _events.length = 400;
+  return entry;
 };
 
-/** Registra uma mutação (POST/PATCH/DELETE) no log do perfil correspondente.
- *  Usado pelo middleware global — garante que TODA alteração apareça no log. */
+/** Registra uma mutação (POST/PATCH/DELETE) no log do perfil correspondente,
+ *  em memória. Usado pelo middleware global. Ver logMutacaoPersistido para o
+ *  write-through compartilhado entre isolates. */
 export function logMutacao(role: string | undefined, method: string, path: string, ok: boolean): void {
   const perfil: LogPerfil = role === "averbadora" ? "averbadora" : role === "banco" ? "banco" : role === "prefeitura" ? "prefeitura" : role === "servidor" ? "servidor" : "sistema";
   const source = perfil === "averbadora" ? "admin.mutacao" : `${perfil}.mutacao`;
   pushEvent(ok ? "info" : "warn", source, `${method} ${path}${ok ? "" : " (falhou)"}`);
+}
+
+/** Igual a logMutacao, mas também persiste no Postgres (app_logs) via waitUntil,
+ *  para que a alteração apareça no log mesmo se o GET /logs cair em outro isolate.
+ *  Best-effort: falha de banco nunca quebra a request. */
+export function logMutacaoPersistido(env: Env, waitUntil: ((p: Promise<unknown>) => void) | undefined, role: string | undefined, method: string, path: string, ok: boolean): void {
+  const perfil: LogPerfil = role === "averbadora" ? "averbadora" : role === "banco" ? "banco" : role === "prefeitura" ? "prefeitura" : role === "servidor" ? "servidor" : "sistema";
+  const source = perfil === "averbadora" ? "admin.mutacao" : `${perfil}.mutacao`;
+  const entry = pushEvent(ok ? "info" : "warn", source, `${method} ${path}${ok ? "" : " (falhou)"}`);
+  const p = appendLog(env, entry).catch(() => undefined);
+  if (waitUntil) waitUntil(p); else void p;
 }
 function randomTrace(): string {
   return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
@@ -817,7 +833,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const level = url.searchParams.get("level");
     const source = url.searchParams.get("source");
     const perfil = url.searchParams.get("perfil");
-    let rows = _events;
+    // Junta o buffer em memória (deste isolate) com o log compartilhado do
+    // Postgres (todas as mutações de todos os isolates). Dedup por trace_id+ts.
+    let shared: AppLogRow[] = [];
+    try { shared = await loadLogs(c.env, 300); } catch { /* fail-safe: só memória */ }
+    const seen = new Set<string>();
+    const merged: LogEntry[] = [];
+    for (const e of [..._events, ...(shared as unknown as LogEntry[])]) {
+      const k = `${e.trace_id}|${e.ts}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      merged.push(e);
+    }
+    merged.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+    let rows = merged;
     if (level) rows = rows.filter((e) => e.level === level);
     if (source) rows = rows.filter((e) => e.source === source);
     if (perfil) rows = rows.filter((e) => e.perfil === perfil);

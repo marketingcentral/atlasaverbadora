@@ -3,7 +3,7 @@ import { authRoutes } from "./modules/auth/index.js";
 import { healthRoutes } from "./modules/health/index.js";
 import { servidoresRoutes } from "./modules/servidores/index.js";
 import { portalBancoRoutes } from "./modules/portal-banco/index.js";
-import { adminRoutes, csvTemplateRoutes, ensureBancosLoaded, ensureServidoresLoaded, logMutacao } from "./modules/admin/index.js";
+import { adminRoutes, csvTemplateRoutes, ensureBancosLoaded, ensureServidoresLoaded, logMutacaoPersistido } from "./modules/admin/index.js";
 import { ensureTombamentoLoaded } from "./modules/admin/tombamento.js";
 import type { JwtClaims } from "./middleware/auth.js";
 import { externalRoutes } from "./modules/external/index.js";
@@ -29,7 +29,9 @@ app.use("/v1/*", async (c, next) => {
   if (m === "GET" || m === "HEAD" || m === "OPTIONS") return;
   const path = new URL(c.req.url).pathname;
   if (path.startsWith("/v1/auth/")) return; // login/refresh/logout não são alteração de dado
-  try { logMutacao(c.get("jwt")?.role, m, path, (c.res?.status ?? 200) < 400); } catch { /* nunca quebra a request */ }
+  // Persiste no log compartilhado (app_logs) via waitUntil — a alteração aparece
+  // no GET /logs mesmo que ele caia em outro isolate. Nunca quebra a request.
+  try { logMutacaoPersistido(c.env, c.executionCtx?.waitUntil?.bind(c.executionCtx), c.get("jwt")?.role, m, path, (c.res?.status ?? 200) < 400); } catch { /* fail-safe */ }
 });
 
 app.route("/", healthRoutes);

@@ -40,6 +40,20 @@ export function ensureSchema(env: Env): Promise<void> {
       data jsonb NOT NULL,
       updated_at timestamptz DEFAULT now()
     )`);
+    // Log operacional compartilhado entre isolates. O Worker roda em vários
+    // isolates e cada um tem seu buffer em memória; persistir aqui garante que
+    // TODA alteração (de qualquer perfil) apareça no log da averbadora
+    // independente de qual isolate serviu a requisição.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS app_logs (
+      id bigserial PRIMARY KEY,
+      ts timestamptz NOT NULL DEFAULT now(),
+      level text NOT NULL,
+      source text NOT NULL,
+      perfil text NOT NULL,
+      message text NOT NULL,
+      trace_id text NOT NULL
+    )`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS app_logs_ts_idx ON app_logs (ts DESC)`);
   })().catch((e) => { _schemaEnsured = null; throw e; });
   return _schemaEnsured;
 }
@@ -248,6 +262,32 @@ export async function seedTombamentoIfEmpty(env: Env, seed: { lote: LoteLike; li
   if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
   for (const s of seed) await upsertTombamentoLote(env, s.lote, s.linhas);
   return true;
+}
+
+// ============================================================
+// App logs (compartilhado entre isolates)
+// ============================================================
+export interface AppLogRow { ts: string; level: string; source: string; perfil: string; message: string; trace_id: string }
+
+/** Anexa uma linha ao log compartilhado. Best-effort — nunca lança pro chamador. */
+export async function appendLog(env: Env, e: AppLogRow): Promise<void> {
+  await getDb(env).execute(sql`
+    INSERT INTO app_logs (ts, level, source, perfil, message, trace_id)
+    VALUES (${e.ts}, ${e.level}, ${e.source}, ${e.perfil}, ${e.message}, ${e.trace_id})`);
+}
+
+/** Carrega os logs compartilhados mais recentes (ts desc). */
+export async function loadLogs(env: Env, limit = 300): Promise<AppLogRow[]> {
+  const rows = (await getDb(env).execute(sql`
+    SELECT to_char(ts, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS ts, level, source, perfil, message, trace_id
+    FROM app_logs ORDER BY ts DESC, id DESC LIMIT ${limit}`)) as unknown as AppLogRow[];
+  return rows;
+}
+
+/** Poda o log compartilhado, mantendo as N linhas mais recentes. */
+export async function pruneLogs(env: Env, keep = 2000): Promise<void> {
+  await getDb(env).execute(sql`
+    DELETE FROM app_logs WHERE id NOT IN (SELECT id FROM app_logs ORDER BY id DESC LIMIT ${keep})`);
 }
 
 /** Repara linhas com jsonb corrompido (escalar): TRUNCATE + re-seed com o raw cast correto. */
