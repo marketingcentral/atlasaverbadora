@@ -6,7 +6,7 @@ import type { Env } from "../../env.js";
 import { generateRefreshToken, signAccessToken } from "./jwt.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
-import { bancos as bancosStore, prefeituras as prefeiturasStore } from "../admin/index.js";
+import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded } from "../admin/index.js";
 
 interface ResolvedUser {
   id: number;
@@ -96,6 +96,11 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
   .post("/v1/auth/login", async (c) => {
     const body = LoginRequestSchema.parse(await c.req.json());
     const identifier = body.identifier.replace(/\D/g, "").length === 11 ? body.identifier.replace(/\D/g, "") : body.identifier;
+
+    // Hidrata os servidores do Postgres (SERVIDORES_BUSCA_MOCK <- linhas reais, com
+    // passwordHash) antes de resolver as credenciais — login costuma ser a primeira
+    // request do isolate, então sem isso o servidor cadastrado só no banco fica invisível.
+    await ensureServidoresLoaded(c.env);
 
     // 1) Servidor cadastrado via averbadora (login = CPF) com senha SHA-256.
     const servidorAuth = await resolveServidorByCredentials(body.identifier, body.password);
