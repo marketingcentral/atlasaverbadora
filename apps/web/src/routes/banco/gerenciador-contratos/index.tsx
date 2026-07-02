@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ContratosTable, FilterBar, FilterCheckboxGroup } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
+import { downloadCsv } from "../../../lib/csv";
 
 const SITUACOES = [
   { value: "ativo", label: "Ativos" },
@@ -44,7 +45,25 @@ export function BancoGerenciadorContratos() {
           setSituacoes(new Set(["ativo"]));
           setExato(false);
         }}
-        onExport={() => alert("Export — em construção (Fase 8 completa)")}
+        onExport={() => {
+          const contratos = data.data?.contratos ?? [];
+          downloadCsv(
+            "contratos-convenio.csv",
+            contratos.map((c) => ({
+              adf: c.adf,
+              cpf: c.cpfMasked,
+              nome: c.nome,
+              matricula: c.matricula,
+              tipoContrato: c.tipoContrato,
+              situacao: c.situacao,
+              parcelas: c.totalParcelas,
+              valorParcela: c.valorParcela,
+              convenio: c.convenio,
+              lancamento: c.lancamento,
+              expiracao: c.expiracao ?? "",
+            })),
+          );
+        }}
       >
         <FilterCheckboxGroup options={SITUACOES} selected={situacoes} onChange={setSituacoes} />
       </FilterBar>
@@ -68,9 +87,6 @@ export function BancoGerenciadorContratos() {
         emptyState="Nenhum contrato no convênio ativo com esses filtros."
       />
 
-      <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-        Detalhe do contrato (7 tabs + Imprimir/Quitar/Suspender/Cancelar/Alongar/Alterar) será implementado na próxima sessão.
-      </div>
     </div>
   );
 }

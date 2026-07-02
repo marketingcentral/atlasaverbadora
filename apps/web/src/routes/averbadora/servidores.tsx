@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, FilterBar, IconButton, Pill, SelectField, TextField, CurrencyField, FormGrid, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { downloadCsv } from "../../lib/csv";
 import type { AdminServidor, AdminServidorUpdate, CsvImportOutcome } from "@atlas/sdk";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -59,7 +60,25 @@ export function AdminServidores() {
           setSearch("");
           setPrefId("");
         }}
-        onExport={() => alert("Export CSV — substitua pela rota /v1/admin/servidores/export quando disponível.")}
+        onExport={() =>
+          downloadCsv(
+            "servidores.csv",
+            filtered.map((s) => ({
+              nome: s.nome,
+              cpf: s.cpf,
+              matricula: s.matricula,
+              cargo: s.cargo ?? "",
+              origem: s.origem,
+              vinculo: s.vinculo,
+              situacaoFuncional: s.situacaoFuncional,
+              salarioLiquido: s.salarioLiquido,
+              status: s.status,
+              email: s.email ?? "",
+              telefone: s.telefone ?? "",
+              idConvenio: s.idConvenio,
+            })),
+          )
+        }
         actions={
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <a href={atlas.admin.csvTemplateUrl("servidores")} download style={{ textDecoration: "none" }}>

@@ -69,8 +69,16 @@ export function ServidorMarketplace() {
                 >
                   Simular →
                 </Button>
-                <Button size="sm" variant="ghost" onClick={() => alert("Em produção: cria proposta com aceite imediato.")}>
-                  Aceitar oferta
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    nav(
+                      `/servidor/termo?tipo=novo&valor=10000&parcelas=${Math.min(o.prazoMaxMeses, 60)}&taxaAm=${(o.taxaMinAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`,
+                    )
+                  }
+                >
+                  Aceitar oferta →
                 </Button>
               </div>
             </Card>
