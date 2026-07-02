@@ -72,6 +72,22 @@ export function ServidorSimular() {
     return t?.disponivel ?? info.margem.margem.disponivel ?? 0;
   }, [info]);
 
+  // Nao ha teto fixo de valor: o maximo e o maior emprestimo cuja parcela ainda
+  // cabe na margem, para o nº de parcelas escolhido (Price invertido). Assim,
+  // 96x cobrindo R$300k e liberado se a margem cobre a parcela.
+  const maxValor = useMemo(() => {
+    if (margemEmprestimo <= 0 || parcelas <= 0) return 500;
+    const bruto = taxaAm <= 0
+      ? margemEmprestimo * parcelas
+      : (margemEmprestimo * (1 - Math.pow(1 + taxaAm, -parcelas))) / taxaAm;
+    return Math.max(500, Math.floor(bruto / 100) * 100);
+  }, [margemEmprestimo, parcelas, taxaAm]);
+
+  // Se o valor atual passar do maximo (ex.: ao reduzir parcelas), reancora.
+  useEffect(() => {
+    if (valor > maxValor) setValor(maxValor);
+  }, [maxValor, valor]);
+
   const parcela = useMemo(() => {
     if (valor <= 0 || parcelas <= 0) return 0;
     // Tabela Price. Quando taxa e zero, a formula gera 0/0 (NaN) — usar
@@ -253,12 +269,15 @@ export function ServidorSimular() {
           <input
             type="range"
             min={500}
-            max={50000}
+            max={Math.max(maxValor, 1000)}
             step={100}
-            value={valor}
+            value={Math.min(valor, maxValor)}
             onChange={(e) => setValor(Number(e.target.value))}
             style={{ width: "100%", accentColor: "var(--accent)" }}
           />
+          <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Máximo p/ {parcelas}x com sua margem: <b>{fmtBRL(maxValor)}</b>
+          </span>
         </div>
       </Card>
 
