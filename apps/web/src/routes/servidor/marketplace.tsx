@@ -7,7 +7,18 @@ const pct = (n: number) => `${(n * 100).toFixed(2)}% a.m.`;
 
 export function ServidorMarketplace() {
   const nav = useNavigate();
-  const q = useQuery({ queryKey: ["servidor", "ofertas"], queryFn: () => atlas.servidor.ofertas() });
+  // staleTime 0 + refetchOnMount always garante que sempre puxa fresco quando
+  // o usuario cai na tela vindo de outro portal. O default do react-query
+  // exibe cache stale enquanto refetch acontece em background — para
+  // "acabou de mexer e nao mudou" isso confunde, entao forcamos refetch
+  // sincrono em cada mount e tambem quando a janela recupera o foco.
+  const q = useQuery({
+    queryKey: ["servidor", "ofertas"],
+    queryFn: () => atlas.servidor.ofertas(),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
