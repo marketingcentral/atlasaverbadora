@@ -7,6 +7,28 @@ import { generateRefreshToken, signAccessToken } from "./jwt.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded } from "../admin/index.js";
+import { setServidorPassword } from "../../db/repos.js";
+
+/** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
+function maskEmail(email?: string): string {
+  if (!email || !email.includes("@")) return "seu e-mail";
+  const parts = email.split("@");
+  const user = parts[0] ?? "";
+  const domain = parts[1] ?? "";
+  return `${user.slice(0, 2)}•••@${domain}`;
+}
+/** Mascara um telefone deixando os 4 últimos dígitos: "(••) •••••-4407". */
+function maskPhone(phone?: string): string {
+  const d = (phone ?? "").replace(/\D/g, "");
+  if (d.length < 4) return "seu telefone";
+  return `(••) •••••-${d.slice(-4)}`;
+}
+function randomCode(): string {
+  const bytes = new Uint8Array(4);
+  crypto.getRandomValues(bytes);
+  const n = ((bytes[0]! << 24) | (bytes[1]! << 16) | (bytes[2]! << 8) | bytes[3]!) >>> 0;
+  return String(100000 + (n % 900000));
+}
 
 interface ResolvedUser {
   id: number;
@@ -170,6 +192,55 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       role: resolved.role,
       user: { id: resolved.id, nome: resolved.nome, role: resolved.role },
     });
+  })
+  // ===== Primeiro acesso (fluxo das telas 01B–01E do app) =====
+  // 1) Busca o servidor pelo CPF na base (Postgres). 404 se não existir.
+  .post("/v1/auth/primeiro-acesso/buscar", async (c) => {
+    const { cpf } = z.object({ cpf: z.string() }).parse(await c.req.json());
+    const digits = cpf.replace(/\D/g, "");
+    if (digits.length !== 11) throw Errors.validation({ cpf: "CPF deve ter 11 dígitos" });
+    await ensureServidoresLoaded(c.env);
+    const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
+    if (!s) return c.json({ encontrado: false });
+    return c.json({
+      encontrado: true,
+      nome: s.nome,
+      matricula: s.matricula,
+      cargo: s.cargo ?? null,
+      origem: s.origem ?? null,
+      email_masked: maskEmail(s.email),
+      telefone_masked: maskPhone(s.telefone),
+      ja_tem_senha: Boolean(s.passwordHash),
+    });
+  })
+  // 2) Envia (test-mode: retorna) o código de 6 dígitos.
+  .post("/v1/auth/primeiro-acesso/codigo", async (c) => {
+    const { cpf } = z.object({ cpf: z.string() }).parse(await c.req.json());
+    const digits = cpf.replace(/\D/g, "");
+    await ensureServidoresLoaded(c.env);
+    const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
+    if (!s) throw Errors.notFound("servidor");
+    const codigo = randomCode();
+    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`pa:${digits}`, codigo, { expirationTtl: 600 });
+    // TEST MODE: sem infra de e-mail/SMS, devolvemos o código para o teste conseguir prosseguir.
+    return c.json({ enviado: true, destino: maskEmail(s.email), codigo_teste: codigo });
+  })
+  // 3) Valida o código e define a senha (grava passwordHash no Postgres).
+  .post("/v1/auth/primeiro-acesso/senha", async (c) => {
+    const { cpf, codigo, senha } = z
+      .object({ cpf: z.string(), codigo: z.string(), senha: z.string().min(6) })
+      .parse(await c.req.json());
+    const digits = cpf.replace(/\D/g, "");
+    if (!c.env.KV_SESSIONS) throw Errors.validation({ kv: "sessões indisponíveis" });
+    const stored = await c.env.KV_SESSIONS.get(`pa:${digits}`);
+    if (!stored || stored !== codigo) throw Errors.unauthorized("Código inválido ou expirado");
+    const hash = await sha256Hex(senha);
+    const n = await setServidorPassword(c.env, digits, hash);
+    if (n === 0) throw Errors.notFound("servidor");
+    // Atualiza o cache em memória do isolate para o login funcionar imediatamente.
+    SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => { x.passwordHash = hash; });
+    await c.env.KV_SESSIONS.delete(`pa:${digits}`);
+    return c.json({ ok: true });
   })
   .post("/v1/auth/refresh", async (c) => {
     const body = RefreshRequestSchema.parse(await c.req.json());

@@ -160,6 +160,17 @@ export async function upsertServidor(env: Env, s: ServidorBuscaMock): Promise<vo
     ON CONFLICT (cpf, matricula) DO UPDATE SET prefeitura_id = EXCLUDED.prefeitura_id, nome = EXCLUDED.nome, vinculo = EXCLUDED.vinculo, situacao_funcional = EXCLUDED.situacao_funcional, status = EXCLUDED.status, data_nascimento = EXCLUDED.data_nascimento, salario_base = EXCLUDED.salario_base, data = EXCLUDED.data`);
 }
 
+/** Define/atualiza o passwordHash (SHA-256) no jsonb `data` de todas as matrículas do CPF.
+ *  Usado no fluxo de primeiro acesso. Retorna o número de linhas afetadas. */
+export async function setServidorPassword(env: Env, cpf: string, passwordHash: string): Promise<number> {
+  const rows = (await getDb(env).execute(sql`
+    UPDATE servidores
+    SET data = jsonb_set(COALESCE(data, '{}'::jsonb), '{passwordHash}', to_jsonb(${passwordHash}::text), true)
+    WHERE cpf = ${cpf}
+    RETURNING id`)) as unknown as { id: number }[];
+  return rows.length;
+}
+
 export async function seedServidoresIfEmpty(env: Env, seed: ServidorBuscaMock[]): Promise<boolean> {
   const db = getDb(env);
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM servidores`)) as unknown as { n: number }[];

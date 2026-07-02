@@ -72,6 +72,8 @@ export interface ServidorBuscaMock {
   codigoIbge?: number;
   /** SHA-256 hex da senha. Nunca retornar plaintext. Login do servidor é o próprio CPF. */
   passwordHash?: string;
+  /** RG (opcional, informativo). */
+  rg?: string;
 }
 
 export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
@@ -152,6 +154,49 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     endereco: "Rua XV de Novembro, 88 - Centro, Joinville/SC",
     email: "suzana.dallarmi@joinville.sc.gov.br",
     telefone: "47991032235",
+    codigoIbge: 4209102,
+  },
+  {
+    // Servidor de teste (login direto) — senha "teste123".
+    cpf: "37534239800",
+    cpfMasked: "***.***.***-00",
+    rg: "40.837.175-4",
+    matricula: "993410027",
+    idMatricula: "MAT-993410027",
+    nome: "DIEGO PEREZ FERREIRA",
+    dataAdmissao: "01/03/2015",
+    dataNascimento: "1987-02-07",
+    vinculo: "ESTATUTARIO",
+    origem: "PREFEITURA DE PALHOCA",
+    situacaoFuncional: "TRABALHANDO",
+    salarioLiquido: 12000,
+    idConvenio: "CONV-001",
+    cargo: "Programador",
+    endereco: "Rua dos Programadores, 100 - Centro, Palhoca/SC",
+    email: "diego.ferreira@palhoca.sc.gov.br",
+    telefone: "48991073451",
+    codigoIbge: 4211900,
+    passwordHash: "289160db0d9f39f9ae1754c4ec9c16f90b50e32e09c5fb5481ae642b3d3d1a36", // sha256("teste123")
+  },
+  {
+    // Servidor de teste SEM senha — usar para testar o fluxo de PRIMEIRO ACESSO.
+    cpf: "12345678909",
+    cpfMasked: "***.***.***-09",
+    rg: "33.112.845-2",
+    matricula: "778102055",
+    idMatricula: "MAT-778102055",
+    nome: "MARIANA COSTA LIMA",
+    dataAdmissao: "10/02/2018",
+    dataNascimento: "1990-05-20",
+    vinculo: "ESTATUTARIO",
+    origem: "PREFEITURA DE JOINVILLE",
+    situacaoFuncional: "TRABALHANDO",
+    salarioLiquido: 8500,
+    idConvenio: "CONV-003",
+    cargo: "Analista de Sistemas",
+    endereco: "Rua XV de Novembro, 480 - Centro, Joinville/SC",
+    email: "mariana.lima@joinville.sc.gov.br",
+    telefone: "47992018745",
     codigoIbge: 4209102,
   },
 ];
