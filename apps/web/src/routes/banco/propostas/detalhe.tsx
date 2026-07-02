@@ -38,26 +38,50 @@ export function BancoPropostaDetalhe() {
   const refresh = () => setVersion((v) => v + 1);
   const trava = travaInfo(proposta);
 
+  const [confirmando, setConfirmando] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Wrapper generico que valida transicao legal + protege contra falha de
+  // persistencia. Cada acao passa o status esperado atual (`from`) e o novo.
+  const transicionar = (from: BancoProposta["status"][], to: BancoProposta["status"], extra?: Partial<BancoProposta>): boolean => {
+    if (!from.includes(proposta.status)) {
+      setSaveError(`Transicao invalida: nao e possivel mudar de "${STATUS_LABEL[proposta.status]}" para "${STATUS_LABEL[to]}".`);
+      return false;
+    }
+    const ok = patchProposta(proposta.idUnico, { status: to, ...(extra ?? {}) });
+    if (!ok) {
+      setSaveError("Falha ao salvar. Verifique o armazenamento do navegador.");
+      return false;
+    }
+    setSaveError(null);
+    return true;
+  };
+
   const aprovar = () => {
-    patchProposta(proposta.idUnico, { status: "aprovada" });
-    refresh();
+    if (transicionar(["recebida", "em_analise", "mais_info"], "aprovada")) refresh();
   };
   const registrarFormalizacao = () => {
-    patchProposta(proposta.idUnico, {
-      status: "formalizada",
-      ccbUrl: proposta.ccbUrl ?? `https://formaliza.bancodelta.com.br/ccb/${proposta.idUnico}.pdf`,
-    });
-    refresh();
+    if (
+      transicionar(["aguardando_formalizacao"], "formalizada", {
+        ccbUrl: proposta.ccbUrl ?? `https://formaliza.bancodelta.com.br/ccb/${proposta.idUnico}.pdf`,
+      })
+    ) refresh();
   };
   // Confirmacao de averbacao e acao sensivel (libera recurso ao servidor e
   // torna a margem efetiva). Exige 2FA antes de aplicar o patch.
   const confirmarAverbacao = () => {
+    if (confirmando) return; // idempotencia contra double-click
     setPendingAverbacao(true);
   };
   const executarConfirmacao = async () => {
-    patchProposta(proposta.idUnico, { status: "averbada" });
-    setPendingAverbacao(false);
-    refresh();
+    if (confirmando) return; // guarda extra contra 2FA disparado 2x
+    setConfirmando(true);
+    try {
+      if (transicionar(["formalizada"], "averbada")) refresh();
+    } finally {
+      setConfirmando(false);
+      setPendingAverbacao(false);
+    }
   };
 
   return (
@@ -65,6 +89,20 @@ export function BancoPropostaDetalhe() {
       <div>
         <Button variant="ghost" size="sm" onClick={() => nav("/banco/propostas")}>← Voltar para a fila</Button>
       </div>
+
+      {saveError ? (
+        <div
+          style={{
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid var(--danger-500)",
+            background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+            fontSize: ".88rem",
+          }}
+        >
+          {saveError}
+        </div>
+      ) : null}
 
       <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>

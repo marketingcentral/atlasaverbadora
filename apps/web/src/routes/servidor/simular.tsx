@@ -74,12 +74,20 @@ export function ServidorSimular() {
 
   const parcela = useMemo(() => {
     if (valor <= 0 || parcelas <= 0) return 0;
+    // Tabela Price. Quando taxa e zero, a formula gera 0/0 (NaN) — usar
+    // divisao simples nesse caso (parcela = valor / parcelas).
+    if (taxaAm <= 0) return valor / parcelas;
     return (valor * taxaAm) / (1 - Math.pow(1 + taxaAm, -parcelas));
   }, [valor, parcelas, taxaAm]);
 
   const iof = valor * 0.0038 + valor * 0.000082 * Math.min(parcelas * 30, 365);
   const total = parcela * parcelas;
-  const cet = ((total / (valor - iof)) ** (1 / parcelas) - 1) * 100;
+  // CET quebra se valor - iof <= 0 (loans muito pequenos) ou se total nao ha
+  // (parcela = 0). Guarda contra NaN pra nao mostrar 'NaN%' na UI.
+  const cetBase = valor - iof;
+  const cet = cetBase > 0 && total > 0 && parcelas > 0
+    ? ((total / cetBase) ** (1 / parcelas) - 1) * 100
+    : 0;
 
   const excedeMargem = info ? parcela > margemEmprestimo : false;
   const locked = !!lockExpiresAt && lockExpiresAt > now;

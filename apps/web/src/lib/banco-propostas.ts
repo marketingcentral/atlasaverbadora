@@ -463,11 +463,12 @@ function readOverlay(): Overlay {
   }
 }
 
-function writeOverlay(o: Overlay): void {
+function writeOverlay(o: Overlay): boolean {
   try {
     window.localStorage.setItem(STORAGE_KEYS.bancoPropostas, JSON.stringify(o));
+    return true;
   } catch {
-    // ignore
+    return false;
   }
 }
 
@@ -490,10 +491,15 @@ export function getProposta(idUnico: string): BancoProposta | undefined {
   return hydrate(seed, readOverlay());
 }
 
-export function patchProposta(idUnico: string, patch: Partial<BancoProposta>): void {
+/**
+ * Aplica um patch parcial no overlay. Retorna false se a escrita no localStorage
+ * falhar (quota / modo privado), pra que a UI possa mostrar erro em vez de fingir
+ * sucesso e o proximo `getProposta` retornar o valor antigo.
+ */
+export function patchProposta(idUnico: string, patch: Partial<BancoProposta>): boolean {
   const overlay = readOverlay();
   overlay[idUnico] = { ...overlay[idUnico], ...patch };
-  writeOverlay(overlay);
+  return writeOverlay(overlay);
 }
 
 // ---------------------------------------------------------------------------
