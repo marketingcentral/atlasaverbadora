@@ -34,6 +34,18 @@ class AuthRepository(
         return auth
     }
 
+    // ---- Primeiro acesso (endpoints não autenticados) ----
+    suspend fun paBuscar(cpf: String) =
+        safeApi(gson) { authApi.primeiroAcessoBuscar(io.atlas.servidor.data.remote.dto.CpfRequest(cpf)) }
+
+    suspend fun paEnviarCodigo(cpf: String) =
+        safeApi(gson) { authApi.primeiroAcessoCodigo(io.atlas.servidor.data.remote.dto.CpfRequest(cpf)) }
+
+    suspend fun paDefinirSenha(cpf: String, codigo: String, senha: String) =
+        safeApi(gson) {
+            authApi.primeiroAcessoSenha(io.atlas.servidor.data.remote.dto.DefinirSenhaRequest(cpf, codigo, senha))
+        }
+
     suspend fun logout() {
         try {
             safeApi(gson) { api.logout() }

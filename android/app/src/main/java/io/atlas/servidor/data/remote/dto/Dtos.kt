@@ -38,6 +38,31 @@ data class ApiErrorDetail(
     @SerializedName("trace_id") val traceId: String? = null,
 )
 
+// ---------- Primeiro acesso ----------
+
+data class CpfRequest(val cpf: String)
+
+data class PrimeiroAcessoBuscarResponse(
+    val encontrado: Boolean,
+    val nome: String? = null,
+    val matricula: String? = null,
+    val cargo: String? = null,
+    val origem: String? = null,
+    @SerializedName("email_masked") val emailMasked: String? = null,
+    @SerializedName("telefone_masked") val telefoneMasked: String? = null,
+    @SerializedName("ja_tem_senha") val jaTemSenha: Boolean = false,
+)
+
+data class CodigoResponse(
+    val enviado: Boolean,
+    val destino: String? = null,
+    @SerializedName("codigo_teste") val codigoTeste: String? = null,
+)
+
+data class DefinirSenhaRequest(val cpf: String, val codigo: String, val senha: String)
+
+data class OkResponse(val ok: Boolean = false)
+
 // ---------- Servidor profile ----------
 
 data class MeResponse(

@@ -25,6 +25,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import io.atlas.servidor.ui.util.CpfVisualTransformation
 import io.atlas.servidor.ui.components.AtlasPrimaryButton
 import io.atlas.servidor.ui.components.AtlasSecondaryButton
 import io.atlas.servidor.ui.theme.Ambar
@@ -76,9 +77,10 @@ fun LoginScreen(
                 value = vm.cpf,
                 onValueChange = vm::onCpfChange,
                 label = { Text("CPF") },
-                placeholder = { Text("Somente números") },
+                placeholder = { Text("000.000.000-00") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                visualTransformation = CpfVisualTransformation(),
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth(),
             )
