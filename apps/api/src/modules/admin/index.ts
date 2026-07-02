@@ -35,9 +35,11 @@ function maskEmail(email: string): string {
   const shown = user.slice(0, Math.min(3, user.length));
   return `${shown}${"*".repeat(Math.max(3, user.length - shown.length))}@${domain}`;
 }
+// DEMONSTRACAO: codigo fixo 000000. Para voltar a gerar codigo real (quando
+// houver provider de email), troque por: crypto.getRandomValues + padStart.
+const CODIGO_DEMO_FIXO = "000000";
 function gerarCodigo6(): string {
-  const n = crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000;
-  return String(n).padStart(6, "0");
+  return CODIGO_DEMO_FIXO;
 }
 interface ConfirmacaoPayload { sub: string; acao: string; recurso: string; codigo: string; exp: number; }
 
