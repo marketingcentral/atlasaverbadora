@@ -59,7 +59,6 @@ export function BancoConvenios() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
         {convenios.map((c) => {
-          const hasActive = c.contratosAtivos > 0;
           return (
             <div key={c.nome} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
@@ -68,10 +67,7 @@ export function BancoConvenios() {
                   size="sm"
                   variant="ghost"
                   onClick={() => setPendingRemove({ nome: c.nome, contratosAtivos: c.contratosAtivos })}
-                  disabled={hasActive}
-                  title={hasActive
-                    ? "Não é possível remover um convênio com contratos ativos"
-                    : `Remover ${c.nome}`}
+                  title={`Remover ${c.nome}`}
                   style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
                 >
                   ✕ Remover
@@ -112,7 +108,11 @@ export function BancoConvenios() {
 
       {pendingRemove ? (
         <TwoFactorModal
-          acao={`remover o convênio "${pendingRemove.nome}"`}
+          acao={
+            pendingRemove.contratosAtivos > 0
+              ? `remover o convênio "${pendingRemove.nome}" (atenção: ${pendingRemove.contratosAtivos} contrato${pendingRemove.contratosAtivos > 1 ? "s" : ""} ativo${pendingRemove.contratosAtivos > 1 ? "s" : ""} ficará sem convênio vinculado)`
+              : `remover o convênio "${pendingRemove.nome}"`
+          }
           canal="email"
           onCancel={() => setPendingRemove(null)}
           onConfirm={confirmarRemocao}
