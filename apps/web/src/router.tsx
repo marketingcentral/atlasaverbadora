@@ -44,6 +44,7 @@ import { PrefeituraRelatorios } from "./routes/prefeitura/relatorios";
 import { PrefeituraAnuencia } from "./routes/prefeitura/anuencia";
 import { PrefeituraPerfis } from "./routes/prefeitura/perfis";
 import { PrefeituraComunicados } from "./routes/prefeitura/comunicados";
+import { PrefeituraMateriais } from "./routes/prefeitura/materiais";
 import { BancoLayout } from "./routes/banco/layout";
 import { BancoVisaoGeral } from "./routes/banco/visao-geral";
 import { BancoPropostas } from "./routes/banco/propostas/index";
@@ -212,6 +213,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "anuencia", element: <PrefeituraAnuencia /> },
           { path: "perfis", element: <PrefeituraPerfis /> },
           { path: "comunicados", element: <PrefeituraComunicados /> },
+          { path: "materiais", element: <PrefeituraMateriais /> },
         ],
       },
     ],
