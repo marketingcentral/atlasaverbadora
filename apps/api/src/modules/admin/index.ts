@@ -226,11 +226,28 @@ const vitrine: VitrineBanner[] = [
 type ServidorStatus = "ativo" | "bloqueado" | "arquivado";
 const servidorStatusOverride = new Map<string, ServidorStatus>();
 
-const _events: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string }[] = [];
+export type LogPerfil = "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema";
+/** Deriva o perfil (aba do log) a partir do prefixo do source. */
+export function perfilDoSource(source: string): LogPerfil {
+  if (source.startsWith("admin") || source.startsWith("averbadora")) return "averbadora";
+  if (source.startsWith("portal.banco") || source.startsWith("banco") || source === "bank") return "banco";
+  if (source.startsWith("prefeitura")) return "prefeitura";
+  if (source.startsWith("servidor")) return "servidor";
+  return "sistema";
+}
+const _events: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string; perfil: LogPerfil }[] = [];
 const pushEvent = (level: "info" | "warn" | "error", source: string, message: string, trace_id = randomTrace()) => {
-  _events.unshift({ ts: new Date().toISOString(), level, trace_id, message, source });
-  if (_events.length > 200) _events.length = 200;
+  _events.unshift({ ts: new Date().toISOString(), level, trace_id, message, source, perfil: perfilDoSource(source) });
+  if (_events.length > 400) _events.length = 400;
 };
+
+/** Registra uma mutação (POST/PATCH/DELETE) no log do perfil correspondente.
+ *  Usado pelo middleware global — garante que TODA alteração apareça no log. */
+export function logMutacao(role: string | undefined, method: string, path: string, ok: boolean): void {
+  const perfil: LogPerfil = role === "averbadora" ? "averbadora" : role === "banco" ? "banco" : role === "prefeitura" ? "prefeitura" : role === "servidor" ? "servidor" : "sistema";
+  const source = perfil === "averbadora" ? "admin.mutacao" : `${perfil}.mutacao`;
+  pushEvent(ok ? "info" : "warn", source, `${method} ${path}${ok ? "" : " (falhou)"}`);
+}
 function randomTrace(): string {
   return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
 }
@@ -799,10 +816,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const url = new URL(c.req.url);
     const level = url.searchParams.get("level");
     const source = url.searchParams.get("source");
+    const perfil = url.searchParams.get("perfil");
     let rows = _events;
     if (level) rows = rows.filter((e) => e.level === level);
     if (source) rows = rows.filter((e) => e.source === source);
-    return c.json({ logs: rows.slice(0, 100) });
+    if (perfil) rows = rows.filter((e) => e.perfil === perfil);
+    return c.json({ logs: rows.slice(0, 200) });
   })
 
   .get("/v1/admin/vitrine", async (c) => {

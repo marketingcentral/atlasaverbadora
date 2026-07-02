@@ -859,8 +859,8 @@ export class AtlasClient {
     listComunicados: () => this.request<{ comunicados: { id: string; titulo: string; corpo: string; linkLabel?: string; linkHref?: string }[] }>("/v1/admin/comunicados"),
     health: () =>
       this.request<{ checks: { servico: string; uptime: number; p95: number; ok: boolean }[] }>("/v1/admin/health"),
-    logs: (q?: { level?: "info" | "warn" | "error"; source?: string }) =>
-      this.request<{ logs: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string }[] }>("/v1/admin/logs", { query: q ?? {} }),
+    logs: (q?: { level?: "info" | "warn" | "error"; source?: string; perfil?: "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema" }) =>
+      this.request<{ logs: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string; perfil: "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema" }[] }>("/v1/admin/logs", { query: q ?? {} }),
     listVitrine: () => this.request<{ banners: AdminBanner[] }>("/v1/admin/vitrine"),
     upsertBanner: (b: { id?: string; bancoId: number; titulo: string; imagemUrl?: string; ativo?: boolean }) =>
       this.request<{ banner: AdminBanner }>("/v1/admin/vitrine", { method: "POST", body: b }),

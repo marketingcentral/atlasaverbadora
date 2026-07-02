@@ -3,8 +3,9 @@ import { authRoutes } from "./modules/auth/index.js";
 import { healthRoutes } from "./modules/health/index.js";
 import { servidoresRoutes } from "./modules/servidores/index.js";
 import { portalBancoRoutes } from "./modules/portal-banco/index.js";
-import { adminRoutes, csvTemplateRoutes, ensureBancosLoaded, ensureServidoresLoaded } from "./modules/admin/index.js";
+import { adminRoutes, csvTemplateRoutes, ensureBancosLoaded, ensureServidoresLoaded, logMutacao } from "./modules/admin/index.js";
 import { ensureTombamentoLoaded } from "./modules/admin/tombamento.js";
+import type { JwtClaims } from "./middleware/auth.js";
 import { externalRoutes } from "./modules/external/index.js";
 import { prefeituraRoutes, prefeituraPublicRoutes } from "./modules/prefeitura/index.js";
 import { errorHandler } from "./middleware/error.js";
@@ -13,11 +14,23 @@ import { corsMiddleware } from "./middleware/cors.js";
 import { rateLimit } from "./middleware/rate-limit.js";
 import type { Env } from "./env.js";
 
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: { jwt?: JwtClaims } }>();
 
 app.use("*", corsMiddleware);
 app.use("*", loggerMiddleware);
 app.onError(errorHandler);
+
+// Log de auditoria operacional: registra TODA mutação (POST/PATCH/DELETE) no log
+// do perfil que a fez (averbadora/banco/prefeitura/servidor). Roda após o handler
+// (o jwt já foi resolvido pela rota) — garante que cada alteração apareça no log.
+app.use("/v1/*", async (c, next) => {
+  await next();
+  const m = c.req.method;
+  if (m === "GET" || m === "HEAD" || m === "OPTIONS") return;
+  const path = new URL(c.req.url).pathname;
+  if (path.startsWith("/v1/auth/")) return; // login/refresh/logout não são alteração de dado
+  try { logMutacao(c.get("jwt")?.role, m, path, (c.res?.status ?? 200) < 400); } catch { /* nunca quebra a request */ }
+});
 
 app.route("/", healthRoutes);
 // Public CSV templates: must be mounted BEFORE the rate-limited / authenticated areas.
