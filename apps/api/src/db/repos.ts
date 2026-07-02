@@ -174,7 +174,7 @@ export async function seedServidoresIfEmpty(env: Env, seed: ServidorBuscaMock[])
 interface TabelaLike { id: string; [k: string]: unknown }
 
 export async function loadTabelas(env: Env): Promise<TabelaLike[]> {
-  const rows = await getDb(env).execute<{ data: TabelaLike }>(sql`SELECT data FROM portal_banco_tabelas ORDER BY id`);
+  const rows = (await getDb(env).execute(sql`SELECT data FROM portal_banco_tabelas ORDER BY id`)) as unknown as { data: TabelaLike }[];
   return rows.map((r) => r.data);
 }
 

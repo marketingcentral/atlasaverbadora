@@ -24,6 +24,10 @@ export function BancoTabelaEmprestimosForm() {
     queryKey: ["banco", "tabela", id],
     queryFn: () => atlas.banco.getTabela(id!),
     enabled: !!id,
+    // Nunca serve cache stale no form de edicao — precisa refletir o que
+    // foi salvo na ultima passagem, senao usuario ve o valor antigo.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const [convenioId, setConvenioId] = useState("");
@@ -67,7 +71,14 @@ export function BancoTabelaEmprestimosForm() {
       return atlas.banco.upsertTabela(body);
     },
     onSuccess: () => {
+      // Invalida BOTH: a lista ('tabelas') e o item individual ('tabela', id).
+      // Sem invalidar o singular, ao reabrir o form o React Query retornava
+      // o cache stale de antes do save — usuario via valor antigo.
       qc.invalidateQueries({ queryKey: ["banco", "tabelas"] });
+      if (id) qc.invalidateQueries({ queryKey: ["banco", "tabela", id] });
+      // Marketplace do servidor tambem le tabelas (via ofertas): invalidar
+      // pra que o servidor veja imediatamente a nova taxa/prazo.
+      qc.invalidateQueries({ queryKey: ["servidor", "ofertas"] });
       nav("/banco/cadastros/tabela-emprestimos");
     },
   });

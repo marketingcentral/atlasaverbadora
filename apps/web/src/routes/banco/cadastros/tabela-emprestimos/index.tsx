@@ -13,7 +13,11 @@ export function BancoTabelaEmprestimosLista() {
   const data = useQuery({ queryKey: ["banco", "tabelas"], queryFn: () => atlas.banco.listTabelas() });
   const remove = useMutation({
     mutationFn: (id: string) => atlas.banco.removerTabela(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["banco", "tabelas"] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["banco", "tabelas"] });
+      qc.invalidateQueries({ queryKey: ["banco", "tabela", id] });
+      qc.invalidateQueries({ queryKey: ["servidor", "ofertas"] });
+    },
   });
 
   const columns: Column<BancoTabela>[] = [
