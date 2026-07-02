@@ -12,7 +12,7 @@ import type { Env } from "../../env.js";
 import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, type FolhaAdmin } from "../admin/index.js";
-import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
+import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
@@ -38,7 +38,9 @@ function bancoNome(id: number): string {
 function servidoresDaPrefeitura(prefeituraId: number): ServidorBuscaMock[] {
   const p = prefeituras.find((x) => x.id === prefeituraId);
   if (!p) return [];
-  return SERVIDORES_BUSCA_MOCK.filter((s) => s.origem.toLowerCase().includes(p.nome.toLowerCase()));
+  // Escopo por prefeituraId (não por substring de `origem`) — assim o mesmo CPF
+  // em prefeituras diferentes aparece só na sua prefeitura.
+  return SERVIDORES_BUSCA_MOCK.filter((s) => prefeituraIdDe(s) === prefeituraId);
 }
 
 function conveniosDaPrefeitura(prefeituraId: number) {
@@ -238,10 +240,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (!idConvenio) return void out.errors.push({ line, message: `${p.nome} nao possui convenios` });
       const salario = Number(r.salarioLiquido);
       const ibge = Number(r.codigoIbge);
-      const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === cpf);
+      // Identidade é (prefeituraId, matricula) — nunca só CPF. Assim o mesmo CPF
+      // pode ser cadastrado em outra prefeitura (acumulação de cargos) sem colisão.
+      const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === id);
       const rec: ServidorBuscaMock = {
         cpf, cpfMasked: `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}`,
-        matricula: r.matricula!, idMatricula: `MAT-${r.matricula!}`, nome: r.nome!,
+        matricula: r.matricula!, idMatricula: `MAT-${r.matricula!}`, prefeituraId: id, nome: r.nome!,
         dataAdmissao: r.dataAdmissao ?? "", dataNascimento: r.dataNascimento ?? "",
         vinculo, origem: p.nome, situacaoFuncional: r.situacaoFuncional ?? "TRABALHANDO",
         salarioLiquido: Number.isFinite(salario) ? salario : 0, idConvenio,
@@ -278,8 +282,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       let cpf = body.cpf.replace(/\D/g, "");
       if (cpf.length > 0 && cpf.length < 11) cpf = cpf.padStart(11, "0");
       if (cpf.length !== 11) throw Errors.validation({ cpf: "CPF deve ter 11 digitos" });
-      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === cpf && x.matricula !== s.matricula);
-      if (dup) throw Errors.validation({ cpf: `CPF ja em uso pela matricula ${dup.matricula}` });
+      // Só bloqueia se o CPF já existir NESTA prefeitura (outra matrícula) — o mesmo
+      // CPF em prefeitura diferente é acúmulo legal de cargos e é permitido.
+      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === cpf && x !== s && prefeituraIdDe(x) === prefeituraIdDe(s));
+      if (dup) throw Errors.validation({ cpf: `CPF ja em uso nesta prefeitura pela matricula ${dup.matricula}` });
       s.cpf = cpf; s.cpfMasked = `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}`; changed.push("cpf");
     }
     if (body.cargo !== undefined) { s.cargo = body.cargo; changed.push("cargo"); }

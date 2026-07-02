@@ -10,7 +10,7 @@ import { getDb } from "./client.js";
 import { bancos as bancosTable, prefeituras as prefeiturasTable, servidores as servidoresTable } from "./schema.js";
 import type { Env } from "../env.js";
 import type { BancoAdmin, PrefeituraAdmin } from "../modules/admin/index.js";
-import { CONVENIOS_MOCK, type ServidorBuscaMock } from "../modules/portal-banco/fixtures.js";
+import { prefeituraIdDe, type ServidorBuscaMock } from "../modules/portal-banco/fixtures.js";
 
 // postgres-js JSON-encoda objetos UMA vez sob `::jsonb`. NAO pre-stringificar
 // (dupla serializacao -> string escalar). Arrays viram array-PG, entao para
@@ -146,7 +146,7 @@ function mapSituacao(s: string): string {
   if (up === "DESLIGADO") return "AFASTADO";
   return "ATIVO";
 }
-const prefeituraIdOf = (s: ServidorBuscaMock) => CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 1;
+const prefeituraIdOf = (s: ServidorBuscaMock) => prefeituraIdDe(s);
 
 export async function loadServidores(env: Env): Promise<ServidorBuscaMock[]> {
   const rows = await getDb(env).select({ data: servidoresTable.data }).from(servidoresTable);

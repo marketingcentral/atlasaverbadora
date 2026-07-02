@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
-import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
+import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
 import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
@@ -698,8 +698,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       })
       .parse(await c.req.json());
     if (body.cpf !== undefined && body.cpf !== s.cpf) {
-      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === body.cpf && x.matricula !== matricula);
-      if (dup) throw Errors.validation({ cpf: `CPF já em uso pela matrícula ${dup.matricula}` });
+      // Mesmo CPF em prefeitura diferente é acúmulo legal — só bloqueia dentro da mesma prefeitura.
+      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === body.cpf && x !== s && prefeituraIdDe(x) === prefeituraIdDe(s));
+      if (dup) throw Errors.validation({ cpf: `CPF já em uso nesta prefeitura pela matrícula ${dup.matricula}` });
       s.cpf = body.cpf;
       s.cpfMasked = `${body.cpf.slice(0, 3)}.***.***-${body.cpf.slice(-2)}`;
     }
@@ -1357,7 +1358,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       }
       if (!idConvenio) idConvenio = defaultConvenioId;
       if (!idConvenio) { out.errors.push({ line, message: `prefeitura ${pref.nome} nao possui convenios cadastrados` }); return; }
-      const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === cpf);
+      // Identidade (prefeituraId, matricula) — permite mesmo CPF em outra prefeitura.
+      const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === prefId);
       const salario = Number(r.salarioLiquido);
       const ibge = Number(r.codigoIbge);
       const s = {
@@ -1365,6 +1367,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         cpfMasked: cpf.slice(0, 3) + ".***.***-" + cpf.slice(-2),
         matricula: r.matricula!,
         idMatricula: `MAT-${r.matricula!}`,
+        prefeituraId: prefId,
         nome: r.nome!,
         dataAdmissao: r.dataAdmissao ?? "",
         dataNascimento: r.dataNascimento ?? "",
