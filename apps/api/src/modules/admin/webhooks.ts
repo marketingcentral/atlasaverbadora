@@ -151,6 +151,14 @@ export function removeWebhook(id: string): boolean {
   return _endpoints.delete(id);
 }
 
+/** Desativa (não apaga) o webhook — para de receber eventos mas o registro fica. */
+export function deactivateWebhook(id: string): WebhookEndpoint | null {
+  const w = _endpoints.get(id);
+  if (!w) return null;
+  w.active = false;
+  return w;
+}
+
 export function listDeliveries(webhookId?: string, limit = 50): WebhookDelivery[] {
   const all = webhookId ? _deliveries.filter((d) => d.webhookId === webhookId) : _deliveries.slice();
   return all.sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt)).slice(0, limit);

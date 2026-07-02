@@ -103,13 +103,21 @@ export async function listTokens(kv: KVNamespace, filter?: { environment?: ApiEn
   return all;
 }
 
-/** Hard delete: remove id key + hash index. Irreversível. */
+/** Hard delete: remove id key + hash index. Irreversível. (Preferir revokeToken.) */
 export async function deleteToken(kv: KVNamespace, id: string): Promise<boolean> {
   const t = await kv.get<ApiToken>(K_ID(id), "json");
   if (!t) return false;
   await kv.delete(K_HASH(t.hash));
   await kv.delete(K_ID(id));
   return true;
+}
+
+/** Revoga (desativa) o token sem apagar o registro — para de autenticar mas fica no histórico. */
+export async function revokeToken(kv: KVNamespace, id: string): Promise<ApiToken | null> {
+  const t = await kv.get<ApiToken>(K_ID(id), "json");
+  if (!t) return null;
+  if (!t.revokedAt) { t.revokedAt = new Date().toISOString(); await kv.put(K_ID(id), JSON.stringify(t)); }
+  return t;
 }
 
 /** Lookup by plaintext bearer header value. */

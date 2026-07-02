@@ -14,7 +14,6 @@ import {
 } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminBanco, AdminBancoInput } from "@atlas/sdk";
-import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
 
 export function AdminBancos() {
   const qc = useQueryClient();
@@ -23,8 +22,16 @@ export function AdminBancos() {
     mutationFn: (id: number) => atlas.admin.testarBanco(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "bancos"] }),
   });
+  // Nunca exclui — desativa/reativa (status). Reversível, sem perda de dados.
+  const toggleAtivo = useMutation({
+    mutationFn: (b: AdminBanco) => atlas.admin.upsertBanco({
+      id: b.id, nome: b.nome, status: b.status === "inativo" ? "ativo" : "inativo",
+      adapter: b.adapter, contatoEmail: b.contatoEmail, loginEmail: b.loginEmail,
+      scopes: b.scopes, mtlsHabilitado: b.mtlsHabilitado,
+    }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "bancos"] }),
+  });
   const [editing, setEditing] = useState<AdminBanco | "new" | null>(null);
-  const [deleting, setDeleting] = useState<AdminBanco | null>(null);
 
   const columns: Column<AdminBanco>[] = [
     {
@@ -90,26 +97,16 @@ export function AdminBancos() {
           <>
             <IconButton title="Editar" onClick={() => setEditing(b)}>✎</IconButton>
             <IconButton title="Testar conexão" onClick={() => testar.mutate(b.id)}>↻</IconButton>
-            <IconButton danger title="Excluir" onClick={() => setDeleting(b)}>🗑</IconButton>
+            {b.status === "inativo" ? (
+              <IconButton title="Reativar" onClick={() => toggleAtivo.mutate(b)}>▶</IconButton>
+            ) : (
+              <IconButton danger title="Desativar" onClick={() => { if (confirm(`Desativar o banco "${b.nome}"?\n\nEle para de operar, mas os dados não são apagados — você pode reativar depois.`)) toggleAtivo.mutate(b); }}>⏸</IconButton>
+            )}
           </>
         )}
       />
 
       {editing ? <BancoModal initial={editing === "new" ? null : editing} onClose={() => setEditing(null)} /> : null}
-
-      {deleting ? (
-        <ConfirmDeleteModal
-          titulo="Excluir banco"
-          alvo={deleting.nome}
-          acao="excluir_banco"
-          recurso={String(deleting.id)}
-          onConfirm={async (challengeId, codigo) => {
-            await atlas.admin.deleteBanco(deleting.id, { challengeId, codigo });
-            qc.invalidateQueries({ queryKey: ["admin", "bancos"] });
-          }}
-          onClose={() => setDeleting(null)}
-        />
-      ) : null}
     </div>
   );
 }

@@ -15,8 +15,6 @@ import {
 } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminPrefeitura, AdminPrefeituraInput } from "@atlas/sdk";
-import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
-
 export function AdminPrefeituras() {
   const qc = useQueryClient();
   const data = useQuery({ queryKey: ["admin", "prefeituras"], queryFn: () => atlas.admin.listPrefeituras() });
@@ -24,11 +22,19 @@ export function AdminPrefeituras() {
     mutationFn: (id: number) => atlas.admin.sincronizarPrefeitura(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] }),
   });
+  // Nunca exclui — desativa/reativa (status). Reversível, sem perda de dados.
+  const toggleAtivo = useMutation({
+    mutationFn: (p: AdminPrefeitura) => atlas.admin.upsertPrefeitura({
+      id: p.id, nome: p.nome, uf: p.uf, municipioIbge: p.municipioIbge,
+      modoIntegracao: p.modoIntegracao, status: p.status === "inativo" ? "ativo" : "inativo",
+      loginEmail: p.loginEmail, servidoresCount: p.servidoresCount,
+    }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] }),
+  });
   const [editing, setEditing] = useState<AdminPrefeitura | "new" | null>(null);
-  const [deleting, setDeleting] = useState<AdminPrefeitura | null>(null);
 
   const columns: Column<AdminPrefeitura>[] = [
-    { key: "status", header: "Situação", render: (p) => <Pill variant={p.status === "ativo" ? "averbado" : "pendente"}>{p.status}</Pill> },
+    { key: "status", header: "Situação", render: (p) => <Pill variant={p.status === "ativo" ? "averbado" : p.status === "inativo" ? "expirado" : "pendente"}>{p.status}</Pill> },
     { key: "nome", header: "Prefeitura", render: (p) => `${p.nome}/${p.uf}` },
     { key: "modoIntegracao", header: "Integração" },
     {
@@ -80,26 +86,16 @@ export function AdminPrefeituras() {
           <>
             <IconButton title="Editar" onClick={() => setEditing(p)}>✎</IconButton>
             <IconButton title="Sincronizar folha" onClick={() => sync.mutate(p.id)}>↻</IconButton>
-            <IconButton danger title="Excluir" onClick={() => setDeleting(p)}>🗑</IconButton>
+            {p.status === "inativo" ? (
+              <IconButton title="Reativar" onClick={() => toggleAtivo.mutate(p)}>▶</IconButton>
+            ) : (
+              <IconButton danger title="Desativar" onClick={() => { if (confirm(`Desativar a prefeitura "${p.nome}"?\n\nEla para de operar, mas os dados não são apagados — você pode reativar depois.`)) toggleAtivo.mutate(p); }}>⏸</IconButton>
+            )}
           </>
         )}
       />
 
       {editing ? <PrefeituraModal initial={editing === "new" ? null : editing} onClose={() => setEditing(null)} /> : null}
-
-      {deleting ? (
-        <ConfirmDeleteModal
-          titulo="Excluir prefeitura"
-          alvo={`${deleting.nome}/${deleting.uf}`}
-          acao="excluir_prefeitura"
-          recurso={String(deleting.id)}
-          onConfirm={async (challengeId, codigo) => {
-            await atlas.admin.deletePrefeitura(deleting.id, { challengeId, codigo });
-            qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] });
-          }}
-          onClose={() => setDeleting(null)}
-        />
-      ) : null}
     </div>
   );
 }

@@ -68,7 +68,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   .get("/v1/portal/banco/convenios", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
-    const ativos = CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id);
+    const ativos = CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id && cv.ativo !== false);
     const activeId = await getActiveConvenioId(c.env, j);
     return c.json({
       // Inclui as exigências que a prefeitura de cada convênio impõe ao averbar

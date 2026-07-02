@@ -12,6 +12,8 @@ export interface ConvenioMock {
   codigoVerba: string;
   dataCorte: number;
   diaRepasse: number;
+  /** Convênios desativados (soft delete) saem das listagens mas o registro permanece. */
+  ativo?: boolean;
 }
 
 export interface ComunicadoMock {

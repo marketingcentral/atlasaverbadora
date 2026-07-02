@@ -22,10 +22,6 @@ export function AverbadoraApiWebhooks() {
     mutationFn: (id: string) => atlas.admin.toggleWebhook(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-webhooks"] }),
   });
-  const remove = useMutation({
-    mutationFn: (id: string) => atlas.admin.deleteWebhook(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin-webhooks"] }),
-  });
   const [testingId, setTestingId] = useState<string | null>(null);
   const test = useMutation({
     mutationFn: (id: string) => atlas.admin.testWebhook(id),
@@ -63,15 +59,7 @@ export function AverbadoraApiWebhooks() {
             {testingId === w.id ? "Testando…" : "▶ Testar"}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelected(w.id)}>📄 Entregas</Button>
-          <Button size="sm" variant="ghost" onClick={() => toggle.mutate(w.id)}>{w.active ? "⏸ Pausar" : "▶ Retomar"}</Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => { if (confirm("Remover webhook?")) remove.mutate(w.id); }}
-            style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
-          >
-            ✕ Remover
-          </Button>
+          <Button size="sm" variant="ghost" onClick={() => toggle.mutate(w.id)}>{w.active ? "⏸ Desativar" : "▶ Reativar"}</Button>
         </div>
       ),
     },

@@ -134,7 +134,7 @@ export interface AdminPrefeitura {
   uf: string;
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
-  status: "ativo" | "pausado";
+  status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
   hasPassword: boolean;
   servidoresCount: number;
@@ -147,7 +147,7 @@ export interface AdminPrefeituraInput {
   uf: string;
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
-  status: "ativo" | "pausado";
+  status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
   password?: string;
   servidoresCount?: number;

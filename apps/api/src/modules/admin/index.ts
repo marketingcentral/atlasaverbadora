@@ -5,14 +5,14 @@ import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
-import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
+import { createToken, revokeToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
+import { WEBHOOK_EVENTS, createWebhook, deactivateWebhook, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
-import { deleteConvenioConfig, getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
+import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import { cancelPreReserva, countExpiringNext24h, getPreReserva, listPreReservas, summarizePreReservas, sweepExpired, type PreReservaStatus } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
@@ -91,7 +91,7 @@ export interface PrefeituraAdmin {
   uf: string;
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
-  status: "ativo" | "pausado";
+  status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
   passwordHash?: string;
   servidoresCount: number;
@@ -540,19 +540,19 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // codigoDemo so existe porque nao ha provider de email; em producao seria omitido.
     return c.json({ challengeId, emailMascarado: maskEmail(email), codigoDemo: codigo, expiraEmSegundos: CONFIRM_TTL_S });
   })
+  // Nunca exclui de fato — DESATIVA (status inativo). Reversível via POST /bancos (status ativo).
+  // Rota mantida por compat; body de confirmação (se enviado) é ignorado.
   .delete("/v1/admin/bancos/:id", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
     const id = Number(c.req.param("id"));
-    const conf = z.object({ challengeId: z.string(), codigo: z.string() }).parse(await c.req.json().catch(() => ({})));
-    const idx = bancos.findIndex((b) => b.id === id);
-    if (idx < 0) throw Errors.notFound("banco");
-    await verificarConfirmacao(c.env, j, conf.challengeId, conf.codigo, "excluir_banco", String(id));
-    const removed = bancos.splice(idx, 1)[0]!;
-    try { await deleteBancoRow(c.env, id); } catch (e) { pushEvent("warn", "db.bancos.delete_failed", `Falha ao apagar banco ${id} no Postgres: ${(e as Error).message}`); }
-    appendAudit({ categoria: "acesso", acao: "banco_excluido", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${removed.nome}" (id=${id}) excluido apos confirmacao por email.` });
-    pushEvent("warn", "admin.bancos.delete", `Banco "${removed.nome}" removido por user:${j.sub}`);
-    return c.body(null, 204);
+    const b = bancos.find((x) => x.id === id);
+    if (!b) throw Errors.notFound("banco");
+    b.status = "inativo";
+    await persistBanco(c.env, b);
+    appendAudit({ categoria: "acesso", acao: "banco_desativado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${b.nome}" (id=${id}) desativado.` });
+    pushEvent("info", "admin.bancos.desativar", `Banco "${b.nome}" desativado por user:${j.sub}`);
+    return c.json({ banco: sanitizeBanco(b) });
   })
 
   .get("/v1/admin/prefeituras", async (c) => {
@@ -568,7 +568,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         uf: z.string().length(2),
         municipioIbge: z.number().int(),
         modoIntegracao: z.enum(["REST", "SOAP", "CSV", "MANUAL"]),
-        status: z.enum(["ativo", "pausado"]),
+        status: z.enum(["ativo", "pausado", "inativo"]),
         loginEmail: z.string().email().optional().or(z.literal("")),
         password: z.string().min(6).optional(),
         servidoresCount: z.number().int().default(0),
@@ -625,24 +625,23 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await persistPrefeitura(c.env, p);
     return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
+  // Nunca exclui — DESATIVA (status inativo). Reversível via POST /prefeituras.
   .delete("/v1/admin/prefeituras/:id", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
     const id = Number(c.req.param("id"));
-    const conf = z.object({ challengeId: z.string(), codigo: z.string() }).parse(await c.req.json().catch(() => ({})));
-    const idx = prefeituras.findIndex((p) => p.id === id);
-    if (idx < 0) throw Errors.notFound("prefeitura");
-    await verificarConfirmacao(c.env, j, conf.challengeId, conf.codigo, "excluir_prefeitura", String(id));
-    const removed = prefeituras.splice(idx, 1)[0]!;
-    try { await deletePrefeituraRow(c.env, id); } catch (e) { pushEvent("warn", "db.prefeituras.delete_failed", `Falha ao apagar prefeitura ${id} no Postgres: ${(e as Error).message}`); }
-    appendAudit({ categoria: "acesso", acao: "prefeitura_excluida", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${removed.nome}" (id=${id}) excluida apos confirmacao por email.` });
-    pushEvent("warn", "admin.prefeituras.delete", `Prefeitura "${removed.nome}" removida por user:${j.sub}`);
-    return c.body(null, 204);
+    const p = prefeituras.find((x) => x.id === id);
+    if (!p) throw Errors.notFound("prefeitura");
+    p.status = "inativo";
+    await persistPrefeitura(c.env, p);
+    appendAudit({ categoria: "acesso", acao: "prefeitura_desativada", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) desativada.` });
+    pushEvent("info", "admin.prefeituras.desativar", `Prefeitura "${p.nome}" desativada por user:${j.sub}`);
+    return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
 
   .get("/v1/admin/convenios", async (c) => {
     requireAdmin(c.get("jwt"));
-    const detalhado = CONVENIOS_MOCK.map((cv) => ({
+    const detalhado = CONVENIOS_MOCK.filter((cv) => cv.ativo !== false).map((cv) => ({
       ...cv,
       bancoNome: bancos.find((b) => b.id === cv.bancoId)?.nome ?? "—",
       prefeituraNome: prefeituras.find((p) => p.id === cv.prefeituraId)?.nome ?? cv.prefeitura,
@@ -870,12 +869,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
     return c.json({ token, plaintext, warning: "Guarde o plaintext agora. Nao sera exibido novamente." }, 201);
   })
+  // Nunca apaga — REVOGA (para de autenticar, registro fica no histórico).
   .delete("/v1/admin/api-tokens/:id", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
-    const ok = await deleteToken(kv, c.req.param("id"));
-    if (!ok) throw Errors.notFound("token");
-    pushEvent("warn", "admin.api-tokens.delete", `Token ${c.req.param("id")} excluido permanentemente por user:${j.sub}`);
+    const t = await revokeToken(kv, c.req.param("id"));
+    if (!t) throw Errors.notFound("token");
+    pushEvent("info", "admin.api-tokens.revoke", `Token ${c.req.param("id")} revogado por user:${j.sub}`);
     return c.body(null, 204);
   })
 
@@ -910,10 +910,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!w) throw Errors.notFound("webhook");
     return c.json({ webhook: w });
   })
+  // Nunca apaga — DESATIVA (active=false). Reativável pelo toggle.
   .delete("/v1/admin/webhooks/:id", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
-    const ok = removeWebhook(c.req.param("id"));
-    if (!ok) throw Errors.notFound("webhook");
+    const w = deactivateWebhook(c.req.param("id"));
+    if (!w) throw Errors.notFound("webhook");
+    pushEvent("info", "admin.webhooks.desativar", `Webhook ${c.req.param("id")} desativado por user:${j.sub}`);
     return c.body(null, 204);
   })
   .get("/v1/admin/webhooks/:id/deliveries", authRequired, async (c) => {
@@ -1091,14 +1093,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     pushEvent("info", "admin.convenios", `Convenio "${novo.nome}" criado`);
     return c.json({ convenio: novo });
   })
+  // Nunca apaga — DESATIVA (ativo=false). Sai das listagens; referências ficam intactas.
   .delete("/v1/admin/convenios/:id", async (c) => {
     requireAdmin(c.get("jwt"));
     const id = c.req.param("id");
-    const idx = CONVENIOS_MOCK.findIndex((cv) => cv.id === id);
-    if (idx < 0) throw Errors.notFound("convenio");
-    const removido = CONVENIOS_MOCK.splice(idx, 1)[0]!;
-    deleteConvenioConfig(id);
-    pushEvent("warn", "admin.convenios", `Convenio "${removido.nome}" removido por user:${c.get("jwt").sub}`);
+    const cv = CONVENIOS_MOCK.find((x) => x.id === id);
+    if (!cv) throw Errors.notFound("convenio");
+    cv.ativo = false;
+    pushEvent("info", "admin.convenios", `Convenio "${cv.nome}" desativado por user:${c.get("jwt").sub}`);
     return c.body(null, 204);
   })
   .get("/v1/admin/convenios/:id/config", async (c) => {

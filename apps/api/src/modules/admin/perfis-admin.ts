@@ -100,10 +100,11 @@ export function disable2FA(id: number): boolean {
   return true;
 }
 
+/** Nunca apaga — DESATIVA (ativo=false). Reativável via upsert. */
 export function deleteAverbadoraUser(id: number): boolean {
-  const idx = _users.findIndex((u) => u.id === id);
-  if (idx < 0) return false;
-  _users.splice(idx, 1);
+  const u = _users.find((x) => x.id === id);
+  if (!u) return false;
+  u.ativo = false;
   return true;
 }
 
