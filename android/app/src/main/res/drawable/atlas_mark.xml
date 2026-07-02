@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Atlas "A" monogram with sweeping swoosh (aprox. do logo Atlas 360). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="120dp"
+    android:height="104dp"
+    android:viewportWidth="120"
+    android:viewportHeight="104">
+    <!-- A silhouette with bottom notch -->
+    <path
+        android:fillColor="#16181C"
+        android:pathData="M60,8 L99,98 L79,98 L60,54 L41,98 L21,98 Z" />
+    <!-- swoosh -->
+    <path
+        android:fillColor="#16181C"
+        android:pathData="M27,84 C58,64 82,46 113,13 C108,24 92,47 67,65 C52,76 40,81 27,84 Z" />
+</vector>

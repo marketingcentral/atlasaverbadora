@@ -70,7 +70,6 @@ private val BANNERS = listOf(
 fun InicioScreen(
     vm: HomeViewModel,
     onOpenSimular: () -> Unit,
-    onOpenMargem: () -> Unit,
     onOpenAnalise: () -> Unit,
 ) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -103,7 +102,6 @@ fun InicioScreen(
                         info = info,
                         locked = locked,
                         remainingMs = if (locked) (expiry!! - now) else 0L,
-                        onOpenMargem = onOpenMargem,
                     )
                     Spacer(Modifier.height(20.dp))
                 }
@@ -115,8 +113,11 @@ fun InicioScreen(
                 Spacer(Modifier.height(12.dp))
                 OfertaAtlas(vm.ofertasState, onOpenSimular)
 
-                Spacer(Modifier.height(16.dp))
-                AtlasPrimaryButton(text = "Acompanhar análise", onClick = onOpenAnalise)
+                // "Acompanhar análise" só aparece quando há uma pré-reserva em andamento.
+                if (locked) {
+                    Spacer(Modifier.height(16.dp))
+                    AtlasPrimaryButton(text = "Acompanhar análise", onClick = onOpenAnalise)
+                }
                 Spacer(Modifier.height(24.dp))
             }
         }
@@ -140,7 +141,7 @@ private fun Header(name: String) {
 }
 
 @Composable
-private fun MargemCard(info: MatriculaInfoDto, locked: Boolean, remainingMs: Long, onOpenMargem: () -> Unit) {
+private fun MargemCard(info: MatriculaInfoDto, locked: Boolean, remainingMs: Long) {
     val m = info.margem.margem
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)),
@@ -176,19 +177,7 @@ private fun MargemCard(info: MatriculaInfoDto, locked: Boolean, remainingMs: Lon
                     trackColor = Superficie.copy(alpha = 0.2f),
                 )
                 Spacer(Modifier.height(10.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Em uso ${Format.money(m.comprometido)}", color = Superficie.copy(alpha = 0.8f), fontSize = 12.sp)
-                    Text(
-                        "Ver detalhes",
-                        color = Verde,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable(onClick = onOpenMargem)
-                            .padding(2.dp),
-                    )
-                }
+                Text("Em uso ${Format.money(m.comprometido)}", color = Superficie.copy(alpha = 0.8f), fontSize = 12.sp)
             }
         }
     }

@@ -63,6 +63,25 @@ data class DefinirSenhaRequest(val cpf: String, val codigo: String, val senha: S
 
 data class OkResponse(val ok: Boolean = false)
 
+// ---------- Proposta (servidor -> banco) ----------
+
+data class CriarPropostaRequest(
+    val valor: Double,
+    val parcelas: Int,
+    val taxaAm: Double,
+    val matricula: String? = null,
+    val bancoNome: String? = null,
+)
+
+data class PropostaResponse(
+    val id: String,
+    val situacao: String? = null,
+    val banco: String? = null,
+    val valor: Double = 0.0,
+    val parcelas: Int = 0,
+    val parcela: Double = 0.0,
+)
+
 // ---------- Servidor profile ----------
 
 data class MeResponse(

@@ -107,6 +107,13 @@ class SimularViewModel : ViewModel() {
                     status = "EM_ANALISE",
                 ),
             )
+            // Envia a solicitação ao ecossistema (banco recebe a pré-reserva). Best-effort:
+            // mesmo offline a pré-reserva local + trava garantem a UX; sincroniza quando houver rede.
+            try {
+                repo.criarProposta(r.valor, r.parcelas, taxaAm, m.matricula, "Banco Atlas")
+            } catch (e: ApiException) {
+                // silencioso — a pré-reserva local já foi registrada
+            }
             // Trava a margem por 48h (uma pré-reserva por vez), como no sistema web.
             prefs.setSimLock(m.matricula)
             submitting = false

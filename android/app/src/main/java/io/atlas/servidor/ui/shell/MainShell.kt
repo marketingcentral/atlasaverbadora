@@ -2,7 +2,7 @@ package io.atlas.servidor.ui.shell
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
-import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Tune
@@ -42,14 +42,13 @@ private data class Tab(val route: String, val label: String, val icon: ImageVect
 private val tabs = listOf(
     Tab(Routes.TAB_INICIO, "Início", Icons.Filled.Home),
     Tab(Routes.TAB_SIMULAR, "Simular", Icons.Filled.Tune),
-    Tab(Routes.TAB_ANALISE, "Em análise", Icons.Filled.HourglassEmpty),
+    Tab(Routes.TAB_ANALISE, "Em análise", Icons.Filled.HourglassTop),
     Tab(Routes.TAB_CONTRATOS, "Contratos", Icons.AutoMirrored.Filled.ReceiptLong),
     Tab(Routes.TAB_CONTA, "Conta", Icons.Filled.Person),
 )
 
 @Composable
 fun MainShell(
-    onOpenMargem: () -> Unit,
     onSwitchMatricula: () -> Unit,
     onLoggedOut: () -> Unit,
     vm: HomeViewModel = viewModel(),
@@ -99,7 +98,6 @@ fun MainShell(
                 InicioScreen(
                     vm = vm,
                     onOpenSimular = { goTab(Routes.TAB_SIMULAR) },
-                    onOpenMargem = onOpenMargem,
                     onOpenAnalise = { goTab(Routes.TAB_ANALISE) },
                 )
             }

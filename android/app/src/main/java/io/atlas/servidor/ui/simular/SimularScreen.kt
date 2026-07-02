@@ -14,16 +14,19 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -131,6 +134,18 @@ private fun MargemTravadaLock(remainingMs: Long, onVerAnalise: () -> Unit) {
 @Composable
 private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit) {
     val result = vm.result()
+    var showTermo by remember { mutableStateOf(false) }
+
+    if (showTermo) {
+        TermoDialog(
+            valor = result.valor,
+            parcelas = result.parcelas,
+            parcela = result.parcelaMensal,
+            taxaAm = vm.taxaAm,
+            onAceitar = { showTermo = false; vm.solicitar(onSolicitado) },
+            onCancelar = { showTermo = false },
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -227,12 +242,60 @@ private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit) {
         Spacer(Modifier.height(20.dp))
         AtlasPrimaryButton(
             text = "Solicitar proposta",
-            onClick = { vm.solicitar(onSolicitado) },
+            onClick = { showTermo = true },
             enabled = result.cabeNaMargem && vm.valor >= 500.0,
             loading = vm.submitting,
         )
         Spacer(Modifier.height(24.dp))
     }
+}
+
+@Composable
+private fun TermoDialog(
+    valor: Double,
+    parcelas: Int,
+    parcela: Double,
+    taxaAm: Double,
+    onAceitar: () -> Unit,
+    onCancelar: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancelar,
+        containerColor = Superficie,
+        title = { Text("Termo de solicitação", fontWeight = FontWeight.ExtraBold, color = Ink) },
+        text = {
+            androidx.compose.foundation.layout.Column {
+                Text(
+                    "Você está solicitando um empréstimo consignado junto ao Banco Atlas:",
+                    color = InkMuted,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                io.atlas.servidor.ui.components.InfoRow("Valor", Format.money(valor))
+                io.atlas.servidor.ui.components.InfoRow("Parcelas", "$parcelas× de ${Format.money(parcela)}")
+                io.atlas.servidor.ui.components.InfoRow("Taxa", Format.rateAm(taxaAm))
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Ao aceitar, este valor será reservado e sua margem ficará BLOQUEADA por 48h " +
+                        "(uma pré-reserva por vez). A taxa é mensal e inclui o CET (juros, IOF e tarifas). " +
+                        "O contrato definitivo é disponibilizado pelo banco após a aprovação. Este aceite é " +
+                        "registrado com data, hora e CPF para fins de auditoria (LGPD).",
+                    color = InkMuted,
+                    fontSize = 12.5.sp,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onAceitar) {
+                Text("Aceitar e reservar", color = Verde, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancelar) {
+                Text("Cancelar", color = InkMuted, fontWeight = FontWeight.SemiBold)
+            }
+        },
+    )
 }
 
 /** Formata ms restantes como "41h 23min 05s". */

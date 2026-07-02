@@ -27,6 +27,9 @@ interface ApiService {
     @GET("v1/servidores/me/ofertas")
     suspend fun ofertas(): OfertasResponse
 
+    @POST("v1/servidores/me/propostas")
+    suspend fun criarProposta(@Body body: io.atlas.servidor.data.remote.dto.CriarPropostaRequest): io.atlas.servidor.data.remote.dto.PropostaResponse
+
     @POST("v1/auth/logout")
     suspend fun logout(): Response<Unit>
 }

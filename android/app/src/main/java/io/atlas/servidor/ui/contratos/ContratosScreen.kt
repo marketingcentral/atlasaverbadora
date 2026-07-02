@@ -1,5 +1,7 @@
 package io.atlas.servidor.ui.contratos
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -12,15 +14,19 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -31,6 +37,7 @@ import io.atlas.servidor.data.remote.dto.ContratoDto
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
 import io.atlas.servidor.domain.Format
 import io.atlas.servidor.ui.components.AtlasCard
+import io.atlas.servidor.ui.components.AtlasSecondaryButton
 import io.atlas.servidor.ui.components.ChipTone
 import io.atlas.servidor.ui.components.ErrorBox
 import io.atlas.servidor.ui.components.InfoRow
@@ -62,10 +69,15 @@ fun ContratosScreen(vm: HomeViewModel) {
 @Composable
 private fun ContratosContent(info: MatriculaInfoDto) {
     var tab by remember { mutableIntStateOf(0) }
+    var lerContrato by remember { mutableStateOf<ContratoDto?>(null) }
     val saldoById = info.elegiveisPortabilidade.associate { it.id to it.saldoDevedor }
     val ativos = info.contratos.filter { !it.status.equals("Quitado", ignoreCase = true) }
     val historico = info.contratos.filter { it.status.equals("Quitado", ignoreCase = true) }
     val visible = if (tab == 0) ativos else historico
+
+    lerContrato?.let { c ->
+        ContratoDialog(c = c, nome = info.nome, orgao = info.prefeitura, onVoltar = { lerContrato = null })
+    }
 
     Column(
         modifier = Modifier
@@ -92,7 +104,7 @@ private fun ContratosContent(info: MatriculaInfoDto) {
         } else {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 visible.forEach { c ->
-                    ContratoCard(c, saldoById[c.id])
+                    ContratoCard(c, saldoById[c.id], onLer = { lerContrato = c })
                     Spacer(Modifier.height(12.dp))
                 }
                 Spacer(Modifier.height(24.dp))
@@ -102,7 +114,7 @@ private fun ContratosContent(info: MatriculaInfoDto) {
 }
 
 @Composable
-private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?) {
+private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?, onLer: () -> Unit) {
     val tone = when {
         c.status.equals("Quitado", ignoreCase = true) -> ChipTone.Neutro
         c.status.equals("Averbado", ignoreCase = true) -> ChipTone.Ambar
@@ -138,5 +150,48 @@ private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?) {
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
         )
+        Spacer(Modifier.height(12.dp))
+        AtlasSecondaryButton(text = "Ler contrato", onClick = onLer)
     }
+}
+
+@Composable
+private fun ContratoDialog(c: ContratoDto, nome: String, orgao: String, onVoltar: () -> Unit) {
+    val context = LocalContext.current
+    fun baixar() {
+        // Abre o comprovante (PDF) do contrato no navegador. pdfUrl é relativo à API.
+        val base = io.atlas.servidor.BuildConfig.API_BASE_URL.trimEnd('/')
+        val rel = (c.pdfUrl ?: "/v1/portal/banco/contratos/${c.id}/comprovante.pdf").trimStart('/')
+        runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("$base/$rel")))
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onVoltar,
+        containerColor = Superficie,
+        title = { Text("Contrato ${c.id}", fontWeight = FontWeight.ExtraBold, color = Ink) },
+        text = {
+            Column {
+                InfoRow("Banco credor", c.banco)
+                InfoRow("Situação", c.status)
+                InfoRow("Servidor", nome)
+                InfoRow("Órgão", orgao)
+                InfoRow("Valor financiado", Format.money(c.valorFinanciado))
+                InfoRow("Taxa", Format.rateAm(c.taxaAm))
+                InfoRow("Parcela", Format.money(c.parcela))
+                InfoRow("Parcelas", "${c.parcelasPagas} de ${c.total} pagas")
+                InfoRow("Próxima parcela", c.proximaParcela ?: "—")
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { baixar() }) {
+                Text("Baixar contrato", color = Verde, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onVoltar) {
+                Text("Voltar", color = InkMuted, fontWeight = FontWeight.SemiBold)
+            }
+        },
+    )
 }

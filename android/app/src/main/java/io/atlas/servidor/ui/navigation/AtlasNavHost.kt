@@ -6,7 +6,6 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.atlas.servidor.ui.auth.LoginScreen
 import io.atlas.servidor.ui.auth.PrimeiroAcessoScreen
-import io.atlas.servidor.ui.margem.MargemTravadaScreen
 import io.atlas.servidor.ui.matricula.SelecionarMatriculaScreen
 import io.atlas.servidor.ui.shell.MainShell
 
@@ -44,7 +43,6 @@ fun AtlasNavHost(startDestination: String) {
 
         composable(Routes.MAIN) {
             MainShell(
-                onOpenMargem = { nav.navigate(Routes.MARGEM_TRAVADA) },
                 onSwitchMatricula = { nav.navigate(Routes.SELECIONAR_MATRICULA) },
                 onLoggedOut = {
                     nav.navigate(Routes.LOGIN) {
@@ -52,10 +50,6 @@ fun AtlasNavHost(startDestination: String) {
                     }
                 },
             )
-        }
-
-        composable(Routes.MARGEM_TRAVADA) {
-            MargemTravadaScreen(onBack = { nav.popBackStack() })
         }
     }
 }

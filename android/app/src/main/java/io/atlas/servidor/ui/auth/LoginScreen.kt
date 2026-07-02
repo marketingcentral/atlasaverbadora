@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.atlas.servidor.ui.util.CpfVisualTransformation
+import io.atlas.servidor.ui.components.AtlasLogo
 import io.atlas.servidor.ui.components.AtlasPrimaryButton
 import io.atlas.servidor.ui.components.AtlasSecondaryButton
 import io.atlas.servidor.ui.theme.Ambar
@@ -49,29 +50,28 @@ fun LoginScreen(
             .padding(horizontal = 24.dp, vertical = 40.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "ATLAS · AVERBADORA",
-                color = Ambar,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp,
-            )
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(8.dp))
+            AtlasLogo(modifier = Modifier.align(Alignment.CenterHorizontally))
+            Spacer(Modifier.height(28.dp))
             Text(
                 text = "Acesso do servidor público",
                 color = Ink,
-                fontSize = 28.sp,
+                fontSize = 22.sp,
                 fontWeight = FontWeight.ExtraBold,
-                lineHeight = 34.sp,
+                lineHeight = 28.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(6.dp))
             Text(
                 text = "Empréstimo consignado, direto da sua margem.",
                 color = InkMuted,
                 fontSize = 15.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
 
-            Spacer(Modifier.height(32.dp))
+            Spacer(Modifier.height(28.dp))
 
             OutlinedTextField(
                 value = vm.cpf,
