@@ -8,7 +8,7 @@ import { listContratos } from "../portal-banco/store.js";
 import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
@@ -17,7 +17,45 @@ import { cancelPreReserva, countExpiringNext24h, getPreReserva, listPreReservas,
 import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
-import { deleteAverbadoraUser, disable2FA, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser } from "./perfis-admin.js";
+import { deleteAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser } from "./perfis-admin.js";
+
+// ============================================================
+// Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
+// Codigo REAL de 6 digitos guardado em KV com TTL de 10min. Sem provider de
+// email, o codigo e revelado na resposta (campo `codigoDemo`) pro modo demo.
+// ============================================================
+const CONFIRM_TTL_S = 600;
+
+function emailDoOperador(j: JwtClaims): string {
+  return getAverbadoraUser(Number(j.sub))?.email ?? "operador@atlas.io";
+}
+function maskEmail(email: string): string {
+  const [user, domain] = email.split("@");
+  if (!user || !domain) return email;
+  const shown = user.slice(0, Math.min(3, user.length));
+  return `${shown}${"*".repeat(Math.max(3, user.length - shown.length))}@${domain}`;
+}
+function gerarCodigo6(): string {
+  const n = crypto.getRandomValues(new Uint32Array(1))[0]! % 1_000_000;
+  return String(n).padStart(6, "0");
+}
+interface ConfirmacaoPayload { sub: string; acao: string; recurso: string; codigo: string; exp: number; }
+
+/** Valida o desafio de confirmacao. One-time: consome a chave no sucesso. */
+async function verificarConfirmacao(
+  env: Env, j: JwtClaims, challengeId: string, codigo: string, acao: string, recurso: string,
+): Promise<void> {
+  if (!env.KV_SESSIONS) throw Errors.validation({ codigo: "Confirmacao indisponivel (sem KV)." });
+  const raw = challengeId ? await env.KV_SESSIONS.get(`confirm:${challengeId}`) : null;
+  if (!raw) throw Errors.validation({ codigo: "Codigo expirado ou inexistente. Solicite um novo." });
+  const p = JSON.parse(raw) as ConfirmacaoPayload;
+  if (p.sub !== String(j.sub) || p.acao !== acao || p.recurso !== recurso) {
+    throw Errors.forbidden("Confirmacao nao corresponde a esta acao.");
+  }
+  if (Date.now() > p.exp) { await env.KV_SESSIONS.delete(`confirm:${challengeId}`); throw Errors.validation({ codigo: "Codigo expirado. Solicite um novo." }); }
+  if (p.codigo !== String(codigo).replace(/\D/g, "")) throw Errors.validation({ codigo: "Codigo incorreto." });
+  await env.KV_SESSIONS.delete(`confirm:${challengeId}`);
+}
 
 function requireAdmin(j: JwtClaims): void {
   if (j.role !== "averbadora") throw Errors.forbidden("Requer perfil averbadora");
@@ -84,10 +122,11 @@ interface VitrineBanner {
   ativo: boolean;
 }
 
+// Banco padrao unico. O cliente opera hoje so com o Banco Atlas; parceiros
+// adicionais entram pelo botao "Adicionar banco". id=1 mantem o vinculo com o
+// login banco@atlas.test (banco_id 1) e com os convenios (bancoId 1).
 export const bancos: BancoAdmin[] = [
-  { id: 1, nome: "SCred Financeira", status: "ativo", adapter: "sandbox", contatoEmail: "ti@scred.com.br", scopes: ["propostas:rw", "margem:r"], mtlsHabilitado: false, ultimoTeste: "2026-06-22T10:00:00Z", ultimoTesteOk: true },
-  { id: 2, nome: "Banco Y", status: "ativo", adapter: "sandbox", contatoEmail: "integracao@bancoy.com.br", scopes: ["propostas:rw"], mtlsHabilitado: true, ultimoTeste: "2026-06-22T09:30:00Z", ultimoTesteOk: true },
-  { id: 3, nome: "Banco BMG", status: "pausado", adapter: "ifractal", contatoEmail: "consig@bmg.com.br", scopes: ["propostas:rw"], mtlsHabilitado: true, ultimoTeste: "2026-06-20T17:12:00Z", ultimoTesteOk: false },
+  { id: 1, nome: "Banco Atlas", status: "ativo", adapter: "sandbox", contatoEmail: "integracao@atlas.io", scopes: ["propostas:rw", "margem:r"], mtlsHabilitado: false, ultimoTeste: "2026-06-22T10:00:00Z", ultimoTesteOk: true },
 ];
 
 // Snapshot das fixtures iniciais — usado como seed do Postgres na primeira carga.
@@ -422,14 +461,33 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await persistBanco(c.env, b);
     return c.json({ banco: sanitizeBanco(b) });
   })
+  // Solicita um codigo de confirmacao para uma acao destrutiva. Envia (demo:
+  // revela) um codigo de 6 digitos ao email do operador logado.
+  .post("/v1/admin/confirmacao/solicitar", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    const body = z.object({ acao: z.string().min(1), recurso: z.string().min(1) }).parse(await c.req.json());
+    const challengeId = crypto.randomUUID();
+    const codigo = gerarCodigo6();
+    const email = emailDoOperador(j);
+    const payload: ConfirmacaoPayload = { sub: String(j.sub), acao: body.acao, recurso: body.recurso, codigo, exp: Date.now() + CONFIRM_TTL_S * 1000 };
+    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`confirm:${challengeId}`, JSON.stringify(payload), { expirationTtl: CONFIRM_TTL_S });
+    pushEvent("info", "admin.confirmacao.solicitada", `Codigo de confirmacao para "${body.acao}" enviado a ${maskEmail(email)} (user:${j.sub})`);
+    // codigoDemo so existe porque nao ha provider de email; em producao seria omitido.
+    return c.json({ challengeId, emailMascarado: maskEmail(email), codigoDemo: codigo, expiraEmSegundos: CONFIRM_TTL_S });
+  })
   .delete("/v1/admin/bancos/:id", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
     const id = Number(c.req.param("id"));
+    const conf = z.object({ challengeId: z.string(), codigo: z.string() }).parse(await c.req.json().catch(() => ({})));
     const idx = bancos.findIndex((b) => b.id === id);
     if (idx < 0) throw Errors.notFound("banco");
+    await verificarConfirmacao(c.env, j, conf.challengeId, conf.codigo, "excluir_banco", String(id));
     const removed = bancos.splice(idx, 1)[0]!;
     try { await deleteBancoRow(c.env, id); } catch (e) { pushEvent("warn", "db.bancos.delete_failed", `Falha ao apagar banco ${id} no Postgres: ${(e as Error).message}`); }
-    pushEvent("warn", "admin.bancos.delete", `Banco "${removed.nome}" removido por user:${c.get("jwt").sub}`);
+    appendAudit({ categoria: "acesso", acao: "banco_excluido", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${removed.nome}" (id=${id}) excluido apos confirmacao por email.` });
+    pushEvent("warn", "admin.bancos.delete", `Banco "${removed.nome}" removido por user:${j.sub}`);
     return c.body(null, 204);
   })
 
@@ -502,6 +560,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     pushEvent("warn", "admin.prefeituras.reset-password", `Senha da prefeitura "${p.nome}" trocada por user:${c.get("jwt").sub}`);
     await persistPrefeitura(c.env, p);
     return c.json({ prefeitura: sanitizePrefeitura(p) });
+  })
+  .delete("/v1/admin/prefeituras/:id", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    const id = Number(c.req.param("id"));
+    const conf = z.object({ challengeId: z.string(), codigo: z.string() }).parse(await c.req.json().catch(() => ({})));
+    const idx = prefeituras.findIndex((p) => p.id === id);
+    if (idx < 0) throw Errors.notFound("prefeitura");
+    await verificarConfirmacao(c.env, j, conf.challengeId, conf.codigo, "excluir_prefeitura", String(id));
+    const removed = prefeituras.splice(idx, 1)[0]!;
+    try { await deletePrefeituraRow(c.env, id); } catch (e) { pushEvent("warn", "db.prefeituras.delete_failed", `Falha ao apagar prefeitura ${id} no Postgres: ${(e as Error).message}`); }
+    appendAudit({ categoria: "acesso", acao: "prefeitura_excluida", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${removed.nome}" (id=${id}) excluida apos confirmacao por email.` });
+    pushEvent("warn", "admin.prefeituras.delete", `Prefeitura "${removed.nome}" removida por user:${j.sub}`);
+    return c.body(null, 204);
   })
 
   .get("/v1/admin/convenios", async (c) => {

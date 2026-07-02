@@ -757,11 +757,19 @@ export class AtlasClient {
     testarBanco: (id: number) => this.request<{ ok: boolean; banco: AdminBanco }>(`/v1/admin/bancos/${id}/testar-conexao`, { method: "POST" }),
     resetBancoPassword: (id: number, password: string) =>
       this.request<{ banco: AdminBanco }>(`/v1/admin/bancos/${id}/reset-password`, { method: "POST", body: { password } }),
+    deleteBanco: (id: number, confirm: { challengeId: string; codigo: string }) =>
+      this.request<void>(`/v1/admin/bancos/${id}`, { method: "DELETE", body: confirm }),
     listPrefeituras: () => this.request<{ prefeituras: AdminPrefeitura[] }>("/v1/admin/prefeituras"),
     upsertPrefeitura: (p: AdminPrefeituraInput) => this.request<{ prefeitura: AdminPrefeitura }>("/v1/admin/prefeituras", { method: "POST", body: p }),
     sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
     resetPrefeituraPassword: (id: number, password: string) =>
       this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/reset-password`, { method: "POST", body: { password } }),
+    deletePrefeitura: (id: number, confirm: { challengeId: string; codigo: string }) =>
+      this.request<void>(`/v1/admin/prefeituras/${id}`, { method: "DELETE", body: confirm }),
+    // Step-up por email para acoes destrutivas. Retorna codigoDemo pois nao ha provider de email.
+    solicitarConfirmacao: (acao: string, recurso: string) =>
+      this.request<{ challengeId: string; emailMascarado: string; codigoDemo: string; expiraEmSegundos: number }>(
+        "/v1/admin/confirmacao/solicitar", { method: "POST", body: { acao, recurso } }),
     listConvenios: () => this.request<{ convenios: AdminConvenio[] }>("/v1/admin/convenios"),
     upsertConvenio: (body: AdminConvenioInput) =>
       this.request<{ convenio: AdminConvenio }>("/v1/admin/convenios", { method: "POST", body }),

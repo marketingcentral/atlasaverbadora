@@ -97,13 +97,14 @@ export function AverbadoraApiTokens() {
       render: (t) => (
         <IconButton
           danger
+          title="Excluir token"
           onClick={() => {
             if (confirm(`Excluir permanentemente o token "${t.name}"?\n\nIsto é IRREVERSÍVEL — todas as integrações que usam este token deixarão de funcionar imediatamente.`)) {
               del.mutate(t.id);
             }
           }}
         >
-          Excluir
+          🗑
         </IconButton>
       ),
     },

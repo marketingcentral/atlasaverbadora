@@ -15,6 +15,7 @@ import {
 } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminPrefeitura, AdminPrefeituraInput } from "@atlas/sdk";
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
 
 export function AdminPrefeituras() {
   const qc = useQueryClient();
@@ -24,6 +25,7 @@ export function AdminPrefeituras() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] }),
   });
   const [editing, setEditing] = useState<AdminPrefeitura | "new" | null>(null);
+  const [deleting, setDeleting] = useState<AdminPrefeitura | null>(null);
 
   const columns: Column<AdminPrefeitura>[] = [
     { key: "status", header: "Situação", render: (p) => <Pill variant={p.status === "ativo" ? "averbado" : "pendente"}>{p.status}</Pill> },
@@ -78,11 +80,26 @@ export function AdminPrefeituras() {
           <>
             <IconButton title="Editar" onClick={() => setEditing(p)}>✎</IconButton>
             <IconButton title="Sincronizar folha" onClick={() => sync.mutate(p.id)}>↻</IconButton>
+            <IconButton danger title="Excluir" onClick={() => setDeleting(p)}>🗑</IconButton>
           </>
         )}
       />
 
       {editing ? <PrefeituraModal initial={editing === "new" ? null : editing} onClose={() => setEditing(null)} /> : null}
+
+      {deleting ? (
+        <ConfirmDeleteModal
+          titulo="Excluir prefeitura"
+          alvo={`${deleting.nome}/${deleting.uf}`}
+          acao="excluir_prefeitura"
+          recurso={String(deleting.id)}
+          onConfirm={async (challengeId, codigo) => {
+            await atlas.admin.deletePrefeitura(deleting.id, { challengeId, codigo });
+            qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] });
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      ) : null}
     </div>
   );
 }

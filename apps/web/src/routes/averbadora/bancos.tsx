@@ -14,6 +14,7 @@ import {
 } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminBanco, AdminBancoInput } from "@atlas/sdk";
+import { ConfirmDeleteModal } from "../../components/ConfirmDeleteModal";
 
 export function AdminBancos() {
   const qc = useQueryClient();
@@ -23,6 +24,7 @@ export function AdminBancos() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "bancos"] }),
   });
   const [editing, setEditing] = useState<AdminBanco | "new" | null>(null);
+  const [deleting, setDeleting] = useState<AdminBanco | null>(null);
 
   const columns: Column<AdminBanco>[] = [
     {
@@ -88,11 +90,26 @@ export function AdminBancos() {
           <>
             <IconButton title="Editar" onClick={() => setEditing(b)}>✎</IconButton>
             <IconButton title="Testar conexão" onClick={() => testar.mutate(b.id)}>↻</IconButton>
+            <IconButton danger title="Excluir" onClick={() => setDeleting(b)}>🗑</IconButton>
           </>
         )}
       />
 
       {editing ? <BancoModal initial={editing === "new" ? null : editing} onClose={() => setEditing(null)} /> : null}
+
+      {deleting ? (
+        <ConfirmDeleteModal
+          titulo="Excluir banco"
+          alvo={deleting.nome}
+          acao="excluir_banco"
+          recurso={String(deleting.id)}
+          onConfirm={async (challengeId, codigo) => {
+            await atlas.admin.deleteBanco(deleting.id, { challengeId, codigo });
+            qc.invalidateQueries({ queryKey: ["admin", "bancos"] });
+          }}
+          onClose={() => setDeleting(null)}
+        />
+      ) : null}
     </div>
   );
 }

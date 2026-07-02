@@ -119,6 +119,10 @@ export async function upsertPrefeitura(env: Env, p: PrefeituraAdmin): Promise<vo
     ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome, uf = EXCLUDED.uf, municipio_ibge = EXCLUDED.municipio_ibge, modo_integracao = EXCLUDED.modo_integracao, status = EXCLUDED.status, ultima_sincronizacao = EXCLUDED.ultima_sincronizacao, config = EXCLUDED.config`);
 }
 
+export async function deletePrefeituraRow(env: Env, id: number): Promise<void> {
+  await getDb(env).execute(sql`DELETE FROM prefeituras WHERE id = ${id}`);
+}
+
 export async function seedPrefeiturasIfEmpty(env: Env, seed: PrefeituraAdmin[]): Promise<boolean> {
   const db = getDb(env);
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM prefeituras`)) as unknown as { n: number }[];
