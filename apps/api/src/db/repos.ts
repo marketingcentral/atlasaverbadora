@@ -1,17 +1,23 @@
-// Postgres repositories (Drizzle). Bridges the in-memory admin stores to real
-// persistence: hydrate on isolate boot, write-through on mutations. First module
-// wired: bancos (schema `bancos` has a `config` jsonb for the extra fields).
+// Postgres repositories. Bridges the in-memory admin stores to real persistence
+// via Hyperdrive -> Postgres: hydrate on isolate boot, write-through on mutations.
+//
+// jsonb columns são escritos com SQL raw + `::jsonb` (uma única serialização).
+// drizzle + postgres-js fazem JSON.stringify duas vezes e gravam o objeto como
+// string escalar ("cannot set path in scalar"); o raw cast evita isso.
 
-import { eq, sql } from "drizzle-orm";
-import { getDb, type Db } from "./client.js";
+import { sql } from "drizzle-orm";
+import { getDb } from "./client.js";
 import { bancos as bancosTable, prefeituras as prefeiturasTable, servidores as servidoresTable } from "./schema.js";
 import type { Env } from "../env.js";
 import type { BancoAdmin, PrefeituraAdmin } from "../modules/admin/index.js";
 import { CONVENIOS_MOCK, type ServidorBuscaMock } from "../modules/portal-banco/fixtures.js";
 
+// postgres-js JSON-encoda objetos UMA vez sob `::jsonb`. NAO pre-stringificar
+// (dupla serializacao -> string escalar). Arrays viram array-PG, entao para
+// colunas jsonb-array usa-se `to_jsonb(${arr}::text[])`.
+
 // ============================================================
-// Schema drift — colunas jsonb adicionadas em runtime (idempotente) enquanto
-// não há migração dedicada. Roda uma vez por isolate.
+// Schema drift — colunas jsonb adicionadas em runtime (idempotente).
 // ============================================================
 let _schemaEnsured: Promise<void> | null = null;
 export function ensureSchema(env: Env): Promise<void> {
@@ -24,11 +30,14 @@ export function ensureSchema(env: Env): Promise<void> {
   return _schemaEnsured;
 }
 
+// ============================================================
+// Bancos
+// ============================================================
+
 function rowToBanco(row: typeof bancosTable.$inferSelect): BancoAdmin {
   const cfg = (row.config ?? {}) as Record<string, unknown>;
   return {
-    id: row.id,
-    nome: row.nome,
+    id: row.id, nome: row.nome,
     adapter: (row.adapter as BancoAdmin["adapter"]) ?? "sandbox",
     status: (row.status as BancoAdmin["status"]) ?? "ativo",
     contatoEmail: (cfg.contatoEmail as string) ?? "",
@@ -41,63 +50,34 @@ function rowToBanco(row: typeof bancosTable.$inferSelect): BancoAdmin {
   };
 }
 
-function bancoToRow(b: BancoAdmin) {
-  return {
-    id: b.id,
-    nome: b.nome,
-    adapter: b.adapter,
-    status: b.status,
-    dominiosEmail: b.loginEmail ? [b.loginEmail.split("@")[1] ?? ""] : [],
-    config: {
-      contatoEmail: b.contatoEmail,
-      loginEmail: b.loginEmail,
-      passwordHash: b.passwordHash,
-      scopes: b.scopes,
-      mtlsHabilitado: b.mtlsHabilitado,
-      ultimoTeste: b.ultimoTeste,
-      ultimoTesteOk: b.ultimoTesteOk,
-    },
-  };
-}
-
 export async function loadBancos(env: Env): Promise<BancoAdmin[]> {
-  const db: Db = getDb(env);
-  const rows = await db.select().from(bancosTable).orderBy(bancosTable.id);
+  const rows = await getDb(env).select().from(bancosTable).orderBy(bancosTable.id);
   return rows.map(rowToBanco);
 }
 
-/** Seeds the table from the given fixtures if it is empty. Preserves ids. */
+export async function upsertBanco(env: Env, b: BancoAdmin): Promise<void> {
+  const dom = b.loginEmail ? [b.loginEmail.split("@")[1] ?? ""] : [];
+  const cfg = { contatoEmail: b.contatoEmail, loginEmail: b.loginEmail, passwordHash: b.passwordHash, scopes: b.scopes, mtlsHabilitado: b.mtlsHabilitado, ultimoTeste: b.ultimoTeste, ultimoTesteOk: b.ultimoTesteOk };
+  // Array jsonb: postgres-js encoda arrays como array-PG (nao JSON). Envolve num
+  // objeto (que ele JSON-encoda corretamente, inclusive arrays aninhados) e extrai.
+  const domWrap = { v: dom } as unknown as Record<string, unknown>;
+  await getDb(env).execute(sql`
+    INSERT INTO bancos (id, nome, adapter, status, dominios_email, config)
+    VALUES (${b.id}, ${b.nome}, ${b.adapter}, ${b.status}, (${domWrap}::jsonb -> 'v'), ${cfg}::jsonb)
+    ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome, adapter = EXCLUDED.adapter, status = EXCLUDED.status, dominios_email = EXCLUDED.dominios_email, config = EXCLUDED.config`);
+}
+
 export async function seedBancosIfEmpty(env: Env, seed: BancoAdmin[]): Promise<boolean> {
-  const db: Db = getDb(env);
-  const countRows = (await db.execute(sql`SELECT count(*)::int AS n FROM bancos`)) as unknown as { n: number }[];
-  const n = countRows[0]?.n ?? 0;
-  if (n > 0) return false;
-  if (seed.length === 0) return false;
-  await db.insert(bancosTable).values(seed.map(bancoToRow));
-  // Ajusta a sequence do serial para o maior id inserido.
+  const db = getDb(env);
+  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM bancos`)) as unknown as { n: number }[];
+  if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
+  for (const b of seed) await upsertBanco(env, b);
   await db.execute(sql`SELECT setval(pg_get_serial_sequence('bancos','id'), (SELECT COALESCE(MAX(id),1) FROM bancos))`);
   return true;
 }
 
-export async function upsertBanco(env: Env, b: BancoAdmin): Promise<void> {
-  const db: Db = getDb(env);
-  const row = bancoToRow(b);
-  await db
-    .insert(bancosTable)
-    .values(row)
-    .onConflictDoUpdate({ target: bancosTable.id, set: { nome: row.nome, adapter: row.adapter, status: row.status, dominiosEmail: row.dominiosEmail, config: row.config } });
-}
-
 export async function deleteBancoRow(env: Env, id: number): Promise<void> {
-  const db: Db = getDb(env);
-  await db.delete(bancosTable).where(eq(bancosTable.id, id));
-}
-
-/** Remove bancos de teste pelo nome (limpeza pós-demonstração). Retorna quantos apagou. */
-export async function deleteBancosByNameLike(env: Env, pattern: string): Promise<number> {
-  const db: Db = getDb(env);
-  const res = (await db.execute(sql`DELETE FROM bancos WHERE nome ILIKE ${pattern} RETURNING id`)) as unknown as unknown[];
-  return res.length;
+  await getDb(env).execute(sql`DELETE FROM bancos WHERE id = ${id}`);
 }
 
 // ============================================================
@@ -107,10 +87,7 @@ export async function deleteBancosByNameLike(env: Env, pattern: string): Promise
 function rowToPrefeitura(row: typeof prefeiturasTable.$inferSelect): PrefeituraAdmin {
   const cfg = (row.config ?? {}) as Record<string, unknown>;
   return {
-    id: row.id,
-    nome: row.nome,
-    uf: row.uf,
-    municipioIbge: row.municipioIbge,
+    id: row.id, nome: row.nome, uf: row.uf, municipioIbge: row.municipioIbge,
     modoIntegracao: (row.modoIntegracao as PrefeituraAdmin["modoIntegracao"]) ?? "REST",
     status: (row.status as PrefeituraAdmin["status"]) ?? "ativo",
     loginEmail: cfg.loginEmail as string | undefined,
@@ -120,41 +97,27 @@ function rowToPrefeitura(row: typeof prefeiturasTable.$inferSelect): PrefeituraA
   };
 }
 
-function prefeituraToRow(p: PrefeituraAdmin) {
-  return {
-    id: p.id,
-    nome: p.nome,
-    uf: p.uf,
-    municipioIbge: p.municipioIbge,
-    modoIntegracao: p.modoIntegracao,
-    status: p.status,
-    ultimaSincronizacao: p.ultimaSincronizacao ? new Date(p.ultimaSincronizacao) : null,
-    config: { loginEmail: p.loginEmail, passwordHash: p.passwordHash, servidoresCount: p.servidoresCount },
-  };
-}
-
 export async function loadPrefeituras(env: Env): Promise<PrefeituraAdmin[]> {
-  const db: Db = getDb(env);
-  const rows = await db.select().from(prefeiturasTable).orderBy(prefeiturasTable.id);
+  const rows = await getDb(env).select().from(prefeiturasTable).orderBy(prefeiturasTable.id);
   return rows.map(rowToPrefeitura);
 }
 
-export async function seedPrefeiturasIfEmpty(env: Env, seed: PrefeituraAdmin[]): Promise<boolean> {
-  const db: Db = getDb(env);
-  const countRows = (await db.execute(sql`SELECT count(*)::int AS n FROM prefeituras`)) as unknown as { n: number }[];
-  if ((countRows[0]?.n ?? 0) > 0 || seed.length === 0) return false;
-  await db.insert(prefeiturasTable).values(seed.map(prefeituraToRow));
-  await db.execute(sql`SELECT setval(pg_get_serial_sequence('prefeituras','id'), (SELECT COALESCE(MAX(id),1) FROM prefeituras))`);
-  return true;
+export async function upsertPrefeitura(env: Env, p: PrefeituraAdmin): Promise<void> {
+  const cfg = { loginEmail: p.loginEmail, passwordHash: p.passwordHash, servidoresCount: p.servidoresCount };
+  const sync = p.ultimaSincronizacao ? new Date(p.ultimaSincronizacao).toISOString() : null;
+  await getDb(env).execute(sql`
+    INSERT INTO prefeituras (id, nome, uf, municipio_ibge, modo_integracao, status, ultima_sincronizacao, config)
+    VALUES (${p.id}, ${p.nome}, ${p.uf}, ${p.municipioIbge}, ${p.modoIntegracao}, ${p.status}, ${sync}, ${cfg}::jsonb)
+    ON CONFLICT (id) DO UPDATE SET nome = EXCLUDED.nome, uf = EXCLUDED.uf, municipio_ibge = EXCLUDED.municipio_ibge, modo_integracao = EXCLUDED.modo_integracao, status = EXCLUDED.status, ultima_sincronizacao = EXCLUDED.ultima_sincronizacao, config = EXCLUDED.config`);
 }
 
-export async function upsertPrefeitura(env: Env, p: PrefeituraAdmin): Promise<void> {
-  const db: Db = getDb(env);
-  const row = prefeituraToRow(p);
-  await db
-    .insert(prefeiturasTable)
-    .values(row)
-    .onConflictDoUpdate({ target: prefeiturasTable.id, set: { nome: row.nome, uf: row.uf, municipioIbge: row.municipioIbge, modoIntegracao: row.modoIntegracao, status: row.status, ultimaSincronizacao: row.ultimaSincronizacao, config: row.config } });
+export async function seedPrefeiturasIfEmpty(env: Env, seed: PrefeituraAdmin[]): Promise<boolean> {
+  const db = getDb(env);
+  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM prefeituras`)) as unknown as { n: number }[];
+  if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
+  for (const p of seed) await upsertPrefeitura(env, p);
+  await db.execute(sql`SELECT setval(pg_get_serial_sequence('prefeituras','id'), (SELECT COALESCE(MAX(id),1) FROM prefeituras))`);
+  return true;
 }
 
 // ============================================================
@@ -163,55 +126,44 @@ export async function upsertPrefeitura(env: Env, p: PrefeituraAdmin): Promise<vo
 
 const VINCULO_ENUM = ["CLT", "ESTATUTARIO", "COMISSIONADO"] as const;
 const SITU_ENUM = ["ATIVO", "FERIAS", "AFASTADO", "LICENCA", "LICENCA_REMUNERADA", "APOSENTADO"] as const;
-
-function mapVinculo(v: string): (typeof VINCULO_ENUM)[number] {
-  return (VINCULO_ENUM as readonly string[]).includes(v) ? (v as (typeof VINCULO_ENUM)[number]) : "ESTATUTARIO";
-}
-function mapSituacao(s: string): (typeof SITU_ENUM)[number] {
+const mapVinculo = (v: string) => (VINCULO_ENUM as readonly string[]).includes(v) ? v : "ESTATUTARIO";
+function mapSituacao(s: string): string {
   const up = (s || "").toUpperCase();
-  if ((SITU_ENUM as readonly string[]).includes(up)) return up as (typeof SITU_ENUM)[number];
+  if ((SITU_ENUM as readonly string[]).includes(up)) return up;
   if (up === "TRABALHANDO") return "ATIVO";
   if (up === "DESLIGADO") return "AFASTADO";
   return "ATIVO";
 }
-function prefeituraIdOf(s: ServidorBuscaMock): number {
-  return CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 1;
-}
-
-function servidorToRow(s: ServidorBuscaMock) {
-  return {
-    prefeituraId: prefeituraIdOf(s),
-    nome: s.nome,
-    cpf: s.cpf,
-    matricula: s.matricula,
-    vinculo: mapVinculo(s.vinculo),
-    situacaoFuncional: mapSituacao(s.situacaoFuncional),
-    status: "ativo" as const,
-    dataNascimento: s.dataNascimento || null,
-    salarioBase: String(s.salarioLiquido),
-    data: s as unknown as Record<string, unknown>,
-  };
-}
+const prefeituraIdOf = (s: ServidorBuscaMock) => CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 1;
 
 export async function loadServidores(env: Env): Promise<ServidorBuscaMock[]> {
-  const db: Db = getDb(env);
-  const rows = await db.select({ data: servidoresTable.data }).from(servidoresTable);
+  const rows = await getDb(env).select({ data: servidoresTable.data }).from(servidoresTable);
   return rows.map((r) => r.data as unknown as ServidorBuscaMock).filter((s) => s && s.cpf);
 }
 
+export async function upsertServidor(env: Env, s: ServidorBuscaMock): Promise<void> {
+  await getDb(env).execute(sql`
+    INSERT INTO servidores (prefeitura_id, nome, cpf, matricula, vinculo, situacao_funcional, status, data_nascimento, salario_base, data)
+    VALUES (${prefeituraIdOf(s)}, ${s.nome}, ${s.cpf}, ${s.matricula}, ${mapVinculo(s.vinculo)}::vinculo, ${mapSituacao(s.situacaoFuncional)}::situacao_funcional, 'ativo'::servidor_status, ${s.dataNascimento || null}, ${String(s.salarioLiquido)}, ${s as unknown as Record<string, unknown>}::jsonb)
+    ON CONFLICT (cpf, matricula) DO UPDATE SET prefeitura_id = EXCLUDED.prefeitura_id, nome = EXCLUDED.nome, vinculo = EXCLUDED.vinculo, situacao_funcional = EXCLUDED.situacao_funcional, status = EXCLUDED.status, data_nascimento = EXCLUDED.data_nascimento, salario_base = EXCLUDED.salario_base, data = EXCLUDED.data`);
+}
+
 export async function seedServidoresIfEmpty(env: Env, seed: ServidorBuscaMock[]): Promise<boolean> {
-  const db: Db = getDb(env);
-  const countRows = (await db.execute(sql`SELECT count(*)::int AS n FROM servidores`)) as unknown as { n: number }[];
-  if ((countRows[0]?.n ?? 0) > 0 || seed.length === 0) return false;
-  await db.insert(servidoresTable).values(seed.map(servidorToRow));
+  const db = getDb(env);
+  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM servidores`)) as unknown as { n: number }[];
+  if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
+  for (const s of seed) await upsertServidor(env, s);
   return true;
 }
 
-export async function upsertServidor(env: Env, s: ServidorBuscaMock): Promise<void> {
-  const db: Db = getDb(env);
-  const row = servidorToRow(s);
-  await db
-    .insert(servidoresTable)
-    .values(row)
-    .onConflictDoUpdate({ target: [servidoresTable.cpf, servidoresTable.matricula], set: { prefeituraId: row.prefeituraId, nome: row.nome, vinculo: row.vinculo, situacaoFuncional: row.situacaoFuncional, status: row.status, dataNascimento: row.dataNascimento, salarioBase: row.salarioBase, data: row.data } });
+/** Repara linhas com jsonb corrompido (escalar): TRUNCATE + re-seed com o raw cast correto. */
+export async function reseedAll(env: Env, bancosSeed: BancoAdmin[], prefeiturasSeed: PrefeituraAdmin[], servidoresSeed: ServidorBuscaMock[]): Promise<void> {
+  const db = getDb(env);
+  await ensureSchema(env);
+  await db.execute(sql`TRUNCATE servidores, bancos, prefeituras RESTART IDENTITY CASCADE`);
+  for (const p of prefeiturasSeed) await upsertPrefeitura(env, p);
+  await db.execute(sql`SELECT setval(pg_get_serial_sequence('prefeituras','id'), (SELECT COALESCE(MAX(id),1) FROM prefeituras))`);
+  for (const b of bancosSeed) await upsertBanco(env, b);
+  await db.execute(sql`SELECT setval(pg_get_serial_sequence('bancos','id'), (SELECT COALESCE(MAX(id),1) FROM bancos))`);
+  for (const s of servidoresSeed) await upsertServidor(env, s);
 }

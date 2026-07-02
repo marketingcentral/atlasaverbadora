@@ -8,7 +8,7 @@ import { listContratos } from "../portal-banco/store.js";
 import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, loadServidores, seedServidoresIfEmpty, upsertServidor } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
@@ -324,16 +324,35 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         (SELECT count(*) FROM bancos)::int AS bancos,
         (SELECT count(*) FROM prefeituras)::int AS prefeituras,
         (SELECT count(*) FROM servidores)::int AS servidores`)) as unknown as Record<string, number>[];
+      // Sanidade do jsonb (read-only): quantos servidores tem `data` como objeto vs escalar.
+      const jt = (await db.execute(sql`SELECT
+        count(*) FILTER (WHERE jsonb_typeof(data) = 'object')::int AS objetos,
+        count(*) FILTER (WHERE jsonb_typeof(data) <> 'object')::int AS escalares
+        FROM servidores`)) as unknown as { objetos: number; escalares: number }[];
       return c.json({
         transport: c.env.HYPERDRIVE ? "hyperdrive" : "direct",
         meta: (meta as unknown as { db: string; pg_version: string; server_time: string }[])[0],
         counts: real[0],
+        servidorDataObjetos: jt[0]?.objetos ?? 0,
+        servidorDataEscalares: jt[0]?.escalares ?? 0,
         seedError,
         latency_ms: Date.now() - started,
       });
     } catch (err) {
       return c.json({ error: { code: "db_ping_failed", message: (err as Error).message } }, 500);
     }
+  })
+
+  // Repara linhas com jsonb corrompido (escalar): TRUNCATE + re-seed com raw cast.
+  // Re-hidrata os stores em memoria deste isolate a partir do Postgres corrigido.
+  .post("/v1/admin/db/reseed", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await reseedAll(c.env, BANCOS_SEED, PREFEITURAS_SEED, SERVIDORES_SEED);
+    const [nb, np, ns] = [await loadBancos(c.env), await loadPrefeituras(c.env), await loadServidores(c.env)];
+    bancos.length = 0; bancos.push(...nb);
+    prefeituras.length = 0; prefeituras.push(...np);
+    SERVIDORES_BUSCA_MOCK.length = 0; SERVIDORES_BUSCA_MOCK.push(...ns);
+    return c.json({ ok: true, counts: { bancos: nb.length, prefeituras: np.length, servidores: ns.length } });
   })
 
   .post("/v1/admin/bancos", async (c) => {
