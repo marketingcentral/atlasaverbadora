@@ -60,19 +60,18 @@ export function BancoConvenios() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
         {convenios.map((c) => {
           return (
-            <div key={c.nome} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                <h2 style={{ margin: "0 0 12px", fontSize: "1.1rem", flex: 1 }}>{c.nome}</h2>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setPendingRemove({ nome: c.nome, contratosAtivos: c.contratosAtivos })}
-                  title={`Remover ${c.nome}`}
-                  style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
-                >
-                  ✕ Remover
-                </Button>
-              </div>
+            <div
+              key={c.nome}
+              style={{
+                background: "var(--bg-elev)",
+                border: "1px solid var(--border-strong)",
+                borderRadius: 12,
+                padding: 18,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <h2 style={{ margin: "0 0 12px", fontSize: "1.1rem" }}>{c.nome}</h2>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14 }}>
                 <Row label="Contratos ativos" value={`${c.contratosAtivos}`} />
                 <Row label="Matrículas únicas" value={`${c.matriculasUnicas}`} />
@@ -90,6 +89,25 @@ export function BancoConvenios() {
                   Sem operações averbadas neste convênio ainda.
                 </div>
               ) : null}
+              <div
+                style={{
+                  marginTop: 16,
+                  paddingTop: 14,
+                  borderTop: "1px solid var(--border)",
+                  display: "flex",
+                  justifyContent: "flex-end",
+                }}
+              >
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setPendingRemove({ nome: c.nome, contratosAtivos: c.contratosAtivos })}
+                  title={`Remover ${c.nome}`}
+                  style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
+                >
+                  ✕ Remover convênio
+                </Button>
+              </div>
             </div>
           );
         })}
