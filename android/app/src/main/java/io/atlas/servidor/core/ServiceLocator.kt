@@ -102,6 +102,6 @@ object ServiceLocator {
         AuthRepository(authApi, apiService, tokenStore, db, appPrefs, gson)
     }
     val servidorRepository: ServidorRepository by lazy {
-        ServidorRepository(apiService, db, gson)
+        ServidorRepository(apiService, db, gson, tokenStore)
     }
 }

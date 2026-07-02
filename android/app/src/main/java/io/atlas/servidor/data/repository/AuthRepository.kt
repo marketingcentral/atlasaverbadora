@@ -30,6 +30,12 @@ class AuthRepository(
         if (auth.role != "servidor") {
             throw ApiException("Este aplicativo é exclusivo para servidores públicos.")
         }
+        // SEGURANÇA: zera qualquer dado local do usuário anterior antes de abrir a
+        // nova sessão — evita que dados em cache (matrículas/ofertas/pré-reservas)
+        // de outra conta apareçam para este usuário.
+        db.cacheDao().clear()
+        db.proposalDao().clear()
+        prefs.clearSelection()
         tokenStore.saveSession(auth)
         return auth
     }

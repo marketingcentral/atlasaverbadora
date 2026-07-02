@@ -7,6 +7,7 @@ import io.atlas.servidor.core.safeApi
 import io.atlas.servidor.data.local.AppDatabase
 import io.atlas.servidor.data.local.CacheEntity
 import io.atlas.servidor.data.local.ProposalRequestEntity
+import io.atlas.servidor.data.local.TokenStore
 import io.atlas.servidor.data.remote.ApiService
 import io.atlas.servidor.data.remote.dto.MatriculasResponse
 import io.atlas.servidor.data.remote.dto.MeResponse
@@ -17,14 +18,18 @@ class ServidorRepository(
     private val api: ApiService,
     private val db: AppDatabase,
     private val gson: Gson,
+    private val tokenStore: TokenStore,
 ) {
     suspend fun me(): MeResponse = safeApi(gson) { api.me() }
 
     suspend fun matriculas(forceRefresh: Boolean = false): CachedData<MatriculasResponse> =
-        cachedRead(KEY_MATRICULAS, MatriculasResponse::class.java, forceRefresh) { api.matriculas() }
+        cachedRead(userKey(KEY_MATRICULAS), MatriculasResponse::class.java, forceRefresh) { api.matriculas() }
 
     suspend fun ofertas(forceRefresh: Boolean = false): CachedData<OfertasResponse> =
-        cachedRead(KEY_OFERTAS, OfertasResponse::class.java, forceRefresh) { api.ofertas() }
+        cachedRead(userKey(KEY_OFERTAS), OfertasResponse::class.java, forceRefresh) { api.ofertas() }
+
+    /** Cache keys são escopadas ao usuário logado — nunca compartilham entre contas. */
+    private fun userKey(base: String) = "$base:${tokenStore.userId}"
 
     /** Network-first with offline fallback: on failure, returns the last cached copy if any. */
     private suspend fun <T> cachedRead(
