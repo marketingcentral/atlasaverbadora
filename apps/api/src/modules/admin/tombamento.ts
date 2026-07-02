@@ -5,6 +5,8 @@ import { parseCsv } from "../../_shared/csv.js";
 import { previewIdUnico } from "./id-unico.js";
 import { SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
+import { ensureSchema, loadTombamento, upsertTombamentoLote, seedTombamentoIfEmpty } from "../../db/repos.js";
+import type { Env } from "../../env.js";
 
 export type TombamentoStatus = "processando" | "conciliado" | "divergente" | "rejeitado";
 
@@ -120,6 +122,35 @@ for (const s of sample) {
   });
 }
 
+// Snapshot do seed (antes de qualquer mutação) — semeia o Postgres na 1ª carga.
+const TOMBAMENTO_SEED = _lotes.map((l) => ({ lote: { ...l }, linhas: _linhas.filter((x) => x.loteId === l.id).map((x) => ({ ...x })) }));
+
+// Hidrata _lotes/_linhas do Postgres 1x por isolate (semeando se vazio). Fail-safe.
+let _tombLoad: Promise<void> | null = null;
+export function ensureTombamentoLoaded(env: Env): Promise<void> {
+  if (_tombLoad) return _tombLoad;
+  _tombLoad = (async () => {
+    try {
+      await ensureSchema(env);
+      await seedTombamentoIfEmpty(env, TOMBAMENTO_SEED as unknown as { lote: { id: string }; linhas: { id: string }[] }[]);
+      const { lotes, linhas } = await loadTombamento(env);
+      if (lotes.length) {
+        _lotes.length = 0; _lotes.push(...(lotes as unknown as TombamentoLote[]));
+        _linhas.length = 0; _linhas.push(...(linhas as unknown as TombamentoLinha[]));
+      }
+    } catch { _tombLoad = null; /* mantém memória */ }
+  })();
+  return _tombLoad;
+}
+
+/** Write-through best-effort de um lote (com suas linhas) no Postgres. */
+async function persistLote(env: Env, loteId: string): Promise<void> {
+  const lote = _lotes.find((l) => l.id === loteId);
+  if (!lote) return;
+  const linhas = _linhas.filter((l) => l.loteId === loteId);
+  try { await upsertTombamentoLote(env, lote as unknown as { id: string }, linhas as unknown as { id: string }[]); } catch { /* best-effort */ }
+}
+
 export function listLotes(filter: { prefeituraId?: number; competencia?: string } = {}): TombamentoLote[] {
   return _lotes
     .filter((l) => !filter.prefeituraId || l.prefeituraId === filter.prefeituraId)
@@ -151,13 +182,14 @@ export interface ImportTombamentoResult {
  * Expected columns: cpfMasked, matricula, bancoNome, adfBanco, valorParcela,
  * parcelasRestantes, saldoDevedor
  */
-export function importTombamento(input: {
+export async function importTombamento(input: {
   prefeituraId: number;
   prefeituraNome: string;
   competencia: string;
   recebidoPor: string;
   csv: string;
-}): ImportTombamentoResult {
+  env?: Env;
+}): Promise<ImportTombamentoResult> {
   const { rows } = parseCsv(input.csv);
   const erros: { line: number; message: string }[] = [];
   let inseridos = 0;
@@ -242,5 +274,7 @@ export function importTombamento(input: {
   };
   _lotes.push(lote);
   _linhas.push(...linhas);
+  // Write-through: o lote e suas linhas ficam duráveis no Postgres.
+  if (input.env) await persistLote(input.env, loteId);
   return { lote, inseridos, atualizados, divergencias, erros };
 }

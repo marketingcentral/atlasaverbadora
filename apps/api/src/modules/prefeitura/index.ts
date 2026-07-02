@@ -24,7 +24,12 @@ import {
   TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia,
   listPerfis, upsertPerfil, deletePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
 } from "./store.js";
-import { upsertPrefeitura } from "../../db/repos.js";
+import { upsertPrefeitura, upsertServidor } from "../../db/repos.js";
+
+/** Write-through best-effort do servidor no Postgres (não quebra a request). */
+async function persistServidorPref(env: Env, s: ServidorBuscaMock): Promise<void> {
+  try { await upsertServidor(env, s); } catch { /* fail-safe: segue com memória */ }
+}
 
 function requirePrefeitura(j: JwtClaims): number {
   if (j.role !== "prefeitura") throw Errors.forbidden("Requer perfil prefeitura");
@@ -243,6 +248,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const defaultConvenioId = conveniosPref[0]?.id ?? "";
     const { rows } = parseCsv(await readCsvBody(c));
     const out: ImportOutcome<{ matricula: string; nome: string; cpfMasked: string }> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
+    const toPersist: ServidorBuscaMock[] = [];
     rows.forEach((r, idx) => {
       const line = idx + 2;
       // Planilhas de Excel perdem o zero a esquerda do CPF (numero). Repadroniza
@@ -273,9 +279,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         email: r.email || undefined, telefone: r.telefone || undefined, cargo: r.cargo,
         endereco: r.endereco || undefined, codigoIbge: Number.isFinite(ibge) ? ibge : p.municipioIbge,
       };
-      if (existing) { Object.assign(existing, rec); out.updated++; } else { SERVIDORES_BUSCA_MOCK.push(rec); out.inserted++; }
+      if (existing) { Object.assign(existing, rec); out.updated++; toPersist.push(existing); } else { SERVIDORES_BUSCA_MOCK.push(rec); out.inserted++; toPersist.push(rec); }
       out.rows.push({ matricula: rec.matricula, nome: rec.nome, cpfMasked: rec.cpfMasked });
     });
+    // Write-through: persiste a base importada no Postgres (durável e consistente entre isolates).
+    for (const s of toPersist) await persistServidorPref(c.env, s);
     appendAudit({ categoria: "dados_pessoais", acao: "base_importada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: base importada — ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros.` });
     return c.json(out);
   })
@@ -320,6 +328,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (dup) throw Errors.validation({ matriculaNova: `matricula ${body.matriculaNova} já em uso` });
       s.matricula = body.matriculaNova; s.idMatricula = `MAT-${body.matriculaNova}`; changed.push("matricula");
     }
+    await persistServidorPref(c.env, s);
     appendAudit({ categoria: "dados_pessoais", acao: "servidor_editado", matricula: s.matricula, cpf: s.cpfMasked, userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Servidor ${s.matricula} editado pela prefeitura (${changed.join(",")}).` });
     return c.json({ servidor: { matricula: s.matricula, nome: s.nome, cpf: s.cpf, cpfMasked: s.cpfMasked, cargo: s.cargo ?? "", endereco: s.endereco ?? "", vinculo: s.vinculo, email: s.email ?? "", telefone: s.telefone ?? "", codigoIbge: s.codigoIbge ?? null } });
   })
@@ -487,7 +496,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const p = prefeituras.find((x) => x.id === id)!;
     const competencia = c.req.query("competencia") || new Date().toISOString().slice(0, 7).replace("-", "");
     const csv = await readCsvBody(c);
-    const res = importTombamento({ prefeituraId: id, prefeituraNome: p.nome, competencia, recebidoPor: `prefeitura:${id}`, csv });
+    const res = await importTombamento({ prefeituraId: id, prefeituraNome: p.nome, competencia, recebidoPor: `prefeitura:${id}`, csv, env: c.env });
     appendAudit({ categoria: "tombamento", acao: "lote_importado", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Lote ${res.lote.id} (${p.nome}/${competencia}): ${res.inseridos} inseridos, ${res.atualizados} atualizados, ${res.divergencias} divergências, ${res.erros.length} erros.` });
     return c.json(res);
   })

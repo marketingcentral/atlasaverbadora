@@ -34,6 +34,12 @@ export function ensureSchema(env: Env): Promise<void> {
       data jsonb NOT NULL,
       updated_at timestamptz DEFAULT now()
     )`);
+    // Tombamento: um registro por lote com o lote + suas linhas em jsonb.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS tombamento_lotes (
+      id text PRIMARY KEY,
+      data jsonb NOT NULL,
+      updated_at timestamptz DEFAULT now()
+    )`);
   })().catch((e) => { _schemaEnsured = null; throw e; });
   return _schemaEnsured;
 }
@@ -211,6 +217,36 @@ export async function seedTabelasIfEmpty(env: Env, seed: TabelaLike[]): Promise<
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM portal_banco_tabelas`)) as unknown as { n: number }[];
   if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
   for (const t of seed) await upsertTabelaRow(env, t);
+  return true;
+}
+
+// ============================================================
+// Tombamento — lotes + linhas (um registro jsonb por lote)
+// ============================================================
+// Tipos genéricos pra evitar import circular repos <-> modules/admin/tombamento.
+interface LoteLike { id: string; [k: string]: unknown }
+
+export async function loadTombamento(env: Env): Promise<{ lotes: LoteLike[]; linhas: LoteLike[] }> {
+  const rows = (await getDb(env).execute(sql`SELECT data FROM tombamento_lotes ORDER BY id`)) as unknown as { data: { lote: LoteLike; linhas: LoteLike[] } }[];
+  const lotes: LoteLike[] = [];
+  const linhas: LoteLike[] = [];
+  for (const r of rows) { if (r.data?.lote) { lotes.push(r.data.lote); linhas.push(...(r.data.linhas ?? [])); } }
+  return { lotes, linhas };
+}
+
+export async function upsertTombamentoLote(env: Env, lote: LoteLike, linhas: LoteLike[]): Promise<void> {
+  const payload = { lote, linhas } as unknown as Record<string, unknown>;
+  await getDb(env).execute(sql`
+    INSERT INTO tombamento_lotes (id, data, updated_at)
+    VALUES (${lote.id}, ${payload}::jsonb, now())
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
+}
+
+export async function seedTombamentoIfEmpty(env: Env, seed: { lote: LoteLike; linhas: LoteLike[] }[]): Promise<boolean> {
+  const db = getDb(env);
+  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM tombamento_lotes`)) as unknown as { n: number }[];
+  if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
+  for (const s of seed) await upsertTombamentoLote(env, s.lote, s.linhas);
   return true;
 }
 

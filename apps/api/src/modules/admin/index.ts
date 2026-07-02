@@ -1239,12 +1239,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }).parse(await c.req.json());
     const pref = prefeituras.find((p) => p.id === body.prefeituraId);
     if (!pref) throw Errors.notFound("prefeitura");
-    const result = importTombamento({
+    const result = await importTombamento({
       prefeituraId: body.prefeituraId,
       prefeituraNome: pref.nome,
       competencia: body.competencia,
       recebidoPor: `averbadora:${c.get("jwt").sub}`,
       csv: body.csv,
+      env: c.env,
     });
     appendAudit({ categoria: "tombamento", acao: "lote_processado", detalhes: `Lote ${result.lote.id} (${pref.nome}/${body.competencia}): ${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.divergencias} divergencias, ${result.erros.length} erros.` });
     // Notifica a averbadora quando há divergência entre as 3 bases (prefeitura × banco × remessa).
