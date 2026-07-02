@@ -185,6 +185,31 @@ export function addBancoConvenio(nome: string): boolean {
   }
 }
 
+/** Convenios seed (Palhoca, Biguacu, Sao Jose) sao imutaveis — nao podem ser removidos. */
+export function isBancoConvenioSeed(nome: string): boolean {
+  return BANCO_CONVENIOS_SEED.includes(nome);
+}
+
+/** Remove um convenio cadastrado via UI. Retorna false se for seed ou se nao existir. */
+export function removeBancoConvenio(nome: string): boolean {
+  if (isBancoConvenioSeed(nome)) return false;
+  let extras: string[] = [];
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEYS.bancoConvenios);
+    if (raw) extras = JSON.parse(raw) as string[];
+  } catch {
+    return false;
+  }
+  const filtered = extras.filter((c) => c !== nome);
+  if (filtered.length === extras.length) return false;
+  try {
+    window.localStorage.setItem(STORAGE_KEYS.bancoConvenios, JSON.stringify(filtered));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 export function fmtBRL(n: number): string {
   return BRL.format(n);

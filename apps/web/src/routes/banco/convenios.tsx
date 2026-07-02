@@ -1,20 +1,35 @@
 import { useEffect, useState } from "react";
 import { Button, Card, Input } from "@atlas/ui/web";
-import { addBancoConvenio, fmtBRL } from "../../lib/banco-propostas";
+import { TwoFactorModal } from "../../components/TwoFactorModal";
+import { addBancoConvenio, fmtBRL, isBancoConvenioSeed, removeBancoConvenio } from "../../lib/banco-propostas";
 import { getConveniosDoBanco } from "../../lib/banco-carteira";
 import { OPEN_CADASTRO_CONVENIO_EVENT } from "./layout";
 
 export function BancoConvenios() {
   const [tick, setTick] = useState(0);
   const [openModal, setOpenModal] = useState(false);
+  const [pendingRemove, setPendingRemove] = useState<{ nome: string; contratosAtivos: number } | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const convenios = getConveniosDoBanco();
-  void tick; // re-render trigger after add
+  void tick; // re-render trigger after add/remove
 
   useEffect(() => {
     const handler = () => setOpenModal(true);
     window.addEventListener(OPEN_CADASTRO_CONVENIO_EVENT, handler);
     return () => window.removeEventListener(OPEN_CADASTRO_CONVENIO_EVENT, handler);
   }, []);
+
+  const confirmarRemocao = async () => {
+    if (!pendingRemove) return;
+    const ok = removeBancoConvenio(pendingRemove.nome);
+    setPendingRemove(null);
+    if (!ok) {
+      setRemoveError("Não foi possível remover o convênio.");
+      return;
+    }
+    setRemoveError(null);
+    setTick((t) => t + 1);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -28,29 +43,63 @@ export function BancoConvenios() {
         </p>
       </header>
 
+      {removeError ? (
+        <div
+          style={{
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "1px solid var(--danger-500)",
+            background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+            fontSize: ".88rem",
+          }}
+        >
+          {removeError}
+        </div>
+      ) : null}
+
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
-        {convenios.map((c) => (
-          <div key={c.nome} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 18 }}>
-            <h2 style={{ margin: "0 0 12px", fontSize: "1.1rem" }}>{c.nome}</h2>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14 }}>
-              <Row label="Contratos ativos" value={`${c.contratosAtivos}`} />
-              <Row label="Matrículas únicas" value={`${c.matriculasUnicas}`} />
-              <Row label="Volume ativo" value={fmtBRL(c.volumeAtivo)} />
-              <Row label="Ticket médio" value={fmtBRL(c.ticketMedio)} />
-              <Row label="Quitados (histórico)" value={`${c.quitados}`} />
-              <Row
-                label="Inadimplentes"
-                value={`${c.inadimplentes}`}
-                accent={c.inadimplentes > 0 ? "var(--gold-500)" : undefined}
-              />
-            </div>
-            {c.contratosAtivos === 0 ? (
-              <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", fontStyle: "italic" }}>
-                Sem operações averbadas neste convênio ainda.
+        {convenios.map((c) => {
+          const isSeed = isBancoConvenioSeed(c.nome);
+          const hasActive = c.contratosAtivos > 0;
+          return (
+            <div key={c.nome} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 18 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <h2 style={{ margin: "0 0 12px", fontSize: "1.1rem", flex: 1 }}>{c.nome}</h2>
+                {!isSeed ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setPendingRemove({ nome: c.nome, contratosAtivos: c.contratosAtivos })}
+                    disabled={hasActive}
+                    title={hasActive
+                      ? "Não é possível remover um convênio com contratos ativos"
+                      : `Remover ${c.nome}`}
+                    style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
+                  >
+                    ✕ Remover
+                  </Button>
+                ) : null}
               </div>
-            ) : null}
-          </div>
-        ))}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14 }}>
+                <Row label="Contratos ativos" value={`${c.contratosAtivos}`} />
+                <Row label="Matrículas únicas" value={`${c.matriculasUnicas}`} />
+                <Row label="Volume ativo" value={fmtBRL(c.volumeAtivo)} />
+                <Row label="Ticket médio" value={fmtBRL(c.ticketMedio)} />
+                <Row label="Quitados (histórico)" value={`${c.quitados}`} />
+                <Row
+                  label="Inadimplentes"
+                  value={`${c.inadimplentes}`}
+                  accent={c.inadimplentes > 0 ? "var(--gold-500)" : undefined}
+                />
+              </div>
+              {c.contratosAtivos === 0 ? (
+                <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-dim)", fontStyle: "italic" }}>
+                  Sem operações averbadas neste convênio ainda.
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
       </div>
 
       {openModal ? (
@@ -61,6 +110,15 @@ export function BancoConvenios() {
             setOpenModal(false);
             setTick((t) => t + 1);
           }}
+        />
+      ) : null}
+
+      {pendingRemove ? (
+        <TwoFactorModal
+          acao={`remover o convênio "${pendingRemove.nome}"`}
+          canal="email"
+          onCancel={() => setPendingRemove(null)}
+          onConfirm={confirmarRemocao}
         />
       ) : null}
     </div>
