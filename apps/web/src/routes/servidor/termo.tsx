@@ -227,7 +227,7 @@ export function ServidorTermo() {
       {show2FA ? (
         <TwoFactorModal
           acao="confirmar o termo e travar sua margem"
-          canal="ambos"
+          canal="email"
           onCancel={() => setShow2FA(false)}
           onConfirm={autorizar}
         />

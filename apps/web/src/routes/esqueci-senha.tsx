@@ -10,7 +10,7 @@ export function EsqueciSenhaPage() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setLoading(true);
-    // Mock: pretend to send a recovery code via e-mail + SMS.
+    // Mock: pretend to send a recovery code via e-mail.
     await new Promise((r) => setTimeout(r, 800));
     setLoading(false);
     setSent(true);
@@ -33,7 +33,7 @@ export function EsqueciSenhaPage() {
           <div>
             <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Recuperar senha</div>
             <div style={{ fontSize: ".82rem", color: "var(--text-dim)" }}>
-              Enviaremos um codigo para o e-mail e SMS cadastrados pela prefeitura
+              Enviaremos um codigo para o e-mail cadastrado pela prefeitura
             </div>
           </div>
         </div>
@@ -50,7 +50,7 @@ export function EsqueciSenhaPage() {
                 fontSize: ".95rem",
               }}
             >
-              <b>Codigo enviado.</b> Verifique seu e-mail e SMS. O codigo expira em 10 minutos.
+              <b>Codigo enviado.</b> Verifique seu e-mail. O codigo expira em 10 minutos.
             </div>
             <p style={{ color: "var(--text-muted)", fontSize: ".88rem", margin: 0 }}>
               Nao recebeu? Aguarde 60 segundos antes de tentar novamente.
@@ -63,12 +63,11 @@ export function EsqueciSenhaPage() {
           <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <Input
               label="CPF"
-              type="password"
               value={cpf}
               onChange={(e) => setCpf(e.target.value)}
               placeholder="000.111.222-33"
               inputMode="numeric"
-              autoComplete="off"
+              autoComplete="username"
               required
             />
             <Button type="submit" disabled={loading || !cpf}>

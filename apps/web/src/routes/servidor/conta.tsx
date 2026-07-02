@@ -170,7 +170,7 @@ export function ServidorConta() {
         <h3 style={{ marginTop: 0 }}>Seguranca</h3>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0 }}>
           Login biometrico (Face/Touch ID) esta disponivel no app mobile. No portal web, recomendamos ativar 2FA por
-          e-mail/SMS.
+          e-mail.
         </p>
       </Card>
 

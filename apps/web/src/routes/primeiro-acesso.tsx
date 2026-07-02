@@ -61,7 +61,7 @@ export function PrimeiroAcessoPage() {
     if (codigo.replace(/\D/g, "").length === 6) {
       setStep("senha");
     } else {
-      setError("Codigo invalido. Verifique seu e-mail e SMS.");
+      setError("Codigo invalido. Verifique seu e-mail.");
     }
     setLoading(false);
   }
