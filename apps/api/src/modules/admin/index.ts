@@ -18,6 +18,7 @@ import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser } from "./perfis-admin.js";
+import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -334,6 +335,64 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       volumePorConvenio: Object.entries(volumePorConvenio).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
       volumePorBanco: Object.entries(volumePorBanco).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
     });
+  })
+
+  // ===== IA (OpenAI) =====
+  .get("/v1/admin/ai/config", async (c) => {
+    requireAdmin(c.get("jwt"));
+    return c.json(await getAiStatus(c.env));
+  })
+  .put("/v1/admin/ai/config", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({ apiKey: z.string().min(20) }).parse(await c.req.json());
+    try {
+      const status = await setAiKey(c.env, body.apiKey);
+      appendAudit({
+        trace_id: c.get("trace_id"),
+        categoria: "convenio_config",
+        acao: "ai.config.set",
+        userId: c.get("jwt").sub,
+        userRole: "averbadora",
+        ip: c.req.header("cf-connecting-ip") ?? undefined,
+        detalhes: "OpenAI API key configurada",
+      });
+      return c.json(status);
+    } catch (err) {
+      throw Errors.validation({ apiKey: err instanceof Error ? err.message : "invalida" });
+    }
+  })
+  .delete("/v1/admin/ai/config", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await clearAiKey(c.env);
+    appendAudit({
+      trace_id: c.get("trace_id"),
+      categoria: "convenio_config",
+      acao: "ai.config.clear",
+      userId: c.get("jwt").sub,
+      userRole: "averbadora",
+      ip: c.req.header("cf-connecting-ip") ?? undefined,
+      detalhes: "OpenAI API key removida",
+    });
+    return c.body(null, 204);
+  })
+  .post("/v1/admin/ai/test", async (c) => {
+    requireAdmin(c.get("jwt"));
+    return c.json(await testAiKey(c.env));
+  })
+  .post("/v1/admin/ai/normalize-csv", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({
+      csv: z.string().min(1).max(200_000),
+      expectedHeaders: z.array(z.string()).min(1),
+      contextHint: z.string().max(200).optional(),
+      model: z.string().max(60).optional(),
+    }).parse(await c.req.json());
+    try {
+      const result = await normalizeCsvWithAi(c.env, body);
+      return c.json(result);
+    } catch (err) {
+      throw Errors.validation({ ai: err instanceof Error ? err.message : "falha" });
+    }
   })
 
   .get("/v1/admin/bancos", async (c) => {

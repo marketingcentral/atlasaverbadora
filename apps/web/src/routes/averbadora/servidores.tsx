@@ -230,6 +230,19 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServidor; on
   );
 }
 
+const SERVIDORES_HEADERS = [
+  "cpf", "matricula", "nome", "dataAdmissao", "dataNascimento",
+  "vinculo", "situacaoFuncional", "salarioLiquido", "idConvenio",
+  "cargo", "endereco", "email", "telefone", "codigoIbge",
+];
+
+function detectHeaderMismatch(csv: string): { compat: boolean; found: string[] } {
+  const firstLine = csv.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const found = firstLine.split(/[,;\t]/).map((h) => h.replace(/^"|"$/g, "").trim());
+  const compat = SERVIDORES_HEADERS.every((h) => found.includes(h)) && found.length > 0;
+  return { compat, found };
+}
+
 function ImportModal({
   prefeituraId,
   prefeituraNome,
@@ -243,6 +256,11 @@ function ImportModal({
 }) {
   const [pasted, setPasted] = useState("");
   const [result, setResult] = useState<CsvImportOutcome | null>(null);
+  const [mismatch, setMismatch] = useState<{ found: string[] } | null>(null);
+  const [aiResult, setAiResult] = useState<{ csv: string; mapping: Record<string, string>; summary: string; usage: { input: number; output: number } } | null>(null);
+
+  const aiStatus = useQuery({ queryKey: ["admin", "ai", "config"], queryFn: () => atlas.admin.aiConfig() });
+
   const importMut = useMutation({
     mutationFn: (csv: string) => atlas.admin.importCsv("servidores", csv, { prefeituraId }),
     onSuccess: (r) => {
@@ -251,10 +269,31 @@ function ImportModal({
     },
   });
 
+  const aiNormalize = useMutation({
+    mutationFn: (csv: string) =>
+      atlas.admin.aiNormalizeCsv({
+        csv,
+        expectedHeaders: SERVIDORES_HEADERS,
+        contextHint: "base de servidores publicos municipais para credito consignado",
+      }),
+    onSuccess: (r) => setAiResult(r),
+  });
+
+  function checkAndMaybeImport(text: string) {
+    setPasted(text);
+    setAiResult(null);
+    const { compat, found } = detectHeaderMismatch(text);
+    if (compat) {
+      setMismatch(null);
+      importMut.mutate(text);
+    } else {
+      setMismatch({ found });
+    }
+  }
+
   async function onFile(file: File) {
     const text = await file.text();
-    setPasted(text);
-    importMut.mutate(text);
+    checkAndMaybeImport(text);
   }
 
   return (
@@ -292,10 +331,85 @@ function ImportModal({
             placeholder="cpf,matricula,nome,..."
             style={{ width: "100%", marginTop: 6, padding: 10, fontFamily: "var(--font-mono)", fontSize: 12, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border-strong)", borderRadius: 8 }}
           />
-          <Button size="sm" onClick={() => importMut.mutate(pasted)} disabled={importMut.isPending || !pasted.trim()} style={{ marginTop: 8 }}>
+          <Button size="sm" onClick={() => checkAndMaybeImport(pasted)} disabled={importMut.isPending || !pasted.trim()} style={{ marginTop: 8 }}>
             {importMut.isPending ? "Importando…" : "Importar texto colado"}
           </Button>
         </details>
+
+        {mismatch ? (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid var(--gold-500)",
+              background: "color-mix(in srgb, var(--gold-500) 10%, transparent)",
+              fontSize: 13,
+            }}
+          >
+            <b>Cabeçalhos não batem com o modelo.</b>
+            <div style={{ marginTop: 4, fontSize: 12, color: "var(--text-muted)" }}>
+              Encontrado: <code style={{ fontFamily: "var(--font-mono)" }}>{mismatch.found.slice(0, 8).join(", ")}{mismatch.found.length > 8 ? "…" : ""}</code>
+            </div>
+            {aiStatus.data?.hasKey ? (
+              <>
+                <p style={{ margin: "8px 0", color: "var(--text-muted)" }}>
+                  Posso pedir pra IA transformar esse arquivo no formato esperado antes de importar.
+                </p>
+                <Button size="sm" onClick={() => aiNormalize.mutate(pasted)} disabled={aiNormalize.isPending || !pasted.trim()}>
+                  {aiNormalize.isPending ? "IA processando…" : "✧ Normalizar com IA"}
+                </Button>
+                {aiNormalize.isError ? (
+                  <div style={{ marginTop: 8, color: "var(--danger-500)", fontSize: 12 }}>
+                    {(aiNormalize.error as Error).message}
+                  </div>
+                ) : null}
+              </>
+            ) : (
+              <p style={{ margin: "8px 0 0", color: "var(--text-muted)" }}>
+                Configure a chave da OpenAI em <a href="/averbadora/ia" style={{ color: "var(--accent)" }}>IA</a> pra
+                deixar a IA tentar normalizar automaticamente.
+              </p>
+            )}
+          </div>
+        ) : null}
+
+        {aiResult ? (
+          <div
+            style={{
+              marginTop: 14,
+              padding: 12,
+              borderRadius: 10,
+              border: "1px solid var(--emerald-500)",
+              background: "color-mix(in srgb, var(--emerald-500) 10%, transparent)",
+              fontSize: 13,
+            }}
+          >
+            <b>✧ IA normalizou o arquivo.</b>
+            <div style={{ marginTop: 6, color: "var(--text-muted)" }}>{aiResult.summary}</div>
+            {Object.keys(aiResult.mapping).length > 0 ? (
+              <details style={{ marginTop: 8 }}>
+                <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted)" }}>
+                  Ver mapeamento ({Object.keys(aiResult.mapping).length} colunas)
+                </summary>
+                <div style={{ marginTop: 6, fontSize: 12, fontFamily: "var(--font-mono)" }}>
+                  {Object.entries(aiResult.mapping).map(([orig, alvo]) => (
+                    <div key={orig}>{orig} → {alvo}</div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+            <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-dim)" }}>
+              Tokens usados: {aiResult.usage.input + aiResult.usage.output} ({aiResult.usage.input} in / {aiResult.usage.output} out)
+            </div>
+            <div style={{ marginTop: 10, display: "flex", gap: 8 }}>
+              <Button size="sm" onClick={() => { setMismatch(null); setPasted(aiResult.csv); importMut.mutate(aiResult.csv); }} disabled={importMut.isPending}>
+                {importMut.isPending ? "Importando…" : "Importar CSV normalizado"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setAiResult(null)}>Descartar</Button>
+            </div>
+          </div>
+        ) : null}
 
         {importMut.isError ? (
           <p style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 12 }}>{(importMut.error as Error).message}</p>

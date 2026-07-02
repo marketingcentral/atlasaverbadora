@@ -745,6 +745,19 @@ export class AtlasClient {
 
   // ============ Admin (Averbadora) ============
   readonly admin = {
+    // ===== IA (OpenAI) =====
+    aiConfig: () =>
+      this.request<{ hasKey: boolean; keyPrefix: string | null; keySuffix: string | null; updatedAt: string | null }>("/v1/admin/ai/config"),
+    aiSaveKey: (apiKey: string) =>
+      this.request<{ hasKey: boolean; keyPrefix: string | null; keySuffix: string | null; updatedAt: string | null }>("/v1/admin/ai/config", { method: "PUT", body: { apiKey } }),
+    aiClearKey: () => this.request<void>("/v1/admin/ai/config", { method: "DELETE" }),
+    aiTest: () => this.request<{ ok: boolean; message: string; latencyMs?: number }>("/v1/admin/ai/test", { method: "POST" }),
+    aiNormalizeCsv: (body: { csv: string; expectedHeaders: string[]; contextHint?: string; model?: string }) =>
+      this.request<{ csv: string; mapping: Record<string, string>; summary: string; usage: { input: number; output: number } }>(
+        "/v1/admin/ai/normalize-csv",
+        { method: "POST", body },
+      ),
+
     dashboard: () =>
       this.request<{
         kpis: { propostasHoje: number; conversao: number; ticketMedio: number; bancosAtivos: number; prefeiturasAtivas: number; servidoresCadastrados: number; receitaVitrineMes: number };
