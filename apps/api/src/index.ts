@@ -3,7 +3,7 @@ import { authRoutes } from "./modules/auth/index.js";
 import { healthRoutes } from "./modules/health/index.js";
 import { servidoresRoutes } from "./modules/servidores/index.js";
 import { portalBancoRoutes } from "./modules/portal-banco/index.js";
-import { adminRoutes, csvTemplateRoutes } from "./modules/admin/index.js";
+import { adminRoutes, csvTemplateRoutes, ensureBancosLoaded } from "./modules/admin/index.js";
 import { externalRoutes } from "./modules/external/index.js";
 import { prefeituraRoutes, prefeituraPublicRoutes } from "./modules/prefeitura/index.js";
 import { errorHandler } from "./middleware/error.js";
@@ -23,6 +23,12 @@ app.route("/", healthRoutes);
 app.route("/", csvTemplateRoutes);
 app.route("/", prefeituraPublicRoutes);
 app.use("/v1/*", rateLimit({ scope: "global", max: 600, perSeconds: 60 }));
+// Hidrata os stores persistidos (bancos) do Postgres uma vez por isolate. Fail-safe:
+// se o banco estiver indisponível, segue com as fixtures em memória.
+app.use("/v1/*", async (c, next) => {
+  await ensureBancosLoaded(c.env).catch(() => undefined);
+  await next();
+});
 app.route("/", authRoutes);
 app.route("/", servidoresRoutes);
 app.route("/", portalBancoRoutes);

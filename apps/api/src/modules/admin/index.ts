@@ -8,6 +8,7 @@ import { listContratos } from "../portal-banco/store.js";
 import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
+import { loadBancos, seedBancosIfEmpty, upsertBanco } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
@@ -88,6 +89,32 @@ export const bancos: BancoAdmin[] = [
   { id: 2, nome: "Banco Y", status: "ativo", adapter: "sandbox", contatoEmail: "integracao@bancoy.com.br", scopes: ["propostas:rw"], mtlsHabilitado: true, ultimoTeste: "2026-06-22T09:30:00Z", ultimoTesteOk: true },
   { id: 3, nome: "Banco BMG", status: "pausado", adapter: "ifractal", contatoEmail: "consig@bmg.com.br", scopes: ["propostas:rw"], mtlsHabilitado: true, ultimoTeste: "2026-06-20T17:12:00Z", ultimoTesteOk: false },
 ];
+
+// Snapshot das fixtures iniciais — usado como seed do Postgres na primeira carga.
+const BANCOS_SEED: BancoAdmin[] = bancos.map((b) => ({ ...b }));
+
+// Hidrata o array `bancos` do Postgres uma vez por isolate (semeando se vazio).
+// Fail-safe: se o banco estiver indisponível, mantém as fixtures em memória.
+let _bancosLoad: Promise<void> | null = null;
+export function ensureBancosLoaded(env: Env): Promise<void> {
+  if (_bancosLoad) return _bancosLoad;
+  _bancosLoad = (async () => {
+    try {
+      await seedBancosIfEmpty(env, BANCOS_SEED);
+      const loaded = await loadBancos(env);
+      if (loaded.length) { bancos.length = 0; bancos.push(...loaded); }
+    } catch (e) {
+      _bancosLoad = null; // permite nova tentativa numa próxima request
+      pushEvent("warn", "db.bancos.hydrate_failed", `Falha ao hidratar bancos do Postgres: ${(e as Error).message}. Usando fixtures em memória.`);
+    }
+  })();
+  return _bancosLoad;
+}
+
+/** Write-through best-effort: persiste o banco no Postgres sem quebrar a request. */
+async function persistBanco(env: Env, b: BancoAdmin): Promise<void> {
+  try { await upsertBanco(env, b); } catch (e) { pushEvent("warn", "db.bancos.write_failed", `Falha ao persistir banco ${b.id}: ${(e as Error).message}`); }
+}
 
 export const prefeituras: PrefeituraAdmin[] = [
   { id: 1, nome: "Palhoca", uf: "SC", municipioIbge: 4211900, modoIntegracao: "REST", status: "ativo", servidoresCount: 2400, ultimaSincronizacao: "2026-06-22T03:14:00Z" },
@@ -293,6 +320,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         passwordHash: password ? await sha256Hex(password) : current.passwordHash,
       };
       pushEvent("info", "admin", `Banco "${bancos[idx]!.nome}" atualizado${password ? " (senha trocada)" : ""}`);
+      await persistBanco(c.env, bancos[idx]!);
       return c.json({ banco: sanitizeBanco(bancos[idx]!) });
     }
     const novo: BancoAdmin = {
@@ -303,6 +331,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     };
     bancos.push(novo);
     pushEvent("info", "admin", `Banco "${novo.nome}" criado${password ? " com credencial de acesso" : ""}`);
+    await persistBanco(c.env, novo);
     return c.json({ banco: sanitizeBanco(novo) });
   })
   .post("/v1/admin/bancos/:id/testar-conexao", async (c) => {
@@ -312,6 +341,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.ultimoTeste = new Date().toISOString();
     b.ultimoTesteOk = b.adapter === "sandbox"; // sandbox sempre passa
     pushEvent(b.ultimoTesteOk ? "info" : "error", "admin", `Teste de conexao ${b.nome} ${b.ultimoTesteOk ? "OK" : "FALHOU"}`);
+    await persistBanco(c.env, b);
     return c.json({ ok: b.ultimoTesteOk, banco: sanitizeBanco(b) });
   })
   .post("/v1/admin/bancos/:id/reset-password", async (c) => {
@@ -321,6 +351,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ password: z.string().min(6) }).parse(await c.req.json());
     b.passwordHash = await sha256Hex(body.password);
     pushEvent("warn", "admin.bancos.reset-password", `Senha do banco "${b.nome}" trocada por user:${c.get("jwt").sub}`);
+    await persistBanco(c.env, b);
     return c.json({ banco: sanitizeBanco(b) });
   })
 
@@ -725,9 +756,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (existing) {
         Object.assign(existing, banco);
         out.updated++;
+        await persistBanco(c.env, existing);
       } else {
         bancos.push(banco);
         out.inserted++;
+        await persistBanco(c.env, banco);
       }
       out.rows.push(banco);
     }
