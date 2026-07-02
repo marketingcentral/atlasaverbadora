@@ -28,6 +28,10 @@ export function BancoTabelaEmprestimosForm() {
     // foi salvo na ultima passagem, senao usuario ve o valor antigo.
     staleTime: 0,
     refetchOnMount: "always",
+    // Desabilita refetch em foco: se o usuario Alt-Tab enquanto edita
+    // partial, o refetch poderia sobrescrever suas alteracoes ainda nao
+    // salvas via o useEffect que sincroniza data -> state.
+    refetchOnWindowFocus: false,
   });
 
   const [convenioId, setConvenioId] = useState("");

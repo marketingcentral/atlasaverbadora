@@ -30,6 +30,11 @@ export function BancoUsuariosForm() {
     queryKey: ["banco", "usuario", id],
     queryFn: () => atlas.banco.getUsuario(id!),
     enabled: !!id,
+    // Cache do item nunca serve stale + nao refetcha em foco pra nao
+    // sobrescrever edicoes em andamento se o usuario Alt-Tab.
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: false,
   });
 
   const [nome, setNome] = useState("");
@@ -69,6 +74,7 @@ export function BancoUsuariosForm() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["banco", "usuarios"] });
+      if (id) qc.invalidateQueries({ queryKey: ["banco", "usuario", id] });
       nav("/banco/cadastros/usuarios");
     },
   });

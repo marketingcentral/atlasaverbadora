@@ -19,6 +19,10 @@ function toAsciiSafe(s: string): string {
   return s
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // remove combining diacritical marks
+    // Whitespace unicode (nbsp U+00A0, narrow nbsp U+202F, figure space U+2007,
+    // etc.) sao os primeiros a virar '?' e ficam feios em "R$?1.000,00". Normaliza
+    // pra espaco regular ANTES do fallback.
+    .replace(/\s/g, " ")
     .replace(/[^\x20-\x7e]/g, "?"); // qualquer resto nao-ASCII imprimivel -> "?"
 }
 

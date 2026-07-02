@@ -65,7 +65,10 @@ export function BancoUsuariosLista() {
 
   const remove = useMutation({
     mutationFn: (id: string) => atlas.banco.removerUsuario(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["banco", "usuarios"] }),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["banco", "usuarios"] });
+      qc.invalidateQueries({ queryKey: ["banco", "usuario", id] });
+    },
   });
 
   const filtered = (data.data?.usuarios ?? []).filter((u) =>
