@@ -1,11 +1,12 @@
 import { Hono } from "hono";
-import { maskCPF, margemDisponivel, margemTotal, percentualUso } from "@atlas/domain";
+import { z } from "zod";
+import { maskCPF, margemDisponivel, margemTotal, percentualUso, calcCET } from "@atlas/domain";
 import { authRequired, requireRole, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
-import { listContratos } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva } from "../portal-banco/store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 
 // Dev shadow data — mirrors the SERVIDORES_BUSCA_MOCK identities (source of truth used
@@ -223,6 +224,89 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         };
       }),
     });
+  })
+  // Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco, então o
+  // portal do banco RECEBE a solicitação (situacao "Aguardando Confirmação do Deferimento").
+  // É assim que o ecossistema conversa: servidor -> banco.
+  .post("/v1/servidores/me/propostas", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    await ensureBancosLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = z
+      .object({
+        valor: z.number().positive(),
+        parcelas: z.number().int().positive(),
+        taxaAm: z.number().positive(),
+        matricula: z.string().optional(),
+        bancoNome: z.string().optional(),
+      })
+      .parse(await c.req.json());
+    const entry =
+      SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && (!body.matricula || x.matricula === body.matricula)) ??
+      SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
+    if (!entry) throw Errors.notFound("matricula");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
+    const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxaAm });
+    const contrato = criarContratoOuReserva({
+      bancoId: conv?.bancoId ?? 1,
+      servidorId: s.id,
+      idMatricula: entry.idMatricula,
+      matricula: entry.matricula,
+      nome: entry.nome,
+      cpfMasked: entry.cpfMasked,
+      convenioId: conv?.id ?? entry.idConvenio,
+      convenio: conv?.nome ?? "Banco Atlas",
+      tipoContrato: "EMPRESTIMO",
+      valorFinanciado: body.valor,
+      parcelas: body.parcelas,
+      taxaAm: body.taxaAm,
+      cetAm: cet.mensal,
+      iof: cet.iof,
+      diasCarencia: 30,
+      valorParcela: round2(cet.parcela),
+      codigoVerba: conv?.codigoVerba ?? "",
+      observacoes: `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
+      isReserva: true,
+      ator: `servidor:${s.id}`,
+    });
+    return c.json(
+      {
+        id: contrato.adf,
+        situacao: contrato.situacao,
+        banco: body.bancoNome ?? bancoNome(contrato.bancoId),
+        valor: contrato.valorFinanciado,
+        parcelas: contrato.totalParcelas,
+        parcela: contrato.valorParcela,
+        expira_em: contrato.expiracao,
+      },
+      201,
+    );
+  })
+  // Lista as propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
+  .get("/v1/servidores/me/propostas", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    await ensureBancosLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const mats = new Set(SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((e) => e.matricula));
+    const propostas = listContratos({})
+      .filter((ct) => mats.has(ct.matricula))
+      .map((ct) => ({
+        id: ct.adf,
+        banco: bancoNome(ct.bancoId),
+        valor: round2(ct.valorFinanciado),
+        parcelas: ct.totalParcelas,
+        parcela: round2(ct.valorParcela),
+        situacao: ct.situacao,
+        data: ct.lancamento,
+        expira_em: ct.expiracao,
+      }));
+    return c.json({ propostas });
   })
   .get("/v1/servidores/:id", async (c) => {
     const j = c.get("jwt");
