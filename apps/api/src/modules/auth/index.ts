@@ -52,10 +52,13 @@ async function resolveServidorByCredentials(
 ): Promise<{ match: ResolvedUser | null; claimedBy: boolean }> {
   const cpfDigits = rawIdentifier.replace(/\D/g, "");
   if (cpfDigits.length !== 11) return { match: null, claimedBy: false };
-  const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === cpfDigits);
-  if (!s || !s.passwordHash) return { match: null, claimedBy: false };
+  // Pode haver mais de uma linha para o mesmo CPF (múltiplas matrículas / imports).
+  // Procura, entre TODAS com senha cadastrada, aquela cujo hash bate — não só a 1ª.
+  const comSenha = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === cpfDigits && x.passwordHash);
+  if (comSenha.length === 0) return { match: null, claimedBy: false };
   const hash = await sha256Hex(password);
-  if (hash !== s.passwordHash) return { match: null, claimedBy: true };
+  const s = comSenha.find((x) => x.passwordHash === hash);
+  if (!s) return { match: null, claimedBy: true };
   const id = Number(s.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
   return { match: { id, nome: s.nome, role: "servidor", servidor_id: id }, claimedBy: true };
 }
