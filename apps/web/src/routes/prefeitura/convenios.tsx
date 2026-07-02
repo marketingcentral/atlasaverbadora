@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, DataTable, IconButton, type Column } from "@atlas/ui/web";
+import { Button, DataTable, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { Modal, Field, inp, selStyle } from "./_ui";
 
@@ -22,7 +22,14 @@ export function PrefeituraConvenios() {
     { key: "prazoTravaHoras", header: "Trava", render: (c) => `${c.prazoTravaHoras}h` },
     { key: "prazoPortabilidadeDU", header: "Portab.", render: (c) => `${c.prazoPortabilidadeDU} DU` },
     { key: "formatoImportacao", header: "Importação" },
-    { key: "acoes", header: "", render: (c) => <IconButton onClick={() => setEditId(c.id)}>Configurar</IconButton> },
+    {
+      key: "acoes",
+      header: "",
+      align: "right",
+      render: (c) => (
+        <Button size="sm" variant="ghost" onClick={() => setEditId(c.id)}>⚙ Configurar</Button>
+      ),
+    },
   ];
 
   return (

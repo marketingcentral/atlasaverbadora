@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, DataTable, IconButton, Pill, type Column } from "@atlas/ui/web";
+import { Button, Card, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraPerfil } from "@atlas/sdk";
 import { PageHeader, Modal, Field, inp, selStyle } from "./_ui";
@@ -24,11 +24,25 @@ export function PrefeituraPerfis() {
     { key: "ativo", header: "Ativo", render: (p) => <Pill variant={p.ativo ? "emdia" : "expirado"}>{p.ativo ? "sim" : "não"}</Pill> },
     { key: "twofa", header: "2FA", render: (p) => <Pill variant={p.twofaEnabled ? "averbado" : "pendente"}>{p.twofaEnabled ? "ativo" : "off"}</Pill> },
     {
-      key: "acoes", header: "", render: (p) => (
-        <div style={{ display: "flex", gap: 6 }}>
-          <IconButton onClick={() => rotate.mutate(p.id)}>{p.twofaEnabled ? "Rotacionar 2FA" : "Ativar 2FA"}</IconButton>
-          {p.twofaEnabled ? <IconButton onClick={() => disable.mutate(p.id)}>Desativar 2FA</IconButton> : null}
-          <IconButton danger onClick={() => { if (confirm(`Excluir ${p.nome}?`)) del.mutate(p.id); }}>Excluir</IconButton>
+      key: "acoes",
+      header: "",
+      align: "right",
+      render: (p) => (
+        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <Button size="sm" variant="ghost" onClick={() => rotate.mutate(p.id)}>
+            {p.twofaEnabled ? "↻ Rotacionar 2FA" : "🔐 Ativar 2FA"}
+          </Button>
+          {p.twofaEnabled ? (
+            <Button size="sm" variant="ghost" onClick={() => disable.mutate(p.id)}>Desativar 2FA</Button>
+          ) : null}
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { if (confirm(`Excluir ${p.nome}?`)) del.mutate(p.id); }}
+            style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
+          >
+            ✕ Excluir
+          </Button>
         </div>
       ),
     },

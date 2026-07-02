@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, CsvImportPanel, DataTable, IconButton, Pill, type Column } from "@atlas/ui/web";
+import { Button, CsvImportPanel, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraFolha } from "@atlas/sdk";
 import { Modal, Field, inp } from "./_ui";
@@ -25,11 +25,20 @@ export function PrefeituraFolhas() {
     { key: "movimentacoes", header: "Movimentações", align: "right" },
     { key: "status", header: "Status", render: (f) => <Pill variant={f.status === "aberta" ? "pendente" : "averbado"}>{f.status}</Pill> },
     {
-      key: "acoes", header: "", render: (f) => (
-        <div style={{ display: "flex", gap: 6 }}>
-          {f.status === "aberta" ? <IconButton onClick={() => setMovFolha(f)}>Movimentar</IconButton> : null}
-          {f.status === "aberta" ? <IconButton onClick={() => setStatus.mutate({ id: f.id, status: "fechada" })}>Fechar</IconButton> : null}
-          {f.status === "fechada" ? <IconButton onClick={() => setStatus.mutate({ id: f.id, status: "consolidada" })}>Consolidar</IconButton> : null}
+      key: "acoes",
+      header: "",
+      align: "right",
+      render: (f) => (
+        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          {f.status === "aberta" ? (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => setMovFolha(f)}>✎ Movimentar</Button>
+              <Button size="sm" onClick={() => setStatus.mutate({ id: f.id, status: "fechada" })}>Fechar</Button>
+            </>
+          ) : null}
+          {f.status === "fechada" ? (
+            <Button size="sm" onClick={() => setStatus.mutate({ id: f.id, status: "consolidada" })}>✓ Consolidar</Button>
+          ) : null}
         </div>
       ),
     },
