@@ -21,6 +21,7 @@ export const STORAGE_KEYS = {
   bancoPropostas: "atlas:banco:propostas",
   bancoAdf: "atlas:banco:adf",
   bancoConvenios: "atlas:banco:convenios",
+  bancoConveniosRemovidos: "atlas:banco:convenios:removidos",
 } as const;
 
 const AUTH_KEYS = [STORAGE_KEYS.role, STORAGE_KEYS.tokens] as const;

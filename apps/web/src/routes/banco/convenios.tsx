@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button, Card, Input } from "@atlas/ui/web";
 import { TwoFactorModal } from "../../components/TwoFactorModal";
-import { addBancoConvenio, fmtBRL, isBancoConvenioSeed, removeBancoConvenio } from "../../lib/banco-propostas";
+import { addBancoConvenio, fmtBRL, removeBancoConvenio } from "../../lib/banco-propostas";
 import { getConveniosDoBanco } from "../../lib/banco-carteira";
 import { OPEN_CADASTRO_CONVENIO_EVENT } from "./layout";
 
@@ -59,26 +59,23 @@ export function BancoConvenios() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
         {convenios.map((c) => {
-          const isSeed = isBancoConvenioSeed(c.nome);
           const hasActive = c.contratosAtivos > 0;
           return (
             <div key={c.nome} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 18 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                 <h2 style={{ margin: "0 0 12px", fontSize: "1.1rem", flex: 1 }}>{c.nome}</h2>
-                {!isSeed ? (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => setPendingRemove({ nome: c.nome, contratosAtivos: c.contratosAtivos })}
-                    disabled={hasActive}
-                    title={hasActive
-                      ? "Não é possível remover um convênio com contratos ativos"
-                      : `Remover ${c.nome}`}
-                    style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
-                  >
-                    ✕ Remover
-                  </Button>
-                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setPendingRemove({ nome: c.nome, contratosAtivos: c.contratosAtivos })}
+                  disabled={hasActive}
+                  title={hasActive
+                    ? "Não é possível remover um convênio com contratos ativos"
+                    : `Remover ${c.nome}`}
+                  style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
+                >
+                  ✕ Remover
+                </Button>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 14 }}>
                 <Row label="Contratos ativos" value={`${c.contratosAtivos}`} />

@@ -156,17 +156,33 @@ const BANCO_CONVENIOS_SEED = [
   "Prefeitura de São José",
 ];
 
-/** Combina seed + convenios cadastrados via UI (persistidos em localStorage). */
-export function getBancoConvenios(): string[] {
-  let extras: string[] = [];
+function readList(key: string): string[] {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.bancoConvenios);
-    if (raw) extras = JSON.parse(raw) as string[];
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as string[]) : [];
   } catch {
-    // ignore
+    return [];
   }
+}
+
+function writeList(key: string, list: string[]): boolean {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(list));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Combina seed + convenios cadastrados via UI, subtraindo os removidos.
+ * Seeds podem ser removidos: a lista de removidos vive em bancoConveniosRemovidos.
+ */
+export function getBancoConvenios(): string[] {
+  const extras = readList(STORAGE_KEYS.bancoConvenios);
+  const removidos = new Set(readList(STORAGE_KEYS.bancoConveniosRemovidos));
   const dedup = new Set<string>([...BANCO_CONVENIOS_SEED, ...extras]);
-  return [...dedup];
+  return [...dedup].filter((c) => !removidos.has(c));
 }
 
 /** Cadastra um novo convenio. Retorna false se ja existir ou se a persistencia falhou. */
@@ -175,39 +191,34 @@ export function addBancoConvenio(nome: string): boolean {
   if (!trimmed) return false;
   const existentes = getBancoConvenios();
   if (existentes.some((c) => c.toLowerCase() === trimmed.toLowerCase())) return false;
-  const extras = existentes.filter((c) => !BANCO_CONVENIOS_SEED.includes(c));
+  // Se o nome coincide com um seed marcado como removido, "restaura" tirando
+  // da lista de removidos em vez de duplicar em extras.
+  if (BANCO_CONVENIOS_SEED.includes(trimmed)) {
+    const removidos = readList(STORAGE_KEYS.bancoConveniosRemovidos).filter((c) => c !== trimmed);
+    return writeList(STORAGE_KEYS.bancoConveniosRemovidos, removidos);
+  }
+  const extras = readList(STORAGE_KEYS.bancoConvenios);
   extras.push(trimmed);
-  try {
-    window.localStorage.setItem(STORAGE_KEYS.bancoConvenios, JSON.stringify(extras));
-    return true;
-  } catch {
-    return false;
-  }
+  return writeList(STORAGE_KEYS.bancoConvenios, extras);
 }
 
-/** Convenios seed (Palhoca, Biguacu, Sao Jose) sao imutaveis — nao podem ser removidos. */
-export function isBancoConvenioSeed(nome: string): boolean {
-  return BANCO_CONVENIOS_SEED.includes(nome);
-}
-
-/** Remove um convenio cadastrado via UI. Retorna false se for seed ou se nao existir. */
+/**
+ * Remove um convenio. Se e cadastrado (extra), some do array de extras.
+ * Se e seed, entra na lista de removidos (persistido separado — permite
+ * "restaurar" via novo cadastro com mesmo nome).
+ * Retorna false se nao existir ou se a persistencia falhou.
+ */
 export function removeBancoConvenio(nome: string): boolean {
-  if (isBancoConvenioSeed(nome)) return false;
-  let extras: string[] = [];
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.bancoConvenios);
-    if (raw) extras = JSON.parse(raw) as string[];
-  } catch {
-    return false;
+  if (BANCO_CONVENIOS_SEED.includes(nome)) {
+    const removidos = readList(STORAGE_KEYS.bancoConveniosRemovidos);
+    if (removidos.includes(nome)) return false; // ja removido
+    removidos.push(nome);
+    return writeList(STORAGE_KEYS.bancoConveniosRemovidos, removidos);
   }
+  const extras = readList(STORAGE_KEYS.bancoConvenios);
   const filtered = extras.filter((c) => c !== nome);
   if (filtered.length === extras.length) return false;
-  try {
-    window.localStorage.setItem(STORAGE_KEYS.bancoConvenios, JSON.stringify(filtered));
-    return true;
-  } catch {
-    return false;
-  }
+  return writeList(STORAGE_KEYS.bancoConvenios, filtered);
 }
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
