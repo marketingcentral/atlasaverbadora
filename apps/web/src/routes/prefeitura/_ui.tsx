@@ -1,4 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 
 export const inp: CSSProperties = { padding: "8px 10px", borderRadius: 8, border: "1px solid var(--border-strong)", background: "var(--surface)", color: "var(--text)", fontSize: 14, width: "100%" };
 
@@ -19,6 +20,42 @@ export async function downloadAuthed(url: string, filename: string): Promise<voi
   URL.revokeObjectURL(objUrl);
 }
 export const selStyle: CSSProperties = { ...inp, cursor: "pointer" };
+
+/**
+ * Botao de "← Voltar" contextual. Usa nav(-1) quando o usuario chegou aqui
+ * navegando por dentro do app (React Router preenche uma chave nao-default
+ * na location). Se caiu direto (recarregou, colou o link, veio de fora),
+ * vai pro caminho de fallback informado.
+ */
+export function BackLink({ fallback, label = "← Voltar" }: { fallback: string; label?: string }) {
+  const nav = useNavigate();
+  const location = useLocation();
+  const hasHistory = location.key !== "default";
+  const onClick = () => {
+    if (hasHistory) nav(-1);
+    else nav(fallback);
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        background: "none",
+        border: "none",
+        padding: 0,
+        color: "var(--text-muted)",
+        fontSize: 13,
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        marginBottom: 4,
+      }}
+    >
+      {label}
+    </button>
+  );
+}
 
 export function PageHeader({ title, subtitle, actions }: { title: string; subtitle?: string; actions?: ReactNode }) {
   return (

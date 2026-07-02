@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import { Modal, Field, inp, selStyle } from "./_ui";
+import { BackLink, Modal, Field, inp, selStyle } from "./_ui";
 
 const VINCULOS = ["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONISTA"];
 const FORMATOS = ["CSV", "EXCEL", "API"];
@@ -34,6 +34,7 @@ export function PrefeituraConvenios() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <BackLink fallback="/prefeitura/comunicados" />
       <header>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>Prefeitura</span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Convênios do município</h1>

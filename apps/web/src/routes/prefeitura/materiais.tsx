@@ -1,5 +1,5 @@
 import { Card, Pill } from "@atlas/ui/web";
-import { PageHeader } from "./_ui";
+import { BackLink, PageHeader } from "./_ui";
 import { buildSimplePdf, downloadPdf } from "../../lib/pdf";
 
 interface Material {
@@ -131,6 +131,7 @@ export function PrefeituraMateriais() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <BackLink fallback="/prefeitura/comunicados" />
       <PageHeader
         title="Materiais de divulgação"
         subtitle="Kit pronto para divulgar o app Atlas entre os servidores municipais. Baixe, imprima ou envie por e-mail."
