@@ -1247,7 +1247,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       csv: body.csv,
     });
     appendAudit({ categoria: "tombamento", acao: "lote_processado", detalhes: `Lote ${result.lote.id} (${pref.nome}/${body.competencia}): ${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.divergencias} divergencias, ${result.erros.length} erros.` });
-    pushEvent("info", "admin.tombamento", `Lote ${result.lote.id} processado por user:${c.get("jwt").sub}`);
+    // Notifica a averbadora quando há divergência entre as 3 bases (prefeitura × banco × remessa).
+    if (result.divergencias > 0) {
+      pushEvent("warn", "admin.tombamento.divergencia", `⚠ Lote ${result.lote.id} (${pref.nome}/${body.competencia}) tem ${result.divergencias} divergência(s) entre as bases. Revise as linhas marcadas.`);
+    } else {
+      pushEvent("info", "admin.tombamento", `Lote ${result.lote.id} conciliado sem divergências.`);
+    }
     return c.json(result);
   })
   .get("/v1/admin/tombamento/csv-template", () => csvResponse("tombamento-exemplo.csv", buildCsv(

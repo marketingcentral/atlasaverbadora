@@ -3,6 +3,8 @@
 
 import { parseCsv } from "../../_shared/csv.js";
 import { previewIdUnico } from "./id-unico.js";
+import { SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
+import { listContratos } from "../portal-banco/store.js";
 
 export type TombamentoStatus = "processando" | "conciliado" | "divergente" | "rejeitado";
 
@@ -187,6 +189,19 @@ export function importTombamento(input: {
     if (!Number.isFinite(valorParcela)) { erros.push({ line, message: "valorParcela invalido" }); return; }
     if (!Number.isFinite(parcelasRestantes)) { erros.push({ line, message: "parcelasRestantes invalido" }); return; }
     const existing = _linhas.find((l) => l.matricula === matricula && l.adfBanco === adfBanco);
+    // Reconciliação em 3 bases: a remessa (base da averbadora antiga) é cruzada
+    // contra (1) a base da PREFEITURA e (2) a base do BANCO.
+    const cpfDigits = cpfRaw.replace(/\D/g, "");
+    const naPrefeitura = SERVIDORES_BUSCA_MOCK.find(
+      (s) => s.matricula === matricula && prefeituraIdDe(s) === input.prefeituraId && (!cpfDigits || s.cpf === cpfDigits.padStart(11, "0") || s.cpf === cpfDigits),
+    );
+    const noBanco = listContratos({ matricula }).find((ct) => ct.adf === adfBanco || ct.matricula === matricula);
+    const divs: string[] = [];
+    if (!naPrefeitura) divs.push("servidor não consta na base da prefeitura");
+    if (!noBanco) divs.push("contrato não consta na base do banco");
+    else if (Math.abs((noBanco.valorParcela ?? 0) - valorParcela) > 0.01) divs.push(`parcela difere do banco: remessa=${valorParcela} / banco=${noBanco.valorParcela}`);
+    if (existing && Math.abs(existing.valorParcela - valorParcela) > 0.01) divs.push(`parcela difere de tombamento anterior: ${existing.valorParcela}`);
+
     const linha: TombamentoLinha = {
       loteId,
       cpfMasked: maskCpf(cpfRaw),
@@ -197,23 +212,18 @@ export function importTombamento(input: {
       valorParcela,
       parcelasRestantes,
       saldoDevedor: Number.isFinite(saldoDevedor) ? saldoDevedor : 0,
-      reconciliacao: existing ? (Math.abs(existing.valorParcela - valorParcela) > 0.01 ? "divergente" : "ok") : "novo",
-      nome: pick(norm, "nome") || undefined,
+      reconciliacao: divs.length > 0 ? "divergente" : (existing ? "ok" : "novo"),
+      detalheReconciliacao: divs.length > 0 ? divs.join("; ") : undefined,
+      nome: pick(norm, "nome") || naPrefeitura?.nome || undefined,
       totalParcelas,
       valorEmprestimo,
       statusContrato: pick(norm, "status") || undefined,
       motivo: pick(norm, "motivo") || undefined,
       tipo: pick(norm, "tipo") || undefined,
     };
-    if (linha.reconciliacao === "divergente") {
-      linha.detalheReconciliacao = `valorParcela difere: prefeitura=${valorParcela} / atlas=${existing!.valorParcela}`;
-      divergencias++;
-      atualizados++;
-    } else if (linha.reconciliacao === "novo") {
-      inseridos++;
-    } else {
-      atualizados++;
-    }
+    if (linha.reconciliacao === "divergente") { divergencias++; atualizados++; }
+    else if (linha.reconciliacao === "novo") { inseridos++; }
+    else { atualizados++; }
     linhas.push(linha);
   });
   const lote: TombamentoLote = {

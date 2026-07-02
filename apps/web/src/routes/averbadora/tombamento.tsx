@@ -57,6 +57,17 @@ export function AdminTombamento() {
         <Button onClick={() => setImporting(true)}>+ Importar remessa</Button>
       </header>
 
+      {(() => {
+        const comDiv = (lotes.data?.lotes ?? []).filter((l) => l.divergencias > 0);
+        if (comDiv.length === 0) return null;
+        const total = comDiv.reduce((s, l) => s + l.divergencias, 0);
+        return (
+          <div style={{ padding: "12px 16px", borderRadius: 10, border: "1px solid var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 12%, transparent)", fontSize: 14 }}>
+            ⚠ <b>{total} divergência(s)</b> em {comDiv.length} lote(s) entre a base da prefeitura, a base do banco e a remessa. Abra o lote (↗) para ver as linhas marcadas.
+          </div>
+        );
+      })()}
+
       <DataTable
         columns={columns}
         rows={lotes.data?.lotes ?? []}
