@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Pill, DataTable, type Column, IconButton } from "@atlas/ui/web";
+import { Button, Card, Pill, DataTable, type Column } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import type { AdminWebhook, AdminWebhookDelivery, ApiEnvironment } from "@atlas/sdk";
 
@@ -56,12 +56,22 @@ export function AverbadoraApiWebhooks() {
     {
       key: "actions",
       header: "",
+      align: "right",
       render: (w) => (
-        <div style={{ display: "flex", gap: 6 }}>
-          <IconButton onClick={() => { if (testingId !== w.id) test.mutate(w.id); }}>{testingId === w.id ? "Testando…" : "Testar"}</IconButton>
-          <IconButton onClick={() => setSelected(w.id)}>Entregas</IconButton>
-          <IconButton onClick={() => toggle.mutate(w.id)}>{w.active ? "Pausar" : "Retomar"}</IconButton>
-          <IconButton onClick={() => { if (confirm("Remover webhook?")) remove.mutate(w.id); }}>Remover</IconButton>
+        <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <Button size="sm" variant="ghost" disabled={testingId === w.id} onClick={() => { if (testingId !== w.id) test.mutate(w.id); }}>
+            {testingId === w.id ? "Testando…" : "▶ Testar"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(w.id)}>📄 Entregas</Button>
+          <Button size="sm" variant="ghost" onClick={() => toggle.mutate(w.id)}>{w.active ? "⏸ Pausar" : "▶ Retomar"}</Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => { if (confirm("Remover webhook?")) remove.mutate(w.id); }}
+            style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
+          >
+            ✕ Remover
+          </Button>
         </div>
       ),
     },
