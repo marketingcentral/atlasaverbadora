@@ -122,8 +122,8 @@ export const prefeituraPublicRoutes = new Hono<{ Bindings: Env }>()
   })
   .get("/v1/prefeitura/tombamento/csv-template", () => {
     const csv = buildCsv(
-      ["cpfMasked", "matricula", "bancoNome", "adfBanco", "valorParcela", "parcelasRestantes", "saldoDevedor"],
-      [{ cpfMasked: "***.***.***-33", matricula: "852029100", bancoNome: "SCred Financeira", adfBanco: "9000123", valorParcela: 520, parcelasRestantes: 44, saldoDevedor: 18000 }],
+      ["cpf", "matricula", "nome", "banco", "numeroContrato", "valorParcela", "totalParcelas", "parcelasRestantes", "valorEmprestimo", "status", "motivo", "tipo"],
+      [{ cpf: "73345725304", matricula: "00000230", nome: "MARIA DO SOCORRO LOPES FARIAS", banco: "104-Caixa Economica Federal", numeroContrato: "10994802", valorParcela: "164,00", totalParcelas: 120, parcelasRestantes: 120, valorEmprestimo: "R$ 7.944,97", status: "Averbação Confirmada", motivo: "Dívidas", tipo: "Novo" }],
     );
     return csvResp("tombamento-modelo.csv", csv);
   });
@@ -201,7 +201,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
         const comprometido = Math.min(comprometidoDe(s.matricula, contratos), total);
         return {
-          matricula: s.matricula, nome: s.nome, cpfMasked: s.cpfMasked, vinculo: s.vinculo,
+          matricula: s.matricula, nome: s.nome, cpf: s.cpf, cpfMasked: s.cpfMasked, vinculo: s.vinculo,
           situacaoFuncional: s.situacaoFuncional, salarioLiquido: s.salarioLiquido, idConvenio: s.idConvenio,
           cargo: s.cargo ?? "", endereco: s.endereco ?? "", email: s.email ?? "", telefone: s.telefone ?? "",
           codigoIbge: s.codigoIbge ?? null,
@@ -222,7 +222,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const out: ImportOutcome<{ matricula: string; nome: string; cpfMasked: string }> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
     rows.forEach((r, idx) => {
       const line = idx + 2;
-      const cpf = (r.cpf ?? "").replace(/\D/g, "");
+      // Planilhas de Excel perdem o zero a esquerda do CPF (numero). Repadroniza
+      // pra 11 digitos antes de validar, senao CPFs como "4019228396" falhariam.
+      let cpf = (r.cpf ?? "").replace(/\D/g, "");
+      if (cpf.length > 0 && cpf.length < 11) cpf = cpf.padStart(11, "0");
       // Validação de campos obrigatórios (passo 3).
       if (!r.nome) return void out.errors.push({ line, message: "nome obrigatorio" });
       if (cpf.length !== 11) return void out.errors.push({ line, message: "cpf deve ter 11 digitos" });
@@ -260,6 +263,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!s) throw Errors.notFound("servidor");
     const body = z.object({
       nome: z.string().min(2).optional(),
+      cpf: z.string().optional(),
       cargo: z.string().min(1).optional(),
       endereco: z.string().optional(),
       matriculaNova: z.string().min(1).optional(),
@@ -270,6 +274,14 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     }).parse(await c.req.json());
     const changed: string[] = [];
     if (body.nome !== undefined) { s.nome = body.nome; changed.push("nome"); }
+    if (body.cpf !== undefined) {
+      let cpf = body.cpf.replace(/\D/g, "");
+      if (cpf.length > 0 && cpf.length < 11) cpf = cpf.padStart(11, "0");
+      if (cpf.length !== 11) throw Errors.validation({ cpf: "CPF deve ter 11 digitos" });
+      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === cpf && x.matricula !== s.matricula);
+      if (dup) throw Errors.validation({ cpf: `CPF ja em uso pela matricula ${dup.matricula}` });
+      s.cpf = cpf; s.cpfMasked = `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}`; changed.push("cpf");
+    }
     if (body.cargo !== undefined) { s.cargo = body.cargo; changed.push("cargo"); }
     if (body.endereco !== undefined) { s.endereco = body.endereco || undefined; changed.push("endereco"); }
     if (body.vinculo !== undefined) { s.vinculo = body.vinculo; changed.push("vinculo"); }
@@ -282,7 +294,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       s.matricula = body.matriculaNova; s.idMatricula = `MAT-${body.matriculaNova}`; changed.push("matricula");
     }
     appendAudit({ categoria: "dados_pessoais", acao: "servidor_editado", matricula: s.matricula, cpf: s.cpfMasked, userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Servidor ${s.matricula} editado pela prefeitura (${changed.join(",")}).` });
-    return c.json({ servidor: { matricula: s.matricula, nome: s.nome, cargo: s.cargo ?? "", endereco: s.endereco ?? "", vinculo: s.vinculo, email: s.email ?? "", telefone: s.telefone ?? "", codigoIbge: s.codigoIbge ?? null } });
+    return c.json({ servidor: { matricula: s.matricula, nome: s.nome, cpf: s.cpf, cpfMasked: s.cpfMasked, cargo: s.cargo ?? "", endereco: s.endereco ?? "", vinculo: s.vinculo, email: s.email ?? "", telefone: s.telefone ?? "", codigoIbge: s.codigoIbge ?? null } });
   })
 
   // ===== Passo 4 — Folha mensal =====

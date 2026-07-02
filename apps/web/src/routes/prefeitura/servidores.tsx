@@ -7,6 +7,16 @@ import { Modal, Field, inp, selStyle } from "./_ui";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 const VINCULOS = ["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONISTA"];
+const fmtCpf = (cpf: string) => {
+  const d = (cpf ?? "").replace(/\D/g, "");
+  return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : (cpf || "—");
+};
+const fmtTel = (tel?: string) => {
+  const d = (tel ?? "").replace(/\D/g, "");
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return d || "—";
+};
 
 export function PrefeituraServidores() {
   const qc = useQueryClient();
@@ -16,12 +26,14 @@ export function PrefeituraServidores() {
   const q = useQuery({ queryKey: ["prefeitura", "servidores"], queryFn: () => atlas.prefeitura.servidores() });
 
   const filtered = (q.data?.servidores ?? []).filter((s) =>
-    search ? `${s.nome} ${s.matricula} ${s.cpfMasked} ${s.cargo ?? ""}`.toLowerCase().includes(search.toLowerCase()) : true,
+    search ? `${s.nome} ${s.matricula} ${s.cpf} ${s.telefone ?? ""} ${s.cargo ?? ""}`.toLowerCase().includes(search.toLowerCase()) : true,
   );
 
   const columns: Column<PrefeituraServidor>[] = [
     { key: "nome", header: "Nome" },
     { key: "matricula", header: "Matrícula", mono: true },
+    { key: "cpf", header: "CPF", mono: true, render: (s) => fmtCpf(s.cpf) },
+    { key: "telefone", header: "Telefone", render: (s) => fmtTel(s.telefone) },
     { key: "cargo", header: "Cargo", render: (s) => s.cargo || "—" },
     { key: "vinculo", header: "Vínculo" },
     { key: "situacaoFuncional", header: "Situação", render: (s) => <Pill variant={/desligado|aposentad/i.test(s.situacaoFuncional) ? "expirado" : "averbado"}>{s.situacaoFuncional}</Pill> },
@@ -70,6 +82,7 @@ export function PrefeituraServidores() {
 
 function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServidor; onClose: () => void; onSaved: () => void }) {
   const [nome, setNome] = useState(servidor.nome);
+  const [cpf, setCpf] = useState(servidor.cpf ?? "");
   const [cargo, setCargo] = useState(servidor.cargo ?? "");
   const [endereco, setEndereco] = useState(servidor.endereco ?? "");
   const [matriculaNova, setMatriculaNova] = useState(servidor.matricula);
@@ -80,6 +93,7 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServido
   const save = useMutation({
     mutationFn: () => atlas.prefeitura.editarServidor(servidor.matricula, {
       nome, cargo, endereco, vinculo, email, telefone,
+      ...(cpf.replace(/\D/g, "") !== (servidor.cpf ?? "").replace(/\D/g, "") ? { cpf } : {}),
       ...(matriculaNova !== servidor.matricula ? { matriculaNova } : {}),
     }),
     onSuccess: onSaved,
@@ -90,17 +104,20 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServido
       <div style={{ display: "grid", gap: 12 }}>
         <Field lbl="Nome"><input style={inp} value={nome} onChange={(e) => setNome(e.target.value)} /></Field>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field lbl="CPF"><input style={inp} value={cpf} onChange={(e) => setCpf(e.target.value)} inputMode="numeric" placeholder="000.000.000-00" /></Field>
           <Field lbl="Cargo"><input style={inp} value={cargo} onChange={(e) => setCargo(e.target.value)} /></Field>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field lbl="Vínculo">
             <select style={selStyle} value={vinculo} onChange={(e) => setVinculo(e.target.value)}>{VINCULOS.map((v) => <option key={v} value={v}>{v}</option>)}</select>
           </Field>
+          <Field lbl="Telefone"><input style={inp} value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(00) 00000-0000" /></Field>
         </div>
         <Field lbl="Endereço"><input style={inp} value={endereco} onChange={(e) => setEndereco(e.target.value)} /></Field>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <Field lbl="Matrícula" hint="Alterar remapeia o servidor"><input style={inp} value={matriculaNova} onChange={(e) => setMatriculaNova(e.target.value)} /></Field>
-          <Field lbl="Telefone"><input style={inp} value={telefone} onChange={(e) => setTelefone(e.target.value)} /></Field>
+          <Field lbl="E-mail"><input style={inp} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
         </div>
-        <Field lbl="E-mail"><input style={inp} value={email} onChange={(e) => setEmail(e.target.value)} /></Field>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>

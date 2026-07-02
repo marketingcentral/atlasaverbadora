@@ -1245,10 +1245,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(result);
   })
   .get("/v1/admin/tombamento/csv-template", () => csvResponse("tombamento-exemplo.csv", buildCsv(
-    ["cpfMasked", "matricula", "bancoNome", "adfBanco", "valorParcela", "parcelasRestantes", "saldoDevedor"],
+    // Formato do relatorio de emprestimos real. Aceita CPF completo (mascarado
+    // no import) e valores em R$. adfBanco = numero do contrato.
+    ["cpf", "matricula", "nome", "banco", "numeroContrato", "valorParcela", "totalParcelas", "parcelasRestantes", "valorEmprestimo", "status", "motivo", "tipo"],
     [
-      { cpfMasked: "000.***.***-33", matricula: "M-9001", bancoNome: "SCred Financeira", adfBanco: "9000123", valorParcela: 320.5, parcelasRestantes: 70, saldoDevedor: 22435 },
-      { cpfMasked: "000.***.***-44", matricula: "M-9002", bancoNome: "Banco Y", adfBanco: "9000124", valorParcela: 180, parcelasRestantes: 58, saldoDevedor: 10440 },
+      { cpf: "73345725304", matricula: "00000230", nome: "MARIA DO SOCORRO LOPES FARIAS", banco: "104-Caixa Economica Federal", numeroContrato: "10994802", valorParcela: "164,00", totalParcelas: 120, parcelasRestantes: 120, valorEmprestimo: "R$ 7.944,97", status: "Averbação Confirmada", motivo: "Dívidas", tipo: "Novo" },
+      { cpf: "01733410392", matricula: "00004421", nome: "FRANCISCO MARDONIO PEREIRA DOS SANTOS", banco: "85-TA FACIL CONSIGNADOS", numeroContrato: "04053861-000", valorParcela: "79,16", totalParcelas: 96, parcelasRestantes: 96, valorEmprestimo: "R$ 2.036,69", status: "Averbação Confirmada", motivo: "Empréstimo", tipo: "Novo" },
     ],
   )))
 

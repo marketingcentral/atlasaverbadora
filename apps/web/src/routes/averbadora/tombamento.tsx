@@ -94,15 +94,16 @@ function LinhasDrawer({ lote, onClose }: { lote: AdminTombamentoLote; onClose: (
         </Pill>
       ),
     },
-    { key: "cpfMasked", header: "CPF" },
-    { key: "matricula", header: "Matrícula" },
+    { key: "cpfMasked", header: "CPF", mono: true },
+    { key: "nome", header: "Nome", render: (l) => l.nome ?? "—" },
+    { key: "matricula", header: "Matrícula", mono: true },
     { key: "bancoNome", header: "Banco" },
-    { key: "adfBanco", header: "ADF banco", mono: true },
-    { key: "idUnico", header: "ID único", mono: true },
+    { key: "adfBanco", header: "Nº contrato", mono: true },
     { key: "valorParcela", header: "Parcela", align: "right", render: (l) => BRL.format(l.valorParcela) },
-    { key: "parcelasRestantes", header: "Restantes", align: "right" },
-    { key: "saldoDevedor", header: "Saldo devedor", align: "right", render: (l) => BRL.format(l.saldoDevedor) },
-    { key: "detalhe", header: "Observação", render: (l) => l.detalheReconciliacao ?? "—" },
+    { key: "parcelasRestantes", header: "Parc. rest.", align: "right", render: (l) => l.totalParcelas ? `${l.parcelasRestantes}/${l.totalParcelas}` : l.parcelasRestantes },
+    { key: "valorEmprestimo", header: "Vlr. empréstimo", align: "right", render: (l) => l.valorEmprestimo != null ? BRL.format(l.valorEmprestimo) : BRL.format(l.saldoDevedor) },
+    { key: "statusContrato", header: "Status", render: (l) => l.statusContrato ? <Pill variant={/confirmad/i.test(l.statusContrato) ? "averbado" : "pendente"}>{l.statusContrato}</Pill> : "—" },
+    { key: "detalhe", header: "Observação", render: (l) => l.detalheReconciliacao ?? l.motivo ?? "—" },
   ];
   return (
     <div onClick={onClose} style={modalBackdrop}>
@@ -165,7 +166,7 @@ function ImportModal({
           value={csv}
           onChange={(e) => setCsv(e.target.value)}
           rows={10}
-          placeholder="cpfMasked,matricula,bancoNome,adfBanco,valorParcela,parcelasRestantes,saldoDevedor"
+          placeholder="cpf,matricula,nome,banco,numeroContrato,valorParcela,totalParcelas,parcelasRestantes,valorEmprestimo,status,motivo,tipo"
           style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-strong)",
             borderRadius: 10, padding: 12, color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: 13,

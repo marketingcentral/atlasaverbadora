@@ -36,6 +36,35 @@ export interface TombamentoLinha {
   /** "ok" — bate; "divergente" — valor/parcelas conflitam; "novo" — não havia no Atlas */
   reconciliacao: "ok" | "divergente" | "novo";
   detalheReconciliacao?: string;
+  // Campos do relatório de empréstimos real (opcionais — presentes quando a
+  // remessa vem no formato completo do banco).
+  nome?: string;
+  totalParcelas?: number;
+  valorEmprestimo?: number;
+  statusContrato?: string;
+  motivo?: string;
+  tipo?: string;
+}
+
+/** Parseia valores BR: "R$ 7.944,97" -> 7944.97; "79.16" -> 79.16; "164" -> 164. */
+function parseBRL(s: string | undefined): number {
+  if (s == null) return NaN;
+  let t = String(s).replace(/[R$\s]/g, "");
+  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
+  return Number(t);
+}
+/** Mascara CPF completo -> "000.***.***-00" (mantém 3 primeiros + 2 últimos). */
+function maskCpf(cpf: string | undefined): string {
+  const raw = (cpf ?? "").replace(/\D/g, "");
+  if (!raw) return "";
+  if (raw.includes("*")) return cpf!; // já mascarado
+  const d = raw.length < 11 ? raw.padStart(11, "0") : raw.slice(-11);
+  return `${d.slice(0, 3)}.***.***-${d.slice(-2)}`;
+}
+/** Lê um campo por vários nomes de coluna possíveis (case-insensitive). */
+function pick(norm: Record<string, string>, ...names: string[]): string {
+  for (const n of names) { const v = norm[n.toLowerCase().trim()]; if (v != null && v !== "") return v; }
+  return "";
 }
 
 const _lotes: TombamentoLote[] = [];
@@ -136,27 +165,45 @@ export function importTombamento(input: {
   const linhas: TombamentoLinha[] = [];
   rows.forEach((r, idx) => {
     const line = idx + 2;
-    if (!r.cpfMasked) { erros.push({ line, message: "cpfMasked obrigatorio" }); return; }
-    if (!r.matricula) { erros.push({ line, message: "matricula obrigatoria" }); return; }
-    if (!r.adfBanco) { erros.push({ line, message: "adfBanco obrigatorio" }); return; }
-    const valorParcela = Number(r.valorParcela);
-    const parcelasRestantes = Number(r.parcelasRestantes);
-    const saldoDevedor = Number(r.saldoDevedor);
+    // Aceita tanto o relatorio de emprestimos real (NÚMERO DO CONTRATO, BANCO,
+    // VALOR DA PARCELA…) quanto o formato legado (cpfMasked, adfBanco…).
+    const norm: Record<string, string> = {};
+    for (const [k, v] of Object.entries(r)) norm[k.toLowerCase().trim()] = v as string;
+
+    const cpfRaw = pick(norm, "cpf", "cpfmasked");
+    const matricula = pick(norm, "matricula");
+    const adfBanco = pick(norm, "numerocontrato", "numero do contrato", "adfbanco", "codigo");
+    if (!cpfRaw) { erros.push({ line, message: "cpf/cpfMasked obrigatorio" }); return; }
+    if (!matricula) { erros.push({ line, message: "matricula obrigatoria" }); return; }
+    if (!adfBanco) { erros.push({ line, message: "numero do contrato (adfBanco) obrigatorio" }); return; }
+
+    const valorParcela = parseBRL(pick(norm, "valorparcela", "valor da parcela"));
+    const parcelasRestantes = Number(pick(norm, "parcelasrestantes", "parcelas remanescentes"));
+    const totalParcelas = Number(pick(norm, "totalparcelas", "total de parcelas")) || undefined;
+    const valorEmprestimo = parseBRL(pick(norm, "valoremprestimo", "valor do emprestimo", "valor do empréstimo")) || undefined;
+    const saldoRaw = parseBRL(pick(norm, "saldodevedor"));
+    // Sem saldo devedor explicito, estima parcela × parcelas restantes.
+    const saldoDevedor = Number.isFinite(saldoRaw) ? saldoRaw : (valorParcela * (Number.isFinite(parcelasRestantes) ? parcelasRestantes : 0));
     if (!Number.isFinite(valorParcela)) { erros.push({ line, message: "valorParcela invalido" }); return; }
     if (!Number.isFinite(parcelasRestantes)) { erros.push({ line, message: "parcelasRestantes invalido" }); return; }
-    if (!Number.isFinite(saldoDevedor)) { erros.push({ line, message: "saldoDevedor invalido" }); return; }
-    const existing = _linhas.find((l) => l.matricula === r.matricula && l.adfBanco === r.adfBanco);
+    const existing = _linhas.find((l) => l.matricula === matricula && l.adfBanco === adfBanco);
     const linha: TombamentoLinha = {
       loteId,
-      cpfMasked: r.cpfMasked,
-      matricula: r.matricula,
-      bancoNome: r.bancoNome ?? "?",
-      adfBanco: r.adfBanco,
+      cpfMasked: maskCpf(cpfRaw),
+      matricula,
+      bancoNome: pick(norm, "banco", "banconome") || "?",
+      adfBanco,
       idUnico: previewIdUnico(input.prefeituraId),
       valorParcela,
       parcelasRestantes,
-      saldoDevedor,
+      saldoDevedor: Number.isFinite(saldoDevedor) ? saldoDevedor : 0,
       reconciliacao: existing ? (Math.abs(existing.valorParcela - valorParcela) > 0.01 ? "divergente" : "ok") : "novo",
+      nome: pick(norm, "nome") || undefined,
+      totalParcelas,
+      valorEmprestimo,
+      statusContrato: pick(norm, "status") || undefined,
+      motivo: pick(norm, "motivo") || undefined,
+      tipo: pick(norm, "tipo") || undefined,
     };
     if (linha.reconciliacao === "divergente") {
       linha.detalheReconciliacao = `valorParcela difere: prefeitura=${valorParcela} / atlas=${existing!.valorParcela}`;

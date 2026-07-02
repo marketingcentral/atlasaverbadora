@@ -274,6 +274,12 @@ export interface AdminTombamentoLinha {
   saldoDevedor: number;
   reconciliacao: "ok" | "divergente" | "novo";
   detalheReconciliacao?: string;
+  nome?: string;
+  totalParcelas?: number;
+  valorEmprestimo?: number;
+  statusContrato?: string;
+  motivo?: string;
+  tipo?: string;
 }
 
 export interface AdminBateCarteiraLinha {
@@ -461,6 +467,7 @@ export interface AdminWebhookInput {
 export interface PrefeituraServidor {
   matricula: string;
   nome: string;
+  cpf: string;
   cpfMasked: string;
   vinculo: string;
   situacaoFuncional: string;
@@ -911,7 +918,7 @@ export class AtlasClient {
     servidores: (query?: { q?: string; vinculo?: string; situacao?: string }) =>
       this.request<{ servidores: PrefeituraServidor[]; total: number }>("/v1/prefeitura/servidores", { query: query ?? {} }),
     importarServidores: (csv: string) => this.request<CsvImportOutcome>("/v1/prefeitura/servidores/importar", { method: "POST", body: { csv } }),
-    editarServidor: (matricula: string, patch: Partial<{ nome: string; cargo: string; endereco: string; matriculaNova: string; vinculo: string; email: string; telefone: string; codigoIbge: number }>) =>
+    editarServidor: (matricula: string, patch: Partial<{ nome: string; cpf: string; cargo: string; endereco: string; matriculaNova: string; vinculo: string; email: string; telefone: string; codigoIbge: number }>) =>
       this.request<{ servidor: PrefeituraServidor }>(`/v1/prefeitura/servidores/${matricula}`, { method: "PATCH", body: patch }),
     servidoresCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/servidores/csv-template`,
 
