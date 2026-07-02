@@ -247,7 +247,9 @@ function ImportModal({
           <b style={{ color: "var(--accent)" }}>{prefeituraNome}</b>.
         </p>
         <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: -4 }}>
-          Colunas: cpf, matricula, nome, dataAdmissao, dataNascimento, vinculo, situacaoFuncional, salarioLiquido. O convênio é resolvido automaticamente pelo padrão da prefeitura.
+          <b>Obrigatórios:</b> cpf, matricula, nome, vinculo, situacaoFuncional, salarioLiquido.
+          <br />
+          <b>Opcionais:</b> dataAdmissao, dataNascimento, idConvenio (usa padrão da prefeitura se vazio), cargo, endereco, email, telefone, codigoIbge.
         </p>
 
         <input

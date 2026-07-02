@@ -158,10 +158,28 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
     ],
   )))
   .get("/v1/admin/servidores/csv-template", () => csvResponse("servidores-exemplo.csv", buildCsv(
-    ["cpf", "matricula", "nome", "dataAdmissao", "dataNascimento", "vinculo", "situacaoFuncional", "salarioLiquido"],
     [
-      { cpf: "00011122233", matricula: "M-9001", nome: "Ana Carolina Silva", dataAdmissao: "17/04/2017", dataNascimento: "1985-03-12", vinculo: "ESTATUTARIO", situacaoFuncional: "TRABALHANDO", salarioLiquido: 4620.50 },
-      { cpf: "00011122244", matricula: "M-9002", nome: "Joao da Silva Neves", dataAdmissao: "02/02/2010", dataNascimento: "1976-08-22", vinculo: "CLT", situacaoFuncional: "TRABALHANDO", salarioLiquido: 5840 },
+      "cpf", "matricula", "nome", "dataAdmissao", "dataNascimento",
+      "vinculo", "situacaoFuncional", "salarioLiquido", "idConvenio",
+      "cargo", "endereco", "email", "telefone", "codigoIbge",
+    ],
+    [
+      {
+        cpf: "00011122233", matricula: "M-9001", nome: "Ana Carolina Silva",
+        dataAdmissao: "17/04/2017", dataNascimento: "1985-03-12",
+        vinculo: "ESTATUTARIO", situacaoFuncional: "TRABALHANDO", salarioLiquido: 4620.50,
+        idConvenio: "CONV-001",
+        cargo: "Professora II", endereco: "Rua das Palmeiras, 320 - Centro, Palhoca/SC",
+        email: "ana.silva@palhoca.sc.gov.br", telefone: "48991010001", codigoIbge: 4211900,
+      },
+      {
+        cpf: "00011122244", matricula: "M-9002", nome: "Joao da Silva Neves",
+        dataAdmissao: "02/02/2010", dataNascimento: "1976-08-22",
+        vinculo: "CLT", situacaoFuncional: "TRABALHANDO", salarioLiquido: 5840,
+        idConvenio: "CONV-002",
+        cargo: "Motorista", endereco: "Rua Central, 45 - Ingleses, Florianopolis/SC",
+        email: "joao.neves@floripa.sc.gov.br", telefone: "48991020002", codigoIbge: 4205407,
+      },
     ],
   )));
 
@@ -1089,6 +1107,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (!idConvenio) { out.errors.push({ line, message: `prefeitura ${pref.nome} nao possui convenios cadastrados` }); return; }
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === cpf);
       const salario = Number(r.salarioLiquido);
+      const ibge = Number(r.codigoIbge);
       const s = {
         cpf,
         cpfMasked: cpf.slice(0, 3) + ".***.***-" + cpf.slice(-2),
@@ -1102,6 +1121,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         situacaoFuncional: r.situacaoFuncional ?? "TRABALHANDO",
         salarioLiquido: Number.isFinite(salario) ? salario : 0,
         idConvenio,
+        cargo: r.cargo || undefined,
+        endereco: r.endereco || undefined,
+        email: r.email || undefined,
+        telefone: r.telefone || undefined,
+        codigoIbge: Number.isFinite(ibge) ? ibge : undefined,
       };
       if (existing) { Object.assign(existing, s); out.updated++; }
       else { SERVIDORES_BUSCA_MOCK.push(s); out.inserted++; }
