@@ -2,10 +2,9 @@ import { Hono } from "hono";
 import { maskCPF, margemDisponivel, margemTotal, percentualUso } from "@atlas/domain";
 import { authRequired, requireRole, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
-import { getBankAdapter } from "../../integrations/index.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { bancos, prefeituras } from "../admin/index.js";
+import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
 import { listContratos } from "../portal-banco/store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 
@@ -108,15 +107,15 @@ function resolveServidor(j: JwtClaims): ResolvedServidor | null {
   const id = j.servidor_id;
   if (id == null) return null;
   const dev = DEV_SERVIDORES.find((x) => x.id === id);
-  if (dev) return { ...dev, fromFixture: false };
+  if (dev) {
+    // Prefer the Postgres-hydrated row for this identity (SERVIDORES_BUSCA_MOCK is
+    // replaced by loadServidores() em ensureServidoresLoaded). Fall back ao shadow dev.
+    const fx = SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf);
+    return fx ? fromFixture(fx) : { ...dev, fromFixture: true };
+  }
   // ids sintéticos (últimos 5 dígitos da idMatricula) usados quando o servidor vem da fixture
   const fx = SERVIDORES_BUSCA_MOCK.find((s) => Number(s.idMatricula.replace(/\D/g, "").slice(-5)) === id);
   return fx ? fromFixture(fx) : null;
-}
-
-function currentCompetencia(): string {
-  const d = new Date();
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims; trace_id: string } }>()
@@ -125,6 +124,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/servidores/me", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     return c.json({
@@ -142,23 +142,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const startedAt = Date.now();
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
 
-    let margens: { tipo: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS"; disponivel: number; total: number }[];
-    if (s.fromFixture) {
-      // Sandbox bank desconhece idMatricula desta fixture — calcular localmente.
-      margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
-        tipo,
-        total: Math.round(margemTotal(s.salarioLiquido, tipo) * 100) / 100,
-        disponivel: Math.round(margemDisponivel(s.salarioLiquido, 0, tipo) * 100) / 100,
-      }));
-    } else {
-      const competencia = currentCompetencia();
-      const bank = getBankAdapter(c.env);
-      const session = await bank.authorize({ username: "atlas", password: "sandbox" });
-      margens = await bank.getMargens(session, s.idMatricula, competencia);
-    }
+    // Margem derivada da folha (salário do Postgres) pelas regras do domínio. Na era
+    // sandbox o banco não conhece a idMatricula real; quando o adapter iFractal entrar,
+    // trocar por bank.getMargens(session, s.idMatricula, competencia).
+    const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
+      tipo,
+      total: Math.round(margemTotal(s.salarioLiquido, tipo) * 100) / 100,
+      disponivel: Math.round(margemDisponivel(s.salarioLiquido, 0, tipo) * 100) / 100,
+    }));
 
     const emp = margens.find((m) => m.tipo === "EMPRESTIMO");
     if (!emp) throw Errors.notFound("margem_emprestimo");
@@ -186,6 +181,8 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/servidores/me/matriculas", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    await ensureBancosLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
@@ -198,6 +195,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/servidores/me/ofertas", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     const hoje = new Date().toISOString().slice(0, 10);
