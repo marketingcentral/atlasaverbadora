@@ -24,6 +24,7 @@ import {
   TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia,
   listPerfis, upsertPerfil, deletePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
 } from "./store.js";
+import { upsertPrefeitura } from "../../db/repos.js";
 
 function requirePrefeitura(j: JwtClaims): number {
   if (j.role !== "prefeitura") throw Errors.forbidden("Requer perfil prefeitura");
@@ -139,6 +140,26 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const p = prefeituras.find((x) => x.id === id);
     if (!p) throw Errors.notFound("prefeitura");
     return c.json({ prefeitura: { id: p.id, nome: p.nome, uf: p.uf, municipioIbge: p.municipioIbge, status: p.status } });
+  })
+
+  // ===== Configurações de averbação — a prefeitura decide se o banco precisa
+  // anexar a CCB e/ou fazer 2FA ao averbar. =====
+  .get("/v1/prefeitura/config", (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    const p = prefeituras.find((x) => x.id === id);
+    if (!p) throw Errors.notFound("prefeitura");
+    return c.json({ exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false });
+  })
+  .post("/v1/prefeitura/config", async (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    const p = prefeituras.find((x) => x.id === id);
+    if (!p) throw Errors.notFound("prefeitura");
+    const body = z.object({ exigeCcb: z.boolean().optional(), exigeBanco2FA: z.boolean().optional() }).parse(await c.req.json());
+    if (body.exigeCcb !== undefined) p.exigeCcb = body.exigeCcb;
+    if (body.exigeBanco2FA !== undefined) p.exigeBanco2FA = body.exigeBanco2FA;
+    try { await upsertPrefeitura(c.env, p); } catch { /* best-effort persist */ }
+    appendAudit({ categoria: "acesso", acao: "config_averbacao", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: exigeCcb=${p.exigeCcb} exigeBanco2FA=${p.exigeBanco2FA}` });
+    return c.json({ exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false });
   })
 
   // ===== Passo 2 — Dashboard (com pendências de upload) =====

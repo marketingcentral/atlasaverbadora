@@ -5,6 +5,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
+import { prefeituras } from "../admin/index.js";
 import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario } from "./cadastros.js";
 
@@ -70,7 +71,12 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const ativos = CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id);
     const activeId = await getActiveConvenioId(c.env, j);
     return c.json({
-      convenios: ativos.map((cv) => ({ id: cv.id, nome: cv.nome, prefeitura: cv.prefeitura, uf: cv.uf })),
+      // Inclui as exigências que a prefeitura de cada convênio impõe ao averbar
+      // (CCB e/ou 2FA), pra o front condicionar o fluxo de averbação.
+      convenios: ativos.map((cv) => {
+        const pref = prefeituras.find((p) => p.id === cv.prefeituraId);
+        return { id: cv.id, nome: cv.nome, prefeitura: cv.prefeitura, uf: cv.uf, exigeCcb: pref?.exigeCcb ?? false, exigeBanco2FA: pref?.exigeBanco2FA ?? false };
+      }),
       activeId,
     });
   })

@@ -654,7 +654,7 @@ export class AtlasClient {
 
   // ============ Portal Banco ============
   readonly banco = {
-    convenios: () => this.request<{ convenios: { id: string; nome: string; prefeitura: string; uf: string }[]; activeId: string }>("/v1/portal/banco/convenios"),
+    convenios: () => this.request<{ convenios: { id: string; nome: string; prefeitura: string; uf: string; exigeCcb: boolean; exigeBanco2FA: boolean }[]; activeId: string }>("/v1/portal/banco/convenios"),
     setConvenioAtivo: (convenioId: string) =>
       this.request<{ activeId: string }>("/v1/portal/banco/convenio-ativo", { method: "POST", body: { convenioId } }),
     visaoGeral: () =>
@@ -902,6 +902,9 @@ export class AtlasClient {
   // ============ Prefeitura (portal completo) ============
   readonly prefeitura = {
     me: () => this.request<{ prefeitura: { id: number; nome: string; uf: string; municipioIbge: number; status: string } }>("/v1/prefeitura/me"),
+    getConfig: () => this.request<{ exigeCcb: boolean; exigeBanco2FA: boolean }>("/v1/prefeitura/config"),
+    setConfig: (body: { exigeCcb?: boolean; exigeBanco2FA?: boolean }) =>
+      this.request<{ exigeCcb: boolean; exigeBanco2FA: boolean }>("/v1/prefeitura/config", { method: "POST", body }),
     dashboard: () =>
       this.request<{
         prefeitura: { id: number; nome: string; uf: string };

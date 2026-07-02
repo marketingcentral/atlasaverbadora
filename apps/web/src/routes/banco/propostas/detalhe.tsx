@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, FormActions, Pill, TextareaField } from "@atlas/ui/web";
+import { atlas } from "../../../lib/sdk";
 import { TwoFactorModal } from "../../../components/TwoFactorModal";
 import {
   PRODUTO_LABEL,
@@ -23,6 +25,11 @@ export function BancoPropostaDetalhe() {
   const perfil = getBancoPerfil();
   const [modal, setModal] = useState<null | "recusar" | "mais_info" | "envio">(null);
   const [pendingAverbacao, setPendingAverbacao] = useState(false);
+  // Exigências definidas pela prefeitura do convênio ativo (algumas exigem CCB/2FA, outras não).
+  const convQ = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
+  const activeConv = convQ.data?.convenios.find((c) => c.id === convQ.data!.activeId);
+  const exigeCcb = activeConv?.exigeCcb ?? false;
+  const exigeBanco2FA = activeConv?.exigeBanco2FA ?? false;
 
   if (!proposta) {
     return (
@@ -71,13 +78,19 @@ export function BancoPropostaDetalhe() {
   // torna a margem efetiva). Exige 2FA antes de aplicar o patch.
   const confirmarAverbacao = () => {
     if (confirmando) return; // idempotencia contra double-click
+    // 2FA só se a prefeitura exigir; senão averba direto.
+    if (!exigeBanco2FA) { void executarConfirmacao(); return; }
     setPendingAverbacao(true);
   };
   const executarConfirmacao = async () => {
     if (confirmando) return; // guarda extra contra 2FA disparado 2x
     setConfirmando(true);
     try {
-      if (transicionar(["formalizada"], "averbada")) refresh();
+      // Se a prefeitura não exige CCB, pode averbar direto de qualquer etapa acionável.
+      const origem = exigeCcb
+        ? (["formalizada"] as BancoProposta["status"][])
+        : (["recebida", "em_analise", "mais_info", "aprovada", "aguardando_formalizacao", "formalizada"] as BancoProposta["status"][]);
+      if (transicionar(origem, "averbada")) refresh();
     } finally {
       setConfirmando(false);
       setPendingAverbacao(false);
@@ -189,6 +202,7 @@ export function BancoPropostaDetalhe() {
           proposta={proposta}
           podeAgir={perfil.perms.aprovacao}
           perfilNome={perfil.nome}
+          exigeCcb={exigeCcb}
           onAprovar={aprovar}
           onEnviarLink={() => setModal("envio")}
           onRegistrarFormalizacao={registrarFormalizacao}
@@ -242,6 +256,7 @@ function NextStep({
   proposta,
   podeAgir,
   perfilNome,
+  exigeCcb,
   onAprovar,
   onEnviarLink,
   onRegistrarFormalizacao,
@@ -252,6 +267,7 @@ function NextStep({
   proposta: BancoProposta;
   podeAgir: boolean;
   perfilNome: string;
+  exigeCcb: boolean;
   onAprovar: () => void;
   onEnviarLink: () => void;
   onRegistrarFormalizacao: () => void;
@@ -267,6 +283,21 @@ function NextStep({
       <span style={{ color: "var(--text-muted)", fontSize: 14 }}>
         Seu perfil <strong>{perfilNome}</strong> tem apenas permissão de consulta. Ações indisponíveis nesta etapa.
       </span>
+    );
+  }
+
+  // Prefeitura NÃO exige CCB: banco averba direto, sem anexar contrato.
+  if (!exigeCcb && acionavel && s !== "formalizada") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
+          Esta prefeitura não exige anexo da CCB. Você pode averbar diretamente e liberar o recurso ao servidor.
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Button variant="primary" onClick={onConfirmarAverbacao}>Averbar contrato</Button>
+          <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
+        </div>
+      </div>
     );
   }
 

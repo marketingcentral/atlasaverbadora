@@ -96,6 +96,9 @@ export interface PrefeituraAdmin {
   passwordHash?: string;
   servidoresCount: number;
   ultimaSincronizacao?: string;
+  /** Exigências que a prefeitura impõe ao banco na averbação (algumas exigem, outras não). */
+  exigeCcb?: boolean;
+  exigeBanco2FA?: boolean;
 }
 
 export function sanitizePrefeitura(p: PrefeituraAdmin) {
