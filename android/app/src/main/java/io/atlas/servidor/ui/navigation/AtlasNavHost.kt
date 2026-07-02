@@ -4,13 +4,11 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import io.atlas.servidor.ui.analise.EmAnaliseScreen
 import io.atlas.servidor.ui.auth.LoginScreen
 import io.atlas.servidor.ui.auth.PrimeiroAcessoScreen
 import io.atlas.servidor.ui.margem.MargemTravadaScreen
 import io.atlas.servidor.ui.matricula.SelecionarMatriculaScreen
 import io.atlas.servidor.ui.shell.MainShell
-import io.atlas.servidor.ui.simular.SimularScreen
 
 @Composable
 fun AtlasNavHost(startDestination: String) {
@@ -46,8 +44,6 @@ fun AtlasNavHost(startDestination: String) {
 
         composable(Routes.MAIN) {
             MainShell(
-                onOpenSimular = { nav.navigate(Routes.SIMULAR) },
-                onOpenAnalise = { nav.navigate(Routes.EM_ANALISE) },
                 onOpenMargem = { nav.navigate(Routes.MARGEM_TRAVADA) },
                 onSwitchMatricula = { nav.navigate(Routes.SELECIONAR_MATRICULA) },
                 onLoggedOut = {
@@ -56,21 +52,6 @@ fun AtlasNavHost(startDestination: String) {
                     }
                 },
             )
-        }
-
-        composable(Routes.SIMULAR) {
-            SimularScreen(
-                onBack = { nav.popBackStack() },
-                onSolicitado = {
-                    nav.navigate(Routes.EM_ANALISE) {
-                        popUpTo(Routes.MAIN)
-                    }
-                },
-            )
-        }
-
-        composable(Routes.EM_ANALISE) {
-            EmAnaliseScreen(onBack = { nav.popBackStack() })
         }
 
         composable(Routes.MARGEM_TRAVADA) {

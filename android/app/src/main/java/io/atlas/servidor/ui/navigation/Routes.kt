@@ -11,6 +11,8 @@ object Routes {
 
     // Bottom-tab destinations (inner graph)
     const val TAB_INICIO = "tab_inicio"
+    const val TAB_SIMULAR = "tab_simular"
+    const val TAB_ANALISE = "tab_analise"
     const val TAB_CONTRATOS = "tab_contratos"
     const val TAB_CONTA = "tab_conta"
 }

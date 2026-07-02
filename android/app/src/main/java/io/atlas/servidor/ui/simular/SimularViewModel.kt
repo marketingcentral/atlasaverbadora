@@ -66,6 +66,9 @@ class SimularViewModel : ViewModel() {
     val margemDisponivel: Double get() = matricula?.margem?.margem?.disponivel ?: 0.0
     val valorMaximo: Double get() = Simulation.valorMaximo(margemDisponivel, parcelas, taxaAm)
 
+    /** Expiração da trava de 48h da matrícula atual (null se liberada). Chave = matrícula. */
+    fun lockExpiry(): Long? = matricula?.matricula?.let { prefs.simLockExpiry(it) }
+
     fun result(): Simulation.Result = Simulation.simular(valor, parcelas, taxaAm, margemDisponivel)
 
     fun updateValor(v: Double) {
@@ -87,13 +90,14 @@ class SimularViewModel : ViewModel() {
 
     fun solicitar(onDone: () -> Unit) {
         val m = matricula ?: return
+        if (lockExpiry() != null) return // já há uma pré-reserva ativa (trava de 48h)
         submitting = true
         viewModelScope.launch {
             val r = result()
             repo.createProposal(
                 ProposalRequestEntity(
                     matricula = m.matricula,
-                    bancoNome = bancoNome.ifBlank { "Banco parceiro" },
+                    bancoNome = "Banco Atlas",
                     cidade = cidade,
                     valor = r.valor,
                     parcelas = r.parcelas,
@@ -103,6 +107,8 @@ class SimularViewModel : ViewModel() {
                     status = "EM_ANALISE",
                 ),
             )
+            // Trava a margem por 48h (uma pré-reserva por vez), como no sistema web.
+            prefs.setSimLock(m.matricula)
             submitting = false
             onDone()
         }

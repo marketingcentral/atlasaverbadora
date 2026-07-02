@@ -70,6 +70,9 @@ class HomeViewModel : ViewModel() {
             ?: data.matriculas.firstOrNull()
     }
 
+    /** Expiração da trava de 48h da matrícula ativa (null se liberada). */
+    fun lockExpiry(): Long? = current()?.matricula?.let { prefs.simLockExpiry(it) }
+
     fun logout(onDone: () -> Unit) {
         viewModelScope.launch {
             auth.logout()

@@ -15,7 +15,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -28,33 +32,36 @@ import io.atlas.servidor.domain.Format
 import io.atlas.servidor.ui.components.AtlasCard
 import io.atlas.servidor.ui.components.ChipTone
 import io.atlas.servidor.ui.components.InfoRow
-import io.atlas.servidor.ui.components.BackHeader
 import io.atlas.servidor.ui.components.StatusChip
 import io.atlas.servidor.ui.theme.DangerRed
 import io.atlas.servidor.ui.theme.Fundo
 import io.atlas.servidor.ui.theme.Ink
 import io.atlas.servidor.ui.theme.InkMuted
+import io.atlas.servidor.ui.theme.Verde
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+private const val LOCK_MS = 48L * 60L * 60L * 1000L
+
 @Composable
 fun EmAnaliseScreen(
-    onBack: () -> Unit,
     vm: EmAnaliseViewModel = viewModel(),
 ) {
     val proposals by vm.proposals.observeAsState(emptyList())
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(Unit) {
+        while (true) { now = System.currentTimeMillis(); kotlinx.coroutines.delay(1000) }
+    }
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Fundo)
-            .padding(20.dp),
+        modifier = Modifier.fillMaxSize().background(Fundo).padding(20.dp),
     ) {
-        BackHeader("Em análise", onBack)
-        Spacer(Modifier.height(8.dp))
+        Text("Em análise", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+        Spacer(Modifier.height(6.dp))
         Text(
-            "Pré-reservas com a margem bloqueada por até 48h enquanto o banco analisa.",
+            "Pré-reservas com a margem bloqueada por até 48h enquanto o banco analisa. " +
+                "Você mantém apenas uma pré-reserva por vez.",
             color = InkMuted,
             fontSize = 14.sp,
         )
@@ -67,7 +74,7 @@ fun EmAnaliseScreen(
         } else {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 proposals.forEach { p ->
-                    ProposalCard(p, onCancel = { vm.cancelar(p.id) })
+                    ProposalCard(p, now, onCancel = { vm.cancelar(p.id, p.matricula) })
                     Spacer(Modifier.height(12.dp))
                 }
             }
@@ -76,7 +83,10 @@ fun EmAnaliseScreen(
 }
 
 @Composable
-private fun ProposalCard(p: ProposalRequestEntity, onCancel: () -> Unit) {
+private fun ProposalCard(p: ProposalRequestEntity, now: Long, onCancel: () -> Unit) {
+    val releaseAt = p.createdAt + LOCK_MS
+    val remaining = releaseAt - now
+    val liberada = remaining <= 0
     AtlasCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -87,13 +97,17 @@ private fun ProposalCard(p: ProposalRequestEntity, onCancel: () -> Unit) {
                 Text(p.bancoNome, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text("Solicitado ${formatDate(p.createdAt)}", color = InkMuted, fontSize = 12.sp)
             }
-            StatusChip("Em análise", ChipTone.Ambar)
+            StatusChip(if (liberada) "Liberada" else "Em análise", if (liberada) ChipTone.Verde else ChipTone.Ambar)
         }
         Spacer(Modifier.height(12.dp))
         InfoRow("Valor", Format.money(p.valor))
         InfoRow("Prazo", "${p.parcelas} parcelas")
         InfoRow("Parcela", Format.money(p.parcelaMensal))
-        InfoRow("Margem", "Bloqueada por 48h")
+        InfoRow(
+            "Margem",
+            if (liberada) "Liberada" else "Libera em ${formatShort(remaining)}",
+            valueColor = if (liberada) Verde else Ink,
+        )
         Spacer(Modifier.height(4.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             TextButton(onClick = onCancel) {
@@ -101,6 +115,14 @@ private fun ProposalCard(p: ProposalRequestEntity, onCancel: () -> Unit) {
             }
         }
     }
+}
+
+private fun formatShort(ms: Long): String {
+    if (ms <= 0) return "0min"
+    val totalMin = ms / 60000
+    val h = totalMin / 60
+    val m = totalMin % 60
+    return if (h > 0) "${h}h ${m}min" else "${m}min"
 }
 
 private fun formatDate(millis: Long): String {

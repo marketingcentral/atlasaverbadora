@@ -16,7 +16,11 @@ class EmAnaliseViewModel : ViewModel() {
     val proposals: LiveData<List<ProposalRequestEntity>> =
         repo.observeProposals(prefs.selectedMatricula ?: "").asLiveData()
 
-    fun cancelar(id: Long) {
-        viewModelScope.launch { repo.deleteProposal(id) }
+    /** Cancela a pré-reserva e libera a trava de 48h daquela matrícula. */
+    fun cancelar(id: Long, matricula: String) {
+        viewModelScope.launch {
+            repo.deleteProposal(id)
+            prefs.clearSimLock(matricula)
+        }
     }
 }
