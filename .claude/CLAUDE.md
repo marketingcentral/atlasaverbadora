@@ -62,6 +62,17 @@ Monorepo pnpm + Turborepo:
 
 Se o `git push` travar pedindo credencial do Git Credential Manager, **avise o usuario e pare** — nao ficar tentando em loop. Nao commitar arquivos sensiveis (`.dev.vars`, `env`, segredos) — confira `.gitignore` antes.
 
+## ⚠️ Coordenacao de DEPLOY entre sessoes (LEIA — ha sessoes paralelas)
+> **Cloudflare Pages (`atlas-web`) NAO tem git auto-deploy. Cada `wrangler pages deploy` sobrescreve o alias de producao (`atlas-web-6ef.pages.dev`) inteiro.** Se voce buildar de um checkout desatualizado, seu deploy **apaga do ar** o que a outra sessao acabou de subir (mesmo estando commitado no `main`). Ja aconteceu 2x em 2026-07-03: um deploy antigo sobrescreveu a feature de "Desativar token".
+>
+> **Regra obrigatoria antes de QUALQUER build+deploy do web:**
+> 1. `git fetch origin main` e garanta que seu HEAD == `origin/main` (nao builde adiantado de um HEAD atrasado).
+> 2. Rebuild a partir do HEAD: `pnpm --filter @atlas/sdk build` (dist) **depois** `pnpm --filter @atlas/web build`.
+> 3. So entao `wrangler pages deploy apps/web/dist --project-name=atlas-web --commit-dirty=true`.
+> 4. Verifique o bundle no ar: `curl -s https://atlas-web-6ef.pages.dev/ | grep -oE 'index-[A-Za-z0-9_-]+\.js'` deve bater com o `apps/web/dist/assets/`. (O `index.html` do alias tem cache de CDN de ~1min — confira tambem o deployment especifico `<hash>.atlas-web-6ef.pages.dev`.)
+>
+> **Estado atual (2026-07-03):** a tela `averbadora/api/tokens` usa botao **"Desativar token" / "Reativar token"** (pause reversivel do token, sem excluir e sem desativar o perfil/parceria) — NAO ha mais icone de lixeira/"Revogar". Se a producao mostrar lixeira, e deploy velho: rebuild do HEAD e redeploy. Nao reintroduza exclusao de token/webhook (regra: nunca hard-delete, so desativar).
+
 ## Como trabalhar
 - Antes de tocar UI, **consulte o MCP `atlas-design-system`** ou a skill `atlas-design-system`.
 - Antes de tocar integracao bancaria, **consulte o MCP `atlas-bank-sandbox`** e os BPMNs em `integracao_exemplo/Rotas Banco 1/`.
