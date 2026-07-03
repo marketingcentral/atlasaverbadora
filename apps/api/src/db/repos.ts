@@ -193,6 +193,26 @@ export async function setServidorPassword(env: Env, cpf: string, passwordHash: s
   return rows.length;
 }
 
+/** Atualiza email e/ou telefone no jsonb `data` de todas as matrículas do CPF. */
+export async function setServidorContato(
+  env: Env,
+  cpf: string,
+  contato: { email?: string; telefone?: string },
+): Promise<number> {
+  if (contato.email === undefined && contato.telefone === undefined) return 0;
+  let expr = sql`COALESCE(data, '{}'::jsonb)`;
+  if (contato.email !== undefined) {
+    expr = sql`jsonb_set(${expr}, '{email}', to_jsonb(${contato.email}::text), true)`;
+  }
+  if (contato.telefone !== undefined) {
+    expr = sql`jsonb_set(${expr}, '{telefone}', to_jsonb(${contato.telefone}::text), true)`;
+  }
+  const rows = (await getDb(env).execute(
+    sql`UPDATE servidores SET data = ${expr} WHERE cpf = ${cpf} RETURNING id`,
+  )) as unknown as { id: number }[];
+  return rows.length;
+}
+
 export async function seedServidoresIfEmpty(env: Env, seed: ServidorBuscaMock[]): Promise<boolean> {
   const db = getDb(env);
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM servidores`)) as unknown as { n: number }[];

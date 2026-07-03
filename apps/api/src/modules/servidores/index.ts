@@ -8,6 +8,21 @@ import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from ".
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
 import { listContratos, criarContratoOuReserva } from "../portal-banco/store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
+import { sha256Hex } from "../admin/api-tokens.js";
+import { setServidorPassword, setServidorContato } from "../../db/repos.js";
+
+/** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
+function maskEmailSrv(email?: string): string {
+  if (!email || !email.includes("@")) return "seu e-mail";
+  const [user = "", domain = ""] = email.split("@");
+  return `${user.slice(0, 2)}•••@${domain}`;
+}
+function code6(): string {
+  const b = new Uint8Array(4);
+  crypto.getRandomValues(b);
+  const n = ((b[0]! << 24) | (b[1]! << 16) | (b[2]! << 8) | b[3]!) >>> 0;
+  return String(100000 + (n % 900000));
+}
 
 // Dev shadow data — mirrors the SERVIDORES_BUSCA_MOCK identities (source of truth used
 // by todos os outros perfis), para o servidor ver os MESMOS dados.
@@ -307,6 +322,63 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         expira_em: ct.expiracao,
       }));
     return c.json({ propostas });
+  })
+  // Envia um código de verificação (test-mode: retorna no corpo) pro e-mail do servidor.
+  .post("/v1/servidores/me/codigo", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
+    const codigo = code6();
+    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`chg:${s.cpf}`, codigo, { expirationTtl: 600 });
+    return c.json({ enviado: true, destino: maskEmailSrv(entry?.email), codigo_teste: codigo });
+  })
+  // Atualiza e-mail/telefone (exige o código enviado). Persiste no Postgres.
+  .post("/v1/servidores/me/contato", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = z
+      .object({ codigo: z.string(), email: z.string().email().optional(), telefone: z.string().optional() })
+      .parse(await c.req.json());
+    if (!c.env.KV_SESSIONS) throw Errors.validation({ kv: "indisponível" });
+    const stored = await c.env.KV_SESSIONS.get(`chg:${s.cpf}`);
+    if (!stored || stored !== body.codigo) throw Errors.unauthorized("Código inválido ou expirado");
+    const n = await setServidorContato(c.env, s.cpf, { email: body.email, telefone: body.telefone });
+    SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => {
+      if (body.email !== undefined) x.email = body.email;
+      if (body.telefone !== undefined) x.telefone = body.telefone;
+    });
+    await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
+    return c.json({ ok: n > 0, email: body.email, telefone: body.telefone });
+  })
+  // Troca de senha: valida a senha atual + o código. Persiste o novo hash no Postgres.
+  .post("/v1/servidores/me/senha", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = z
+      .object({ senha_atual: z.string(), codigo: z.string(), nova_senha: z.string().min(8) })
+      .parse(await c.req.json());
+    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
+    const atualHash = await sha256Hex(body.senha_atual);
+    if (entry?.passwordHash && entry.passwordHash !== atualHash) {
+      throw Errors.unauthorized("Senha atual incorreta");
+    }
+    if (!c.env.KV_SESSIONS) throw Errors.validation({ kv: "indisponível" });
+    const stored = await c.env.KV_SESSIONS.get(`chg:${s.cpf}`);
+    if (!stored || stored !== body.codigo) throw Errors.unauthorized("Código inválido ou expirado");
+    const novoHash = await sha256Hex(body.nova_senha);
+    await setServidorPassword(c.env, s.cpf, novoHash);
+    SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = novoHash; });
+    await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
+    return c.json({ ok: true });
   })
   .get("/v1/servidores/:id", async (c) => {
     const j = c.get("jwt");
