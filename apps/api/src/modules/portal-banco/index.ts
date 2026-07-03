@@ -6,7 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
 import { prefeituras } from "../admin/index.js";
-import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato } from "./store.js";
+import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario } from "./cadastros.js";
 
 function requireBancoRole(j: JwtClaims): void {
@@ -212,6 +212,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const j = c.get("jwt");
     requireBancoRole(j);
     const activeConv = await getActiveConvenioId(c.env, j);
+    await refreshContratos(c.env); // vê propostas/reservas criadas pelo servidor em outros isolates
     const url = new URL(c.req.url);
     const colaborador = url.searchParams.get("colaborador");
     const filtroSituacao: string[] = [];
@@ -223,13 +224,21 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       matricula: colaborador ?? undefined,
       situacao: filtroSituacao.length ? filtroSituacao : undefined,
     });
-    return c.json({ contratos: rows, total: rows.length });
+    // Propostas/reservas do servidor caem em qualquer convênio do banco — elas
+    // SEMPRE aparecem na fila (independe do convênio ativo do switcher), senão o
+    // banco não veria a solicitação recém-criada pelo servidor.
+    const bancoId = j.banco_id ?? 1;
+    const reservas = listContratos({})
+      .filter((ct) => ct.bancoId === bancoId && ct.situacao.toLowerCase().includes("aguard") && !rows.some((r) => r.adf === ct.adf));
+    const contratos = [...reservas, ...rows];
+    return c.json({ contratos, total: contratos.length });
   })
 
   // --------- Detalhe contrato ----------
   .get("/v1/portal/banco/contratos/:adf", async (c) => {
     requireBancoRole(c.get("jwt"));
     const adf = c.req.param("adf");
+    await refreshContratos(c.env);
     const ct = getContrato(adf);
     if (!ct) throw Errors.notFound("contrato");
     return c.json({
@@ -269,6 +278,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const body = z
       .object({ motivo: z.string().optional(), parcelasExtras: z.number().int().optional(), observacoes: z.string().optional(), codigoVerba: z.string().optional() })
       .parse(raw);
+    await refreshContratos(c.env); // garante que o contrato/reserva (de outro isolate) esteja no Map antes de agir
     const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
     if (!r) throw Errors.notFound("contrato");
     await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
@@ -453,6 +463,7 @@ async function persistir(
   body: z.infer<typeof NovoContratoBody>,
   isReserva: boolean,
 ) {
+  await refreshContratos(env); // sincroniza contador de adf entre isolates antes de criar
   const activeConvenioId = await getActiveConvenioId(env, j);
   const conv = CONVENIOS_MOCK.find((c) => c.id === activeConvenioId);
   const colaborador = SERVIDORES_BUSCA_MOCK.find((s) => s.idMatricula === body.idMatricula);

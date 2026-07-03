@@ -6,7 +6,7 @@ import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
-import { listContratos, criarContratoOuReserva, persistContrato } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos } from "../portal-banco/store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
@@ -265,6 +265,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!entry) throw Errors.notFound("matricula");
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
     const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxaAm });
+    await refreshContratos(c.env); // sincroniza o contador de adf entre isolates antes de criar
     const contrato = criarContratoOuReserva({
       bancoId: conv?.bancoId ?? 1,
       servidorId: s.id,
@@ -309,6 +310,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await ensureBancosLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
+    await refreshContratos(c.env); // vê reservas criadas em outros isolates
     const mats = new Set(SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((e) => e.matricula));
     const propostas = listContratos({})
       .filter((ct) => mats.has(ct.matricula))

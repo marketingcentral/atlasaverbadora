@@ -42,7 +42,19 @@ export interface ContratoEvento {
 const _contratos = new Map<string, ContratoFull>();
 const _eventos: ContratoEvento[] = [];
 let _eventoId = 1;
-let _adfCounter = 9_000_000;
+
+/** Gera um adf único (colisão-resistente entre isolates). Usa crypto random +
+ *  checagem no Map (que foi sincronizado do Postgres via refreshContratos antes
+ *  de criar). Nunca chamar em escopo de módulo — só durante uma request. */
+function nextAdf(): string {
+  for (let i = 0; i < 8; i++) {
+    const buf = new Uint32Array(1);
+    crypto.getRandomValues(buf);
+    const adf = String(9_000_000 + (buf[0]! % 990_000)); // 9.000.000–9.989.999
+    if (!_contratos.has(adf)) return adf;
+  }
+  return String(9_000_000 + (Number(new Date()) % 990_000));
+}
 
 // Helpers (declared before seed loop to avoid TDZ on `const MESES`).
 
@@ -125,13 +137,7 @@ export function ensureContratosLoaded(env: Env): Promise<void> {
         const rows = await loadContratos(env);
         if (rows.length > 0) {
           _contratos.clear();
-          let maxAdf = _adfCounter - 1;
-          for (const r of rows) {
-            _contratos.set(r.adf, r as unknown as ContratoFull);
-            const n = Number(r.adf);
-            if (Number.isFinite(n)) maxAdf = Math.max(maxAdf, n);
-          }
-          _adfCounter = maxAdf + 1; // evita colidir adf de novas reservas com os já persistidos
+          for (const r of rows) _contratos.set(r.adf, r as unknown as ContratoFull);
         }
         _hydrated = true;
       } catch {
@@ -147,6 +153,21 @@ export async function persistContrato(env: Env, adf: string): Promise<void> {
   const c = _contratos.get(adf);
   if (!c) return;
   try { await upsertContrato(env, c as unknown as { adf: string; [k: string]: unknown }); } catch { /* fail-safe */ }
+}
+
+/**
+ * Read-through: re-carrega os contratos do Postgres e faz merge no Map deste
+ * isolate. O hydrate de boot roda só uma vez, então sem isto uma reserva criada
+ * por OUTRO isolate não apareceria aqui. Chamado no início dos endpoints de
+ * leitura (e antes de criar, pra sincronizar o contador de adf entre isolates).
+ * Best-effort: falha de DB mantém o estado em memória.
+ */
+export async function refreshContratos(env: Env): Promise<void> {
+  try {
+    await ensureContratosLoaded(env); // garante schema + seed inicial
+    const rows = await loadContratos(env);
+    for (const r of rows) _contratos.set(r.adf, r as unknown as ContratoFull);
+  } catch { /* fail-safe: segue com o Map em memória */ }
 }
 
 export function listContratos(filters: { convenioId?: string; matricula?: string; situacao?: string[] } = {}): ContratoFull[] {
@@ -208,7 +229,7 @@ export interface NovoContratoInput {
 }
 
 export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
-  const adf = String(_adfCounter++);
+  const adf = nextAdf();
   const expiracao = input.isReserva ? addDaysISO(2) : null;
   const valorLiquido = input.valorFinanciado - input.iof;
   const c: ContratoFull = {
