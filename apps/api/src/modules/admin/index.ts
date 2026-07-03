@@ -94,6 +94,8 @@ export interface PrefeituraAdmin {
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
   status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
+  /** E-mail de contato do responsável da prefeitura (persistido). Separado do loginEmail. */
+  contatoEmail?: string;
   passwordHash?: string;
   servidoresCount: number;
   ultimaSincronizacao?: string;
@@ -633,6 +635,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         modoIntegracao: z.enum(["REST", "SOAP", "CSV", "MANUAL"]),
         status: z.enum(["ativo", "pausado", "inativo"]),
         loginEmail: z.string().email().optional().or(z.literal("")),
+        contatoEmail: z.string().email().optional().or(z.literal("")),
         password: z.string().min(6).optional(),
         servidoresCount: z.number().int().default(0),
       })

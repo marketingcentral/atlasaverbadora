@@ -127,6 +127,7 @@ function rowToPrefeitura(row: typeof prefeiturasTable.$inferSelect): PrefeituraA
     modoIntegracao: (row.modoIntegracao as PrefeituraAdmin["modoIntegracao"]) ?? "REST",
     status: (row.status as PrefeituraAdmin["status"]) ?? "ativo",
     loginEmail: cfg.loginEmail as string | undefined,
+    contatoEmail: cfg.contatoEmail as string | undefined,
     passwordHash: cfg.passwordHash as string | undefined,
     servidoresCount: (cfg.servidoresCount as number) ?? 0,
     ultimaSincronizacao: row.ultimaSincronizacao ? new Date(row.ultimaSincronizacao).toISOString() : undefined,
@@ -141,7 +142,7 @@ export async function loadPrefeituras(env: Env): Promise<PrefeituraAdmin[]> {
 }
 
 export async function upsertPrefeitura(env: Env, p: PrefeituraAdmin): Promise<void> {
-  const cfg = { loginEmail: p.loginEmail, passwordHash: p.passwordHash, servidoresCount: p.servidoresCount, exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false };
+  const cfg = { loginEmail: p.loginEmail, contatoEmail: p.contatoEmail, passwordHash: p.passwordHash, servidoresCount: p.servidoresCount, exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false };
   const sync = p.ultimaSincronizacao ? new Date(p.ultimaSincronizacao).toISOString() : null;
   await getDb(env).execute(sql`
     INSERT INTO prefeituras (id, nome, uf, municipio_ibge, modo_integracao, status, ultima_sincronizacao, config)

@@ -110,6 +110,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
     modoIntegracao: initial?.modoIntegracao ?? "REST",
     status: initial?.status ?? "ativo",
     loginEmail: initial?.loginEmail ?? "",
+    contatoEmail: initial?.contatoEmail ?? "",
     password: "",
     servidoresCount: initial?.servidoresCount ?? 0,
   });
@@ -118,6 +119,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
     mutationFn: () => {
       const payload: AdminPrefeituraInput = { ...form };
       if (!payload.loginEmail) delete payload.loginEmail;
+      if (!payload.contatoEmail) delete payload.contatoEmail;
       if (!payload.password) delete payload.password;
       return atlas.admin.upsertPrefeitura(payload);
     },
@@ -157,6 +159,13 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
             value={form.loginEmail ?? ""}
             onChange={(e) => setForm({ ...form, loginEmail: e.target.value })}
             placeholder="rh@prefeitura.gov.br"
+          />
+          <TextField
+            label="Email de contato do responsável"
+            type="email"
+            value={form.contatoEmail ?? ""}
+            onChange={(e) => setForm({ ...form, contatoEmail: e.target.value })}
+            placeholder="responsavel@prefeitura.gov.br"
           />
           <TextField
             label={initial?.hasPassword ? "Nova senha (opcional)" : "Senha"}

@@ -139,6 +139,7 @@ export interface AdminPrefeitura {
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
   status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
+  contatoEmail?: string;
   hasPassword: boolean;
   servidoresCount: number;
   ultimaSincronizacao?: string;
@@ -152,6 +153,7 @@ export interface AdminPrefeituraInput {
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
   status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
+  contatoEmail?: string;
   password?: string;
   servidoresCount?: number;
 }

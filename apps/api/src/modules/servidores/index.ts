@@ -126,7 +126,12 @@ function resolveServidor(j: JwtClaims): ResolvedServidor | null {
   if (dev) {
     // Prefer the Postgres-hydrated row for this identity (SERVIDORES_BUSCA_MOCK is
     // replaced by loadServidores() em ensureServidoresLoaded). Fall back ao shadow dev.
-    const fx = SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf);
+    // Um mesmo CPF pode estar em >1 convênio/prefeitura — casa pelo convênio do dev
+    // (determinístico) pra o servidor cair sempre na prefeitura esperada (login),
+    // senão a ordem do Postgres decide e o ciclo com a prefeitura logada não bate.
+    const fx =
+      SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf && s.idConvenio === dev.idConvenio) ??
+      SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf);
     return fx ? fromFixture(fx) : { ...dev, fromFixture: true };
   }
   // ids sintéticos (últimos 5 dígitos da idMatricula) usados quando o servidor vem da fixture
@@ -260,6 +265,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       })
       .parse(await c.req.json());
     const entry =
+      SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === s.matricula) ??
       SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && (!body.matricula || x.matricula === body.matricula)) ??
       SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
     if (!entry) throw Errors.notFound("matricula");
