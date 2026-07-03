@@ -3,16 +3,17 @@ import { z } from "zod";
 import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
-import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
+import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
-import { createToken, deleteToken, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
+import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs } from "../../db/repos.js";
+import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { WEBHOOK_EVENTS, createWebhook, fireEvent, listDeliveries, listWebhooks, removeWebhook, testWebhookEvents, toggleWebhook, type WebhookEvent } from "./webhooks.js";
+import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
-import { deleteConvenioConfig, getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
+import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import { cancelPreReserva, countExpiringNext24h, getPreReserva, listPreReservas, summarizePreReservas, sweepExpired, type PreReservaStatus } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
@@ -91,11 +92,14 @@ export interface PrefeituraAdmin {
   uf: string;
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
-  status: "ativo" | "pausado";
+  status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
   passwordHash?: string;
   servidoresCount: number;
   ultimaSincronizacao?: string;
+  /** Exigências que a prefeitura impõe ao banco na averbação (algumas exigem, outras não). */
+  exigeCcb?: boolean;
+  exigeBanco2FA?: boolean;
 }
 
 export function sanitizePrefeitura(p: PrefeituraAdmin) {
@@ -156,6 +160,19 @@ export function ensureBancosLoaded(env: Env): Promise<void> {
 /** Write-through best-effort: persiste o banco no Postgres sem quebrar a request. */
 async function persistBanco(env: Env, b: BancoAdmin): Promise<void> {
   try { await upsertBanco(env, b); } catch (e) { pushEvent("warn", "db.bancos.write_failed", `Falha ao persistir banco ${b.id}: ${(e as Error).message}`); }
+}
+
+/**
+ * Cascade de acesso dos WEBHOOKS de um banco conforme o status dele (banco
+ * pausado → webhooks param de entregar; ativo → retomam). Os TOKENS não são
+ * escritos aqui: o efeito do banco-inativo sobre tokens é derivado em tempo de
+ * leitura (overlay na listagem + middleware de auth), para não sobrescrever o
+ * pause MANUAL individual de um token (que deve sobreviver à reativação do banco).
+ */
+function syncBancoAccess(b: BancoAdmin): { webhooks: number } {
+  const paused = b.status !== "ativo";
+  const webhooks = setWebhooksPausedForPartner("banco", b.id, paused);
+  return { webhooks };
 }
 
 export const prefeituras: PrefeituraAdmin[] = [
@@ -223,11 +240,43 @@ const vitrine: VitrineBanner[] = [
 type ServidorStatus = "ativo" | "bloqueado" | "arquivado";
 const servidorStatusOverride = new Map<string, ServidorStatus>();
 
-const _events: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string }[] = [];
-const pushEvent = (level: "info" | "warn" | "error", source: string, message: string, trace_id = randomTrace()) => {
-  _events.unshift({ ts: new Date().toISOString(), level, trace_id, message, source });
-  if (_events.length > 200) _events.length = 200;
+export type LogPerfil = "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema";
+/** Deriva o perfil (aba do log) a partir do prefixo do source. */
+export function perfilDoSource(source: string): LogPerfil {
+  if (source.startsWith("admin") || source.startsWith("averbadora")) return "averbadora";
+  if (source.startsWith("portal.banco") || source.startsWith("banco") || source === "bank") return "banco";
+  if (source.startsWith("prefeitura")) return "prefeitura";
+  if (source.startsWith("servidor")) return "servidor";
+  return "sistema";
+}
+type LogEntry = { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string; perfil: LogPerfil };
+const _events: LogEntry[] = [];
+const pushEvent = (level: "info" | "warn" | "error", source: string, message: string, trace_id = randomTrace()): LogEntry => {
+  const entry: LogEntry = { ts: new Date().toISOString(), level, trace_id, message, source, perfil: perfilDoSource(source) };
+  _events.unshift(entry);
+  if (_events.length > 400) _events.length = 400;
+  return entry;
 };
+
+/** Registra uma mutação (POST/PATCH/DELETE) no log do perfil correspondente,
+ *  em memória. Usado pelo middleware global. Ver logMutacaoPersistido para o
+ *  write-through compartilhado entre isolates. */
+export function logMutacao(role: string | undefined, method: string, path: string, ok: boolean): void {
+  const perfil: LogPerfil = role === "averbadora" ? "averbadora" : role === "banco" ? "banco" : role === "prefeitura" ? "prefeitura" : role === "servidor" ? "servidor" : "sistema";
+  const source = perfil === "averbadora" ? "admin.mutacao" : `${perfil}.mutacao`;
+  pushEvent(ok ? "info" : "warn", source, `${method} ${path}${ok ? "" : " (falhou)"}`);
+}
+
+/** Igual a logMutacao, mas também persiste no Postgres (app_logs) via waitUntil,
+ *  para que a alteração apareça no log mesmo se o GET /logs cair em outro isolate.
+ *  Best-effort: falha de banco nunca quebra a request. */
+export function logMutacaoPersistido(env: Env, waitUntil: ((p: Promise<unknown>) => void) | undefined, role: string | undefined, method: string, path: string, ok: boolean): void {
+  const perfil: LogPerfil = role === "averbadora" ? "averbadora" : role === "banco" ? "banco" : role === "prefeitura" ? "prefeitura" : role === "servidor" ? "servidor" : "sistema";
+  const source = perfil === "averbadora" ? "admin.mutacao" : `${perfil}.mutacao`;
+  const entry = pushEvent(ok ? "info" : "warn", source, `${method} ${path}${ok ? "" : " (falhou)"}`);
+  const p = appendLog(env, entry).catch(() => undefined);
+  if (waitUntil) waitUntil(p); else void p;
+}
 function randomTrace(): string {
   return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
 }
@@ -489,6 +538,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       };
       pushEvent("info", "admin", `Banco "${bancos[idx]!.nome}" atualizado${password ? " (senha trocada)" : ""}`);
       await persistBanco(c.env, bancos[idx]!);
+      const casc = syncBancoAccess(bancos[idx]!); // status ativo↔inativo → retoma/pausa webhooks (tokens são derivados)
+      if (casc.webhooks) {
+        const verbo = bancos[idx]!.status === "ativo" ? "reativados" : "pausados";
+        pushEvent("info", "admin.bancos.cascata", `Banco "${bancos[idx]!.nome}" ${bancos[idx]!.status}: ${casc.webhooks} webhook(s) ${verbo} junto.`);
+      }
       return c.json({ banco: sanitizeBanco(bancos[idx]!) });
     }
     const novo: BancoAdmin = {
@@ -537,19 +591,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // codigoDemo so existe porque nao ha provider de email; em producao seria omitido.
     return c.json({ challengeId, emailMascarado: maskEmail(email), codigoDemo: codigo, expiraEmSegundos: CONFIRM_TTL_S });
   })
+  // Nunca exclui de fato — DESATIVA (status inativo). Reversível via POST /bancos (status ativo).
+  // Rota mantida por compat; body de confirmação (se enviado) é ignorado.
   .delete("/v1/admin/bancos/:id", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
     const id = Number(c.req.param("id"));
-    const conf = z.object({ challengeId: z.string(), codigo: z.string() }).parse(await c.req.json().catch(() => ({})));
-    const idx = bancos.findIndex((b) => b.id === id);
-    if (idx < 0) throw Errors.notFound("banco");
-    await verificarConfirmacao(c.env, j, conf.challengeId, conf.codigo, "excluir_banco", String(id));
-    const removed = bancos.splice(idx, 1)[0]!;
-    try { await deleteBancoRow(c.env, id); } catch (e) { pushEvent("warn", "db.bancos.delete_failed", `Falha ao apagar banco ${id} no Postgres: ${(e as Error).message}`); }
-    appendAudit({ categoria: "acesso", acao: "banco_excluido", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${removed.nome}" (id=${id}) excluido apos confirmacao por email.` });
-    pushEvent("warn", "admin.bancos.delete", `Banco "${removed.nome}" removido por user:${j.sub}`);
-    return c.body(null, 204);
+    const b = bancos.find((x) => x.id === id);
+    if (!b) throw Errors.notFound("banco");
+    b.status = "inativo";
+    await persistBanco(c.env, b);
+    const casc = syncBancoAccess(b); // pausa webhooks do banco em cascata (tokens são derivados)
+    appendAudit({ categoria: "acesso", acao: "banco_desativado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${b.nome}" (id=${id}) desativado.` });
+    pushEvent("info", "admin.bancos.desativar", `Banco "${b.nome}" desativado por user:${j.sub} — ${casc.webhooks} webhook(s) pausados junto.`);
+    return c.json({ banco: sanitizeBanco(b) });
   })
 
   .get("/v1/admin/prefeituras", async (c) => {
@@ -565,7 +620,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         uf: z.string().length(2),
         municipioIbge: z.number().int(),
         modoIntegracao: z.enum(["REST", "SOAP", "CSV", "MANUAL"]),
-        status: z.enum(["ativo", "pausado"]),
+        status: z.enum(["ativo", "pausado", "inativo"]),
         loginEmail: z.string().email().optional().or(z.literal("")),
         password: z.string().min(6).optional(),
         servidoresCount: z.number().int().default(0),
@@ -622,24 +677,23 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await persistPrefeitura(c.env, p);
     return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
+  // Nunca exclui — DESATIVA (status inativo). Reversível via POST /prefeituras.
   .delete("/v1/admin/prefeituras/:id", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
     const id = Number(c.req.param("id"));
-    const conf = z.object({ challengeId: z.string(), codigo: z.string() }).parse(await c.req.json().catch(() => ({})));
-    const idx = prefeituras.findIndex((p) => p.id === id);
-    if (idx < 0) throw Errors.notFound("prefeitura");
-    await verificarConfirmacao(c.env, j, conf.challengeId, conf.codigo, "excluir_prefeitura", String(id));
-    const removed = prefeituras.splice(idx, 1)[0]!;
-    try { await deletePrefeituraRow(c.env, id); } catch (e) { pushEvent("warn", "db.prefeituras.delete_failed", `Falha ao apagar prefeitura ${id} no Postgres: ${(e as Error).message}`); }
-    appendAudit({ categoria: "acesso", acao: "prefeitura_excluida", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${removed.nome}" (id=${id}) excluida apos confirmacao por email.` });
-    pushEvent("warn", "admin.prefeituras.delete", `Prefeitura "${removed.nome}" removida por user:${j.sub}`);
-    return c.body(null, 204);
+    const p = prefeituras.find((x) => x.id === id);
+    if (!p) throw Errors.notFound("prefeitura");
+    p.status = "inativo";
+    await persistPrefeitura(c.env, p);
+    appendAudit({ categoria: "acesso", acao: "prefeitura_desativada", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) desativada.` });
+    pushEvent("info", "admin.prefeituras.desativar", `Prefeitura "${p.nome}" desativada por user:${j.sub}`);
+    return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
 
   .get("/v1/admin/convenios", async (c) => {
     requireAdmin(c.get("jwt"));
-    const detalhado = CONVENIOS_MOCK.map((cv) => ({
+    const detalhado = CONVENIOS_MOCK.filter((cv) => cv.ativo !== false).map((cv) => ({
       ...cv,
       bancoNome: bancos.find((b) => b.id === cv.bancoId)?.nome ?? "—",
       prefeituraNome: prefeituras.find((p) => p.id === cv.prefeituraId)?.nome ?? cv.prefeitura,
@@ -698,8 +752,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       })
       .parse(await c.req.json());
     if (body.cpf !== undefined && body.cpf !== s.cpf) {
-      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === body.cpf && x.matricula !== matricula);
-      if (dup) throw Errors.validation({ cpf: `CPF já em uso pela matrícula ${dup.matricula}` });
+      // Mesmo CPF em prefeitura diferente é acúmulo legal — só bloqueia dentro da mesma prefeitura.
+      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === body.cpf && x !== s && prefeituraIdDe(x) === prefeituraIdDe(s));
+      if (dup) throw Errors.validation({ cpf: `CPF já em uso nesta prefeitura pela matrícula ${dup.matricula}` });
       s.cpf = body.cpf;
       s.cpfMasked = `${body.cpf.slice(0, 3)}.***.***-${body.cpf.slice(-2)}`;
     }
@@ -796,10 +851,25 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const url = new URL(c.req.url);
     const level = url.searchParams.get("level");
     const source = url.searchParams.get("source");
-    let rows = _events;
+    const perfil = url.searchParams.get("perfil");
+    // Junta o buffer em memória (deste isolate) com o log compartilhado do
+    // Postgres (todas as mutações de todos os isolates). Dedup por trace_id+ts.
+    let shared: AppLogRow[] = [];
+    try { shared = await loadLogs(c.env, 300); } catch { /* fail-safe: só memória */ }
+    const seen = new Set<string>();
+    const merged: LogEntry[] = [];
+    for (const e of [..._events, ...(shared as unknown as LogEntry[])]) {
+      const k = `${e.trace_id}|${e.ts}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      merged.push(e);
+    }
+    merged.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+    let rows = merged;
     if (level) rows = rows.filter((e) => e.level === level);
     if (source) rows = rows.filter((e) => e.source === source);
-    return c.json({ logs: rows.slice(0, 100) });
+    if (perfil) rows = rows.filter((e) => e.perfil === perfil);
+    return c.json({ logs: rows.slice(0, 200) });
   })
 
   .get("/v1/admin/vitrine", async (c) => {
@@ -843,7 +913,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
     const env = c.req.query("environment") as ApiEnvironment | undefined;
     const aud = c.req.query("audience") as ApiAudience | undefined;
-    const tokens = await listTokens(kv, { ...(env ? { environment: env } : {}), ...(aud ? { audience: aud } : {}) });
+    const raw = await listTokens(kv, { ...(env ? { environment: env } : {}), ...(aud ? { audience: aud } : {}) });
+    // Dois motivos independentes de um token estar inativo:
+    //  - pausedAt: pause MANUAL individual (sobrevive à reativação do banco).
+    //  - bancoInativo (derivado): o banco dono está pausado. Segue o status do
+    //    banco em tempo de leitura (fonte de verdade), sem depender do TTL do KV.
+    // Efetivamente pausado = pausedAt || bancoInativo. O front decide o rótulo/ação.
+    const tokens = raw.map((t) => {
+      const banco = t.audience === "banco" ? bancos.find((b) => b.id === t.partnerId) : undefined;
+      const bancoInativo = !!banco && banco.status !== "ativo";
+      return { ...t, bancoInativo };
+    });
     return c.json({ tokens, scopesByAudience: SCOPES_BY_AUDIENCE });
   })
   .post("/v1/admin/api-tokens", authRequired, async (c) => {
@@ -866,20 +946,32 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
     return c.json({ token, plaintext, warning: "Guarde o plaintext agora. Nao sera exibido novamente." }, 201);
   })
-  .delete("/v1/admin/api-tokens/:id", authRequired, async (c) => {
+  // Pausa/retoma UM token específico (ação manual, reversível). NÃO apaga nem
+  // revoga, e NÃO toca no perfil/parceria dono — ele continua ativo. Independe
+  // do cascade do banco: reativar o banco não desfaz um pause manual.
+  .patch("/v1/admin/api-tokens/:id/pause", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
-    const ok = await deleteToken(kv, c.req.param("id"));
-    if (!ok) throw Errors.notFound("token");
-    pushEvent("warn", "admin.api-tokens.delete", `Token ${c.req.param("id")} excluido permanentemente por user:${j.sub}`);
-    return c.body(null, 204);
+    const body = z.object({ paused: z.boolean() }).parse(await c.req.json());
+    const t = await setTokenPaused(kv, c.req.param("id"), body.paused);
+    if (!t) throw Errors.notFound("token");
+    pushEvent("info", "admin.api-tokens.pause", `Token "${t.name}" ${body.paused ? "pausado" : "reativado"} por user:${j.sub} (perfil/parceria segue ativo).`);
+    return c.json({ token: t });
   })
 
   // ===== Webhooks (admin) =====
   .get("/v1/admin/webhooks", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
     const env = c.req.query("environment") as ApiEnvironment | undefined;
-    return c.json({ webhooks: listWebhooks(env ? { environment: env } : undefined), events: WEBHOOK_EVENTS });
+    // Overlay do pause: webhook de banco pausado aparece inativo, seguindo o
+    // status do banco (fonte de verdade), independente do estado em memória
+    // deste isolate.
+    const webhooks = listWebhooks(env ? { environment: env } : undefined).map((w) => {
+      if (w.audience !== "banco") return w;
+      const banco = bancos.find((b) => b.id === w.partnerId);
+      return banco && banco.status !== "ativo" ? { ...w, active: false } : w;
+    });
+    return c.json({ webhooks, events: WEBHOOK_EVENTS });
   })
   .post("/v1/admin/webhooks", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
@@ -900,18 +992,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
     return c.json({ webhook, secret, warning: "Guarde o secret agora." }, 201);
   })
-  .patch("/v1/admin/webhooks/:id/toggle", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
-    const w = toggleWebhook(c.req.param("id"));
-    if (!w) throw Errors.notFound("webhook");
-    return c.json({ webhook: w });
-  })
-  .delete("/v1/admin/webhooks/:id", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
-    const ok = removeWebhook(c.req.param("id"));
-    if (!ok) throw Errors.notFound("webhook");
-    return c.body(null, 204);
-  })
+  // Webhooks NÃO são apagados nem pausados manualmente. Pausam/retomam em
+  // cascata com o status do banco dono (ver syncBancoAccess). Sem rota de
+  // toggle/exclusão individual.
   .get("/v1/admin/webhooks/:id/deliveries", authRequired, async (c) => {
     const j = c.get("jwt"); requireAdmin(j);
     return c.json({ deliveries: listDeliveries(c.req.param("id")) });
@@ -1087,14 +1170,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     pushEvent("info", "admin.convenios", `Convenio "${novo.nome}" criado`);
     return c.json({ convenio: novo });
   })
+  // Nunca apaga — DESATIVA (ativo=false). Sai das listagens; referências ficam intactas.
   .delete("/v1/admin/convenios/:id", async (c) => {
     requireAdmin(c.get("jwt"));
     const id = c.req.param("id");
-    const idx = CONVENIOS_MOCK.findIndex((cv) => cv.id === id);
-    if (idx < 0) throw Errors.notFound("convenio");
-    const removido = CONVENIOS_MOCK.splice(idx, 1)[0]!;
-    deleteConvenioConfig(id);
-    pushEvent("warn", "admin.convenios", `Convenio "${removido.nome}" removido por user:${c.get("jwt").sub}`);
+    const cv = CONVENIOS_MOCK.find((x) => x.id === id);
+    if (!cv) throw Errors.notFound("convenio");
+    cv.ativo = false;
+    pushEvent("info", "admin.convenios", `Convenio "${cv.nome}" desativado por user:${c.get("jwt").sub}`);
     return c.body(null, 204);
   })
   .get("/v1/admin/convenios/:id/config", async (c) => {
@@ -1233,15 +1316,21 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }).parse(await c.req.json());
     const pref = prefeituras.find((p) => p.id === body.prefeituraId);
     if (!pref) throw Errors.notFound("prefeitura");
-    const result = importTombamento({
+    const result = await importTombamento({
       prefeituraId: body.prefeituraId,
       prefeituraNome: pref.nome,
       competencia: body.competencia,
       recebidoPor: `averbadora:${c.get("jwt").sub}`,
       csv: body.csv,
+      env: c.env,
     });
     appendAudit({ categoria: "tombamento", acao: "lote_processado", detalhes: `Lote ${result.lote.id} (${pref.nome}/${body.competencia}): ${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.divergencias} divergencias, ${result.erros.length} erros.` });
-    pushEvent("info", "admin.tombamento", `Lote ${result.lote.id} processado por user:${c.get("jwt").sub}`);
+    // Notifica a averbadora quando há divergência entre as 3 bases (prefeitura × banco × remessa).
+    if (result.divergencias > 0) {
+      pushEvent("warn", "admin.tombamento.divergencia", `⚠ Lote ${result.lote.id} (${pref.nome}/${body.competencia}) tem ${result.divergencias} divergência(s) entre as bases. Revise as linhas marcadas.`);
+    } else {
+      pushEvent("info", "admin.tombamento", `Lote ${result.lote.id} conciliado sem divergências.`);
+    }
     return c.json(result);
   })
   .get("/v1/admin/tombamento/csv-template", () => csvResponse("tombamento-exemplo.csv", buildCsv(
@@ -1357,7 +1446,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       }
       if (!idConvenio) idConvenio = defaultConvenioId;
       if (!idConvenio) { out.errors.push({ line, message: `prefeitura ${pref.nome} nao possui convenios cadastrados` }); return; }
-      const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === cpf);
+      // Identidade (prefeituraId, matricula) — permite mesmo CPF em outra prefeitura.
+      const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === prefId);
       const salario = Number(r.salarioLiquido);
       const ibge = Number(r.codigoIbge);
       const s = {
@@ -1365,6 +1455,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         cpfMasked: cpf.slice(0, 3) + ".***.***-" + cpf.slice(-2),
         matricula: r.matricula!,
         idMatricula: `MAT-${r.matricula!}`,
+        prefeituraId: prefId,
         nome: r.nome!,
         dataAdmissao: r.dataAdmissao ?? "",
         dataNascimento: r.dataNascimento ?? "",

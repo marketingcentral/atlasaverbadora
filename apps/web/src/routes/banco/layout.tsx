@@ -2,9 +2,6 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShellAdmin, Button, ConvenioSwitcher, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import { getBancoPerfil } from "../../lib/banco-propostas";
-
-export const OPEN_CADASTRO_CONVENIO_EVENT = "atlas:convenios:open-cadastro";
 
 const NAV = [
   { key: "visao-geral", label: "Visão Geral", href: "/banco/visao-geral", icon: "◉" },
@@ -23,8 +20,6 @@ const NAV = [
   { key: "adf", label: "ADF", href: "/banco/adf", icon: "▤" },
   { key: "bate-carteira", label: "Bate de Carteira", href: "/banco/bate-carteira", icon: "▦" },
   { key: "convenios", label: "Convênios", href: "/banco/convenios", icon: "◈" },
-  { key: "servidores", label: "Servidores", href: "/banco/servidores", icon: "◎" },
-  { key: "gerenciador-contratos", label: "Gerenciador de Contratos", href: "/banco/gerenciador-contratos", icon: "▥" },
   {
     key: "relatorios",
     label: "Relatórios",
@@ -83,14 +78,6 @@ export function BancoLayout() {
         <>
           <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{location.pathname}</div>
           <div style={{ display: "flex", gap: 10 }}>
-            {location.pathname === "/banco/convenios" && getBancoPerfil().perms.aprovacao ? (
-              <Button
-                size="sm"
-                onClick={() => window.dispatchEvent(new CustomEvent(OPEN_CADASTRO_CONVENIO_EVENT))}
-              >
-                + Cadastrar convênio
-              </Button>
-            ) : null}
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
             </Button>

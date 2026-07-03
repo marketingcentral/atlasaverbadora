@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Pill, DataTable, type Column, IconButton } from "@atlas/ui/web";
+import { Button, Card, Pill, DataTable, type Column } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import type { AdminApiToken, ApiAudience, ApiEnvironment, ApiScope } from "@atlas/sdk";
 
@@ -38,12 +38,14 @@ export function AverbadoraApiTokens() {
 
   const scopesByAudience = q.data?.scopesByAudience ?? SCOPES_FALLBACK;
 
-  const del = useMutation({
-    mutationFn: (id: string) => atlas.admin.deleteApiToken(id),
+  const rows = q.data?.tokens ?? [];
+
+  // Token que o usuário pediu para pausar — segura o aviso antes de confirmar.
+  const [confirmPause, setConfirmPause] = useState<AdminApiToken | null>(null);
+  const pause = useMutation({
+    mutationFn: ({ id, paused }: { id: string; paused: boolean }) => atlas.admin.pauseApiToken(id, paused),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["api-tokens"] }),
   });
-
-  const rows = q.data?.tokens ?? [];
 
   const cols: Column<AdminApiToken>[] = [
     { key: "name", header: "Nome", render: (t) => <b>{t.name}</b> },
@@ -92,21 +94,41 @@ export function AverbadoraApiTokens() {
     { key: "scopes", header: "Escopos", render: (t) => <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{t.scopes.length}</span> },
     { key: "lastUsedAt", header: "Último uso", render: (t) => t.lastUsedAt ? new Date(t.lastUsedAt).toLocaleString("pt-BR") : "—" },
     {
+      key: "status",
+      header: "Status",
+      render: (t) => {
+        const manual = !!t.pausedAt;
+        const porBanco = !manual && !!t.bancoInativo;
+        const label = manual ? "Desativado" : porBanco ? "Desativado (banco)" : "Ativo";
+        const dica = manual ? "Token desativado manualmente. O perfil/parceria segue ativo." : porBanco ? "Inativo porque o banco dono está pausado. Volta ao reativar o banco." : undefined;
+        return (
+          <span title={dica}>
+            <Pill variant={manual || porBanco ? "expirado" : "emdia"}>{label}</Pill>
+          </span>
+        );
+      },
+    },
+    {
       key: "actions",
       header: "",
-      render: (t) => (
-        <IconButton
-          danger
-          title="Excluir token"
-          onClick={() => {
-            if (confirm(`Excluir permanentemente o token "${t.name}"?\n\nIsto é IRREVERSÍVEL — todas as integrações que usam este token deixarão de funcionar imediatamente.`)) {
-              del.mutate(t.id);
-            }
-          }}
-        >
-          🗑
-        </IconButton>
-      ),
+      align: "right",
+      render: (t) => {
+        if (t.pausedAt) {
+          return (
+            <Button size="sm" variant="ghost" disabled={pause.isPending} onClick={() => pause.mutate({ id: t.id, paused: false })}>
+              ▶ Reativar token
+            </Button>
+          );
+        }
+        if (t.bancoInativo) {
+          return <span style={{ fontSize: 11, color: "var(--text-muted)" }}>reative o banco</span>;
+        }
+        return (
+          <Button size="sm" variant="ghost" disabled={pause.isPending} onClick={() => setConfirmPause(t)}>
+            ⏸ Desativar token
+          </Button>
+        );
+      },
     },
   ];
 
@@ -118,6 +140,7 @@ export function AverbadoraApiTokens() {
           <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Tokens de acesso</h1>
           <p style={{ color: "var(--text-muted)", marginTop: 4 }}>
             Cada token pertence a uma camada (Banco / Servidor / Averbadora) e consome <code>/v1/external/&lt;camada&gt;/*</code>. Plaintext exibido apenas na criação.
+            Você pode desativar um token individualmente sem desativar o perfil/parceria. Nada é apagado: desativar é reversível (dá pra reativar depois). Tokens de um banco pausado também ficam inativos e voltam ao reativar o banco.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -155,6 +178,45 @@ export function AverbadoraApiTokens() {
       {justCreated ? (
         <RevealModal token={justCreated} onClose={() => setJustCreated(null)} />
       ) : null}
+
+      {confirmPause ? (
+        <PauseWarningModal
+          token={confirmPause}
+          pending={pause.isPending}
+          onCancel={() => setConfirmPause(null)}
+          onConfirm={() => pause.mutate({ id: confirmPause.id, paused: true }, { onSuccess: () => setConfirmPause(null) })}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function PauseWarningModal({ token, pending, onCancel, onConfirm }: { token: AdminApiToken; pending: boolean; onCancel: () => void; onConfirm: () => void }) {
+  const dono = token.audience === "averbadora" ? "a Averbadora" : token.audience === "banco" ? `o banco #${token.partnerId}` : `o servidor #${token.partnerId}`;
+  return (
+    <div style={backdrop} onClick={onCancel}>
+      <div style={{ ...modal, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 22 }}>⏸</span>
+          <h3 style={{ margin: 0 }}>Desativar o token "{token.name}"?</h3>
+        </div>
+        <div
+          style={{
+            marginTop: 14, padding: "12px 14px", borderRadius: 10,
+            border: "1px solid color-mix(in srgb, #f59e0b 55%, transparent)",
+            background: "color-mix(in srgb, #f59e0b 12%, transparent)",
+            color: "var(--text)", fontSize: 13.5, lineHeight: 1.55,
+          }}
+        >
+          Isto <b>desativa apenas este token de acesso</b> — ele para de autenticar na API imediatamente.
+          <br />
+          <b>{dono} continua ativo</b> e não é afetado: pode operar normalmente e gerar novos tokens. A ação é reversível — você pode reativar o token depois.
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+          <Button variant="ghost" onClick={onCancel}>Cancelar</Button>
+          <Button onClick={onConfirm} disabled={pending}>{pending ? "Desativando…" : "Desativar token"}</Button>
+        </div>
+      </div>
     </div>
   );
 }

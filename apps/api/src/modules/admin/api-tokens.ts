@@ -35,7 +35,12 @@ export interface ApiToken {
   createdAt: string;
   createdBy: string;
   lastUsedAt?: string;
-  revokedAt?: string;
+  /** Pause MANUAL deste token (ação individual do admin), independente do banco.
+   *  Enquanto setado, o token não autentica, mas o perfil/parceria dono continua
+   *  ativo. Só é limpo por um "reativar token" explícito — reativar o banco NÃO
+   *  desfaz. (O pause por banco-inativo é derivado em tempo de leitura, não aqui.)
+   *  Nunca é revogado/apagado. */
+  pausedAt?: string;
 }
 
 const K_ID = (id: string) => `apitok:i:${id}`;
@@ -103,13 +108,20 @@ export async function listTokens(kv: KVNamespace, filter?: { environment?: ApiEn
   return all;
 }
 
-/** Hard delete: remove id key + hash index. Irreversível. */
-export async function deleteToken(kv: KVNamespace, id: string): Promise<boolean> {
+/**
+ * Pausa/retoma UM token específico (ação manual do admin, independente do banco).
+ * Liga/desliga `pausedAt` — o token para/volta a autenticar sem tocar no
+ * perfil/parceria dono, que continua ativo. Nunca revoga nem apaga. Retorna o
+ * token atualizado (ou null se não existir).
+ */
+export async function setTokenPaused(kv: KVNamespace, id: string, paused: boolean): Promise<ApiToken | null> {
   const t = await kv.get<ApiToken>(K_ID(id), "json");
-  if (!t) return false;
-  await kv.delete(K_HASH(t.hash));
-  await kv.delete(K_ID(id));
-  return true;
+  if (!t) return null;
+  if (paused && !t.pausedAt) t.pausedAt = new Date().toISOString();
+  else if (!paused && t.pausedAt) delete t.pausedAt;
+  else return t; // já estava no estado desejado
+  await kv.put(K_ID(id), JSON.stringify(t));
+  return t;
 }
 
 /** Lookup by plaintext bearer header value. */
@@ -120,7 +132,7 @@ export async function resolveByPlaintext(kv: KVNamespace, plaintext: string): Pr
   const id = await kv.get(K_HASH(hash));
   if (!id) return null;
   const t = await kv.get<ApiToken>(K_ID(id), "json");
-  if (!t || t.revokedAt) return null;
+  if (!t || t.pausedAt) return null; // banco pausado → token não autentica (reversível)
   return t;
 }
 

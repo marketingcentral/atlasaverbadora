@@ -9,6 +9,41 @@ const FORMATOS = ["CSV", "EXCEL", "API"];
 
 interface ConvRow { id: string; nome: string; bancoNome: string; codigoVerba: string; prazoTravaHoras: number; prazoPortabilidadeDU: number; prefixo: string; formatoImportacao: string }
 
+function ExigenciasAverbacaoCard() {
+  const qc = useQueryClient();
+  const cfg = useQuery({ queryKey: ["prefeitura", "config"], queryFn: () => atlas.prefeitura.getConfig() });
+  const save = useMutation({
+    mutationFn: (patch: { exigeCcb?: boolean; exigeBanco2FA?: boolean }) => atlas.prefeitura.setConfig(patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prefeitura", "config"] }),
+  });
+  const exigeCcb = cfg.data?.exigeCcb ?? false;
+  const exige2fa = cfg.data?.exigeBanco2FA ?? false;
+  return (
+    <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 18, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div>
+        <b>Exigências ao banco na averbação</b>
+        <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "4px 0 0" }}>
+          Defina se os bancos precisam anexar a CCB e/ou fazer verificação em duas etapas ao averbar contratos desta prefeitura.
+        </p>
+      </div>
+      <Toggle label="Exigir anexo da CCB" hint="Banco precisa anexar a Cédula de Crédito Bancário (PDF) para averbar." checked={exigeCcb} disabled={cfg.isLoading || save.isPending} onChange={(v) => save.mutate({ exigeCcb: v })} />
+      <Toggle label="Exigir verificação em duas etapas (2FA)" hint="Banco confirma a averbação com um código enviado por e-mail." checked={exige2fa} disabled={cfg.isLoading || save.isPending} onChange={(v) => save.mutate({ exigeBanco2FA: v })} />
+    </div>
+  );
+}
+
+function Toggle({ label, hint, checked, disabled, onChange }: { label: string; hint: string; checked: boolean; disabled?: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label style={{ display: "flex", alignItems: "flex-start", gap: 12, cursor: disabled ? "default" : "pointer" }}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, accentColor: "var(--accent)" }} />
+      <span>
+        <span style={{ fontWeight: 600 }}>{label}</span>
+        <span style={{ display: "block", fontSize: 12, color: "var(--text-muted)" }}>{hint}</span>
+      </span>
+    </label>
+  );
+}
+
 export function PrefeituraConvenios() {
   const qc = useQueryClient();
   const [editId, setEditId] = useState<string | null>(null);
@@ -40,6 +75,7 @@ export function PrefeituraConvenios() {
         <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Convênios do município</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 4 }}>Parametrize prazo de trava, vínculos aceitos, comprometimento máximo e prefixo de origem.</p>
       </header>
+      <ExigenciasAverbacaoCard />
       <DataTable columns={columns} rows={(q.data?.convenios ?? []) as ConvRow[]} rowKey={(c) => c.id} loading={q.isLoading} emptyState="Nenhum convênio." />
       {editId ? <ConfigModal id={editId} onClose={() => setEditId(null)} onSaved={() => { setEditId(null); qc.invalidateQueries({ queryKey: ["prefeitura", "convenios"] }); }} /> : null}
     </div>

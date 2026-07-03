@@ -10,7 +10,7 @@ import { getDb } from "./client.js";
 import { bancos as bancosTable, prefeituras as prefeiturasTable, servidores as servidoresTable } from "./schema.js";
 import type { Env } from "../env.js";
 import type { BancoAdmin, PrefeituraAdmin } from "../modules/admin/index.js";
-import { CONVENIOS_MOCK, type ServidorBuscaMock } from "../modules/portal-banco/fixtures.js";
+import { prefeituraIdDe, type ServidorBuscaMock } from "../modules/portal-banco/fixtures.js";
 
 // postgres-js JSON-encoda objetos UMA vez sob `::jsonb`. NAO pre-stringificar
 // (dupla serializacao -> string escalar). Arrays viram array-PG, entao para
@@ -34,6 +34,26 @@ export function ensureSchema(env: Env): Promise<void> {
       data jsonb NOT NULL,
       updated_at timestamptz DEFAULT now()
     )`);
+    // Tombamento: um registro por lote com o lote + suas linhas em jsonb.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS tombamento_lotes (
+      id text PRIMARY KEY,
+      data jsonb NOT NULL,
+      updated_at timestamptz DEFAULT now()
+    )`);
+    // Log operacional compartilhado entre isolates. O Worker roda em vários
+    // isolates e cada um tem seu buffer em memória; persistir aqui garante que
+    // TODA alteração (de qualquer perfil) apareça no log da averbadora
+    // independente de qual isolate serviu a requisição.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS app_logs (
+      id bigserial PRIMARY KEY,
+      ts timestamptz NOT NULL DEFAULT now(),
+      level text NOT NULL,
+      source text NOT NULL,
+      perfil text NOT NULL,
+      message text NOT NULL,
+      trace_id text NOT NULL
+    )`);
+    await db.execute(sql`CREATE INDEX IF NOT EXISTS app_logs_ts_idx ON app_logs (ts DESC)`);
   })().catch((e) => { _schemaEnsured = null; throw e; });
   return _schemaEnsured;
 }
@@ -102,6 +122,8 @@ function rowToPrefeitura(row: typeof prefeiturasTable.$inferSelect): PrefeituraA
     passwordHash: cfg.passwordHash as string | undefined,
     servidoresCount: (cfg.servidoresCount as number) ?? 0,
     ultimaSincronizacao: row.ultimaSincronizacao ? new Date(row.ultimaSincronizacao).toISOString() : undefined,
+    exigeCcb: Boolean(cfg.exigeCcb),
+    exigeBanco2FA: Boolean(cfg.exigeBanco2FA),
   };
 }
 
@@ -111,7 +133,7 @@ export async function loadPrefeituras(env: Env): Promise<PrefeituraAdmin[]> {
 }
 
 export async function upsertPrefeitura(env: Env, p: PrefeituraAdmin): Promise<void> {
-  const cfg = { loginEmail: p.loginEmail, passwordHash: p.passwordHash, servidoresCount: p.servidoresCount };
+  const cfg = { loginEmail: p.loginEmail, passwordHash: p.passwordHash, servidoresCount: p.servidoresCount, exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false };
   const sync = p.ultimaSincronizacao ? new Date(p.ultimaSincronizacao).toISOString() : null;
   await getDb(env).execute(sql`
     INSERT INTO prefeituras (id, nome, uf, municipio_ibge, modo_integracao, status, ultima_sincronizacao, config)
@@ -146,7 +168,7 @@ function mapSituacao(s: string): string {
   if (up === "DESLIGADO") return "AFASTADO";
   return "ATIVO";
 }
-const prefeituraIdOf = (s: ServidorBuscaMock) => CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 1;
+const prefeituraIdOf = (s: ServidorBuscaMock) => prefeituraIdDe(s);
 
 export async function loadServidores(env: Env): Promise<ServidorBuscaMock[]> {
   const rows = await getDb(env).select({ data: servidoresTable.data }).from(servidoresTable);
@@ -210,6 +232,62 @@ export async function seedTabelasIfEmpty(env: Env, seed: TabelaLike[]): Promise<
   if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
   for (const t of seed) await upsertTabelaRow(env, t);
   return true;
+}
+
+// ============================================================
+// Tombamento — lotes + linhas (um registro jsonb por lote)
+// ============================================================
+// Tipos genéricos pra evitar import circular repos <-> modules/admin/tombamento.
+interface LoteLike { id: string; [k: string]: unknown }
+
+export async function loadTombamento(env: Env): Promise<{ lotes: LoteLike[]; linhas: LoteLike[] }> {
+  const rows = (await getDb(env).execute(sql`SELECT data FROM tombamento_lotes ORDER BY id`)) as unknown as { data: { lote: LoteLike; linhas: LoteLike[] } }[];
+  const lotes: LoteLike[] = [];
+  const linhas: LoteLike[] = [];
+  for (const r of rows) { if (r.data?.lote) { lotes.push(r.data.lote); linhas.push(...(r.data.linhas ?? [])); } }
+  return { lotes, linhas };
+}
+
+export async function upsertTombamentoLote(env: Env, lote: LoteLike, linhas: LoteLike[]): Promise<void> {
+  const payload = { lote, linhas } as unknown as Record<string, unknown>;
+  await getDb(env).execute(sql`
+    INSERT INTO tombamento_lotes (id, data, updated_at)
+    VALUES (${lote.id}, ${payload}::jsonb, now())
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
+}
+
+export async function seedTombamentoIfEmpty(env: Env, seed: { lote: LoteLike; linhas: LoteLike[] }[]): Promise<boolean> {
+  const db = getDb(env);
+  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM tombamento_lotes`)) as unknown as { n: number }[];
+  if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
+  for (const s of seed) await upsertTombamentoLote(env, s.lote, s.linhas);
+  return true;
+}
+
+// ============================================================
+// App logs (compartilhado entre isolates)
+// ============================================================
+export interface AppLogRow { ts: string; level: string; source: string; perfil: string; message: string; trace_id: string }
+
+/** Anexa uma linha ao log compartilhado. Best-effort — nunca lança pro chamador. */
+export async function appendLog(env: Env, e: AppLogRow): Promise<void> {
+  await getDb(env).execute(sql`
+    INSERT INTO app_logs (ts, level, source, perfil, message, trace_id)
+    VALUES (${e.ts}, ${e.level}, ${e.source}, ${e.perfil}, ${e.message}, ${e.trace_id})`);
+}
+
+/** Carrega os logs compartilhados mais recentes (ts desc). */
+export async function loadLogs(env: Env, limit = 300): Promise<AppLogRow[]> {
+  const rows = (await getDb(env).execute(sql`
+    SELECT to_char(ts, 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS ts, level, source, perfil, message, trace_id
+    FROM app_logs ORDER BY ts DESC, id DESC LIMIT ${limit}`)) as unknown as AppLogRow[];
+  return rows;
+}
+
+/** Poda o log compartilhado, mantendo as N linhas mais recentes. */
+export async function pruneLogs(env: Env, keep = 2000): Promise<void> {
+  await getDb(env).execute(sql`
+    DELETE FROM app_logs WHERE id NOT IN (SELECT id FROM app_logs ORDER BY id DESC LIMIT ${keep})`);
 }
 
 /** Repara linhas com jsonb corrompido (escalar): TRUNCATE + re-seed com o raw cast correto. */

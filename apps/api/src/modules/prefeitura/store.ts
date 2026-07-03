@@ -3,7 +3,7 @@
 // identifiers, PT-BR labels in the UI layer. All mutations are real and reflected
 // across the platform (they touch the same servidores/folhas the bancos read).
 
-import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK } from "../portal-banco/fixtures.js";
+import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
 import { issueIdUnico } from "../admin/id-unico.js";
 
@@ -43,7 +43,7 @@ export function applyMovimentacao(input: {
   folhaId: string; prefeituraId: number; tipo: MovimentacaoTipo; matricula: string;
   cargoNovo?: string; salarioNovo?: number; detalhe?: string; nomeNovo?: string; cpf?: string;
 }, now: string): { ok: true; mov: Movimentacao } | { ok: false; error: string } {
-  const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === input.matricula);
+  const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === input.matricula && prefeituraIdDe(x) === input.prefeituraId);
 
   // Admissão pode criar um servidor novo se não existir.
   if (!s && input.tipo !== "admissao") return { ok: false, error: `matricula ${input.matricula} nao encontrada` };
@@ -55,7 +55,7 @@ export function applyMovimentacao(input: {
     const convenio = CONVENIOS_MOCK.find((cv) => cv.prefeituraId === input.prefeituraId);
     target = {
       cpf, cpfMasked: `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}`,
-      matricula: input.matricula, idMatricula: `MAT-${input.matricula}`,
+      matricula: input.matricula, idMatricula: `MAT-${input.matricula}`, prefeituraId: input.prefeituraId,
       nome: input.nomeNovo ?? "SERVIDOR ADMITIDO", dataAdmissao: now.slice(0, 10), dataNascimento: "",
       vinculo: "ESTATUTARIO", origem: prefeituraNome(input.prefeituraId), situacaoFuncional: "TRABALHANDO",
       salarioLiquido: input.salarioNovo ?? 0, idConvenio: convenio?.id ?? "", cargo: input.cargoNovo,
@@ -250,10 +250,11 @@ export function upsertPerfil(input: { id?: number; prefeituraId: number; nome: s
   return novo;
 }
 
+/** Nunca apaga — DESATIVA (ativo=false). Reativável via upsertPerfil. */
 export function deletePerfil(prefeituraId: number, id: number): boolean {
-  const idx = _perfis.findIndex((p) => p.id === id && p.prefeituraId === prefeituraId);
-  if (idx < 0) return false;
-  _perfis.splice(idx, 1);
+  const p = _perfis.find((x) => x.id === id && x.prefeituraId === prefeituraId);
+  if (!p) return false;
+  p.ativo = false;
   return true;
 }
 

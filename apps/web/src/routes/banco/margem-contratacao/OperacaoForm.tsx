@@ -71,8 +71,8 @@ export function OperacaoForm({ modo, tipo }: Props) {
       };
       return modo === "averbar" ? atlas.banco.averbar(tipo, body) : atlas.banco.reservar(tipo, body);
     },
-    onSuccess: (data) => {
-      nav(`/banco/gerenciador-contratos/${data.adf}`);
+    onSuccess: () => {
+      nav("/banco/carteira");
     },
   });
 

@@ -134,7 +134,7 @@ export interface AdminPrefeitura {
   uf: string;
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
-  status: "ativo" | "pausado";
+  status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
   hasPassword: boolean;
   servidoresCount: number;
@@ -147,7 +147,7 @@ export interface AdminPrefeituraInput {
   uf: string;
   municipioIbge: number;
   modoIntegracao: "REST" | "SOAP" | "CSV" | "MANUAL";
-  status: "ativo" | "pausado";
+  status: "ativo" | "pausado" | "inativo";
   loginEmail?: string;
   password?: string;
   servidoresCount?: number;
@@ -432,7 +432,10 @@ export interface AdminApiToken {
   createdAt: string;
   createdBy: string;
   lastUsedAt?: string;
-  revokedAt?: string;
+  /** Pause MANUAL individual (ação do admin). Token não autentica, mas o perfil/parceria dono continua ativo. Só some com "reativar token". */
+  pausedAt?: string;
+  /** Derivado: o banco dono está pausado (status != ativo). Token fica inativo junto, mas volta sozinho ao reativar o banco. */
+  bancoInativo?: boolean;
 }
 
 export interface AdminApiTokenInput {
@@ -654,7 +657,7 @@ export class AtlasClient {
 
   // ============ Portal Banco ============
   readonly banco = {
-    convenios: () => this.request<{ convenios: { id: string; nome: string; prefeitura: string; uf: string }[]; activeId: string }>("/v1/portal/banco/convenios"),
+    convenios: () => this.request<{ convenios: { id: string; nome: string; prefeitura: string; uf: string; exigeCcb: boolean; exigeBanco2FA: boolean }[]; activeId: string }>("/v1/portal/banco/convenios"),
     setConvenioAtivo: (convenioId: string) =>
       this.request<{ activeId: string }>("/v1/portal/banco/convenio-ativo", { method: "POST", body: { convenioId } }),
     visaoGeral: () =>
@@ -859,8 +862,8 @@ export class AtlasClient {
     listComunicados: () => this.request<{ comunicados: { id: string; titulo: string; corpo: string; linkLabel?: string; linkHref?: string }[] }>("/v1/admin/comunicados"),
     health: () =>
       this.request<{ checks: { servico: string; uptime: number; p95: number; ok: boolean }[] }>("/v1/admin/health"),
-    logs: (q?: { level?: "info" | "warn" | "error"; source?: string }) =>
-      this.request<{ logs: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string }[] }>("/v1/admin/logs", { query: q ?? {} }),
+    logs: (q?: { level?: "info" | "warn" | "error"; source?: string; perfil?: "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema" }) =>
+      this.request<{ logs: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string; perfil: "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema" }[] }>("/v1/admin/logs", { query: q ?? {} }),
     listVitrine: () => this.request<{ banners: AdminBanner[] }>("/v1/admin/vitrine"),
     upsertBanner: (b: { id?: string; bancoId: number; titulo: string; imagemUrl?: string; ativo?: boolean }) =>
       this.request<{ banner: AdminBanner }>("/v1/admin/vitrine", { method: "POST", body: b }),
@@ -870,18 +873,16 @@ export class AtlasClient {
       this.request<{ tokens: AdminApiToken[]; scopesByAudience: Record<ApiAudience, ApiScope[]> }>("/v1/admin/api-tokens", { query: filter ?? {} }),
     createApiToken: (body: AdminApiTokenInput) =>
       this.request<{ token: AdminApiToken; plaintext: string; warning: string }>("/v1/admin/api-tokens", { method: "POST", body }),
-    deleteApiToken: (id: string) =>
-      this.request<void>(`/v1/admin/api-tokens/${id}`, { method: "DELETE" }),
+    // Pausa/reativa UM token (manual, reversível). Não apaga nem toca no perfil/parceria dono.
+    pauseApiToken: (id: string, paused: boolean) =>
+      this.request<{ token: AdminApiToken }>(`/v1/admin/api-tokens/${id}/pause`, { method: "PATCH", body: { paused } }),
 
     // === Webhooks ===
     listWebhooks: (environment?: "production" | "sandbox") =>
       this.request<{ webhooks: AdminWebhook[]; events: readonly string[] }>("/v1/admin/webhooks", { query: environment ? { environment } : {} }),
     createWebhook: (body: AdminWebhookInput) =>
       this.request<{ webhook: AdminWebhook; secret: string; warning: string }>("/v1/admin/webhooks", { method: "POST", body }),
-    toggleWebhook: (id: string) =>
-      this.request<{ webhook: AdminWebhook }>(`/v1/admin/webhooks/${id}/toggle`, { method: "PATCH" }),
-    deleteWebhook: (id: string) =>
-      this.request<void>(`/v1/admin/webhooks/${id}`, { method: "DELETE" }),
+    // Webhooks não são apagados/pausados manualmente: seguem o status do banco dono (cascade).
     webhookDeliveries: (id: string) =>
       this.request<{ deliveries: AdminWebhookDelivery[] }>(`/v1/admin/webhooks/${id}/deliveries`),
     fireWebhook: (body: { event: string; environment?: "production" | "sandbox"; payload?: Record<string, unknown> }) =>
@@ -902,6 +903,9 @@ export class AtlasClient {
   // ============ Prefeitura (portal completo) ============
   readonly prefeitura = {
     me: () => this.request<{ prefeitura: { id: number; nome: string; uf: string; municipioIbge: number; status: string } }>("/v1/prefeitura/me"),
+    getConfig: () => this.request<{ exigeCcb: boolean; exigeBanco2FA: boolean }>("/v1/prefeitura/config"),
+    setConfig: (body: { exigeCcb?: boolean; exigeBanco2FA?: boolean }) =>
+      this.request<{ exigeCcb: boolean; exigeBanco2FA: boolean }>("/v1/prefeitura/config", { method: "POST", body }),
     dashboard: () =>
       this.request<{
         prefeitura: { id: number; nome: string; uf: string };

@@ -4,20 +4,20 @@ import { Button, Card, Input } from "@atlas/ui/web";
 interface Props {
   /** Texto curto explicando a acao que ativou o 2FA (ex.: "concluir pre-reserva"). */
   acao: string;
-  /** Canal mockado pra exibir no UI. */
-  canal?: "email" | "sms" | "ambos";
+  /** Mantido por compat; a verificacao e SEMPRE por email (sem SMS). */
+  canal?: "email";
   /** Quando o usuario confirma o codigo. Recebe o code digitado. */
   onConfirm: (code: string) => void | Promise<void>;
   /** Quando o usuario cancela. */
   onCancel: () => void;
 }
 
+// 2FA e exclusivamente por email — nao ha canal de SMS na plataforma.
 const MASCARADO = {
   email: "ana.car****@palhoca.sc.gov.br",
-  sms: "(48) 9****-3210",
 };
 
-export function TwoFactorModal({ acao, canal = "ambos", onConfirm, onCancel }: Props) {
+export function TwoFactorModal({ acao, onConfirm, onCancel }: Props) {
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,12 +46,7 @@ export function TwoFactorModal({ acao, canal = "ambos", onConfirm, onCancel }: P
     setSubmitting(false);
   }
 
-  const canalLabel =
-    canal === "email"
-      ? `Enviamos um codigo para ${MASCARADO.email}`
-      : canal === "sms"
-        ? `Enviamos um codigo por SMS para ${MASCARADO.sms}`
-        : `Enviamos um codigo para ${MASCARADO.email} e por SMS para ${MASCARADO.sms}`;
+  const canalLabel = `Enviamos um codigo para ${MASCARADO.email}`;
 
   return (
     <div

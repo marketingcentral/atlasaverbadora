@@ -12,6 +12,8 @@ export interface ConvenioMock {
   codigoVerba: string;
   dataCorte: number;
   diaRepasse: number;
+  /** Convênios desativados (soft delete) saem das listagens mas o registro permanece. */
+  ativo?: boolean;
 }
 
 export interface ComunicadoMock {
@@ -56,6 +58,12 @@ export interface ServidorBuscaMock {
   cpfMasked: string;
   matricula: string;
   idMatricula: string;
+  /**
+   * Prefeitura dona deste vínculo. Um mesmo CPF pode existir em VÁRIAS prefeituras
+   * (acumulação legal de cargos) — a identidade do servidor é (prefeituraId, matricula),
+   * NUNCA só o CPF. Opcional no seed (derivado do convênio); setado no import.
+   */
+  prefeituraId?: number;
   nome: string;
   dataAdmissao: string;
   dataNascimento: string;
@@ -74,6 +82,15 @@ export interface ServidorBuscaMock {
   passwordHash?: string;
   /** RG (opcional, informativo). */
   rg?: string;
+}
+
+/**
+ * Prefeitura a que um servidor pertence. Usa o campo explícito quando presente;
+ * senão deriva do convênio. É a chave de escopo para busca e deduplicação —
+ * mesmo CPF em prefeituras diferentes são registros distintos.
+ */
+export function prefeituraIdDe(s: Pick<ServidorBuscaMock, "prefeituraId" | "idConvenio">): number {
+  return s.prefeituraId ?? CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 1;
 }
 
 export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [

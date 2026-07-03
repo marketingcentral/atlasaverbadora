@@ -52,20 +52,20 @@ export function BancoVisaoGeral() {
           label="Carteira de Contratos"
           value={v.kpis.carteira.count}
           hint={`Percentual: ${(v.kpis.carteira.percentual * 100).toFixed(0)}%`}
-          cta={{ label: "Meus contratos", onClick: () => (window.location.href = "/banco/gerenciador-contratos") }}
+          cta={{ label: "Meus contratos", onClick: () => (window.location.href = "/banco/carteira") }}
           accent="info"
         />
         <KpiCard
           label="Novos Contratos"
           value={v.kpis.novosNoMes.count}
           hint="Neste mês"
-          cta={{ label: "Contratos novos", onClick: () => (window.location.href = "/banco/gerenciador-contratos") }}
+          cta={{ label: "Contratos novos", onClick: () => (window.location.href = "/banco/carteira") }}
         />
         <KpiCard
           label="Pendências em Contratos"
           value={v.kpis.pendencias.count}
           hint={v.kpis.pendencias.count > 0 ? "Atenção" : "Tudo em dia"}
-          cta={{ label: "Minhas pendências", onClick: () => (window.location.href = "/banco/gerenciador-contratos") }}
+          cta={{ label: "Minhas pendências", onClick: () => (window.location.href = "/banco/carteira") }}
           accent={v.kpis.pendencias.count > 0 ? "warn" : "success"}
         />
         <DataCorteCard

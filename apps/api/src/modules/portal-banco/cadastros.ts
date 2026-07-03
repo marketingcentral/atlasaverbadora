@@ -77,7 +77,7 @@ let _userSeq = 999000;
 // e serem visiveis por outros isolates. Se o DB estiver indisponivel, cai
 // pro comportamento in-memory (nao quebra a demo).
 import type { Env } from "../../env.js";
-import { ensureSchema, loadTabelas, upsertTabelaRow, deleteTabelaRow, seedTabelasIfEmpty } from "../../db/repos.js";
+import { ensureSchema, loadTabelas, upsertTabelaRow, seedTabelasIfEmpty } from "../../db/repos.js";
 
 let _tabelasHydrated = false;
 let _hydrationPromise: Promise<void> | null = null;
@@ -139,12 +139,13 @@ export async function upsertTabela(env: Env, input: Omit<TabelaEmprestimo, "id" 
   await upsertTabelaRow(env, saved as unknown as { id: string; [k: string]: unknown }).catch(() => undefined);
   return saved;
 }
+/** Nunca apaga — DESATIVA (ativo=false), persistindo o novo estado. */
 export async function removerTabela(env: Env, id: string): Promise<boolean> {
   await hydrateTabelas(env);
-  const idx = _tabelas.findIndex((t) => t.id === id);
-  if (idx < 0) return false;
-  _tabelas.splice(idx, 1);
-  await deleteTabelaRow(env, id).catch(() => undefined);
+  const t = _tabelas.find((x) => x.id === id);
+  if (!t) return false;
+  t.ativo = false;
+  await upsertTabelaRow(env, t as unknown as { id: string; [k: string]: unknown }).catch(() => undefined);
   return true;
 }
 
@@ -187,9 +188,10 @@ export function upsertUsuario(input: UsuarioUpsert): BancoUsuario {
   _usuarios.push(novo);
   return novo;
 }
+/** Nunca apaga — DESATIVA (ativo=false). */
 export function removerUsuario(id: string): boolean {
-  const idx = _usuarios.findIndex((u) => u.id === id);
-  if (idx < 0) return false;
-  _usuarios.splice(idx, 1);
+  const u = _usuarios.find((x) => x.id === id);
+  if (!u) return false;
+  u.ativo = false;
   return true;
 }
