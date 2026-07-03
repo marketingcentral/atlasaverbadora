@@ -35,8 +35,11 @@ export interface ApiToken {
   createdAt: string;
   createdBy: string;
   lastUsedAt?: string;
-  /** Definido enquanto o banco dono está pausado (status != ativo). Nunca é
-   *  apagado/revogado — só pausa de autenticar. Volta a null quando o banco reativa. */
+  /** Pause MANUAL deste token (ação individual do admin), independente do banco.
+   *  Enquanto setado, o token não autentica, mas o perfil/parceria dono continua
+   *  ativo. Só é limpo por um "reativar token" explícito — reativar o banco NÃO
+   *  desfaz. (O pause por banco-inativo é derivado em tempo de leitura, não aqui.)
+   *  Nunca é revogado/apagado. */
   pausedAt?: string;
 }
 
@@ -106,26 +109,19 @@ export async function listTokens(kv: KVNamespace, filter?: { environment?: ApiEn
 }
 
 /**
- * Pausa/retoma TODOS os tokens de um parceiro em cascata com o status do banco.
- * Nunca revoga nem apaga — só liga/desliga `pausedAt` (o token para/volta a
- * autenticar). Chamado quando o banco é desativado/reativado. Retorna quantos
- * tokens mudaram de estado.
+ * Pausa/retoma UM token específico (ação manual do admin, independente do banco).
+ * Liga/desliga `pausedAt` — o token para/volta a autenticar sem tocar no
+ * perfil/parceria dono, que continua ativo. Nunca revoga nem apaga. Retorna o
+ * token atualizado (ou null se não existir).
  */
-export async function setTokensPausedForPartner(kv: KVNamespace, audience: ApiAudience, partnerId: number, paused: boolean): Promise<number> {
-  await ensureSeeded(kv);
-  const list = await kv.list({ prefix: "apitok:i:" });
-  let changed = 0;
-  for (const k of list.keys) {
-    const t = await kv.get<ApiToken>(k.name, "json");
-    if (!t || t.audience !== audience || t.partnerId !== partnerId) continue;
-    const isPaused = !!t.pausedAt;
-    if (paused === isPaused) continue;
-    if (paused) t.pausedAt = new Date().toISOString();
-    else delete t.pausedAt;
-    await kv.put(k.name, JSON.stringify(t));
-    changed++;
-  }
-  return changed;
+export async function setTokenPaused(kv: KVNamespace, id: string, paused: boolean): Promise<ApiToken | null> {
+  const t = await kv.get<ApiToken>(K_ID(id), "json");
+  if (!t) return null;
+  if (paused && !t.pausedAt) t.pausedAt = new Date().toISOString();
+  else if (!paused && t.pausedAt) delete t.pausedAt;
+  else return t; // já estava no estado desejado
+  await kv.put(K_ID(id), JSON.stringify(t));
+  return t;
 }
 
 /** Lookup by plaintext bearer header value. */

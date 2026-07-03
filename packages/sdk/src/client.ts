@@ -432,8 +432,10 @@ export interface AdminApiToken {
   createdAt: string;
   createdBy: string;
   lastUsedAt?: string;
-  /** Definido enquanto o banco dono está pausado. Token não autentica, mas não é revogado — volta ao reativar o banco. */
+  /** Pause MANUAL individual (ação do admin). Token não autentica, mas o perfil/parceria dono continua ativo. Só some com "reativar token". */
   pausedAt?: string;
+  /** Derivado: o banco dono está pausado (status != ativo). Token fica inativo junto, mas volta sozinho ao reativar o banco. */
+  bancoInativo?: boolean;
 }
 
 export interface AdminApiTokenInput {
@@ -871,7 +873,9 @@ export class AtlasClient {
       this.request<{ tokens: AdminApiToken[]; scopesByAudience: Record<ApiAudience, ApiScope[]> }>("/v1/admin/api-tokens", { query: filter ?? {} }),
     createApiToken: (body: AdminApiTokenInput) =>
       this.request<{ token: AdminApiToken; plaintext: string; warning: string }>("/v1/admin/api-tokens", { method: "POST", body }),
-    // Tokens não são revogados/apagados: pausam junto do banco dono (cascade).
+    // Pausa/reativa UM token (manual, reversível). Não apaga nem toca no perfil/parceria dono.
+    pauseApiToken: (id: string, paused: boolean) =>
+      this.request<{ token: AdminApiToken }>(`/v1/admin/api-tokens/${id}/pause`, { method: "PATCH", body: { paused } }),
 
     // === Webhooks ===
     listWebhooks: (environment?: "production" | "sandbox") =>

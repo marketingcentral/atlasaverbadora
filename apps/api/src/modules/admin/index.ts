@@ -5,7 +5,7 @@ import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
-import { createToken, setTokensPausedForPartner, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
+import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs } from "../../db/repos.js";
@@ -163,16 +163,16 @@ async function persistBanco(env: Env, b: BancoAdmin): Promise<void> {
 }
 
 /**
- * Cascade de acesso: os tokens/webhooks de um banco seguem o status dele.
- * Banco pausado (status != "ativo") → tokens/webhooks pausam (param de
- * autenticar/entregar). Banco ativo → retomam. Nunca revoga nem apaga nada.
+ * Cascade de acesso dos WEBHOOKS de um banco conforme o status dele (banco
+ * pausado → webhooks param de entregar; ativo → retomam). Os TOKENS não são
+ * escritos aqui: o efeito do banco-inativo sobre tokens é derivado em tempo de
+ * leitura (overlay na listagem + middleware de auth), para não sobrescrever o
+ * pause MANUAL individual de um token (que deve sobreviver à reativação do banco).
  */
-async function syncBancoAccess(env: Env, b: BancoAdmin): Promise<{ tokens: number; webhooks: number }> {
+function syncBancoAccess(b: BancoAdmin): { webhooks: number } {
   const paused = b.status !== "ativo";
-  let tokens = 0;
-  if (env.KV_CACHE) tokens = await setTokensPausedForPartner(env.KV_CACHE, "banco", b.id, paused).catch(() => 0);
   const webhooks = setWebhooksPausedForPartner("banco", b.id, paused);
-  return { tokens, webhooks };
+  return { webhooks };
 }
 
 export const prefeituras: PrefeituraAdmin[] = [
@@ -538,10 +538,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       };
       pushEvent("info", "admin", `Banco "${bancos[idx]!.nome}" atualizado${password ? " (senha trocada)" : ""}`);
       await persistBanco(c.env, bancos[idx]!);
-      const casc = await syncBancoAccess(c.env, bancos[idx]!); // status ativo↔inativo → retoma/pausa tokens+webhooks
-      if (casc.tokens || casc.webhooks) {
+      const casc = syncBancoAccess(bancos[idx]!); // status ativo↔inativo → retoma/pausa webhooks (tokens são derivados)
+      if (casc.webhooks) {
         const verbo = bancos[idx]!.status === "ativo" ? "reativados" : "pausados";
-        pushEvent("info", "admin.bancos.cascata", `Banco "${bancos[idx]!.nome}" ${bancos[idx]!.status}: ${casc.tokens} token(s) e ${casc.webhooks} webhook(s) ${verbo} junto.`);
+        pushEvent("info", "admin.bancos.cascata", `Banco "${bancos[idx]!.nome}" ${bancos[idx]!.status}: ${casc.webhooks} webhook(s) ${verbo} junto.`);
       }
       return c.json({ banco: sanitizeBanco(bancos[idx]!) });
     }
@@ -601,9 +601,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!b) throw Errors.notFound("banco");
     b.status = "inativo";
     await persistBanco(c.env, b);
-    const casc = await syncBancoAccess(c.env, b); // pausa tokens/webhooks do banco em cascata
+    const casc = syncBancoAccess(b); // pausa webhooks do banco em cascata (tokens são derivados)
     appendAudit({ categoria: "acesso", acao: "banco_desativado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${b.nome}" (id=${id}) desativado.` });
-    pushEvent("info", "admin.bancos.desativar", `Banco "${b.nome}" desativado por user:${j.sub} — ${casc.tokens} token(s) e ${casc.webhooks} webhook(s) pausados junto.`);
+    pushEvent("info", "admin.bancos.desativar", `Banco "${b.nome}" desativado por user:${j.sub} — ${casc.webhooks} webhook(s) pausados junto.`);
     return c.json({ banco: sanitizeBanco(b) });
   })
 
@@ -914,16 +914,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const env = c.req.query("environment") as ApiEnvironment | undefined;
     const aud = c.req.query("audience") as ApiAudience | undefined;
     const raw = await listTokens(kv, { ...(env ? { environment: env } : {}), ...(aud ? { audience: aud } : {}) });
-    // Overlay imediato do pause: o status exibido segue o status do banco dono
-    // (fonte de verdade), sem esperar o TTL de leitura do KV. Banco pausado →
-    // token aparece "Pausado"; banco ativo → limpa pausedAt eventualmente stale.
+    // Dois motivos independentes de um token estar inativo:
+    //  - pausedAt: pause MANUAL individual (sobrevive à reativação do banco).
+    //  - bancoInativo (derivado): o banco dono está pausado. Segue o status do
+    //    banco em tempo de leitura (fonte de verdade), sem depender do TTL do KV.
+    // Efetivamente pausado = pausedAt || bancoInativo. O front decide o rótulo/ação.
     const tokens = raw.map((t) => {
-      if (t.audience !== "banco") return t;
-      const banco = bancos.find((b) => b.id === t.partnerId);
-      if (!banco) return t;
-      if (banco.status !== "ativo") return { ...t, pausedAt: t.pausedAt ?? new Date().toISOString() };
-      const { pausedAt: _drop, ...rest } = t;
-      return rest;
+      const banco = t.audience === "banco" ? bancos.find((b) => b.id === t.partnerId) : undefined;
+      const bancoInativo = !!banco && banco.status !== "ativo";
+      return { ...t, bancoInativo };
     });
     return c.json({ tokens, scopesByAudience: SCOPES_BY_AUDIENCE });
   })
@@ -947,9 +946,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
     return c.json({ token, plaintext, warning: "Guarde o plaintext agora. Nao sera exibido novamente." }, 201);
   })
-  // Tokens NÃO são revogados nem apagados. Eles pausam/retomam automaticamente
-  // em cascata com o status do banco dono (ver syncBancoAccess). Não há rota de
-  // revogação/exclusão individual.
+  // Pausa/retoma UM token específico (ação manual, reversível). NÃO apaga nem
+  // revoga, e NÃO toca no perfil/parceria dono — ele continua ativo. Independe
+  // do cascade do banco: reativar o banco não desfaz um pause manual.
+  .patch("/v1/admin/api-tokens/:id/pause", authRequired, async (c) => {
+    const j = c.get("jwt"); requireAdmin(j);
+    const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
+    const body = z.object({ paused: z.boolean() }).parse(await c.req.json());
+    const t = await setTokenPaused(kv, c.req.param("id"), body.paused);
+    if (!t) throw Errors.notFound("token");
+    pushEvent("info", "admin.api-tokens.pause", `Token "${t.name}" ${body.paused ? "pausado" : "reativado"} por user:${j.sub} (perfil/parceria segue ativo).`);
+    return c.json({ token: t });
+  })
 
   // ===== Webhooks (admin) =====
   .get("/v1/admin/webhooks", authRequired, async (c) => {
