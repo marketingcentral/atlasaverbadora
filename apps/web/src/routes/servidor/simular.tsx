@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
+import { atlas } from "../../lib/sdk";
 import {
   MatriculaInfo,
   readActiveMatricula,
@@ -11,6 +13,7 @@ import {
   formatRemaining,
   getActiveLock,
   setLock,
+  clearLock,
   SIMULATION_LOCK_KEY,
 } from "../../lib/simulation-lock";
 
@@ -65,6 +68,29 @@ export function ServidorSimular() {
     }, 1000);
     return () => clearInterval(i);
   }, [lockExpiresAt]);
+
+  // A trava existe enquanto o banco NAO respondeu. Poll das propostas do servidor:
+  // se nao ha nenhuma "Aguardando" (o banco aprovou/recusou/cancelou), libera a
+  // margem na hora pra o servidor fazer uma nova. Poll a cada 10s.
+  const propostasQ = useQuery({
+    queryKey: ["servidor", "propostas"],
+    queryFn: () => atlas.servidor.propostas(),
+    refetchInterval: 10_000,
+    enabled: !!lockExpiresAt, // so consulta quando ha trava pra liberar
+  });
+  const temPendente = useMemo(
+    () => (propostasQ.data?.propostas ?? []).some((p) => p.situacao.toLowerCase().includes("aguard")),
+    [propostasQ.data],
+  );
+  useEffect(() => {
+    // So libera depois que a consulta trouxe dados (evita liberar antes de saber).
+    if (!lockExpiresAt || !propostasQ.data) return;
+    if (!temPendente) {
+      const id = info?.idMatricula;
+      if (id) clearLock(id);
+      setLockExpiresAt(null);
+    }
+  }, [propostasQ.data, temPendente, lockExpiresAt, info?.idMatricula]);
 
   const margemEmprestimo = useMemo(() => {
     if (!info) return 0;
