@@ -39,6 +39,15 @@ class ServidorRepository(
             )
         }
 
+    // ---- Conta: alterar contato / senha (código por e-mail) ----
+    suspend fun enviarCodigoConta() = safeApi(gson) { api.contaCodigo() }
+
+    suspend fun atualizarContato(codigo: String, email: String?, telefone: String?) =
+        safeApi(gson) { api.atualizarContato(io.atlas.servidor.data.remote.dto.ContatoRequest(codigo, email, telefone)) }
+
+    suspend fun alterarSenha(senhaAtual: String, codigo: String, novaSenha: String) =
+        safeApi(gson) { api.alterarSenha(io.atlas.servidor.data.remote.dto.AlterarSenhaRequest(senhaAtual, codigo, novaSenha)) }
+
     /** Network-first with offline fallback: on failure, returns the last cached copy if any. */
     private suspend fun <T> cachedRead(
         key: String,

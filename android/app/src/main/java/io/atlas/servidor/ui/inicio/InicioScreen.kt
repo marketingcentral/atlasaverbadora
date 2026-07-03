@@ -19,6 +19,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -129,15 +132,28 @@ private fun Header(name: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(greeting(), color = InkMuted, fontSize = 14.sp)
-            Text(name, color = Ink, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+            Text(firstName(name), color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
         }
+        Icon(
+            imageVector = Icons.Outlined.Notifications,
+            contentDescription = "Notificações",
+            tint = Ink,
+            modifier = Modifier.size(24.dp),
+        )
+        Spacer(Modifier.size(14.dp))
         Box(
-            modifier = Modifier.size(46.dp).clip(CircleShape).background(VerdeSoft),
+            modifier = Modifier.size(46.dp).clip(CircleShape).background(Ink),
             contentAlignment = Alignment.Center,
         ) {
-            Text(initials(name), color = Verde, fontWeight = FontWeight.Bold)
+            Text(initials(name), color = Superficie, fontWeight = FontWeight.Bold)
         }
     }
+}
+
+/** Apenas o primeiro nome, em Title Case (ex.: "DIEGO PEREZ FERREIRA" -> "Diego"). */
+private fun firstName(name: String): String {
+    val first = name.trim().split(" ").firstOrNull { it.isNotBlank() } ?: return name
+    return first.lowercase().replaceFirstChar { it.uppercase() }
 }
 
 @Composable

@@ -63,6 +63,14 @@ data class DefinirSenhaRequest(val cpf: String, val codigo: String, val senha: S
 
 data class OkResponse(val ok: Boolean = false)
 
+data class ContatoRequest(val codigo: String, val email: String? = null, val telefone: String? = null)
+
+data class AlterarSenhaRequest(
+    @SerializedName("senha_atual") val senhaAtual: String,
+    val codigo: String,
+    @SerializedName("nova_senha") val novaSenha: String,
+)
+
 // ---------- Proposta (servidor -> banco) ----------
 
 data class CriarPropostaRequest(

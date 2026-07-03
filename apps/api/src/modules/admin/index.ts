@@ -3,7 +3,7 @@ import { z } from "zod";
 import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
-import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
+import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
@@ -183,6 +183,9 @@ export const prefeituras: PrefeituraAdmin[] = [
 
 const PREFEITURAS_SEED: PrefeituraAdmin[] = prefeituras.map((p) => ({ ...p }));
 const SERVIDORES_SEED = SERVIDORES_BUSCA_MOCK.map((s) => ({ ...s }));
+// CPFs de contas de teste que devem SEMPRE existir no login, mesmo que um import/reseed
+// da folha real as remova do banco (a hidratação faz merge, não replace, para elas).
+const TEST_CPFS = new Set(["37534239800", "12345678909"]);
 
 let _prefeiturasLoad: Promise<void> | null = null;
 export function ensurePrefeiturasLoaded(env: Env): Promise<void> {
@@ -213,7 +216,15 @@ export function ensureServidoresLoaded(env: Env): Promise<void> {
       await ensurePrefeiturasLoaded(env);
       await seedServidoresIfEmpty(env, SERVIDORES_SEED);
       const loaded = await loadServidores(env);
-      if (loaded.length) { SERVIDORES_BUSCA_MOCK.length = 0; SERVIDORES_BUSCA_MOCK.push(...loaded); }
+      if (loaded.length) {
+        // As contas de teste vêm SEMPRE do seed (com passwordHash correto), sobrescrevendo
+        // qualquer versão do Postgres — um import/reseed da folha real pode ter removido ou
+        // estragado o hash delas. Assim Diego/Mariana nunca quebram no login/primeiro acesso.
+        const filtered: ServidorBuscaMock[] = loaded.filter((s) => !TEST_CPFS.has(s.cpf));
+        const testAccounts = SERVIDORES_SEED.filter((s) => TEST_CPFS.has(s.cpf));
+        SERVIDORES_BUSCA_MOCK.length = 0;
+        SERVIDORES_BUSCA_MOCK.push(...filtered, ...testAccounts);
+      }
     } catch (e) {
       _servidoresLoad = null;
       pushEvent("warn", "db.servidores.hydrate_failed", `Falha ao hidratar servidores: ${(e as Error).message}. Usando fixtures.`);

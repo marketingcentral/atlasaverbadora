@@ -33,9 +33,9 @@ import io.atlas.servidor.ui.inicio.InicioScreen
 import io.atlas.servidor.ui.navigation.Routes
 import io.atlas.servidor.ui.simular.SimularScreen
 import io.atlas.servidor.ui.theme.Fundo
+import io.atlas.servidor.ui.theme.Ink
 import io.atlas.servidor.ui.theme.InkMuted
 import io.atlas.servidor.ui.theme.Superficie
-import io.atlas.servidor.ui.theme.Verde
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -78,9 +78,9 @@ fun MainShell(
                         label = { Text(tab.label, fontSize = 10.sp, textAlign = TextAlign.Center) },
                         alwaysShowLabel = true,
                         colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = Verde,
-                            selectedTextColor = Verde,
-                            indicatorColor = Fundo,
+                            selectedIconColor = Ink,
+                            selectedTextColor = Ink,
+                            indicatorColor = androidx.compose.ui.graphics.Color.Transparent,
                             unselectedIconColor = InkMuted,
                             unselectedTextColor = InkMuted,
                         ),

@@ -30,6 +30,15 @@ interface ApiService {
     @POST("v1/servidores/me/propostas")
     suspend fun criarProposta(@Body body: io.atlas.servidor.data.remote.dto.CriarPropostaRequest): io.atlas.servidor.data.remote.dto.PropostaResponse
 
+    @POST("v1/servidores/me/codigo")
+    suspend fun contaCodigo(): io.atlas.servidor.data.remote.dto.CodigoResponse
+
+    @POST("v1/servidores/me/contato")
+    suspend fun atualizarContato(@Body body: io.atlas.servidor.data.remote.dto.ContatoRequest): io.atlas.servidor.data.remote.dto.OkResponse
+
+    @POST("v1/servidores/me/senha")
+    suspend fun alterarSenha(@Body body: io.atlas.servidor.data.remote.dto.AlterarSenhaRequest): io.atlas.servidor.data.remote.dto.OkResponse
+
     @POST("v1/auth/logout")
     suspend fun logout(): Response<Unit>
 }
