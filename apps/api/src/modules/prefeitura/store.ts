@@ -4,7 +4,7 @@
 // across the platform (they touch the same servidores/folhas the bancos read).
 
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
-import { listContratos } from "../portal-banco/store.js";
+import { listContratos, setContratoFolhaStatus } from "../portal-banco/store.js";
 import { issueIdUnico } from "../admin/id-unico.js";
 
 // ============================================================
@@ -124,19 +124,35 @@ export interface AdfEntry {
 
 const _adfs: AdfEntry[] = [];
 
-/** Lazily materialize ADFs from the prefeitura's averbado contratos (one ADF per contrato). */
+/** Averbado = o banco confirmou/averbou (situacao "Ativo"). Reservas ("Aguardando"),
+ *  cancelados e quitados NÃO viram ADF pendente na folha. */
+function isAverbado(situacao: string): boolean {
+  const s = situacao.toLowerCase();
+  return s === "ativo" || s.includes("averb");
+}
+
+/** Materializa ADFs a partir dos contratos AVERBADOS da prefeitura (1 ADF por contrato).
+ *  O status do ADF é fonte-única do próprio contrato (ct.folhaStatus) — assim a
+ *  confirmação da prefeitura persiste e o banco a enxerga. Requer refreshContratos
+ *  antes (feito no endpoint) pra ver averbações de outros isolates. */
 export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeById: (id: number) => string, now: string): void {
   const convenioIds = new Set(CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefeituraId).map((cv) => cv.id));
-  const contratos = listContratos().filter((ct) => convenioIds.has(ct.convenioId));
+  const contratos = listContratos().filter((ct) => convenioIds.has(ct.convenioId) && isAverbado(ct.situacao));
   for (const ct of contratos) {
+    const status = (ct.folhaStatus ?? "recebida") as AdfStatus;
     const already = _adfs.find((a) => a.adf === ct.adf && a.competencia === competencia);
-    if (already) continue;
+    if (already) {
+      already.status = status; // sincroniza status do contrato (cross-isolate)
+      already.motivo = ct.folhaMotivo;
+      already.atualizadoEm = now;
+      continue;
+    }
     _adfs.push({
       id: `ADF-${competencia}-${ct.adf}`,
       competencia, prefeituraId, adf: ct.adf, idUnico: issueIdUnico(prefeituraId),
       cpfMasked: ct.cpfMasked, matricula: ct.matricula, nome: ct.nome,
       bancoNome: bancoNomeById(ct.bancoId), valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
-      status: "recebida", atualizadoEm: now,
+      status, motivo: ct.folhaMotivo, atualizadoEm: now,
     });
   }
 }
@@ -155,14 +171,19 @@ export function listAdfCompetencias(prefeituraId: number): { competencia: string
   return Array.from(map.values()).sort((a, b) => b.competencia.localeCompare(a.competencia));
 }
 
-export function setAdfStatus(prefeituraId: number, adfIds: string[], status: AdfStatus, motivo: string | undefined, now: string): number {
-  let n = 0;
+/** Aplica o status na folha. Fonte-única = contrato: além do _adfs local, grava
+ *  ct.folhaStatus (o chamador persiste os adfs retornados). Retorna os `adf` de
+ *  contrato tocados pra o endpoint fazer o write-through. */
+export function setAdfStatus(prefeituraId: number, adfIds: string[], status: AdfStatus, motivo: string | undefined, now: string): string[] {
+  const contratoAdfs: string[] = [];
   for (const a of _adfs) {
     if (a.prefeituraId === prefeituraId && adfIds.includes(a.id)) {
-      a.status = status; a.motivo = motivo; a.atualizadoEm = now; n++;
+      a.status = status; a.motivo = motivo; a.atualizadoEm = now;
+      setContratoFolhaStatus(a.adf, status, motivo); // sincroniza no contrato (banco vê)
+      contratoAdfs.push(a.adf);
     }
   }
-  return n;
+  return contratoAdfs;
 }
 
 // ============================================================

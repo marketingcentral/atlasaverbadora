@@ -13,7 +13,7 @@ import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato } from "../portal-banco/store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig } from "../admin/id-unico.js";
@@ -502,21 +502,24 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 8 — ADF / Descontos em folha =====
-  .get("/v1/prefeitura/adf/competencias", (c) => {
+  .get("/v1/prefeitura/adf/competencias", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshContratos(c.env); // vê averbações feitas pelo banco em outros isolates
     const competenciaAtual = folhas.filter((f) => f.prefeituraId === id).sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", "");
     ensureAdfs(id, competenciaAtual, bancoNome, new Date().toISOString());
     return c.json({ competencias: listAdfCompetencias(id), competenciaAtual });
   })
-  .get("/v1/prefeitura/adf", (c) => {
+  .get("/v1/prefeitura/adf", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshContratos(c.env);
     const competencia = c.req.query("competencia") || undefined;
     if (competencia) ensureAdfs(id, competencia, bancoNome, new Date().toISOString());
     return c.json({ adfs: listAdfs(id, competencia) });
   })
-  .get("/v1/prefeitura/adf/:competencia/download.csv", (c) => {
+  .get("/v1/prefeitura/adf/:competencia/download.csv", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const competencia = c.req.param("competencia");
+    await refreshContratos(c.env);
     ensureAdfs(id, competencia, bancoNome, new Date().toISOString());
     const adfs = listAdfs(id, competencia);
     const csv = buildCsv(
@@ -525,9 +528,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     );
     return csvResp(`adf-${competencia}.csv`, csv);
   })
-  .get("/v1/prefeitura/adf/:competencia/lote.pdf", (c) => {
+  .get("/v1/prefeitura/adf/:competencia/lote.pdf", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const competencia = c.req.param("competencia");
+    await refreshContratos(c.env);
     ensureAdfs(id, competencia, bancoNome, new Date().toISOString());
     const adfs = listAdfs(id, competencia);
     const total = adfs.reduce((s, a) => s + a.valorParcela, 0);
@@ -544,16 +548,20 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/prefeitura/adf/confirmar", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const body = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
-    const n = setAdfStatus(id, body.ids, "aplicada", undefined, new Date().toISOString());
-    appendAudit({ categoria: "margem", acao: "adf_aplicada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${n} ADFs confirmadas/aplicadas em folha.` });
-    return c.json({ aplicadas: n });
+    await refreshContratos(c.env);
+    const adfs = setAdfStatus(id, body.ids, "aplicada", undefined, new Date().toISOString());
+    for (const adf of adfs) await persistContrato(c.env, adf); // write-through: banco vê "aplicada em folha"
+    appendAudit({ categoria: "margem", acao: "adf_aplicada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${adfs.length} ADFs confirmadas/aplicadas em folha.` });
+    return c.json({ aplicadas: adfs.length });
   })
   .post("/v1/prefeitura/adf/falha", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
-    const n = setAdfStatus(id, body.ids, "falha", body.motivo, new Date().toISOString());
-    appendAudit({ categoria: "margem", acao: "adf_falha", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${n} ADFs marcadas como falha: ${body.motivo}.` });
-    return c.json({ falhas: n });
+    await refreshContratos(c.env);
+    const adfs = setAdfStatus(id, body.ids, "falha", body.motivo, new Date().toISOString());
+    for (const adf of adfs) await persistContrato(c.env, adf);
+    appendAudit({ categoria: "margem", acao: "adf_falha", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
+    return c.json({ falhas: adfs.length });
   })
 
   // ===== Passo 9 — Relatórios =====

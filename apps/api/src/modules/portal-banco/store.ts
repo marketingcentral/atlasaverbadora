@@ -24,6 +24,12 @@ export interface ContratoFull extends ContratoMock {
   dataContrato: string;
   observacoes?: string;
   adfVinculada?: string;
+  /** Status do ADF na folha da prefeitura (cadeia banco→prefeitura). Só relevante
+   *  em contratos averbados. "recebida" = prefeitura ainda não confirmou; "aplicada"
+   *  = desconto entrou em folha; "falha" = prefeitura reprovou. Persistido no contrato
+   *  pra ser fonte única (prefeitura confirma, banco vê). */
+  folhaStatus?: "recebida" | "aplicada" | "falha";
+  folhaMotivo?: string;
 }
 
 export interface ContratoEvento {
@@ -183,6 +189,16 @@ export function listContratos(filters: { convenioId?: string; matricula?: string
 
 export function getContrato(adf: string): ContratoFull | undefined {
   return _contratos.get(adf);
+}
+
+/** Marca o status do ADF na folha (chamado pela prefeitura). Fonte única = contrato.
+ *  Retorna o contrato atualizado (o chamador persiste via persistContrato). */
+export function setContratoFolhaStatus(adf: string, status: "recebida" | "aplicada" | "falha", motivo?: string): ContratoFull | undefined {
+  const c = _contratos.get(adf);
+  if (!c) return undefined;
+  c.folhaStatus = status;
+  c.folhaMotivo = motivo;
+  return c;
 }
 
 export function getContratoEventos(adf: string): ContratoEvento[] {

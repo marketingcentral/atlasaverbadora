@@ -13,6 +13,15 @@ function requireBancoRole(j: JwtClaims): void {
   if (j.role !== "banco") throw Errors.forbidden("Requer perfil banco");
 }
 
+/**
+ * Servidores que ENTRARAM EM CONTATO com o banco = quem tem contrato/reserva com
+ * este bancoId. O banco NÃO acessa mais a base geral de servidores da prefeitura;
+ * só enxerga quem solicitou uma operação a ele. Requer refreshContratos antes.
+ */
+function matriculasContato(bancoId: number): Set<string> {
+  return new Set(listContratos({}).filter((ct) => ct.bancoId === bancoId).map((ct) => ct.matricula));
+}
+
 function currentCompetencia(): { mes: number; ano: number; yyyymm: string } {
   const d = new Date();
   const mes = d.getMonth() + 1;
@@ -134,29 +143,20 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       })
       .refine((b) => !!b.cpf || !!b.matricula, "cpf_ou_matricula_obrigatorio")
       .parse(await c.req.json());
-    const activeConv = await getActiveConvenioId(c.env, j);
-    const activeConvNome = CONVENIOS_MOCK.find((cv) => cv.id === activeConv)?.nome ?? activeConv;
+    // O banco só acessa quem entrou em contato com ele (tem contrato/reserva).
+    await refreshContratos(c.env);
+    const contatos = matriculasContato(j.banco_id ?? 1);
     const cpfNorm = body.cpf?.replace(/\D/g, "");
     const matchPred = (s: typeof SERVIDORES_BUSCA_MOCK[number]) =>
       cpfNorm ? s.cpf === cpfNorm : body.matricula ? s.matricula === body.matricula : false;
-    const found = SERVIDORES_BUSCA_MOCK.find((s) => s.idConvenio === activeConv && matchPred(s));
+    // Busca só entre os contatos do banco (não na base geral da prefeitura).
+    const found = SERVIDORES_BUSCA_MOCK.find((s) => contatos.has(s.matricula) && matchPred(s));
     if (found) return c.json({ ficha: found });
-    // Pista util: existe em outro convenio?
-    const elsewhere = SERVIDORES_BUSCA_MOCK.find(matchPred);
-    if (elsewhere) {
-      const outroNome = CONVENIOS_MOCK.find((cv) => cv.id === elsewhere.idConvenio)?.nome ?? elsewhere.idConvenio;
-      throw new HttpError(
-        404,
-        "not_found_in_active_convenio",
-        `Colaborador encontrado no convenio "${outroNome}", mas o convenio ativo e "${activeConvNome}". Troque o convenio ativo no menu lateral.`,
-        { outroConvenioId: elsewhere.idConvenio, outroConvenioNome: outroNome, activeConvenioId: activeConv, activeConvenioNome: activeConvNome },
-      );
-    }
     throw new HttpError(
       404,
       "not_found",
-      `Nenhum colaborador encontrado para ${cpfNorm ? `CPF ${body.cpf}` : `matricula ${body.matricula}`} em qualquer convenio.`,
-      { activeConvenioId: activeConv, activeConvenioNome: activeConvNome },
+      `Nenhum servidor com ${cpfNorm ? `CPF ${body.cpf}` : `matricula ${body.matricula}`} entrou em contato com o banco. O banco só acessa servidores que solicitaram uma operação (proposta/averbação).`,
+      {},
     );
   })
 
@@ -166,30 +166,31 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     requireBancoRole(j);
     const activeConv = await getActiveConvenioId(c.env, j);
     const activeConvNome = CONVENIOS_MOCK.find((cv) => cv.id === activeConv)?.nome ?? activeConv;
-    const noConvenio = SERVIDORES_BUSCA_MOCK.filter((s) => s.idConvenio === activeConv)
-      .slice(0, 3)
+    // Só os servidores que entraram em contato com o banco (não a base da prefeitura).
+    await refreshContratos(c.env);
+    const contatos = matriculasContato(j.banco_id ?? 1);
+    const noConvenio = SERVIDORES_BUSCA_MOCK.filter((s) => contatos.has(s.matricula))
+      .slice(0, 6)
       .map((s) => ({ nome: s.nome, matricula: s.matricula, cpf: s.cpf, cpfMasked: s.cpfMasked, idConvenio: s.idConvenio }));
-    const outrosConvenios = SERVIDORES_BUSCA_MOCK.filter((s) => s.idConvenio !== activeConv)
-      .slice(0, 3)
-      .map((s) => ({
-        nome: s.nome,
-        matricula: s.matricula,
-        cpfMasked: s.cpfMasked,
-        idConvenio: s.idConvenio,
-        convenio: CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.nome ?? s.idConvenio,
-      }));
-    return c.json({ activeConvenioId: activeConv, activeConvenioNome: activeConvNome, noConvenio, outrosConvenios });
+    // Nada de "outros convênios": o banco não navega mais a base de servidores.
+    return c.json({ activeConvenioId: activeConv, activeConvenioNome: activeConvNome, noConvenio, outrosConvenios: [] });
   })
 
   // --------- Calcular margem para uma competencia ----------
   .post("/v1/portal/banco/margem/:idMatricula/calcular", async (c) => {
-    requireBancoRole(c.get("jwt"));
+    const j = c.get("jwt");
+    requireBancoRole(j);
     const body = z
       .object({ mes: z.number().int().min(1).max(12), ano: z.number().int() })
       .parse(await c.req.json());
     const idMatricula = c.req.param("idMatricula");
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.idMatricula === idMatricula);
     if (!s) throw Errors.notFound("colaborador");
+    // Só calcula margem de quem contatou o banco.
+    await refreshContratos(c.env);
+    if (!matriculasContato(j.banco_id ?? 1).has(s.matricula)) {
+      throw Errors.forbidden("Este servidor não entrou em contato com o banco.");
+    }
     const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
     const comprometido = Math.round(total * 0.93 * 100) / 100;
     const disponivel = margemDisponivel(s.salarioLiquido, comprometido, "EMPRESTIMO");

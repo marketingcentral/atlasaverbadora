@@ -31,6 +31,9 @@ export interface BancoContratoFull {
   dataContrato: string;
   observacoes?: string;
   adfVinculada?: string;
+  /** Status do ADF na folha da prefeitura (cadeia banco→prefeitura). "aplicada" = a prefeitura confirmou o desconto em folha. */
+  folhaStatus?: "recebida" | "aplicada" | "falha";
+  folhaMotivo?: string;
 }
 
 export interface NovoContratoBody {
@@ -709,6 +712,7 @@ export class AtlasClient {
           cpfMasked: string; matricula: string; nome: string; tipoContrato: string;
           totalParcelas: number; valorParcela: number; convenio: string;
           convenioId: string; valorFinanciado: number; taxaAm: number;
+          folhaStatus?: "recebida" | "aplicada" | "falha";
         }[];
         total: number;
       }>("/v1/portal/banco/contratos", {
