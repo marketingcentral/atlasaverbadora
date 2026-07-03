@@ -100,7 +100,8 @@ export function BancoPropostas() {
   const apiQ = useQuery({
     queryKey: ["banco", "propostas-api"],
     queryFn: () => atlas.banco.contratos(),
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
   });
   const decidir = useMutation({
     mutationFn: ({ adf, acao }: { adf: string; acao: "confirmar" | "cancelar" }) => atlas.banco.acao(adf, acao),

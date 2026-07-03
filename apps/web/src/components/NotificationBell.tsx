@@ -42,10 +42,13 @@ export function NotificationBell() {
   const ref = useRef<HTMLDivElement>(null);
 
   // Fonte unica com /servidor/propostas: mesma query, mesmo cache.
+  // Poll rapido (5s) pra sensacao de tempo real — qualquer transicao de
+  // estado (banco aceita, altera, recusa) aparece no sino em ate 5s.
   const q = useQuery({
     queryKey: ["servidor", "propostas"],
     queryFn: () => atlas.servidor.propostas(),
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
   });
 
   const propostas: Proposta[] = useMemo(
@@ -103,6 +106,42 @@ export function NotificationBell() {
 
   const unread = notifs.filter((n) => !n.lida).length;
 
+  // Anima o sino (pulse dourado) toda vez que o contador de nao-lidas SOBE.
+  // Alem da animacao, atualiza o title da aba pra "(N) Atlas" quando ha
+  // pendencias — assim o usuario ve mesmo com a aba em background.
+  const prevUnreadRef = useRef(unread);
+  const [pulse, setPulse] = useState(false);
+  useEffect(() => {
+    if (unread > prevUnreadRef.current) {
+      setPulse(true);
+      const t = setTimeout(() => setPulse(false), 1500);
+      // Bipe curto opcional — silencioso se o browser bloquear autoplay.
+      try {
+        const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.frequency.value = 880;
+          g.gain.value = 0.05;
+          o.connect(g); g.connect(ctx.destination);
+          o.start();
+          o.stop(ctx.currentTime + 0.12);
+          setTimeout(() => ctx.close(), 300);
+        }
+      } catch { /* autoplay policy */ }
+      return () => clearTimeout(t);
+    }
+    prevUnreadRef.current = unread;
+    return;
+  }, [unread]);
+
+  useEffect(() => {
+    const base = "Atlas";
+    document.title = unread > 0 ? `(${unread}) ${base}` : base;
+    return () => { document.title = base; };
+  }, [unread]);
+
   useEffect(() => {
     if (!open) return;
     const onClickOutside = (e: MouseEvent) => {
@@ -138,6 +177,7 @@ export function NotificationBell() {
 
   return (
     <div ref={ref} style={{ position: "relative", zIndex: 100 }}>
+      <style>{`@keyframes atlas-bell-pulse { 0%{transform:scale(1);box-shadow:0 0 0 0 rgba(212,175,55,.6)} 50%{transform:scale(1.15);box-shadow:0 0 0 8px rgba(212,175,55,0)} 100%{transform:scale(1);box-shadow:0 0 0 0 rgba(212,175,55,0)} }`}</style>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -156,6 +196,7 @@ export function NotificationBell() {
           fontSize: 16,
           display: "grid",
           placeItems: "center",
+          animation: pulse ? "atlas-bell-pulse 1.4s ease-out" : undefined,
         }}
       >
         🔔

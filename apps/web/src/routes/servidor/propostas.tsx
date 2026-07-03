@@ -35,7 +35,8 @@ export function ServidorPropostas() {
   const q = useQuery({
     queryKey: ["servidor", "propostas"],
     queryFn: () => atlas.servidor.propostas(),
-    refetchInterval: 15_000,
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
   });
 
   const propostas: Proposta[] = useMemo(
