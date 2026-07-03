@@ -31,12 +31,16 @@ export function ServidorPropostas() {
   const location = useLocation();
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
-  // Fonte única = backend (mesma que o banco lê). Poll a cada 15s pra ver a decisão do banco.
+  // Fonte única = backend (mesma que o banco lê). Poll a cada 5s pra ver a decisão do banco.
+  // placeholderData mantem os cards visiveis entre refetches — sem isso, um
+  // hiato entre polls (ex.: isolate frio revalidando KV) piscaria pra
+  // "Voce ainda nao tem propostas" mesmo com propostas existindo.
   const q = useQuery({
     queryKey: ["servidor", "propostas"],
     queryFn: () => atlas.servidor.propostas(),
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
   });
 
   const propostas: Proposta[] = useMemo(

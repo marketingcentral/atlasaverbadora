@@ -49,6 +49,7 @@ export function NotificationBell() {
     queryFn: () => atlas.servidor.propostas(),
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
   });
 
   const propostas: Proposta[] = useMemo(
