@@ -513,7 +513,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const id = requirePrefeitura(c.get("jwt"));
     await refreshContratos(c.env);
     const competencia = c.req.query("competencia") || undefined;
-    if (competencia) ensureAdfs(id, competencia, bancoNome, new Date().toISOString());
+    // Materializa sempre (competência pedida ou a atual) — assim o ADF aparece
+    // mesmo se a tela pedir /adf direto, sem passar por /adf/competencias antes.
+    const comp = competencia ?? (folhas.filter((f) => f.prefeituraId === id).sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", ""));
+    ensureAdfs(id, comp, bancoNome, new Date().toISOString());
     return c.json({ adfs: listAdfs(id, competencia) });
   })
   .get("/v1/prefeitura/adf/:competencia/download.csv", async (c) => {
