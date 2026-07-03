@@ -1,14 +1,29 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import {
-  buildNotifications,
+  buildNotificationsFromPropostas,
   markAllAsRead,
   markAsRead,
   type NotifType,
   type Notification,
 } from "../lib/notifications";
 import { STORAGE_KEY_ID, STORAGE_KEY_META } from "../lib/matricula-data";
-import { PROPOSTAS_KEY } from "../lib/propostas-data";
+import { atlas } from "../lib/sdk";
+import type { EstadoProposta, Proposta } from "../lib/propostas-data";
+
+/** Mesmo mapeamento do /servidor/propostas — situacao backend -> estado UI. */
+function mapSituacao(situacao: string): EstadoProposta {
+  const t = situacao.toLowerCase();
+  if (t.includes("aguard")) return "em_analise";
+  if (t.includes("cancel")) return "cancelada";
+  if (t.includes("recus")) return "recusada";
+  if (t.includes("suspens")) return "cancelada";
+  if (t.includes("expir")) return "expirada";
+  if (t.includes("quitad")) return "liberada";
+  if (t.includes("ativo") || t.includes("averb")) return "liberada";
+  return "em_analise";
+}
 
 const ICONS: Record<NotifType, string> = {
   proposta_em_analise: "📋",
@@ -24,44 +39,67 @@ export function NotificationBell() {
   const nav = useNavigate();
   const location = useLocation();
   const [open, setOpen] = useState(false);
-  const [notifs, setNotifs] = useState<Notification[]>(() => buildNotifications());
   const ref = useRef<HTMLDivElement>(null);
 
-  // Recalcula notifs sempre que a rota muda (cobre o caso de criar proposta
-  // em /servidor/termo e voltar) ou quando outra aba mexe no storage.
-  useEffect(() => {
-    setNotifs(buildNotifications());
-  }, [location.pathname]);
+  // Fonte unica com /servidor/propostas: mesma query, mesmo cache.
+  const q = useQuery({
+    queryKey: ["servidor", "propostas"],
+    queryFn: () => atlas.servidor.propostas(),
+    refetchInterval: 15_000,
+  });
 
+  const propostas: Proposta[] = useMemo(
+    () =>
+      (q.data?.propostas ?? []).map((p) => ({
+        id: p.id,
+        banco: p.banco,
+        estado: mapSituacao(p.situacao),
+        valor: p.valor,
+        parcelas: p.parcelas,
+        parcela: p.parcela,
+        taxaAm: p.taxaAm,
+        criadaEm: p.data,
+        expiraEm: p.expira_em ?? undefined,
+      })),
+    [q.data],
+  );
+
+  const [tickKey, setTickKey] = useState(0);
+  const notifs = useMemo(
+    () => {
+      void tickKey; // usado pra re-render periodico dos "ha Xmin"
+      return buildNotificationsFromPropostas(propostas);
+    },
+    [propostas, tickKey],
+  );
+
+  // Recalcula os "ha Xmin/Xh" a cada 30s sem refetch.
+  useEffect(() => {
+    const i = setInterval(() => setTickKey((k) => k + 1), 30_000);
+    return () => clearInterval(i);
+  }, []);
+
+  // Storage: matricula/lidas mudou → forca re-render pra reaplicar filtros.
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (
         e.key === STORAGE_KEY_META ||
         e.key === STORAGE_KEY_ID ||
-        e.key === PROPOSTAS_KEY ||
         e.key === "atlas:notifications:read"
       ) {
-        setNotifs(buildNotifications());
+        setTickKey((k) => k + 1);
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Recalcula tambem ao abrir o sino (capta criacoes na MESMA aba que nao
-  // disparam evento "storage").
+  // Ao trocar de rota, refetch pra pegar mudancas depois de agir (ex.: criou
+  // proposta em /termo e voltou).
   useEffect(() => {
-    if (open) setNotifs(buildNotifications());
-  }, [open]);
-
-  // Tick periodico — recalcula a cada 30s pra atualizar os "ha Xmin/Xh"
-  // sem precisar refresh, e pra captar mudancas de estado.
-  useEffect(() => {
-    const i = setInterval(() => {
-      setNotifs(buildNotifications());
-    }, 30000);
-    return () => clearInterval(i);
-  }, []);
+    void q.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname]);
 
   const unread = notifs.filter((n) => !n.lida).length;
 
@@ -83,7 +121,7 @@ export function NotificationBell() {
 
   function abrirNotif(n: Notification) {
     markAsRead(n.id);
-    setNotifs(buildNotifications());
+    setTickKey((k) => k + 1);
     setOpen(false);
     // Link externo (banco) abre em nova aba; navegacao interna leva pra
     // pagina com hash pra scrollar ate o card especifico.
@@ -95,7 +133,7 @@ export function NotificationBell() {
 
   function marcarTodasLidas() {
     markAllAsRead(notifs.map((n) => n.id));
-    setNotifs(buildNotifications());
+    setTickKey((k) => k + 1);
   }
 
   return (

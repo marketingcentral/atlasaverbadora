@@ -154,20 +154,24 @@ function folhaProcessada(): Notification {
 
 /**
  * Constroi a lista de notificacoes para a matricula ativa, com estado
- * lida/nao-lida aplicado.
+ * lida/nao-lida aplicado. Le propostas do localStorage (legado).
  */
 export function buildNotifications(): Notification[] {
   const idMatricula = readActiveIdMatricula();
   const propostas = getAllPropostasForMatricula(idMatricula);
-  const readIds = readReadIds();
+  return buildNotificationsFromPropostas(propostas);
+}
 
+/**
+ * Versao que aceita propostas ja carregadas (idealmente do backend via
+ * useQuery). Isso mantem sino e /servidor/propostas na MESMA fonte de
+ * verdade, evitando notificar sobre proposta que ja nao existe no DB.
+ */
+export function buildNotificationsFromPropostas(propostas: Proposta[]): Notification[] {
+  const readIds = readReadIds();
   const derivadas = propostas
     .map(notifFromProposta)
     .filter((n): n is Notification => n != null);
-
-  // Folha processada sempre presente. Em prod, geraria com base no ciclo
-  // de processamento da prefeitura.
   const lista = [...derivadas, folhaProcessada()];
-
   return lista.map((n) => ({ ...n, lida: readIds.has(n.id) }));
 }
