@@ -191,19 +191,28 @@ private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit) {
         Spacer(Modifier.height(24.dp))
         SectionLabel("Parcelas")
         Spacer(Modifier.height(8.dp))
-        Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
-            PARCELA_OPTIONS.forEach { p ->
-                FilterChip(
-                    selected = vm.parcelas == p,
-                    onClick = { vm.updateParcelas(p) },
-                    label = { Text("${p}×") },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = Verde,
-                        selectedLabelColor = Superficie,
-                    ),
-                    modifier = Modifier.padding(end = 8.dp),
-                )
+        // 4 por linha, alinhadas na largura da tela (sem rolagem horizontal).
+        PARCELA_OPTIONS.chunked(4).forEach { linha ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                linha.forEach { p ->
+                    FilterChip(
+                        selected = vm.parcelas == p,
+                        onClick = { vm.updateParcelas(p) },
+                        label = {
+                            Text("${p}×", modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = Verde,
+                            selectedLabelColor = Superficie,
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
             }
+            Spacer(Modifier.height(8.dp))
         }
 
         Spacer(Modifier.height(24.dp))

@@ -100,9 +100,11 @@ fun ContaScreen(
                     SectionLabel("Contato")
                     Spacer(Modifier.height(8.dp))
                     AtlasCard {
-                        EditableRow("E-mail", info.email, onClick = { contaVm.abrirEmail(info.email) })
-                        EditableRow("Telefone", info.telefone, onClick = { contaVm.abrirTelefone(info.telefone) })
-                        InfoRow("Endereço", info.endereco)
+                        ContatoItem("E-mail", info.email, editavel = true) { contaVm.abrirEmail(info.email) }
+                        RowDivider()
+                        ContatoItem("Telefone", info.telefone, editavel = true) { contaVm.abrirTelefone(info.telefone) }
+                        RowDivider()
+                        ContatoItem("Endereço", info.endereco, editavel = false) {}
                     }
                     Spacer(Modifier.height(10.dp))
                     AtlasSecondaryButton(text = "Alterar senha", onClick = { contaVm.abrirSenha() })
@@ -135,23 +137,40 @@ fun ContaScreen(
     }
 }
 
+/** Item de contato empilhado: rótulo (com "Editar") em cima, valor embaixo em largura
+ *  total — não quebra o layout com e-mails/endereços longos. */
 @Composable
-private fun EditableRow(label: String, value: String, onClick: () -> Unit) {
-    Row(
+private fun ContatoItem(label: String, value: String, editavel: Boolean, onClick: () -> Unit) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            .then(if (editavel) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 10.dp),
     ) {
-        Text(label, color = InkMuted, fontSize = 14.sp)
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(value, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.size(8.dp))
-            Icon(Icons.Filled.Edit, contentDescription = "Editar", tint = Verde, modifier = Modifier.size(16.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(label, color = InkMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            if (editavel) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Editar", color = Verde, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.size(4.dp))
+                    Icon(Icons.Filled.Edit, contentDescription = null, tint = Verde, modifier = Modifier.size(14.dp))
+                }
+            }
         }
+        Spacer(Modifier.height(3.dp))
+        Text(value, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
+}
+
+@Composable
+private fun RowDivider() {
+    androidx.compose.foundation.layout.Box(
+        Modifier.fillMaxWidth().height(1.dp).background(io.atlas.servidor.ui.theme.Divider),
+    )
 }
 
 @Composable
