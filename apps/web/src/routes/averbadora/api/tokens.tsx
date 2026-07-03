@@ -99,8 +99,8 @@ export function AverbadoraApiTokens() {
       render: (t) => {
         const manual = !!t.pausedAt;
         const porBanco = !manual && !!t.bancoInativo;
-        const label = manual ? "Pausado" : porBanco ? "Pausado (banco)" : "Ativo";
-        const dica = manual ? "Token pausado manualmente. O perfil/parceria segue ativo." : porBanco ? "Inativo porque o banco dono está pausado. Volta ao reativar o banco." : undefined;
+        const label = manual ? "Desativado" : porBanco ? "Desativado (banco)" : "Ativo";
+        const dica = manual ? "Token desativado manualmente. O perfil/parceria segue ativo." : porBanco ? "Inativo porque o banco dono está pausado. Volta ao reativar o banco." : undefined;
         return (
           <span title={dica}>
             <Pill variant={manual || porBanco ? "expirado" : "emdia"}>{label}</Pill>
@@ -125,7 +125,7 @@ export function AverbadoraApiTokens() {
         }
         return (
           <Button size="sm" variant="ghost" disabled={pause.isPending} onClick={() => setConfirmPause(t)}>
-            ⏸ Pausar token
+            ⏸ Desativar token
           </Button>
         );
       },
@@ -140,7 +140,7 @@ export function AverbadoraApiTokens() {
           <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Tokens de acesso</h1>
           <p style={{ color: "var(--text-muted)", marginTop: 4 }}>
             Cada token pertence a uma camada (Banco / Servidor / Averbadora) e consome <code>/v1/external/&lt;camada&gt;/*</code>. Plaintext exibido apenas na criação.
-            Você pode pausar um token individualmente sem desativar o perfil/parceria. Nada é apagado: pausar é reversível. Tokens de um banco pausado também ficam inativos e voltam ao reativar o banco.
+            Você pode desativar um token individualmente sem desativar o perfil/parceria. Nada é apagado: desativar é reversível (dá pra reativar depois). Tokens de um banco pausado também ficam inativos e voltam ao reativar o banco.
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -198,7 +198,7 @@ function PauseWarningModal({ token, pending, onCancel, onConfirm }: { token: Adm
       <div style={{ ...modal, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 22 }}>⏸</span>
-          <h3 style={{ margin: 0 }}>Pausar o token "{token.name}"?</h3>
+          <h3 style={{ margin: 0 }}>Desativar o token "{token.name}"?</h3>
         </div>
         <div
           style={{
@@ -214,7 +214,7 @@ function PauseWarningModal({ token, pending, onCancel, onConfirm }: { token: Adm
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
           <Button variant="ghost" onClick={onCancel}>Cancelar</Button>
-          <Button onClick={onConfirm} disabled={pending}>{pending ? "Pausando…" : "Pausar token"}</Button>
+          <Button onClick={onConfirm} disabled={pending}>{pending ? "Desativando…" : "Desativar token"}</Button>
         </div>
       </div>
     </div>
