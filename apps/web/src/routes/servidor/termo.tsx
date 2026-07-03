@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
 import { TwoFactorModal } from "../../components/TwoFactorModal";
-import { readActiveIdMatricula } from "../../lib/matricula-data";
+import { atlas } from "../../lib/sdk";
 
 type Tipo = "novo" | "portabilidade" | "refinanciamento";
 
@@ -18,8 +18,6 @@ const PRAZOS: Record<Tipo, { horas?: number; diasUteis?: number; label: string }
   portabilidade: { diasUteis: 7, label: "7 dias uteis" },
   refinanciamento: { diasUteis: 7, label: "7 dias uteis" },
 };
-
-const PROPOSTAS_KEY = "atlas:propostas:userCriadas";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -45,15 +43,11 @@ export function ServidorTermo() {
   const [aceito, setAceito] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [show2FA, setShow2FA] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
   const [done, setDone] = useState<null | { propostaId: string; quando: Date; ip: string; device: string }>(null);
 
   const prazo = PRAZOS[tipo];
   const tipoLabel = TIPO_LABEL[tipo];
-
-  const propostaId = useMemo(
-    () => `PRO-${Math.floor(Math.random() * 9000 + 1000)}`,
-    [],
-  );
 
   function pedirAutorizacao() {
     // Acao sensivel — abre 2FA antes de fechar a pre-reserva.
@@ -63,35 +57,26 @@ export function ServidorTermo() {
   async function autorizar() {
     setShow2FA(false);
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 1200));
+    setErro(null);
     const quando = new Date();
     const ip = "189.41." + Math.floor(Math.random() * 200) + "." + Math.floor(Math.random() * 200);
     const device = navigator.userAgent.includes("Mobi") ? "Smartphone (web)" : "Desktop (web)";
 
-    // Persiste no localStorage para aparecer em /servidor/propostas.
+    // Cria a proposta no BACKEND (persistido) — é assim que ela chega no portal do
+    // banco e sobrevive ao refresh/troca de perfil. Taxa mensal em fração (1.8% -> 0.018).
     try {
-      const raw = window.localStorage.getItem(PROPOSTAS_KEY);
-      const list = raw ? (JSON.parse(raw) as unknown[]) : [];
-      const novaProposta = {
-        id: propostaId,
-        banco,
-        estado: "em_analise" as const,
+      const res = await atlas.servidor.criarProposta({
         valor,
         parcelas,
-        parcela,
-        taxaAm,
-        tipo,
-        criadaEm: quando.toISOString(),
-        expiraEm: new Date(quando.getTime() + (tipo === "novo" ? 48 : 7 * 24) * 60 * 60 * 1000).toISOString(),
-        idMatricula: readActiveIdMatricula() ?? undefined,
-      };
-      window.localStorage.setItem(PROPOSTAS_KEY, JSON.stringify([novaProposta, ...list]));
-    } catch {
-      // Modo privado / quota cheia — segue mesmo assim.
+        taxaAm: taxaAm / 100,
+        bancoNome: banco,
+      });
+      setDone({ propostaId: res.id, quando, ip, device });
+    } catch (e) {
+      setErro((e as Error).message || "Não foi possível registrar a proposta. Tente novamente.");
+    } finally {
+      setSubmitting(false);
     }
-
-    setDone({ propostaId, quando, ip, device });
-    setSubmitting(false);
   }
 
   if (done) {
@@ -223,6 +208,12 @@ export function ServidorTermo() {
           Voltar ao inicio
         </Button>
       </div>
+
+      {erro ? (
+        <div style={{ padding: 14, borderRadius: 10, background: "color-mix(in srgb, var(--danger-500) 12%, transparent)", border: "1px solid var(--danger-500)", color: "var(--text)", fontSize: ".9rem" }}>
+          {erro}
+        </div>
+      ) : null}
 
       {show2FA ? (
         <TwoFactorModal

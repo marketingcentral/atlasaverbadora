@@ -653,6 +653,17 @@ export class AtlasClient {
           vigenciaFim: string | null;
         }[];
       }>("/v1/servidores/me/ofertas"),
+    /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
+    criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string }) =>
+      this.request<{ id: string; situacao: string; banco: string; valor: number; parcelas: number; parcela: number; expira_em: string | null }>(
+        "/v1/servidores/me/propostas",
+        { method: "POST", body: input },
+      ),
+    /** Propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê). */
+    propostas: () =>
+      this.request<{ propostas: { id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number; situacao: string; data: string; expira_em: string | null }[] }>(
+        "/v1/servidores/me/propostas",
+      ),
   };
 
   // ============ Portal Banco ============
@@ -697,6 +708,7 @@ export class AtlasClient {
           adf: string; situacao: string; lancamento: string; expiracao: string | null;
           cpfMasked: string; matricula: string; nome: string; tipoContrato: string;
           totalParcelas: number; valorParcela: number; convenio: string;
+          convenioId: string; valorFinanciado: number; taxaAm: number;
         }[];
         total: number;
       }>("/v1/portal/banco/contratos", {

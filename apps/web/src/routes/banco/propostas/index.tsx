@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { DataTable, IconButton, Pill, SelectField, type Column } from "@atlas/ui/web";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, DataTable, IconButton, Pill, SelectField, type Column } from "@atlas/ui/web";
+import { atlas } from "../../../lib/sdk";
 import {
   getBancoConvenios,
   PRODUTO_LABEL,
@@ -16,6 +18,55 @@ import {
   type BancoProposta,
   type BancoPropostaStatus,
 } from "../../../lib/banco-propostas";
+
+// Proposta vinda do backend (real, criada pelo servidor). `_api` marca a origem
+// para o front decidir via API (não localStorage).
+type PropostaRow = BancoProposta & { _api?: boolean };
+
+/** Converte "DD/MM/YYYY" (lancamento do backend) em ISO para o countdown da trava. */
+function parseBrDate(s: string): string {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  if (!m) return new Date().toISOString();
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).toISOString();
+}
+
+/** Mapeia um contrato/reserva do backend para o modelo de proposta do banco. */
+function contratoToProposta(ct: {
+  adf: string; situacao: string; lancamento: string; cpfMasked: string; matricula: string;
+  nome: string; tipoContrato: string; totalParcelas: number; valorParcela: number;
+  convenio: string; valorFinanciado: number; taxaAm: number;
+}): PropostaRow {
+  const t = ct.situacao.toLowerCase();
+  const status: BancoPropostaStatus = t.includes("aguard")
+    ? "recebida"
+    : t.includes("cancel") || t.includes("suspens") || t.includes("recus")
+      ? "recusada"
+      : t.includes("ativo") || t.includes("averb") || t.includes("quitad")
+        ? "averbada"
+        : "recebida";
+  return {
+    idUnico: ct.adf,
+    cpfMasked: ct.cpfMasked,
+    nome: ct.nome,
+    convenio: ct.convenio,
+    matricula: ct.matricula,
+    produto: ct.tipoContrato === "REFIN" ? "portabilidade" : "novo",
+    valor: ct.valorFinanciado,
+    parcelas: ct.totalParcelas,
+    parcela: ct.valorParcela,
+    taxaAm: ct.taxaAm * 100,
+    margemComprometida: ct.valorParcela,
+    margemDisponivel: 0,
+    salarioLiquido: 0,
+    vinculo: "",
+    situacaoFuncional: "",
+    status,
+    criadaEm: parseBrDate(ct.lancamento),
+    travaHoras: 48,
+    contratosAtivos: [],
+    _api: true,
+  };
+}
 
 const STATUS_OPTS: BancoPropostaStatus[] = [
   "recebida",
@@ -44,7 +95,26 @@ export function BancoPropostas() {
     return () => clearInterval(t);
   }, []);
 
-  const todas = getAllPropostas();
+  const qc = useQueryClient();
+  // Propostas REAIS do backend (criadas pelo servidor). Poll pra ver novas caírem na fila.
+  const apiQ = useQuery({
+    queryKey: ["banco", "propostas-api"],
+    queryFn: () => atlas.banco.contratos(),
+    refetchInterval: 15_000,
+  });
+  const decidir = useMutation({
+    mutationFn: ({ adf, acao }: { adf: string; acao: "confirmar" | "cancelar" }) => atlas.banco.acao(adf, acao),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["banco", "propostas-api"] });
+      qc.invalidateQueries({ queryKey: ["servidor", "propostas"] });
+    },
+  });
+
+  // Fila = propostas reais do backend (primeiro) + o seed de demonstração (localStorage).
+  const todas: PropostaRow[] = useMemo(() => {
+    const api = (apiQ.data?.contratos ?? []).map(contratoToProposta);
+    return [...api, ...(getAllPropostas() as PropostaRow[])];
+  }, [apiQ.data]);
 
   const filtradas = useMemo(() => {
     return todas.filter((p) => {
@@ -59,7 +129,7 @@ export function BancoPropostas() {
     });
   }, [todas, convenio, produto, status, expirando]);
 
-  const columns: Column<BancoProposta>[] = [
+  const columns: Column<PropostaRow>[] = [
     { key: "status", header: "Status", render: (r) => <Pill variant={statusPill(r.status)}>{STATUS_LABEL[r.status]}</Pill> },
     { key: "idUnico", header: "ID único", mono: true },
     {
@@ -166,7 +236,20 @@ export function BancoPropostas() {
         columns={columns}
         rows={filtradas}
         rowKey={(r) => r.idUnico}
-        actions={(r) => <IconButton title="Analisar proposta" onClick={() => nav(`/banco/propostas/${r.idUnico}`)}>›</IconButton>}
+        actions={(r) =>
+          r._api ? (
+            r.status === "recebida" ? (
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <Button size="sm" disabled={decidir.isPending} onClick={() => decidir.mutate({ adf: r.idUnico, acao: "confirmar" })}>Aprovar</Button>
+                <Button size="sm" variant="ghost" disabled={decidir.isPending} onClick={() => decidir.mutate({ adf: r.idUnico, acao: "cancelar" })}>Recusar</Button>
+              </div>
+            ) : (
+              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{STATUS_LABEL[r.status]}</span>
+            )
+          ) : (
+            <IconButton title="Analisar proposta" onClick={() => nav(`/banco/propostas/${r.idUnico}`)}>›</IconButton>
+          )
+        }
       />
     </div>
   );

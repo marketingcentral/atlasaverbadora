@@ -3,6 +3,8 @@
 // Same shape as the future Drizzle queries so swapping is trivial.
 
 import { CONTRATOS_MOCK, type ContratoMock } from "./fixtures.js";
+import type { Env } from "../../env.js";
+import { ensureSchema, loadContratos, upsertContrato, seedContratosIfEmpty } from "../../db/repos.js";
 
 export interface ContratoFull extends ContratoMock {
   bancoId: number;
@@ -102,6 +104,49 @@ for (const c of CONTRATOS_MOCK) {
     ator: "system:seed",
     criadoEm: new Date().toISOString(),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Persistência (Postgres) — compartilha contratos/reservas entre isolates e faz
+// a proposta do servidor sobreviver ao refresh/redeploy. Write-through + hydrate,
+// fail-safe pras fixtures em memória (segue o padrão de repos/cadastros).
+// ---------------------------------------------------------------------------
+let _hydrated = false;
+let _hydrationPromise: Promise<void> | null = null;
+
+/** Hidrata `_contratos` do Postgres uma vez por isolate (semeando do seed se vazio). */
+export function ensureContratosLoaded(env: Env): Promise<void> {
+  if (_hydrated) return Promise.resolve();
+  if (!_hydrationPromise) {
+    _hydrationPromise = (async () => {
+      try {
+        await ensureSchema(env);
+        await seedContratosIfEmpty(env, Array.from(_contratos.values()) as unknown as { adf: string; [k: string]: unknown }[]);
+        const rows = await loadContratos(env);
+        if (rows.length > 0) {
+          _contratos.clear();
+          let maxAdf = _adfCounter - 1;
+          for (const r of rows) {
+            _contratos.set(r.adf, r as unknown as ContratoFull);
+            const n = Number(r.adf);
+            if (Number.isFinite(n)) maxAdf = Math.max(maxAdf, n);
+          }
+          _adfCounter = maxAdf + 1; // evita colidir adf de novas reservas com os já persistidos
+        }
+        _hydrated = true;
+      } catch {
+        _hydrated = true; // sem DB → segue in-memory (demo)
+      }
+    })();
+  }
+  return _hydrationPromise;
+}
+
+/** Write-through best-effort: persiste um contrato/reserva sem quebrar a request. */
+export async function persistContrato(env: Env, adf: string): Promise<void> {
+  const c = _contratos.get(adf);
+  if (!c) return;
+  try { await upsertContrato(env, c as unknown as { adf: string; [k: string]: unknown }); } catch { /* fail-safe */ }
 }
 
 export function listContratos(filters: { convenioId?: string; matricula?: string; situacao?: string[] } = {}): ContratoFull[] {

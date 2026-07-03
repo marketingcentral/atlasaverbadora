@@ -6,7 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
 import { prefeituras } from "../admin/index.js";
-import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos } from "./store.js";
+import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario } from "./cadastros.js";
 
 function requireBancoRole(j: JwtClaims): void {
@@ -245,14 +245,18 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     requireBancoRole(j);
     const tipo = OperacaoTipoSchema.parse(c.req.param("tipo")?.toUpperCase());
     const body = NovoContratoBody.parse(await c.req.json());
-    return c.json(await persistir(j, c.env, tipo, body, false));
+    const ct = await persistir(j, c.env, tipo, body, false);
+    await persistContrato(c.env, ct.adf);
+    return c.json(ct);
   })
   .post("/v1/portal/banco/contratos/reservar/:tipo", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
     const tipo = OperacaoTipoSchema.parse(c.req.param("tipo")?.toUpperCase());
     const body = NovoContratoBody.parse(await c.req.json());
-    return c.json(await persistir(j, c.env, tipo, body, true));
+    const ct = await persistir(j, c.env, tipo, body, true);
+    await persistContrato(c.env, ct.adf);
+    return c.json(ct);
   })
 
   // --------- Acoes em contratos ----------
@@ -267,6 +271,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       .parse(raw);
     const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
     if (!r) throw Errors.notFound("contrato");
+    await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
     return c.json({ contrato: r });
   })
 

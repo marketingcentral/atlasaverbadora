@@ -1,17 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Card, Pill } from "@atlas/ui/web";
-import {
-  readActiveIdMatricula,
-  STORAGE_KEY_ID,
-  STORAGE_KEY_META,
-} from "../../lib/matricula-data";
+import { atlas } from "../../lib/sdk";
 import {
   ESTADO_LABEL,
   ESTADOS_TIMELINE,
-  PROPOSTAS_KEY,
   fmtDateTime,
-  getAllPropostasForMatricula,
   type EstadoProposta,
   type Proposta,
 } from "../../lib/propostas-data";
@@ -19,48 +14,56 @@ import {
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
-// Estados visiveis em /propostas — pedido do usuario.
-// Mostra apenas a primeira proposta em_analise + todas as expiradas.
-const ESTADOS_VISIVEIS: EstadoProposta[] = ["em_analise", "expirada"];
-
-function filtrarVisiveis(list: Proposta[]): Proposta[] {
-  const filtradas = list.filter((p) => ESTADOS_VISIVEIS.includes(p.estado));
-  let viuEmAnalise = false;
-  return filtradas.filter((p) => {
-    if (p.estado === "em_analise") {
-      if (viuEmAnalise) return false;
-      viuEmAnalise = true;
-      return true;
-    }
-    return true; // expirada sempre passa
-  });
+/** Mapeia a situação do contrato/reserva (backend) para o estado exibido ao servidor. */
+function mapSituacao(situacao: string): EstadoProposta {
+  const t = situacao.toLowerCase();
+  if (t.includes("aguard")) return "em_analise";
+  if (t.includes("cancel")) return "cancelada";
+  if (t.includes("recus")) return "recusada";
+  if (t.includes("suspens")) return "cancelada";
+  if (t.includes("expir")) return "expirada";
+  if (t.includes("quitad")) return "liberada";
+  if (t.includes("ativo") || t.includes("averb")) return "liberada";
+  return "em_analise";
 }
 
 export function ServidorPropostas() {
   const location = useLocation();
-  const [idMatricula, setIdMatricula] = useState<string | null>(() => readActiveIdMatricula());
-  const [propostas, setPropostas] = useState<Proposta[]>(() =>
-    filtrarVisiveis(getAllPropostasForMatricula(readActiveIdMatricula())),
-  );
   const [highlightId, setHighlightId] = useState<string | null>(null);
 
-  useEffect(() => {
-    setPropostas(filtrarVisiveis(getAllPropostasForMatricula(idMatricula)));
-  }, [idMatricula]);
+  // Fonte única = backend (mesma que o banco lê). Poll a cada 15s pra ver a decisão do banco.
+  const q = useQuery({
+    queryKey: ["servidor", "propostas"],
+    queryFn: () => atlas.servidor.propostas(),
+    refetchInterval: 15_000,
+  });
 
-  // Scroll + destaque quando a URL tem hash (#PRO-9803) — usado pelas
-  // notificacoes ao clicar.
+  const propostas: Proposta[] = useMemo(
+    () =>
+      (q.data?.propostas ?? []).map((p) => ({
+        id: p.id,
+        banco: p.banco,
+        estado: mapSituacao(p.situacao),
+        valor: p.valor,
+        parcelas: p.parcelas,
+        parcela: p.parcela,
+        taxaAm: p.taxaAm,
+        criadaEm: p.data,
+        expiraEm: p.expira_em ?? undefined,
+      })),
+    [q.data],
+  );
+
+  // Scroll + destaque quando a URL tem hash (#9001234) — usado pelas notificacoes.
   useEffect(() => {
     const hash = location.hash?.replace(/^#/, "");
     if (!hash) return;
     let highlightTimer: ReturnType<typeof setTimeout> | undefined;
-    // Pequeno delay pra dar tempo do DOM renderizar os cards.
     const t = setTimeout(() => {
       const el = document.getElementById(`proposta-${hash}`);
       if (!el) return;
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       setHighlightId(hash);
-      // Tira o destaque depois de 3s.
       highlightTimer = setTimeout(() => setHighlightId(null), 3000);
     }, 100);
     return () => {
@@ -68,18 +71,6 @@ export function ServidorPropostas() {
       if (highlightTimer) clearTimeout(highlightTimer);
     };
   }, [location.hash, propostas]);
-
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
-        setIdMatricula(readActiveIdMatricula());
-      } else if (e.key === PROPOSTAS_KEY) {
-        setPropostas(filtrarVisiveis(getAllPropostasForMatricula(idMatricula)));
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [idMatricula]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>

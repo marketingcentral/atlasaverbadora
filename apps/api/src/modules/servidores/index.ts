@@ -6,7 +6,7 @@ import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
-import { listContratos, criarContratoOuReserva } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato } from "../portal-banco/store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
@@ -287,6 +287,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       isReserva: true,
       ator: `servidor:${s.id}`,
     });
+    await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh
     return c.json(
       {
         id: contrato.adf,
@@ -317,6 +318,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         valor: round2(ct.valorFinanciado),
         parcelas: ct.totalParcelas,
         parcela: round2(ct.valorParcela),
+        taxaAm: round2(ct.taxaAm * 100),
         situacao: ct.situacao,
         data: ct.lancamento,
         expira_em: ct.expiracao,

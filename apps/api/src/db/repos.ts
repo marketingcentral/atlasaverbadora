@@ -54,6 +54,14 @@ export function ensureSchema(env: Env): Promise<void> {
       trace_id text NOT NULL
     )`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS app_logs_ts_idx ON app_logs (ts DESC)`);
+    // Contratos + reservas (propostas) do portal do banco. Chave = adf (id string).
+    // Dado completo em jsonb pra evoluir sem migração. Compartilhado entre isolates:
+    // é aqui que a proposta do servidor "chega" no banco e sobrevive ao refresh.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS contratos (
+      adf text PRIMARY KEY,
+      data jsonb NOT NULL,
+      updated_at timestamptz DEFAULT now()
+    )`);
   })().catch((e) => { _schemaEnsured = null; throw e; });
   return _schemaEnsured;
 }
@@ -281,6 +289,31 @@ export async function seedTombamentoIfEmpty(env: Env, seed: { lote: LoteLike; li
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM tombamento_lotes`)) as unknown as { n: number }[];
   if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
   for (const s of seed) await upsertTombamentoLote(env, s.lote, s.linhas);
+  return true;
+}
+
+// ============================================================
+// Contratos + reservas (portal do banco) — compartilhado entre isolates
+// ============================================================
+interface ContratoLike { adf: string; [k: string]: unknown }
+
+export async function loadContratos(env: Env): Promise<ContratoLike[]> {
+  const rows = (await getDb(env).execute(sql`SELECT data FROM contratos ORDER BY updated_at`)) as unknown as { data: ContratoLike }[];
+  return rows.map((r) => r.data).filter((d): d is ContratoLike => !!d && typeof d.adf === "string");
+}
+
+export async function upsertContrato(env: Env, c: ContratoLike): Promise<void> {
+  await getDb(env).execute(sql`
+    INSERT INTO contratos (adf, data, updated_at)
+    VALUES (${c.adf}, ${c as unknown as Record<string, unknown>}::jsonb, now())
+    ON CONFLICT (adf) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
+}
+
+export async function seedContratosIfEmpty(env: Env, seed: ContratoLike[]): Promise<boolean> {
+  const db = getDb(env);
+  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM contratos`)) as unknown as { n: number }[];
+  if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
+  for (const row of seed) await upsertContrato(env, row);
   return true;
 }
 
