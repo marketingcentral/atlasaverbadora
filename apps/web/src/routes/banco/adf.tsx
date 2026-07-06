@@ -14,7 +14,10 @@ function mapSituacaoBackend(situacao: string): ContratoStatus | null {
   const t = situacao.toLowerCase();
   if (t.includes("quitad")) return "quitado";
   if (t.includes("inadimpl")) return "inadimplente";
-  if (t.includes("ativo") || t.includes("averb")) return "em_dia";
+  // "libera" cobre "Liberada" — status usado pelo backend quando o banco
+  // aprova a proposta e o contrato entra em vigor. Sem esse match, o
+  // contrato sumia da ADF/carteira (ficava so na fila de propostas).
+  if (t.includes("ativo") || t.includes("averb") || t.includes("libera")) return "em_dia";
   return null;
 }
 
