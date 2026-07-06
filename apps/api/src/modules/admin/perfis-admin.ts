@@ -29,6 +29,15 @@ const _users: AverbadoraUser[] = [
   { id: 204, nome: "Auditor LGPD", email: "auditoria@atlas.io", perfil: "auditoria", ativo: true, twoFactorEnabled: true, twoFactorSecret: "KRSXG5DJOZSXE6JANRQXEYK7", criadoEm: "2026-04-01T00:00:00Z" },
 ];
 
+/** Usuários crus (com hash/secret) — para persistência write-through. */
+export function exportUsersRaw(): AverbadoraUser[] {
+  return _users;
+}
+/** Substitui os usuários em memória pelos hidratados do Postgres. */
+export function hydrateUsers(rows: AverbadoraUser[]): void {
+  if (rows.length) { _users.length = 0; _users.push(...rows); }
+}
+
 export function listAverbadoraUsers(): Omit<AverbadoraUser, "passwordHash" | "twoFactorSecret">[] {
   return _users.map(sanitize);
 }

@@ -294,6 +294,34 @@ export async function seedTombamentoIfEmpty(env: Env, seed: { lote: LoteLike; li
 }
 
 // ============================================================
+// Coleções jsonb genéricas (vitrine, comunicados, perfis/usuários da averbadora…)
+// Uma tabela por coleção: id text PK + data jsonb. Nomes de tabela são fixos no
+// código (não vêm de input), então sql.raw é seguro aqui.
+// ============================================================
+export async function ensureCollection(env: Env, table: string): Promise<void> {
+  await getDb(env).execute(sql.raw(`CREATE TABLE IF NOT EXISTS ${table} (id text PRIMARY KEY, data jsonb NOT NULL, updated_at timestamptz DEFAULT now())`));
+}
+export async function loadCollection<T = Record<string, unknown>>(env: Env, table: string): Promise<T[]> {
+  await ensureCollection(env, table);
+  const rows = (await getDb(env).execute(sql.raw(`SELECT data FROM ${table} ORDER BY id`))) as unknown as { data: T }[];
+  return rows.map((r) => r.data).filter((d): d is T => !!d);
+}
+export async function upsertCollectionRow(env: Env, table: string, id: string, data: unknown): Promise<void> {
+  await ensureCollection(env, table);
+  await getDb(env).execute(sql`
+    INSERT INTO ${sql.raw(table)} (id, data, updated_at)
+    VALUES (${id}, ${data as Record<string, unknown>}::jsonb, now())
+    ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
+}
+export async function seedCollectionIfEmpty(env: Env, table: string, rows: { id: string; data: unknown }[]): Promise<boolean> {
+  await ensureCollection(env, table);
+  const c = (await getDb(env).execute(sql.raw(`SELECT count(*)::int AS n FROM ${table}`))) as unknown as { n: number }[];
+  if ((c[0]?.n ?? 0) > 0 || rows.length === 0) return false;
+  for (const r of rows) await upsertCollectionRow(env, table, r.id, r.data);
+  return true;
+}
+
+// ============================================================
 // Contratos + reservas (portal do banco) — compartilhado entre isolates
 // ============================================================
 interface ContratoLike { adf: string; [k: string]: unknown }

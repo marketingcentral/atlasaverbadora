@@ -8,7 +8,7 @@ import { listContratos, refreshContratos, aplicarAcao, persistContrato } from ".
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
@@ -18,7 +18,7 @@ import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-rese
 import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
-import { deleteAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser } from "./perfis-admin.js";
+import { deleteAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 
 // ============================================================
@@ -248,6 +248,55 @@ const vitrine: VitrineBanner[] = [
   { id: "BAN-1", bancoId: 2, bancoNome: "Banco Y", titulo: "Empréstimo a 1,72% a.m.", impressoes: 42000, cliques: 3360, receitaMes: 18000, ativo: true },
   { id: "BAN-2", bancoId: 1, bancoNome: "SCred Financeira", titulo: "Portabilidade com troco", impressoes: 28000, cliques: 1400, receitaMes: 9200, ativo: true },
 ];
+const VITRINE_SEED: VitrineBanner[] = vitrine.map((v) => ({ ...v }));
+// Persistência da vitrine (write-through + hydrate; fail-safe pras fixtures).
+let _vitrineLoad: Promise<void> | null = null;
+function ensureVitrineLoaded(env: Env): Promise<void> {
+  if (_vitrineLoad) return _vitrineLoad;
+  _vitrineLoad = (async () => {
+    try {
+      await seedCollectionIfEmpty(env, "admin_vitrine", VITRINE_SEED.map((v) => ({ id: v.id, data: v })));
+      const rows = await loadCollection<VitrineBanner>(env, "admin_vitrine");
+      if (rows.length) { vitrine.length = 0; vitrine.push(...rows); }
+    } catch { _vitrineLoad = null; }
+  })();
+  return _vitrineLoad;
+}
+async function persistVitrine(env: Env, v: VitrineBanner): Promise<void> {
+  try { await upsertCollectionRow(env, "admin_vitrine", v.id, v); } catch { /* fail-safe */ }
+}
+// Persistência dos usuários da averbadora (perfis).
+let _perfisLoad: Promise<void> | null = null;
+function ensurePerfisLoaded(env: Env): Promise<void> {
+  if (_perfisLoad) return _perfisLoad;
+  _perfisLoad = (async () => {
+    try {
+      await seedCollectionIfEmpty(env, "admin_perfis", exportUsersRaw().map((u) => ({ id: String(u.id), data: u })));
+      const rows = await loadCollection<AverbadoraUser>(env, "admin_perfis");
+      hydrateUsers(rows);
+    } catch { _perfisLoad = null; }
+  })();
+  return _perfisLoad;
+}
+/** Persiste TODOS os usuários (lista pequena) — write-through após qualquer mutação. */
+async function persistPerfis(env: Env): Promise<void> {
+  try { for (const u of exportUsersRaw()) await upsertCollectionRow(env, "admin_perfis", String(u.id), u); } catch { /* fail-safe */ }
+}
+// Persistência do status do servidor (ativo/bloqueado/arquivado) — o override em memória.
+let _servidorStatusLoad: Promise<void> | null = null;
+function ensureServidorStatusLoaded(env: Env): Promise<void> {
+  if (_servidorStatusLoad) return _servidorStatusLoad;
+  _servidorStatusLoad = (async () => {
+    try {
+      const rows = await loadCollection<{ matricula: string; status: ServidorStatus }>(env, "admin_servidor_status");
+      for (const r of rows) if (r.matricula && r.status) servidorStatusOverride.set(r.matricula, r.status);
+    } catch { _servidorStatusLoad = null; }
+  })();
+  return _servidorStatusLoad;
+}
+async function persistServidorStatus(env: Env, matricula: string, status: ServidorStatus): Promise<void> {
+  try { await upsertCollectionRow(env, "admin_servidor_status", matricula, { matricula, status }); } catch { /* fail-safe */ }
+}
 
 // Status do servidor não vive na fixture (sempre "ativo"); override por matrícula.
 type ServidorStatus = "ativo" | "bloqueado" | "arquivado";
@@ -834,6 +883,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/servidores", async (c) => {
     requireAdmin(c.get("jwt"));
+    await ensureServidorStatusLoaded(c.env);
     const url = new URL(c.req.url);
     const prefeituraId = url.searchParams.get("prefeitura_id");
     const status = url.searchParams.get("status");
@@ -865,6 +915,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   .patch("/v1/admin/servidores/:matricula", async (c) => {
     requireAdmin(c.get("jwt"));
+    await ensureServidorStatusLoaded(c.env);
     const matricula = c.req.param("matricula");
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === matricula);
     if (!s) throw Errors.notFound("servidor");
@@ -894,7 +945,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (body.situacaoFuncional !== undefined) s.situacaoFuncional = body.situacaoFuncional;
     if (body.salarioLiquido !== undefined) s.salarioLiquido = body.salarioLiquido;
     if (body.idConvenio !== undefined) s.idConvenio = body.idConvenio;
-    if (body.status !== undefined) servidorStatusOverride.set(matricula, body.status);
+    if (body.status !== undefined) { servidorStatusOverride.set(matricula, body.status); await persistServidorStatus(c.env, matricula, body.status); }
     if (body.email !== undefined) s.email = body.email || undefined;
     if (body.telefone !== undefined) s.telefone = body.telefone || undefined;
     if (body.password) s.passwordHash = await sha256Hex(body.password);
@@ -1011,10 +1062,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/vitrine", async (c) => {
     requireAdmin(c.get("jwt"));
+    await ensureVitrineLoaded(c.env);
     return c.json({ banners: vitrine });
   })
   .post("/v1/admin/vitrine", async (c) => {
     requireAdmin(c.get("jwt"));
+    await ensureVitrineLoaded(c.env);
     const body = z
       .object({
         id: z.string().optional(),
@@ -1030,6 +1083,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const idx = vitrine.findIndex((v) => v.id === body.id);
       if (idx < 0) throw Errors.notFound("banner");
       vitrine[idx] = { ...vitrine[idx]!, ...body, bancoNome: banco.nome };
+      await persistVitrine(c.env, vitrine[idx]!);
       return c.json({ banner: vitrine[idx] });
     }
     const novo: VitrineBanner = {
@@ -1041,6 +1095,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       ...body,
     };
     vitrine.push(novo);
+    await persistVitrine(c.env, novo);
     return c.json({ banner: novo });
   })
 
@@ -1520,10 +1575,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ===== Perfis admin (passo 1: perfis + 2FA) =====
   .get("/v1/admin/perfis", async (c) => {
     requireAdmin(c.get("jwt"));
+    await ensurePerfisLoaded(c.env);
     return c.json({ usuarios: listAverbadoraUsers(), perfis: perfilOptions() });
   })
   .post("/v1/admin/perfis", async (c) => {
     requireAdmin(c.get("jwt"));
+    await ensurePerfisLoaded(c.env);
     const body = z.object({
       id: z.number().int().optional(),
       nome: z.string().min(2),
@@ -1534,6 +1591,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       twoFactorEnabled: z.boolean().optional(),
     }).parse(await c.req.json());
     const u = await upsertAverbadoraUser(body);
+    await persistPerfis(c.env);
     appendAudit({ categoria: "acesso", acao: body.id ? "usuario_atualizado" : "usuario_criado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora ${u.email} (perfil=${u.perfil}, 2FA=${u.twoFactorEnabled}) ${body.id ? "atualizado" : "criado"}.` });
     return c.json({ usuario: u });
   })
@@ -1542,6 +1600,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const id = Number(c.req.param("id"));
     const r = rotateTotpSecret(id);
     if (!r) throw Errors.notFound("usuario");
+    await persistPerfis(c.env);
     appendAudit({ categoria: "acesso", acao: "2fa_rotacionado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} rotacionado. Novo secret deve ser entregue uma unica vez.` });
     return c.json(r);
   })
@@ -1549,6 +1608,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(c.get("jwt"));
     const id = Number(c.req.param("id"));
     if (!disable2FA(id)) throw Errors.notFound("usuario");
+    await persistPerfis(c.env);
     appendAudit({ categoria: "acesso", acao: "2fa_desativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} desativado.` });
     return c.json({ ok: true });
   })
@@ -1556,6 +1616,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(c.get("jwt"));
     const id = Number(c.req.param("id"));
     if (!deleteAverbadoraUser(id)) throw Errors.notFound("usuario");
+    await persistPerfis(c.env);
     appendAudit({ categoria: "acesso", acao: "usuario_removido", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} removido.` });
     return c.body(null, 204);
   })
