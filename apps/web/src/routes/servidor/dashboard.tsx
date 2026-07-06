@@ -143,47 +143,70 @@ function MargensPorProduto({ info }: { info: MatriculaInfo }) {
   const margens = info.margem.margens_por_tipo;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <span className="eyebrow">Margens por produto</span>
-        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-          Salário base: <b style={{ color: "var(--text)" }}>{fmtBRL(info.margem.margem.salario_base)}</b>
-        </span>
-      </div>
-      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
-        {margens.map((m) => {
-          const utilizado = Math.max(0, m.total - m.disponivel);
-          const pct = m.total > 0 ? Math.min(100, Math.round((utilizado / m.total) * 100)) : 0;
-          return (
-            <Card key={m.tipo}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                <span style={{ fontWeight: 700, fontSize: ".98rem" }}>
-                  {PRODUTO_LABEL[m.tipo] ?? m.tipo.replace(/_/g, " ").toLowerCase()}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--text-dim)", padding: "2px 8px", background: "var(--bg-elev-2)", borderRadius: 999, fontWeight: 600 }}>
-                  {pct}% usado
-                </span>
-              </div>
+      {/* Hero navy-gradient — mesmo peso visual do MargemCard antigo,
+          mas dentro contem os 3 produtos (Emprestimo, Cartao Consignado,
+          Cartao Beneficios). */}
+      <article
+        style={{
+          background: "linear-gradient(160deg, var(--navy-700), var(--navy-900))",
+          border: "1px solid var(--border)",
+          borderRadius: 16,
+          padding: 24,
+          color: "#EAF0FA",
+          boxShadow: "var(--shadow-md)",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#9BAAC2" }}>
+            Margens por produto
+          </div>
+          <div style={{ fontSize: 12, color: "#C7D2E0" }}>
+            Salário base <b style={{ color: "#EAF0FA" }}>{fmtBRL(info.margem.margem.salario_base)}</b>
+          </div>
+        </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 12, fontSize: ".82rem" }}>
-                <MargemStat label="Total" value={fmtBRL(m.total)} />
-                <MargemStat label="Utilizado" value={fmtBRL(utilizado)} muted />
-                <MargemStat label="Disponível" value={fmtBRL(m.disponivel)} accent />
-              </div>
+        <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", marginTop: 16 }}>
+          {margens.map((m) => {
+            const utilizado = Math.max(0, m.total - m.disponivel);
+            const pct = m.total > 0 ? Math.min(100, Math.round((utilizado / m.total) * 100)) : 0;
+            const barra = pct > 80 ? "#EF4444" : pct > 60 ? "#C9A961" : "#10B981";
+            return (
+              <div
+                key={m.tipo}
+                style={{
+                  background: "rgba(255,255,255,.04)",
+                  border: "1px solid rgba(255,255,255,.08)",
+                  borderRadius: 12,
+                  padding: 16,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: ".95rem", color: "#EAF0FA" }}>
+                    {PRODUTO_LABEL[m.tipo] ?? m.tipo.replace(/_/g, " ").toLowerCase()}
+                  </span>
+                  <span style={{ fontSize: 11, color: "#9BAAC2", padding: "2px 8px", background: "rgba(255,255,255,.06)", borderRadius: 999, fontWeight: 600 }}>
+                    {pct}% usado
+                  </span>
+                </div>
 
-              <div style={{ marginTop: 12, height: 6, background: "var(--bg-elev-2)", borderRadius: 999, overflow: "hidden" }}>
-                <div
-                  style={{
-                    width: `${pct}%`,
-                    height: "100%",
-                    background: pct > 80 ? "var(--danger-500)" : pct > 60 ? "var(--gold-500)" : "var(--emerald-500)",
-                    transition: "width .4s ease",
-                  }}
-                />
+                <div style={{ fontSize: 26, fontWeight: 800, marginTop: 10, color: "#10B981", lineHeight: 1 }}>
+                  {fmtBRL(m.disponivel)}
+                </div>
+                <div style={{ fontSize: 11, color: "#9BAAC2", marginTop: 2 }}>disponível</div>
+
+                <div style={{ height: 6, background: "rgba(255,255,255,.06)", borderRadius: 3, marginTop: 14, overflow: "hidden" }}>
+                  <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, #C9A961, ${barra})`, transition: "width .4s ease" }} />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 12, color: "#C7D2E0" }}>
+                  <span>Total <b style={{ color: "#EAF0FA" }}>{fmtBRL(m.total)}</b></span>
+                  <span>Utilizado <b style={{ color: "#EAF0FA" }}>{fmtBRL(utilizado)}</b></span>
+                </div>
               </div>
-            </Card>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      </article>
 
       <div
         style={{
@@ -200,25 +223,6 @@ function MargensPorProduto({ info }: { info: MatriculaInfo }) {
         <div style={{ marginTop: 4 }}>
           <b style={{ color: "var(--text)" }}>ℹ️ Margem por produto:</b> a margem de empréstimo não pode ser usada para cartão e vice-versa — cada produto tem seu próprio limite.
         </div>
-      </div>
-    </div>
-  );
-}
-
-function MargemStat({ label, value, accent, muted }: { label: string; value: string; accent?: boolean; muted?: boolean }) {
-  return (
-    <div>
-      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
-        {label}
-      </div>
-      <div
-        style={{
-          marginTop: 4,
-          fontWeight: 700,
-          color: accent ? "var(--emerald-500)" : muted ? "var(--text-muted)" : "var(--text)",
-        }}
-      >
-        {value}
       </div>
     </div>
   );
