@@ -104,9 +104,13 @@ export function BancoPropostas() {
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
   });
+  // Rastreio local de "acabei de decidir" — mantem a proposta no topo apos
+  // Aprovar/Recusar ate uma nova pendente chegar (via poll de 5s).
+  const [decidedAt, setDecidedAt] = useState<Record<string, number>>({});
   const decidir = useMutation({
     mutationFn: ({ adf, acao }: { adf: string; acao: "confirmar" | "cancelar" }) => atlas.banco.acao(adf, acao),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
+      setDecidedAt((prev) => ({ ...prev, [vars.adf]: Date.now() }));
       qc.invalidateQueries({ queryKey: ["banco", "propostas-api"] });
       qc.invalidateQueries({ queryKey: ["servidor", "propostas"] });
     },
@@ -119,21 +123,16 @@ export function BancoPropostas() {
   }, [apiQ.data]);
 
   const filtradas = useMemo(() => {
-    // Prioridade de status: propostas pendentes de acao do banco (recebida,
-    // em_analise, mais_info) vem primeiro, depois aprovadas aguardando algo,
-    // depois formalizadas/averbadas, por ultimo terminais negativas. Dentro
-    // de cada bloco, mais recentes primeiro.
-    const prioridade: Record<BancoPropostaStatus, number> = {
-      recebida: 0,
-      em_analise: 0,
-      mais_info: 0,
-      aprovada: 1,
-      aguardando_formalizacao: 1,
-      formalizada: 2,
-      averbada: 2,
-      recusada: 3,
-      expirada: 3,
-    };
+    // Ordenacao em 2 chaves:
+    // 1. Grupo de acao pendente (recebida/em_analise/mais_info) vs demais.
+    //    Assim uma proposta nova pra aprovar sempre bate uma ja decidida.
+    // 2. Dentro do grupo, "atividade recente" = max(criadaEm, decidedAt).
+    //    Quando o banco clica Aprovar/Recusar, decidedAt=now e a proposta
+    //    fica ancorada no topo do seu novo grupo ate uma nova chegar.
+    const isPendente = (s: BancoPropostaStatus) =>
+      s === "recebida" || s === "em_analise" || s === "mais_info";
+    const atividade = (p: PropostaRow) =>
+      Math.max(new Date(p.criadaEm).getTime() || 0, decidedAt[p.idUnico] ?? 0);
     return todas
       .filter((p) => {
         if (convenio && p.convenio !== convenio) return false;
@@ -146,12 +145,12 @@ export function BancoPropostas() {
         return true;
       })
       .sort((a, b) => {
-        const pa = prioridade[a.status] ?? 9;
-        const pb = prioridade[b.status] ?? 9;
-        if (pa !== pb) return pa - pb; // pendentes primeiro
-        return new Date(b.criadaEm).getTime() - new Date(a.criadaEm).getTime(); // dentro do bloco, mais recentes primeiro
+        const pa = isPendente(a.status) ? 0 : 1;
+        const pb = isPendente(b.status) ? 0 : 1;
+        if (pa !== pb) return pa - pb;
+        return atividade(b) - atividade(a);
       });
-  }, [todas, convenio, produto, status, expirando]);
+  }, [todas, convenio, produto, status, expirando, decidedAt]);
 
   const columns: Column<PropostaRow>[] = [
     { key: "status", header: "Status", render: (r) => <Pill variant={statusPill(r.status)}>{STATUS_LABEL[r.status]}</Pill> },
