@@ -91,12 +91,15 @@ export function BancoCarteira() {
     const byId = new Map<string, Contrato>();
     for (const c of seed) byId.set(c.idUnico, c);
     for (const c of contratosBackend) byId.set(c.idUnico, c);
-    return [...byId.values()].filter((c) => {
-      if (convenio && c.convenio !== convenio) return false;
-      if (produto && c.produto !== produto) return false;
-      if (status && c.status !== status) return false;
-      return true;
-    });
+    return [...byId.values()]
+      .filter((c) => {
+        if (convenio && c.convenio !== convenio) return false;
+        if (produto && c.produto !== produto) return false;
+        if (status && c.status !== status) return false;
+        return true;
+      })
+      // Recentes no topo — ordena por averbadoEm desc.
+      .sort((a, b) => new Date(b.averbadoEm).getTime() - new Date(a.averbadoEm).getTime());
   }, [convenio, produto, status, version, contratosBackend]);
 
   const exportRows = () =>
