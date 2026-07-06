@@ -109,7 +109,7 @@ export function ServidorPortabilidade() {
                     style={{ marginTop: 4 }}
                   />
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <div>
                         <div style={{ fontWeight: 700 }}>{c.banco}</div>
                         <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
