@@ -1684,10 +1684,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       try { await upsertServidor(c.env, s); }
       catch (e) { persistFailures.push({ matricula: s.matricula, message: (e as Error).message }); }
     }
+    // Log persistido inclui o total de linhas do CSV recebido — sem isso
+    // fica dificil detectar depois "importei 50 mas so 1 entrou". Se houver
+    // qualquer rejeicao ou falha, log fica "error" pra a linha aparecer
+    // em vermelho em /averbadora/logs.
+    const totalLinhas = rows.length;
+    const nivel = (persistFailures.length + out.errors.length) > 0 ? "error" : "info";
     if (persistFailures.length > 0) {
-      pushEvent("error", "admin.servidores.import", `prefeitura=${pref.nome}: ${persistFailures.length} falhas de persistencia. Primeira: ${persistFailures[0]?.message}`);
+      pushEvent(nivel, "admin.servidores.import", `prefeitura=${pref.nome}: ${totalLinhas} linhas no CSV, ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} rejeitados, ${persistFailures.length} falhas de persistencia. Primeira: ${persistFailures[0]?.message}`);
     } else {
-      pushEvent("info", "admin.servidores.import", `prefeitura=${pref.nome}: ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
+      pushEvent(nivel, "admin.servidores.import", `prefeitura=${pref.nome}: ${totalLinhas} linhas no CSV, ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} rejeitados` + (out.errors.length > 0 ? `. Primeiro erro (linha ${out.errors[0]?.line}): ${out.errors[0]?.message}` : ""));
     }
     return c.json({ ...out, persistFailures });
   });
