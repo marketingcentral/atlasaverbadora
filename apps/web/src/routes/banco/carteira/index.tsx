@@ -76,7 +76,9 @@ export function BancoCarteira() {
           valorParcela: ct.valorParcela,
           status: s,
           proximaParcela: competenciaProximaAtual(),
-          averbadoEm: ct.lancamento,
+          // Fallback pra NOW se backend nao devolveu lancamento — mantem
+          // sort estavel (contratos recentes ficam no topo).
+          averbadoEm: ct.lancamento || new Date().toISOString(),
           ccbUrl: `https://formaliza.banco.com.br/ccb/${ct.adf}.pdf`,
         };
       })
@@ -98,8 +100,13 @@ export function BancoCarteira() {
         if (status && c.status !== status) return false;
         return true;
       })
-      // Recentes no topo — ordena por averbadoEm desc.
-      .sort((a, b) => new Date(b.averbadoEm).getTime() - new Date(a.averbadoEm).getTime());
+      // Recentes no topo — ordena por averbadoEm desc. NaN vira 0 pra nao
+      // gerar sort indefinido (caso alguma data venha invalida).
+      .sort((a, b) => {
+        const ta = new Date(b.averbadoEm).getTime() || 0;
+        const tb = new Date(a.averbadoEm).getTime() || 0;
+        return ta - tb;
+      });
   }, [convenio, produto, status, version, contratosBackend]);
 
   const exportRows = () =>
