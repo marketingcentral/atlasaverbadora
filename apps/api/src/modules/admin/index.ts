@@ -671,10 +671,19 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
   })
 
-  // Repara linhas com jsonb corrompido (escalar): TRUNCATE + re-seed com raw cast.
-  // Re-hidrata os stores em memoria deste isolate a partir do Postgres corrigido.
+  // ⚠️ OPERACAO DESTRUTIVA: reseedAll faz TRUNCATE servidores/bancos/prefeituras +
+  // re-seed. So existe pra reparar jsonb corrompido. GUARDA ANTI-RESET: exige
+  // confirmacao explicita no body para NUNCA apagar dados por acidente/automacao/
+  // deploy. Sem a frase exata, retorna 400 e nao toca no banco.
   .post("/v1/admin/db/reseed", async (c) => {
     requireAdmin(c.get("jwt"));
+    const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
+    if (body.confirmar !== "APAGAR-TUDO-E-RESEMEAR") {
+      throw Errors.validation({
+        confirmar: 'Operacao destrutiva bloqueada (TRUNCATE). Para confirmar, envie { "confirmar": "APAGAR-TUDO-E-RESEMEAR" }. Isso apaga servidores/bancos/prefeituras e volta ao seed.',
+      });
+    }
+    pushEvent("error", "admin.db.reseed", `RESEED DESTRUTIVO confirmado por admin ${c.get("jwt")?.sub}: TRUNCATE + re-seed de servidores/bancos/prefeituras.`);
     await reseedAll(c.env, BANCOS_SEED, PREFEITURAS_SEED, SERVIDORES_SEED);
     const [nb, np, ns] = [await loadBancos(c.env), await loadPrefeituras(c.env), await loadServidores(c.env)];
     bancos.length = 0; bancos.push(...nb);
