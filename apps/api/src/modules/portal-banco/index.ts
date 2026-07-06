@@ -240,13 +240,19 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       matricula: colaborador ?? undefined,
       situacao: filtroSituacao.length ? filtroSituacao : undefined,
     });
-    // Propostas/reservas do servidor caem em qualquer convênio do banco — elas
-    // SEMPRE aparecem na fila (independe do convênio ativo do switcher), senão o
-    // banco não veria a solicitação recém-criada pelo servidor.
+    // Todos os contratos do banco que estejam em situacao "viva" (aguardando
+    // decisao, ativo, liberado) aparecem independente do convenio ativo do
+    // switcher. Sem isso, quando o operador troca de convenio depois de
+    // aprovar uma proposta, ela some do /banco/propostas, /banco/carteira e
+    // /banco/adf — servidor ve a operacao mas banco nao consegue mais achar.
     const bancoId = j.banco_id ?? 1;
-    const reservas = listContratos({})
-      .filter((ct) => ct.bancoId === bancoId && ct.situacao.toLowerCase().includes("aguard") && !rows.some((r) => r.adf === ct.adf));
-    const contratos = [...reservas, ...rows];
+    const outrosConvenios = listContratos({}).filter((ct) => {
+      if (ct.bancoId !== bancoId) return false;
+      if (rows.some((r) => r.adf === ct.adf)) return false; // ja incluida via filtro principal
+      const s = ct.situacao.toLowerCase();
+      return s.includes("aguard") || s.includes("ativo") || s.includes("libera") || s.includes("averb");
+    });
+    const contratos = [...outrosConvenios, ...rows];
     return c.json({ contratos, total: contratos.length });
   })
 
