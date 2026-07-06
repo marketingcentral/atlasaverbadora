@@ -13,6 +13,7 @@ const NAV = [
   { key: "portabilidade", label: "Portabilidade", href: "/servidor/portabilidade" },
   { key: "propostas", label: "Propostas", href: "/servidor/propostas" },
   { key: "contratos", label: "Contratos", href: "/servidor/contratos" },
+  { key: "beneficios", label: "Benefícios", href: "/servidor/beneficios" },
   { key: "conta", label: "Conta", href: "/servidor/conta" },
 ];
 
