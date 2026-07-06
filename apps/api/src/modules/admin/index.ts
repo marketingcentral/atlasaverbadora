@@ -316,6 +316,8 @@ function descreverMutacao(perfil: LogPerfil, method: string, path: string, ok: b
   else if (p === "admin/confirmacao/solicitar") acao = "solicitou um código de confirmação por e-mail";
   else if (p === "admin/vitrine" && method === "POST") acao = "atualizou a vitrine de ofertas";
   else if (p === "admin/comunicados" && method === "POST") acao = "publicou um comunicado";
+  else if (/^admin\/bate-carteira/.test(p)) acao = "rodou o bate de carteira (conciliação banco × folha)";
+  else if (/^admin\/id-unico/.test(p)) acao = "configurou a chave de ID único";
   // ---- Servidor: conta ----
   else if (/^servidores\/me\/(conta|contato|senha)/.test(p)) acao = "atualizou os dados da conta";
   // ---- fallback amigável ----
@@ -998,7 +1000,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (level) rows = rows.filter((e) => e.level === level);
     if (source) rows = rows.filter((e) => e.source === source);
     if (perfil) rows = rows.filter((e) => e.perfil === perfil);
-    return c.json({ logs: rows.slice(0, 200) });
+    // Traduz na leitura os logs antigos ainda no formato cru "METODO /rota"
+    // (gravados antes das frases) — assim TODO o painel fica legível.
+    const traduzidos = rows.slice(0, 200).map((e) => {
+      const mm = /^(GET|POST|PATCH|PUT|DELETE)\s+(\S+)(\s+\(falhou\))?$/.exec(e.message);
+      return mm ? { ...e, message: descreverMutacao(e.perfil, mm[1]!, mm[2]!, !mm[3]) } : e;
+    });
+    return c.json({ logs: traduzidos });
   })
 
   .get("/v1/admin/vitrine", async (c) => {
