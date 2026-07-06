@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   MATRICULAS,
   readActiveIdMatricula,
@@ -16,6 +17,11 @@ export function MatriculaSwitcher() {
   const [open, setOpen] = useState(false);
   const [, force] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
+  // Feedback de troca: overlay de ~2s nomeando a matricula de destino, para que
+  // um servidor desatento perceba que a matricula (e os dados) mudaram.
+  const [trocandoPara, setTrocandoPara] = useState<{ matricula: string; prefeitura: string } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
   // Re-renderiza quando as matriculas hidratam do backend ou a ativa muda.
   useEffect(() => {
@@ -50,13 +56,20 @@ export function MatriculaSwitcher() {
   if (MATRICULAS.length < 2 || !ativa) return null;
 
   function trocar(idMatricula: string) {
-    if (idMatricula !== activeId) {
+    setOpen(false);
+    if (idMatricula === activeId) return;
+    const alvo = MATRICULAS.find((m) => m.idMatricula === idMatricula);
+    // Mostra o overlay de troca por ~2s; só então aplica a troca — assim o usuario
+    // ve a transicao e a tela revela ja os dados da nova matricula.
+    setTrocandoPara({ matricula: alvo?.matricula ?? "", prefeitura: alvo?.prefeitura ?? "" });
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
       setActiveMatricula(idMatricula);
       // setActiveMatricula nao dispara 'storage' na propria aba — emitimos manualmente
       // para que dashboard/margem/contratos/etc. releiam a matricula ativa na hora.
       window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY_META }));
-    }
-    setOpen(false);
+      setTrocandoPara(null);
+    }, 2000);
   }
 
   return (
@@ -172,6 +185,41 @@ export function MatriculaSwitcher() {
           })}
         </div>
       ) : null}
+
+      {trocandoPara
+        ? createPortal(
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 9999,
+                background: "color-mix(in srgb, var(--navy-900) 82%, transparent)",
+                backdropFilter: "blur(4px)",
+                display: "grid",
+                placeItems: "center",
+              }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center", padding: 24 }}>
+                <div
+                  className="atlas-mat-spin"
+                  style={{ width: 46, height: 46, borderRadius: "50%", border: "3px solid var(--border-strong)", borderTopColor: "var(--gold-500)" }}
+                />
+                <div>
+                  <div style={{ fontSize: 12, color: "var(--gold-500)", fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" }}>
+                    Trocando de matrícula
+                  </div>
+                  <div style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: 6, color: "var(--text)" }}>{trocandoPara.prefeitura}</div>
+                  <div style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)", marginTop: 2 }}>Matrícula {trocandoPara.matricula}</div>
+                  <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginTop: 10 }}>Atualizando margem, contratos e dados…</div>
+                </div>
+              </div>
+              <style>{`@keyframes atlasMatSpin{to{transform:rotate(360deg)}}.atlas-mat-spin{animation:atlasMatSpin .8s linear infinite}`}</style>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
