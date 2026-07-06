@@ -88,10 +88,11 @@ export function BancoPropostas() {
   const [expirando, setExpirando] = useState(false);
   const [perfilId, setPerfilId] = useState(() => getBancoPerfil().id);
 
-  // Re-render a cada 60s para o countdown da trava permanecer vivo.
+  // Re-render a cada segundo para o countdown da trava mostrar HH:MM:SS
+  // em tempo real (era 60s antes, o valor congelava por um minuto).
   const [, setTick] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 60_000);
+    const t = setInterval(() => setTick((n) => n + 1), 1_000);
     return () => clearInterval(t);
   }, []);
 
@@ -118,16 +119,20 @@ export function BancoPropostas() {
   }, [apiQ.data]);
 
   const filtradas = useMemo(() => {
-    return todas.filter((p) => {
-      if (convenio && p.convenio !== convenio) return false;
-      if (produto && p.produto !== produto) return false;
-      if (status && p.status !== status) return false;
-      if (expirando) {
-        const t = travaInfo(p);
-        if (!t || t.expirada || !t.urgente) return false;
-      }
-      return true;
-    });
+    return todas
+      .filter((p) => {
+        if (convenio && p.convenio !== convenio) return false;
+        if (produto && p.produto !== produto) return false;
+        if (status && p.status !== status) return false;
+        if (expirando) {
+          const t = travaInfo(p);
+          if (!t || t.expirada || !t.urgente) return false;
+        }
+        return true;
+      })
+      // Recentes no topo — sort desc por criadaEm. Ao chegar uma proposta
+      // nova do servidor via poll de 5s, ela pula pro topo automaticamente.
+      .sort((a, b) => new Date(b.criadaEm).getTime() - new Date(a.criadaEm).getTime());
   }, [todas, convenio, produto, status, expirando]);
 
   const columns: Column<PropostaRow>[] = [
@@ -157,9 +162,17 @@ export function BancoPropostas() {
         const t = travaInfo(r);
         if (!t) return <span style={{ color: "var(--text-dim)" }}>—</span>;
         if (t.expirada) return <span style={{ color: "var(--danger-500)" }}>expirou</span>;
+        // Formata em tempo real: "Xd HH:MM:SS" se > 24h, "HH:MM:SS" caso contrario.
+        const total = Math.max(0, Math.floor(t.msRestantes / 1000));
+        const d = Math.floor(total / 86400);
+        const h = Math.floor((total % 86400) / 3600);
+        const m = Math.floor((total % 3600) / 60);
+        const s = total % 60;
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const label = d > 0 ? `${d}d ${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(h)}:${pad(m)}:${pad(s)}`;
         return (
-          <span style={{ color: t.urgente ? "var(--gold-500)" : "var(--text)", fontWeight: t.urgente ? 600 : 400 }}>
-            {t.label}
+          <span style={{ color: t.urgente ? "var(--gold-500)" : "var(--text)", fontWeight: t.urgente ? 600 : 500, fontFamily: "var(--font-mono)" }}>
+            {label}
           </span>
         );
       },
