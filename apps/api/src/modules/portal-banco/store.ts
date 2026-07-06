@@ -176,23 +176,32 @@ export async function refreshContratos(env: Env): Promise<void> {
     // Normaliza a IDENTIDADE DO CONVÊNIO (nome único vindo de CONVENIOS_MOCK, mesmo
     // pra contratos persistidos com o nome antigo) e EXPIRA reservas vencidas
     // (reserva "Aguardando" após a data de expiração vira "Expirado" em todas as telas).
-    const hoje = Date.now();
-    for (const c of _contratos.values()) {
-      const conv = CONVENIOS_MOCK.find((cv) => cv.id === c.convenioId);
-      if (conv && c.convenio !== conv.nome) c.convenio = conv.nome;
-      if (c.expiracao && /aguard/i.test(c.situacao)) {
-        const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(c.expiracao);
-        if (m) {
-          const exp = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]) + 1).getTime(); // fim do dia de expiração
-          if (exp < hoje) c.situacao = "Expirado";
-        }
-      }
-    }
+    for (const c of _contratos.values()) normalizeContrato(c);
   } catch { /* fail-safe: segue com o Map em memória */ }
 }
 
+/**
+ * Normaliza um contrato IN-PLACE em toda leitura (independe do Postgres/refresh):
+ *  - identidade do convênio: nome único vindo de CONVENIOS_MOCK (corrige registros
+ *    persistidos com nome antigo);
+ *  - expiração: reserva "Aguardando" cuja data de expiração já passou vira "Expirado".
+ * Idempotente — seguro chamar em cada listagem.
+ */
+export function normalizeContrato(c: ContratoFull): ContratoFull {
+  const conv = CONVENIOS_MOCK.find((cv) => cv.id === c.convenioId);
+  if (conv && c.convenio !== conv.nome) c.convenio = conv.nome;
+  if (c.expiracao && /aguard/i.test(c.situacao)) {
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(c.expiracao);
+    if (m) {
+      const exp = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]) + 1).getTime(); // fim do dia de expiração
+      if (exp < Date.now()) c.situacao = "Expirado";
+    }
+  }
+  return c;
+}
+
 export function listContratos(filters: { convenioId?: string; matricula?: string; situacao?: string[] } = {}): ContratoFull[] {
-  return Array.from(_contratos.values()).filter((c) => {
+  return Array.from(_contratos.values()).map(normalizeContrato).filter((c) => {
     if (filters.convenioId && c.convenioId !== filters.convenioId) return false;
     if (filters.matricula && c.matricula !== filters.matricula) return false;
     if (filters.situacao && filters.situacao.length > 0) {
@@ -203,7 +212,8 @@ export function listContratos(filters: { convenioId?: string; matricula?: string
 }
 
 export function getContrato(adf: string): ContratoFull | undefined {
-  return _contratos.get(adf);
+  const c = _contratos.get(adf);
+  return c ? normalizeContrato(c) : undefined;
 }
 
 /** Marca o status do ADF na folha (chamado pela prefeitura). Fonte única = contrato.
