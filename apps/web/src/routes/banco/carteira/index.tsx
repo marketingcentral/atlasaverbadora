@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button, DataTable, Pill, SelectField, type Column } from "@atlas/ui/web";
 import { downloadCsv, downloadJson } from "../../../lib/csv";
+import { atlas } from "../../../lib/sdk";
 import {
   getBancoConvenios,
   PRODUTO_LABEL,
@@ -21,6 +23,22 @@ function statusPill(s: ContratoStatus): "emdia" | "aceita" | "rejeitada" {
   return s === "em_dia" ? "emdia" : s === "quitado" ? "aceita" : "rejeitada";
 }
 
+/** Backend situacao -> ContratoStatus da UI. Contratos ainda em analise (reserva)
+ *  nao entram na carteira — so os averbados/ativos aparecem aqui. */
+function mapSituacaoBackend(situacao: string): ContratoStatus | null {
+  const t = situacao.toLowerCase();
+  if (t.includes("quitad")) return "quitado";
+  if (t.includes("inadimpl")) return "inadimplente";
+  if (t.includes("ativo") || t.includes("averb")) return "em_dia";
+  return null; // aguardando/cancelada/recusada nao vira contrato de carteira
+}
+
+function competenciaProximaAtual(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function BancoCarteira() {
   const perfil = getBancoPerfil();
   const [convenio, setConvenio] = useState("");
@@ -28,15 +46,58 @@ export function BancoCarteira() {
   const [status, setStatus] = useState<"" | ContratoStatus>("");
   const [version, setVersion] = useState(0);
 
+  // Backend: contratos reais criados quando o banco aprovou propostas do
+  // servidor. Poll 5s pra pegar novas aprovacoes em quase-tempo-real.
+  const q = useQuery({
+    queryKey: ["banco", "contratos-api"],
+    queryFn: () => atlas.banco.contratos(),
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+
+  const contratosBackend: Contrato[] = useMemo(() => {
+    const list = q.data?.contratos ?? [];
+    return list
+      .map((ct): Contrato | null => {
+        const s = mapSituacaoBackend(ct.situacao);
+        if (!s) return null;
+        const tipo = ct.tipoContrato?.toLowerCase() ?? "";
+        const produtoUi: BancoProduto = tipo.includes("portab") ? "portabilidade" : "novo";
+        return {
+          idUnico: ct.adf,
+          cpfMasked: ct.cpfMasked,
+          nome: ct.nome,
+          convenio: ct.convenio,
+          matricula: ct.matricula,
+          produto: produtoUi,
+          valor: ct.valorFinanciado,
+          parcelas: ct.totalParcelas,
+          valorParcela: ct.valorParcela,
+          status: s,
+          proximaParcela: competenciaProximaAtual(),
+          averbadoEm: ct.lancamento,
+          ccbUrl: `https://formaliza.banco.com.br/ccb/${ct.adf}.pdf`,
+        };
+      })
+      .filter((c): c is Contrato => c !== null);
+  }, [q.data]);
+
   const contratos = useMemo(() => {
     void version;
-    return getCarteira().filter((c) => {
+    // Dedupe por idUnico: backend eh a fonte de verdade quando conflita com
+    // o seed antigo do localStorage.
+    const seed = getCarteira();
+    const byId = new Map<string, Contrato>();
+    for (const c of seed) byId.set(c.idUnico, c);
+    for (const c of contratosBackend) byId.set(c.idUnico, c);
+    return [...byId.values()].filter((c) => {
       if (convenio && c.convenio !== convenio) return false;
       if (produto && c.produto !== produto) return false;
       if (status && c.status !== status) return false;
       return true;
     });
-  }, [convenio, produto, status, version]);
+  }, [convenio, produto, status, version, contratosBackend]);
 
   const exportRows = () =>
     contratos.map((c) => ({
