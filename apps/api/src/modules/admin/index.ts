@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato } from "../portal-banco/store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
@@ -14,7 +14,7 @@ import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
-import { cancelPreReserva, countExpiringNext24h, getPreReserva, listPreReservas, summarizePreReservas, sweepExpired, type PreReservaStatus } from "./pre-reservas.js";
+import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
@@ -293,6 +293,69 @@ export function logMutacaoPersistido(env: Env, waitUntil: ((p: Promise<unknown>)
 function randomTrace(): string {
   return Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
 }
+
+// ===== Pré-reservas derivadas do fluxo REAL (store de contratos), não mais seed.
+// A averbadora vê as propostas/reservas que os servidores criam, com o mesmo
+// estado que o banco/prefeitura enxergam. Fonte única = _contratos (persistido).
+function brToIso(s: string): string {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s || "");
+  if (!m) return new Date().toISOString();
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).toISOString();
+}
+function contratoToPreReserva(ct: ReturnType<typeof listContratos>[number]): PreReserva {
+  const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+  const prefId = conv?.prefeituraId ?? 1;
+  const pref = prefeituras.find((p) => p.id === prefId);
+  const banco = bancos.find((b) => b.id === ct.bancoId);
+  const s = ct.situacao.toLowerCase();
+  const criadoEm = brToIso(ct.lancamento);
+  const expiraEm = ct.expiracao ? brToIso(ct.expiracao) : criadoEm;
+  const expirou = !!ct.expiracao && new Date(expiraEm).getTime() < Date.now();
+  const status: PreReservaStatus = s.includes("cancel")
+    ? "cancelada"
+    : s.includes("ativo") || s.includes("averb") || s.includes("quitad")
+      ? "confirmada"
+      : s.includes("aguard") && expirou
+        ? "expirada"
+        : "ativa";
+  return {
+    id: ct.adf,
+    idUnico: ct.adf,
+    bancoId: ct.bancoId,
+    bancoNome: banco?.nome ?? `Banco ${ct.bancoId}`,
+    prefeituraId: prefId,
+    prefeituraNome: pref?.nome ?? conv?.prefeitura ?? "",
+    convenioId: ct.convenioId,
+    convenioNome: ct.convenio,
+    servidorCpfMasked: ct.cpfMasked,
+    servidorNome: ct.nome,
+    matricula: ct.matricula,
+    tipoOperacao: ct.tipoContrato === "REFIN" ? "REFIN" : "EMPRESTIMO",
+    valorMargem: ct.valorFinanciado,
+    valorParcela: ct.valorParcela,
+    parcelas: ct.totalParcelas,
+    criadoEm,
+    expiraEm,
+    status,
+    finalizadoEm: status !== "ativa" ? (ct.expiracao ? expiraEm : criadoEm) : undefined,
+  };
+}
+function resumoPreReservas(list: PreReserva[]): PreReservaSummary {
+  const now = Date.now();
+  const todayStart = new Date(new Date().toISOString().slice(0, 10)).getTime();
+  let ativas = 0, expirandoEm24h = 0, confirmadasHoje = 0, expiradasHoje = 0, margemTotalTravada = 0;
+  for (const r of list) {
+    if (r.status === "ativa") {
+      ativas++; margemTotalTravada += r.valorMargem;
+      if (new Date(r.expiraEm).getTime() <= now + 24 * 3600_000) expirandoEm24h++;
+    } else if (r.status === "confirmada" && r.finalizadoEm && new Date(r.finalizadoEm).getTime() >= todayStart) {
+      confirmadasHoje++;
+    } else if (r.status === "expirada" && r.finalizadoEm && new Date(r.finalizadoEm).getTime() >= todayStart) {
+      expiradasHoje++;
+    }
+  }
+  return { ativas, expirandoEm24h, confirmadasHoje, expiradasHoje, margemTotalTravada };
+}
 pushEvent("info", "system", "Atlas API initialized");
 pushEvent("info", "auth", "Login OK servidor:00011122233");
 pushEvent("warn", "bank", "BMG timeout after 1200ms (retry 1/3)");
@@ -364,10 +427,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/dashboard", async (c) => {
     requireAdmin(c.get("jwt"));
+    await refreshContratos(c.env);
     const todosContratos = listContratos({});
     const totalVitrineMes = vitrine.reduce((acc, v) => acc + v.receitaMes, 0);
-    sweepExpired();
-    const preResumo = summarizePreReservas();
+    const preResumo = resumoPreReservas(todosContratos.map(contratoToPreReserva));
     const folhasAbertas = folhas.filter((f) => f.status === "aberta").length;
     const volumePorConvenio = todosContratos.reduce<Record<string, number>>((acc, c) => {
       acc[c.convenio] = (acc[c.convenio] ?? 0) + c.valorFinanciado;
@@ -388,7 +451,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         servidoresCadastrados: prefeituras.reduce((a, p) => a + p.servidoresCount, 0),
         receitaVitrineMes: totalVitrineMes,
         preReservasAtivas: preResumo.ativas,
-        preReservasExpirandoEm24h: countExpiringNext24h(),
+        preReservasExpirandoEm24h: preResumo.expirandoEm24h,
         margemTravada: preResumo.margemTotalTravada,
         folhasAbertas,
       },
@@ -1271,37 +1334,38 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ===== Pre-reservas e travas (passo 8) =====
   .get("/v1/admin/pre-reservas", async (c) => {
     requireAdmin(c.get("jwt"));
-    sweepExpired();
+    await refreshContratos(c.env); // fluxo real: propostas/reservas criadas pelos servidores
+    const all = listContratos({}).map(contratoToPreReserva);
     const url = new URL(c.req.url);
     const status = url.searchParams.get("status") as PreReservaStatus | null;
     const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
     const bancoId = Number(url.searchParams.get("banco_id"));
-    const list = listPreReservas({
-      status: status ?? undefined,
-      prefeituraId: Number.isFinite(prefeituraId) ? prefeituraId : undefined,
-      bancoId: Number.isFinite(bancoId) ? bancoId : undefined,
-    });
-    return c.json({ preReservas: list, resumo: summarizePreReservas() });
+    const list = all.filter((r) =>
+      (!status || r.status === status)
+      && (!Number.isFinite(prefeituraId) || r.prefeituraId === prefeituraId)
+      && (!Number.isFinite(bancoId) || r.bancoId === bancoId));
+    return c.json({ preReservas: list, resumo: resumoPreReservas(all) });
   })
   .post("/v1/admin/pre-reservas/:id/cancelar", async (c) => {
     requireAdmin(c.get("jwt"));
     const id = c.req.param("id");
     const body = z.object({ motivo: z.string().min(3).max(200) }).parse(await c.req.json());
-    const existing = getPreReserva(id);
-    if (!existing) throw Errors.notFound("pre_reserva");
-    const r = cancelPreReserva(id, `averbadora:${c.get("jwt").sub}`, body.motivo);
-    if (!r) throw Errors.notFound("pre_reserva");
+    // Cancela a reserva REAL (contrato) — libera a margem e o servidor vê "Cancelada".
+    await refreshContratos(c.env);
+    const ct = aplicarAcao(id, "cancelar", `averbadora:${c.get("jwt").sub}`, body.motivo);
+    if (!ct) throw Errors.notFound("pre_reserva");
+    await persistContrato(c.env, id);
+    const r = contratoToPreReserva(ct);
     appendAudit({ categoria: "margem", acao: "pre_reserva_cancelada", propostaId: id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Pre-reserva ${id} cancelada manualmente. Motivo: ${body.motivo}. Margem R$ ${r.valorMargem.toFixed(2)} liberada.` });
     pushEvent("warn", "admin.pre-reservas", `Pre-reserva ${id} cancelada por user:${c.get("jwt").sub}`);
     return c.json({ preReserva: r });
   })
   .post("/v1/admin/pre-reservas/sweep", async (c) => {
     requireAdmin(c.get("jwt"));
-    const expiradas = sweepExpired();
-    for (const r of expiradas) {
-      appendAudit({ categoria: "margem", acao: "margem_liberada", propostaId: r.id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, detalhes: `Pre-reserva ${r.id} expirou por TTL. Margem R$ ${r.valorMargem.toFixed(2)} liberada automaticamente.` });
-    }
-    return c.json({ expiradas: expiradas.length });
+    await refreshContratos(c.env);
+    // Expiração é derivada (reserva "Aguardando" com data de expiração vencida).
+    const expiradas = listContratos({}).map(contratoToPreReserva).filter((r) => r.status === "expirada").length;
+    return c.json({ expiradas });
   })
 
   // ===== Tombamento de contratos (passo 9) =====

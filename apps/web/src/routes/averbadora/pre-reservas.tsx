@@ -12,7 +12,8 @@ export function AdminPreReservas() {
   const data = useQuery({
     queryKey: ["admin", "pre-reservas", statusFilter],
     queryFn: () => atlas.admin.listPreReservas(statusFilter ? { status: statusFilter } : undefined),
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
+    placeholderData: (prev) => prev,
   });
   const sweep = useMutation({
     mutationFn: () => atlas.admin.sweepPreReservas(),
