@@ -1,14 +1,32 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ComunicadoCarrossel, DataCorteCard, KpiCard } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { fmtBRL, getAllPropostas } from "../../lib/banco-propostas";
 
+const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+/** Gera lista de cortes navegaveis: 6 meses passados + atual + 3 futuros.
+ *  O corte cai no `dia` de cada mes (com fallback para o ultimo dia do mes). */
+function buildCortes(diaCorte: number, origem: string, operacoes: string) {
+  const hoje = new Date();
+  const lista: { dia: number; mes: string; origem: string; operacoes: string }[] = [];
+  for (let offset = -6; offset <= 3; offset++) {
+    const ref = new Date(hoje.getFullYear(), hoje.getMonth() + offset, 1);
+    const ultimoDia = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate();
+    const dia = Math.min(diaCorte, ultimoDia);
+    lista.push({ dia, mes: MESES_PT[ref.getMonth()]!, origem, operacoes });
+  }
+  return lista; // index 6 = corte atual
+}
+
 export function BancoVisaoGeral() {
   const nav = useNavigate();
   const visao = useQuery({ queryKey: ["banco", "visao-geral"], queryFn: () => atlas.banco.visaoGeral() });
   const comunicados = useQuery({ queryKey: ["banco", "comunicados"], queryFn: () => atlas.banco.comunicados() });
+  // index do corte selecionado (6 = corte atual, gerado por buildCortes)
+  const [corteIdx, setCorteIdx] = useState(6);
 
   const propostas = getAllPropostas();
   const painel = useMemo(() => {
@@ -68,12 +86,23 @@ export function BancoVisaoGeral() {
           cta={{ label: "Minhas pendências", onClick: () => (window.location.href = "/banco/carteira") }}
           accent={v.kpis.pendencias.count > 0 ? "warn" : "success"}
         />
-        <DataCorteCard
-          dia={v.dataCorte.dia}
-          mes={v.dataCorte.mes}
-          origem={v.dataCorte.origem}
-          operacoes={v.dataCorte.operacoes}
-        />
+        {(() => {
+          const cortes = buildCortes(v.dataCorte.dia, v.dataCorte.origem, v.dataCorte.operacoes);
+          const idx = Math.min(Math.max(corteIdx, 0), cortes.length - 1);
+          const c = cortes[idx]!;
+          return (
+            <DataCorteCard
+              dia={c.dia}
+              mes={c.mes}
+              origem={c.origem}
+              operacoes={c.operacoes}
+              canPrev={idx > 0}
+              canNext={idx < cortes.length - 1}
+              onPrev={() => setCorteIdx((i) => Math.max(0, i - 1))}
+              onNext={() => setCorteIdx((i) => Math.min(cortes.length - 1, i + 1))}
+            />
+          );
+        })()}
       </div>
 
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
