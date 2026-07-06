@@ -1,19 +1,78 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Button, DataTable, Pill, SelectField, type Column } from "@atlas/ui/web";
+import { atlas } from "../../lib/sdk";
 import { buildSimplePdf, downloadPdf } from "../../lib/pdf";
-import { fmtBRL, fmtDateTime, getBancoPerfil } from "../../lib/banco-propostas";
-import { gerarAdf, getAdf, getCarteira, type Contrato } from "../../lib/banco-carteira";
+import { fmtBRL, fmtDateTime, getBancoPerfil, type BancoProduto } from "../../lib/banco-propostas";
+import { gerarAdf, getAdf, getCarteira, type Contrato, type ContratoStatus } from "../../lib/banco-carteira";
 
 type FiltroAdf = "todas" | "geradas" | "pendentes";
+
+/** Mesmo mapeamento da carteira — so contratos com situacao final entram na
+ *  lista de ADFs. Reservas/aguardando nao geram ADF. */
+function mapSituacaoBackend(situacao: string): ContratoStatus | null {
+  const t = situacao.toLowerCase();
+  if (t.includes("quitad")) return "quitado";
+  if (t.includes("inadimpl")) return "inadimplente";
+  if (t.includes("ativo") || t.includes("averb")) return "em_dia";
+  return null;
+}
 
 export function BancoAdf() {
   const perfil = getBancoPerfil();
   const [version, setVersion] = useState(0);
   const [filtro, setFiltro] = useState<FiltroAdf>("todas");
-  // getCarteira() le do localStorage a cada render; nao ha ganho em memoizar
-  // porque a referencia do array mudaria a cada chamada. Filtro inline.
+
+  // Backend: contratos aprovados (mesma fonte que /banco/carteira).
+  const q = useQuery({
+    queryKey: ["banco", "contratos-api"],
+    queryFn: () => atlas.banco.contratos(),
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+
+  const contratosBackend: Contrato[] = useMemo(() => {
+    const list = q.data?.contratos ?? [];
+    return list
+      .map((ct): Contrato | null => {
+        const s = mapSituacaoBackend(ct.situacao);
+        if (!s) return null;
+        const tipo = ct.tipoContrato?.toLowerCase() ?? "";
+        const produtoUi: BancoProduto = tipo.includes("portab") ? "portabilidade" : "novo";
+        return {
+          idUnico: ct.adf,
+          cpfMasked: ct.cpfMasked,
+          nome: ct.nome,
+          convenio: ct.convenio,
+          matricula: ct.matricula,
+          produto: produtoUi,
+          valor: ct.valorFinanciado,
+          parcelas: ct.totalParcelas,
+          valorParcela: ct.valorParcela,
+          status: s,
+          proximaParcela: "",
+          averbadoEm: ct.lancamento || new Date().toISOString(),
+          ccbUrl: `https://formaliza.banco.com.br/ccb/${ct.adf}.pdf`,
+        };
+      })
+      .filter((c): c is Contrato => c !== null);
+  }, [q.data]);
+
+  // Merge SEED + backend, dedupe por idUnico, recentes no topo.
   void version;
-  const todosContratos = getCarteira();
+  const todosContratos = useMemo(() => {
+    const seed = getCarteira();
+    const byId = new Map<string, Contrato>();
+    for (const c of seed) byId.set(c.idUnico, c);
+    for (const c of contratosBackend) byId.set(c.idUnico, c);
+    return [...byId.values()].sort((a, b) => {
+      const ta = new Date(b.averbadoEm).getTime() || 0;
+      const tb = new Date(a.averbadoEm).getTime() || 0;
+      return ta - tb;
+    });
+  }, [contratosBackend]);
+
   const contratos = filtro === "todas"
     ? todosContratos
     : todosContratos.filter((c) => (filtro === "geradas" ? !!getAdf(c.idUnico) : !getAdf(c.idUnico)));
