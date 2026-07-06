@@ -1674,9 +1674,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       else { SERVIDORES_BUSCA_MOCK.push(s); out.inserted++; }
       out.rows.push(s);
     });
-    for (const s of out.rows) await persistServidor(c.env, s);
-    pushEvent("info", "admin.servidores.import", `prefeitura=${pref.nome}: ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
-    return c.json(out);
+    // Persistencia NAO-silenciosa. persistServidor engolia erros e o import
+    // reportava "sucesso" mesmo quando nada foi para o Postgres — dai a
+    // sensacao de "dados resetaram sozinhos" no dia seguinte (na verdade
+    // nunca chegaram no DB). Agora usamos upsertServidor direto e coletamos
+    // as falhas por linha pra devolver no response.
+    const persistFailures: { matricula: string; message: string }[] = [];
+    for (const s of out.rows) {
+      try { await upsertServidor(c.env, s); }
+      catch (e) { persistFailures.push({ matricula: s.matricula, message: (e as Error).message }); }
+    }
+    if (persistFailures.length > 0) {
+      pushEvent("error", "admin.servidores.import", `prefeitura=${pref.nome}: ${persistFailures.length} falhas de persistencia. Primeira: ${persistFailures[0]?.message}`);
+    } else {
+      pushEvent("info", "admin.servidores.import", `prefeitura=${pref.nome}: ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
+    }
+    return c.json({ ...out, persistFailures });
   });
 
 async function readCsvBody(c: { req: { json: () => Promise<unknown>; text: () => Promise<string>; header: (n: string) => string | undefined } }): Promise<string> {
