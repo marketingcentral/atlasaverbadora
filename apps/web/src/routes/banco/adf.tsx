@@ -65,7 +65,8 @@ export function BancoAdf() {
           valorParcela: ct.valorParcela,
           status: s,
           proximaParcela: "",
-          averbadoEm: (() => {
+          // Idem carteira: atualizadoEm (evento) > lancamento > NOW.
+          averbadoEm: ct.atualizadoEm ?? (() => {
             const t = parseLancamento(ct.lancamento);
             return t > 0 ? new Date(t).toISOString() : new Date().toISOString();
           })(),

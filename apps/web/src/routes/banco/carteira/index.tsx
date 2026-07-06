@@ -100,9 +100,11 @@ export function BancoCarteira() {
           valorParcela: ct.valorParcela,
           status: s,
           proximaParcela: competenciaProximaAtual(),
-          // Normaliza pra ISO (backend as vezes manda DD/MM/YYYY). Se nao
-          // parsear, cai em NOW pra manter o contrato visivel no topo.
-          averbadoEm: (() => {
+          // Prioridade: atualizadoEm (evento mais recente, ex.: acabou de
+          // ser aprovada) > lancamento (data do contrato) > NOW. Assim
+          // contratos recem-aprovados sobem pro topo em vez de ficarem
+          // ancorados na data do contrato original.
+          averbadoEm: ct.atualizadoEm ?? (() => {
             const t = parseLancamento(ct.lancamento);
             return t > 0 ? new Date(t).toISOString() : new Date().toISOString();
           })(),

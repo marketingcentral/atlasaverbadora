@@ -252,7 +252,17 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const s = ct.situacao.toLowerCase();
       return s.includes("aguard") || s.includes("ativo") || s.includes("libera") || s.includes("averb");
     });
-    const contratos = [...outrosConvenios, ...rows];
+    // Enriquecemos cada contrato com `atualizadoEm` = criadoEm do evento mais
+    // recente (aprovacao, averbacao, folha aplicada). Frontend usa isso pra
+    // ordenar carteira/ADF com "acabou de acontecer" no topo — sem esse campo
+    // ficariam sorteados por lancamento (data BR do contrato original), o que
+    // e uma proxy ruim de "novidade".
+    const contratosBase = [...outrosConvenios, ...rows];
+    const contratos = contratosBase.map((ct) => {
+      const eventos = getContratoEventos(ct.adf);
+      const ultimo = eventos.length > 0 ? eventos[eventos.length - 1]?.criadoEm : undefined;
+      return { ...ct, atualizadoEm: ultimo ?? new Date().toISOString() };
+    });
     return c.json({ contratos, total: contratos.length });
   })
 

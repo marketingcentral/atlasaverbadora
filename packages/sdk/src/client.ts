@@ -718,6 +718,10 @@ export class AtlasClient {
           totalParcelas: number; valorParcela: number; convenio: string;
           convenioId: string; valorFinanciado: number; taxaAm: number;
           folhaStatus?: "recebida" | "aplicada" | "falha";
+          /** ISO 8601 — data do evento mais recente do contrato (criar,
+           *  aprovar, averbar, folha aplicada). Usado pra ordenar
+           *  carteira/ADF com "acabou de acontecer" no topo. */
+          atualizadoEm?: string;
         }[];
         total: number;
       }>("/v1/portal/banco/contratos", {
