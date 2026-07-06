@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, Pill } from "@atlas/ui/web";
+import { Card, Pill } from "@atlas/ui/web";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
@@ -44,11 +44,9 @@ export function ServidorDashboard() {
         <span className="eyebrow">Bem-vindo(a)</span>
         <h1 style={{ margin: "6px 0 0", fontSize: "2rem", letterSpacing: "-.02em" }}>{info.nome}</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6 }}>
-          Matrícula <b>{info.matricula}</b> · {info.cargo} · {info.vinculo}
+          Matrícula <b>{info.matricula}</b> · {info.cargo} · {info.prefeitura}
         </p>
       </div>
-
-      <MatriculaDropdown info={info} />
 
       <MargensPorProduto info={info} />
 
@@ -240,122 +238,6 @@ function MargemCartaoMini({ data }: { data: { tipo: string; total: number; dispo
         <span>Utilizado <b style={{ color: "var(--text)" }}>{fmtBRL(utilizado)}</b></span>
       </div>
     </Card>
-  );
-}
-
-function MatriculaDropdown({ info }: { info: MatriculaInfo }) {
-  const nav = useNavigate();
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("mousedown", onClickOutside);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onClickOutside);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  function trocar() {
-    setOpen(false);
-    nav("/servidor/selecionar-matricula?trocar=1");
-  }
-
-  return (
-    <div ref={ref} style={{ position: "relative", zIndex: 30 }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 12,
-          padding: "12px 16px",
-          borderRadius: 12,
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          cursor: "pointer",
-          color: "var(--text)",
-          textAlign: "left",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: "var(--emerald-500)",
-              flexShrink: 0,
-            }}
-          />
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
-              Matrícula ativa
-            </div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 2 }}>
-              <span style={{ fontWeight: 700, fontSize: ".98rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {info.prefeitura}
-              </span>
-              <span style={{ color: "var(--text-muted)", fontSize: ".82rem", fontFamily: "var(--font-mono)" }}>
-                {info.matricula}
-              </span>
-            </div>
-          </div>
-        </div>
-        <span style={{ color: "var(--text-muted)", fontSize: ".9rem", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
-          ▾
-        </span>
-      </button>
-
-      {open ? (
-        <div
-          role="menu"
-          style={{
-            position: "absolute",
-            top: "calc(100% + 6px)",
-            left: 0,
-            right: 0,
-            background: "var(--bg-elev)",
-            border: "1px solid var(--border-strong)",
-            borderRadius: 12,
-            boxShadow: "0 12px 32px rgba(0,0,0,.45)",
-            padding: 14,
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
-            zIndex: 50,
-          }}
-        >
-          <div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
-              Detalhes
-            </div>
-            <div style={{ marginTop: 6, fontSize: ".88rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
-              {info.cargo} · {info.uf}<br />
-              <span style={{ fontFamily: "var(--font-mono)" }}>Mat. {info.matricula}</span>
-            </div>
-          </div>
-          <div style={{ height: 1, background: "var(--border)" }} />
-          <Button size="sm" variant="ghost" onClick={trocar}>
-            Trocar matrícula →
-          </Button>
-        </div>
-      ) : null}
-    </div>
   );
 }
 
