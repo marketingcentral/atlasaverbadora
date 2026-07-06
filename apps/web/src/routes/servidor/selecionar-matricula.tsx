@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { clearAtlasState } from "../../lib/session";
+import { AtlasBrand } from "../../components/AtlasBrand";
 import {
   MATRICULAS,
   STORAGE_KEY_ID,
@@ -65,19 +66,7 @@ export function ServidorSelecionarMatricula() {
           gap: 12,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span
-            style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: "linear-gradient(135deg, var(--gold-500), var(--gold-400) 40%, var(--emerald-500))",
-              display: "grid", placeItems: "center", color: "var(--navy-900)", fontWeight: 800,
-              boxShadow: "var(--shadow-gold)",
-            }}
-          >
-            A
-          </span>
-          <div style={{ fontWeight: 700 }}>Atlas</div>
-        </div>
+        <AtlasBrand />
         <div style={{ display: "flex", gap: 8 }}>
           {window.localStorage.getItem(STORAGE_KEY_ID) ? (
             <Button variant="ghost" size="sm" onClick={() => nav("/servidor/dashboard")}>

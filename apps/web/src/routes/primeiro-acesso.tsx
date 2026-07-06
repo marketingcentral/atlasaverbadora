@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, Card, Input } from "@atlas/ui/web";
+import { AtlasLogo } from "../components/AtlasBrand";
 
 type Step = "cpf" | "codigo" | "senha" | "termos" | "ok";
 
@@ -101,17 +102,8 @@ export function PrimeiroAcessoPage() {
   return (
     <div className="auth-shell">
       <Card style={{ background: "var(--surface)", maxWidth: 520 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-          <span
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: "linear-gradient(135deg, var(--gold-500), var(--gold-400) 40%, var(--emerald-500))",
-              display: "grid", placeItems: "center", color: "var(--navy-900)", fontWeight: 800,
-              boxShadow: "var(--shadow-gold)",
-            }}
-          >
-            A
-          </span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 20, textAlign: "center" }}>
+          <AtlasLogo height={72} />
           <div>
             <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Primeiro acesso</div>
             <div style={{ fontSize: ".82rem", color: "var(--text-dim)" }}>
