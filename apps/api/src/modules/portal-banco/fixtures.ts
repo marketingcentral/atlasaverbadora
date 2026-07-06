@@ -26,7 +26,7 @@ export interface ComunicadoMock {
 }
 
 export const CONVENIOS_MOCK: ConvenioMock[] = [
-  { id: "CONV-001", bancoId: 1, prefeituraId: 1, nome: "CASTRO / DELTA GLOBAL", prefeitura: "Palhoca", uf: "SC", codigoVerba: "1547 - DELTA GLOBAL I", dataCorte: 15, diaRepasse: 5 },
+  { id: "CONV-001", bancoId: 1, prefeituraId: 1, nome: "PALHOCA / DELTA GLOBAL", prefeitura: "Palhoca", uf: "SC", codigoVerba: "1547 - DELTA GLOBAL I", dataCorte: 15, diaRepasse: 5 },
   { id: "CONV-002", bancoId: 1, prefeituraId: 2, nome: "FLORIPA / DELTA GLOBAL", prefeitura: "Florianopolis", uf: "SC", codigoVerba: "2210 - DELTA GLOBAL II", dataCorte: 18, diaRepasse: 8 },
   { id: "CONV-003", bancoId: 1, prefeituraId: 3, nome: "JOINVILLE / DELTA GLOBAL", prefeitura: "Joinville", uf: "SC", codigoVerba: "2310 - DELTA GLOBAL III", dataCorte: 20, diaRepasse: 10 },
 ];
@@ -236,5 +236,5 @@ export interface ContratoMock {
 export const CONTRATOS_MOCK: ContratoMock[] = [
   { adf: "472600084", situacao: "Aguardando Confirmação do Deferimento", lancamento: "19/06/2026", expiracao: "26/06/2026", cpfMasked: "***.***.***-34", matricula: "843796302", nome: "FERNANDA KELLI TOMAZONI", tipoContrato: "EMPRESTIMO", totalParcelas: 96, valorParcela: 240.18, convenio: "FLORIPA / DELTA GLOBAL", convenioId: "CONV-002" },
   { adf: "461050084", situacao: "Ativo", lancamento: "25/03/2026", expiracao: null, cpfMasked: "***.***.***-35", matricula: "56571701", nome: "SUZANA DALLARMI", tipoContrato: "EMPRESTIMO", totalParcelas: 84, valorParcela: 312.50, convenio: "JOINVILLE / DELTA GLOBAL", convenioId: "CONV-003" },
-  { adf: "460690084", situacao: "Ativo", lancamento: "18/03/2026", expiracao: null, cpfMasked: "***.***.***-33", matricula: "852029100", nome: "ADRIANA MARQUES DA SILVA", tipoContrato: "EMPRESTIMO", totalParcelas: 120, valorParcela: 15.48, convenio: "CASTRO / DELTA GLOBAL", convenioId: "CONV-001" },
+  { adf: "460690084", situacao: "Ativo", lancamento: "18/03/2026", expiracao: null, cpfMasked: "***.***.***-33", matricula: "852029100", nome: "ADRIANA MARQUES DA SILVA", tipoContrato: "EMPRESTIMO", totalParcelas: 120, valorParcela: 15.48, convenio: "PALHOCA / DELTA GLOBAL", convenioId: "CONV-001" },
 ];

@@ -151,7 +151,12 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       cpfNorm ? s.cpf === cpfNorm : body.matricula ? s.matricula === body.matricula : false;
     // Busca só entre os contatos do banco (não na base geral da prefeitura).
     const found = SERVIDORES_BUSCA_MOCK.find((s) => contatos.has(s.matricula) && matchPred(s));
-    if (found) return c.json({ ficha: found });
+    if (found) {
+      // LGPD: o banco não vê o salário líquido — só a MARGEM disponível.
+      const { salarioLiquido, ...ficha } = found;
+      const margemDisponivelValor = Math.round(margemDisponivel(salarioLiquido, 0, "EMPRESTIMO") * 100) / 100;
+      return c.json({ ficha: { ...ficha, margemDisponivel: margemDisponivelValor } });
+    }
     throw new HttpError(
       404,
       "not_found",

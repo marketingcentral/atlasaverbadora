@@ -2,7 +2,7 @@
 // Replaces direct DB access while the migration is not yet applied.
 // Same shape as the future Drizzle queries so swapping is trivial.
 
-import { CONTRATOS_MOCK, type ContratoMock } from "./fixtures.js";
+import { CONTRATOS_MOCK, CONVENIOS_MOCK, type ContratoMock } from "./fixtures.js";
 import type { Env } from "../../env.js";
 import { ensureSchema, loadContratos, upsertContrato, seedContratosIfEmpty } from "../../db/repos.js";
 
@@ -173,6 +173,21 @@ export async function refreshContratos(env: Env): Promise<void> {
     await ensureContratosLoaded(env); // garante schema + seed inicial
     const rows = await loadContratos(env);
     for (const r of rows) _contratos.set(r.adf, r as unknown as ContratoFull);
+    // Normaliza a IDENTIDADE DO CONVÊNIO (nome único vindo de CONVENIOS_MOCK, mesmo
+    // pra contratos persistidos com o nome antigo) e EXPIRA reservas vencidas
+    // (reserva "Aguardando" após a data de expiração vira "Expirado" em todas as telas).
+    const hoje = Date.now();
+    for (const c of _contratos.values()) {
+      const conv = CONVENIOS_MOCK.find((cv) => cv.id === c.convenioId);
+      if (conv && c.convenio !== conv.nome) c.convenio = conv.nome;
+      if (c.expiracao && /aguard/i.test(c.situacao)) {
+        const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(c.expiracao);
+        if (m) {
+          const exp = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]) + 1).getTime(); // fim do dia de expiração
+          if (exp < hoje) c.situacao = "Expirado";
+        }
+      }
+    }
   } catch { /* fail-safe: segue com o Map em memória */ }
 }
 
