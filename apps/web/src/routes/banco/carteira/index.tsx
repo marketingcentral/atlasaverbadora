@@ -39,6 +39,16 @@ function competenciaProximaAtual(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Linha da carteira = Contrato + status do ADF na folha da prefeitura (folhaStatus),
+ *  pra mostrar "Aplicada em folha" quando a prefeitura confirma (Passo 6). */
+type CarteiraRow = Contrato & { folhaStatus?: "recebida" | "aplicada" | "falha" };
+
+function folhaPill(f?: "recebida" | "aplicada" | "falha"): { label: string; variant: "emdia" | "aceita" | "rejeitada" } {
+  if (f === "aplicada") return { label: "Aplicada em folha", variant: "emdia" };
+  if (f === "falha") return { label: "Falha na folha", variant: "rejeitada" };
+  return { label: "Aguardando folha", variant: "aceita" };
+}
+
 export function BancoCarteira() {
   const perfil = getBancoPerfil();
   const [convenio, setConvenio] = useState("");
@@ -56,10 +66,10 @@ export function BancoCarteira() {
     placeholderData: (prev) => prev,
   });
 
-  const contratosBackend: Contrato[] = useMemo(() => {
+  const contratosBackend: CarteiraRow[] = useMemo(() => {
     const list = q.data?.contratos ?? [];
     return list
-      .map((ct): Contrato | null => {
+      .map((ct): CarteiraRow | null => {
         const s = mapSituacaoBackend(ct.situacao);
         if (!s) return null;
         const tipo = ct.tipoContrato?.toLowerCase() ?? "";
@@ -80,9 +90,10 @@ export function BancoCarteira() {
           // sort estavel (contratos recentes ficam no topo).
           averbadoEm: ct.lancamento || new Date().toISOString(),
           ccbUrl: `https://formaliza.banco.com.br/ccb/${ct.adf}.pdf`,
+          folhaStatus: ct.folhaStatus, // Passo 6: prefeitura confirmou em folha?
         };
       })
-      .filter((c): c is Contrato => c !== null);
+      .filter((c): c is CarteiraRow => c !== null);
   }, [q.data]);
 
   const contratos = useMemo(() => {
@@ -90,7 +101,7 @@ export function BancoCarteira() {
     // Dedupe por idUnico: backend eh a fonte de verdade quando conflita com
     // o seed antigo do localStorage.
     const seed = getCarteira();
-    const byId = new Map<string, Contrato>();
+    const byId = new Map<string, CarteiraRow>();
     for (const c of seed) byId.set(c.idUnico, c);
     for (const c of contratosBackend) byId.set(c.idUnico, c);
     return [...byId.values()]
@@ -126,8 +137,16 @@ export function BancoCarteira() {
       ccb: c.ccbUrl,
     }));
 
-  const columns: Column<Contrato>[] = [
+  const columns: Column<CarteiraRow>[] = [
     { key: "status", header: "Status", render: (r) => <Pill variant={statusPill(r.status)}>{CONTRATO_STATUS_LABEL[r.status]}</Pill> },
+    {
+      key: "folha",
+      header: "Folha",
+      render: (r) => {
+        const f = folhaPill(r.folhaStatus);
+        return <Pill variant={f.variant}>{f.label}</Pill>;
+      },
+    },
     { key: "idUnico", header: "ID único", mono: true },
     {
       key: "nome",
