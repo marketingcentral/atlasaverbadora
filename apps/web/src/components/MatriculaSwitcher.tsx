@@ -69,7 +69,7 @@ export function MatriculaSwitcher() {
       // para que dashboard/margem/contratos/etc. releiam a matricula ativa na hora.
       window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY_META }));
       setTrocandoPara(null);
-    }, 2000);
+    }, 1200);
   }
 
   return (

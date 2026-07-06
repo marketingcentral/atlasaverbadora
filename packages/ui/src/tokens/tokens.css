@@ -83,14 +83,16 @@
 }
 
 [data-theme="light"] {
-  --bg: var(--ivory-50);
-  --bg-elev: var(--white);
-  --bg-elev-2: var(--ivory-100);
-  --surface: rgba(255, 255, 255, .85);
-  --surface-solid: var(--white);
-  --border: rgba(10, 22, 40, .08);
-  --border-strong: rgba(10, 22, 40, .16);
-  --text: var(--navy-900);
+  /* Tema claro suave: sem branco puro nem texto quase-preto (evita o visual
+     "clinico"/duro). Fundo bege claro, cards off-white e texto navy suave. */
+  --bg: #F3F1EA;
+  --bg-elev: #FBFAF6;
+  --bg-elev-2: #ECE9E1;
+  --surface: rgba(251, 250, 246, .92);
+  --surface-solid: #FBFAF6;
+  --border: rgba(10, 22, 40, .10);
+  --border-strong: rgba(10, 22, 40, .18);
+  --text: #1E2A40;
   --text-muted: var(--slate-700);
   --text-dim: var(--slate-500);
   --accent: var(--gold-600);

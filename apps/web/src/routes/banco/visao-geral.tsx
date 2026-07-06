@@ -159,8 +159,8 @@ export function BancoVisaoGeral() {
       <form
         onSubmit={iniciarOperacao}
         style={{
-          background: "var(--navy-900)",
-          border: "1px solid var(--border-strong)",
+          background: "color-mix(in srgb, var(--accent) 8%, var(--bg-elev))",
+          border: "1px solid color-mix(in srgb, var(--accent) 30%, var(--border))",
           borderRadius: 16,
           padding: 20,
           display: "flex",
@@ -171,7 +171,7 @@ export function BancoVisaoGeral() {
         }}
       >
         <div style={{ minWidth: 220 }}>
-          <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase" }}>
+          <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--accent)", textTransform: "uppercase" }}>
             Próximo passo
           </div>
           <div style={{ fontSize: "1.15rem", fontWeight: 700, color: "var(--text)", marginTop: 2 }}>
