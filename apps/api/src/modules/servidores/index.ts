@@ -311,6 +311,9 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     );
   })
   // Lista as propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
+  // Opcionalmente filtra pela matricula ativa — sem esse filtro o servidor
+  // com múltiplas matrículas (acumulação de cargos) veria propostas de todas
+  // ao mesmo tempo, misturando históricos que devem viver por matrícula.
   .get("/v1/servidores/me/propostas", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
@@ -319,7 +322,12 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     await refreshContratos(c.env); // vê reservas criadas em outros isolates
-    const mats = new Set(SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((e) => e.matricula));
+    const matAtiva = c.req.query("matricula")?.trim();
+    const mats = new Set(
+      SERVIDORES_BUSCA_MOCK
+        .filter((x) => x.cpf === s.cpf && (!matAtiva || x.matricula === matAtiva))
+        .map((e) => e.matricula),
+    );
     const propostas = listContratos({})
       .filter((ct) => mats.has(ct.matricula))
       .map((ct) => ({

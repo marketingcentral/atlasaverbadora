@@ -664,10 +664,13 @@ export class AtlasClient {
         "/v1/servidores/me/propostas",
         { method: "POST", body: input },
       ),
-    /** Propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê). */
-    propostas: () =>
+    /** Propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
+     *  Filtra pela matrícula ativa quando informada — evita misturar histórico
+     *  entre matrículas de servidor com acumulação de cargos. */
+    propostas: (matricula?: string) =>
       this.request<{ propostas: { id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number; situacao: string; folhaStatus?: "recebida" | "aplicada" | "falha"; folhaMotivo?: string; data: string; expira_em: string | null }[] }>(
         "/v1/servidores/me/propostas",
+        { query: matricula ? { matricula } : undefined },
       ),
   };
 

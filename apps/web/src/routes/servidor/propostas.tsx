@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Card, Pill } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { readActiveMatricula, STORAGE_KEY_ID, STORAGE_KEY_META } from "../../lib/matricula-data";
 import {
   ESTADO_LABEL,
   fmtDateTime,
@@ -67,14 +68,27 @@ function faseChain(situacao: string, folhaStatus?: string, motivo?: string): Fas
 export function ServidorPropostas() {
   const location = useLocation();
   const [highlightId, setHighlightId] = useState<string | null>(null);
+  // Matricula ativa vai no queryKey — trocar matricula invalida cache e o
+  // backend filtra propostas por essa matricula (evita misturar historico
+  // entre matriculas do mesmo CPF).
+  const [matAtiva, setMatAtiva] = useState<string | null>(() => readActiveMatricula()?.matricula ?? null);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setMatAtiva(readActiveMatricula()?.matricula ?? null);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   // Fonte única = backend (mesma que o banco lê). Poll a cada 5s pra ver a decisão do banco.
   // placeholderData mantem os cards visiveis entre refetches — sem isso, um
   // hiato entre polls (ex.: isolate frio revalidando KV) piscaria pra
   // "Voce ainda nao tem propostas" mesmo com propostas existindo.
   const q = useQuery({
-    queryKey: ["servidor", "propostas"],
-    queryFn: () => atlas.servidor.propostas(),
+    queryKey: ["servidor", "propostas", matAtiva],
+    queryFn: () => atlas.servidor.propostas(matAtiva ?? undefined),
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

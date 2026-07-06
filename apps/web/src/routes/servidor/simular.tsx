@@ -73,8 +73,8 @@ export function ServidorSimular() {
   // se nao ha nenhuma "Aguardando" (o banco aprovou/recusou/cancelou), libera a
   // margem na hora pra o servidor fazer uma nova. Poll a cada 10s.
   const propostasQ = useQuery({
-    queryKey: ["servidor", "propostas"],
-    queryFn: () => atlas.servidor.propostas(),
+    queryKey: ["servidor", "propostas", info?.matricula ?? null],
+    queryFn: () => atlas.servidor.propostas(info?.matricula),
     refetchInterval: 10_000,
     enabled: !!lockExpiresAt, // so consulta quando ha trava pra liberar
   });

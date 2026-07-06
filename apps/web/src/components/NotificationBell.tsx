@@ -8,7 +8,7 @@ import {
   type NotifType,
   type Notification,
 } from "../lib/notifications";
-import { STORAGE_KEY_ID, STORAGE_KEY_META } from "../lib/matricula-data";
+import { STORAGE_KEY_ID, STORAGE_KEY_META, readActiveMatricula } from "../lib/matricula-data";
 import { atlas } from "../lib/sdk";
 import type { EstadoProposta, Proposta } from "../lib/propostas-data";
 
@@ -41,12 +41,26 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // Matricula ativa entra no queryKey → trocar matricula invalida o cache
+  // automaticamente e o backend filtra por essa matricula (evita vazamento
+  // de proposta entre matriculas do mesmo CPF).
+  const [matAtiva, setMatAtiva] = useState<string | null>(() => readActiveMatricula()?.matricula ?? null);
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setMatAtiva(readActiveMatricula()?.matricula ?? null);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   // Fonte unica com /servidor/propostas: mesma query, mesmo cache.
   // Poll rapido (5s) pra sensacao de tempo real — qualquer transicao de
   // estado (banco aceita, altera, recusa) aparece no sino em ate 5s.
   const q = useQuery({
-    queryKey: ["servidor", "propostas"],
-    queryFn: () => atlas.servidor.propostas(),
+    queryKey: ["servidor", "propostas", matAtiva],
+    queryFn: () => atlas.servidor.propostas(matAtiva ?? undefined),
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
     placeholderData: (prev) => prev,

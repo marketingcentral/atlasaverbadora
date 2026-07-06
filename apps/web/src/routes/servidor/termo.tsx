@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
 import { TwoFactorModal } from "../../components/TwoFactorModal";
 import { atlas } from "../../lib/sdk";
+import { readActiveMatricula } from "../../lib/matricula-data";
 
 type Tipo = "novo" | "portabilidade" | "refinanciamento";
 
@@ -70,6 +71,10 @@ export function ServidorTermo() {
         parcelas,
         taxaAm: taxaAm / 100,
         bancoNome: banco,
+        // Vincula a proposta a matricula ativa — sem isso, o backend cai no
+        // fallback (primeira matricula do CPF) e servidor com acumulacao de
+        // cargos ve a proposta criada na matricula errada.
+        matricula: readActiveMatricula()?.matricula,
       });
       setDone({ propostaId: res.id, quando, ip, device });
     } catch (e) {
