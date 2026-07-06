@@ -237,20 +237,23 @@ export function BancoPropostas() {
         columns={columns}
         rows={filtradas}
         rowKey={(r) => r.idUnico}
-        actions={(r) =>
-          r._api ? (
-            r.status === "recebida" ? (
-              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                <Button size="sm" disabled={decidir.isPending} onClick={() => decidir.mutate({ adf: r.idUnico, acao: "confirmar" })}>Aprovar</Button>
-                <Button size="sm" variant="ghost" disabled={decidir.isPending} onClick={() => decidir.mutate({ adf: r.idUnico, acao: "cancelar" })}>Recusar</Button>
-              </div>
-            ) : (
-              <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{STATUS_LABEL[r.status]}</span>
-            )
-          ) : (
-            <IconButton title="Analisar proposta" onClick={() => nav(`/banco/propostas/${r.idUnico}`)}>›</IconButton>
-          )
-        }
+        actions={(r) => {
+          // Trava expirada: banco perdeu a janela — nao pode mais decidir.
+          const travaExp = travaInfo(r)?.expirada;
+          if (r._api) {
+            if (travaExp) return <span style={{ fontSize: 11, color: "var(--danger-500)" }}>Expirada</span>;
+            if (r.status === "recebida") {
+              return (
+                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                  <Button size="sm" disabled={decidir.isPending} onClick={() => decidir.mutate({ adf: r.idUnico, acao: "confirmar" })}>Aprovar</Button>
+                  <Button size="sm" variant="ghost" disabled={decidir.isPending} onClick={() => decidir.mutate({ adf: r.idUnico, acao: "cancelar" })}>Recusar</Button>
+                </div>
+              );
+            }
+            return <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{STATUS_LABEL[r.status]}</span>;
+          }
+          return <IconButton title="Analisar proposta" onClick={() => nav(`/banco/propostas/${r.idUnico}`)}>›</IconButton>;
+        }}
       />
     </div>
   );
