@@ -9,11 +9,14 @@ import {
   STORAGE_KEY_META,
 } from "../../lib/matricula-data";
 
-// Banco que aceitaria a portabilidade (mock).
-const BANCO_DESTINO = {
-  nome: "SCred Financeira",
-  taxaAm: 1.65,
-};
+// Bancos que aceitariam portabilidade (mock — em prod viria de
+// atlas.servidor.ofertas() filtrado por convenio + produto portabilidade).
+const BANCOS_DESTINO = [
+  { nome: "SCred Financeira", taxaAm: 1.65 },
+  { nome: "Banco Atlas",      taxaAm: 1.72 },
+  { nome: "BMG Consignado",   taxaAm: 1.78 },
+  { nome: "Daycoval",         taxaAm: 1.82 },
+] as const;
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -22,6 +25,9 @@ export function ServidorPortabilidade() {
   const nav = useNavigate();
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+  // Banco destino escolhido pelo servidor (default = melhor taxa).
+  const [bancoIdx, setBancoIdx] = useState(0);
+  const BANCO_DESTINO = BANCOS_DESTINO[bancoIdx]!;
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -77,11 +83,47 @@ export function ServidorPortabilidade() {
         <span className="eyebrow">Portabilidade / Compra de divida</span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Consolidar seus contratos</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6 }}>
-          Selecione os contratos que voce quer mover para o {BANCO_DESTINO.nome} (taxa proposta:{" "}
-          <b style={{ color: "var(--emerald-500)" }}>{BANCO_DESTINO.taxaAm.toFixed(2)}% a.m.</b>). A trava de margem para
+          Selecione os contratos que voce quer mover e escolha a instituição de destino. A trava de margem para
           portabilidade dura <b>7 dias uteis</b>.
         </p>
       </header>
+
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+              Instituição de destino
+            </div>
+            <div style={{ marginTop: 4, fontSize: ".92rem", color: "var(--text-muted)" }}>
+              Escolha o banco que vai receber os contratos.
+            </div>
+          </div>
+          <select
+            value={bancoIdx}
+            onChange={(e) => setBancoIdx(Number(e.target.value))}
+            style={{
+              minWidth: 240,
+              padding: "10px 12px",
+              borderRadius: 10,
+              background: "var(--bg-elev-2)",
+              border: "1px solid var(--border-strong)",
+              color: "var(--text)",
+              fontSize: ".92rem",
+              cursor: "pointer",
+            }}
+          >
+            {BANCOS_DESTINO.map((b, i) => (
+              <option key={b.nome} value={i}>
+                {b.nome} — {b.taxaAm.toFixed(2)}% a.m.
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ marginTop: 12, fontSize: ".82rem", color: "var(--text-muted)" }}>
+          Taxa proposta pelo <b style={{ color: "var(--text)" }}>{BANCO_DESTINO.nome}</b>:{" "}
+          <b style={{ color: "var(--emerald-500)" }}>{BANCO_DESTINO.taxaAm.toFixed(2)}% a.m.</b>
+        </div>
+      </Card>
 
       {ELEGIVEIS.length === 0 ? (
         <Card>

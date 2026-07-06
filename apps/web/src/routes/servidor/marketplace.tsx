@@ -1,12 +1,36 @@
+import { useEffect, useMemo, useState } from "react";
 import { Button, Card } from "@atlas/ui/web";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { atlas } from "../../lib/sdk";
+import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID, type MatriculaInfo } from "../../lib/matricula-data";
 
 const pct = (n: number) => `${(n * 100).toFixed(2)}% a.m.`;
 
+/** Normaliza nome de prefeitura/cidade pra matching case-insensitive
+ *  sem acentos e sem prefixo "Prefeitura de". */
+function slug(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\bprefeitura\s+de\s+/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
 export function ServidorMarketplace() {
   const nav = useNavigate();
+  const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setInfo(readActiveMatricula());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   // staleTime 0 + refetchOnMount always garante que sempre puxa fresco quando
   // o usuario cai na tela vindo de outro portal. O default do react-query
   // exibe cache stale enquanto refetch acontece em background — para
@@ -20,6 +44,21 @@ export function ServidorMarketplace() {
     refetchOnWindowFocus: true,
   });
 
+  // Filtra por convenio da matricula ativa — casa cidade da oferta OU
+  // texto do convenio com o slug da prefeitura ativa. Se nao ha matricula
+  // ativa, mostra todas (nao deveria acontecer no fluxo normal).
+  const ofertasFiltradas = useMemo(() => {
+    const todas = q.data?.ofertas ?? [];
+    if (!info) return todas;
+    const alvo = slug(info.prefeitura);
+    if (!alvo) return todas;
+    return todas.filter((o) => {
+      const cidade = slug(o.cidade ?? "");
+      const conv = slug(o.convenio ?? "");
+      return cidade.includes(alvo) || conv.includes(alvo);
+    });
+  }, [q.data, info]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <header>
@@ -28,7 +67,7 @@ export function ServidorMarketplace() {
         </span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Marketplace</h1>
         <p style={{ color: "var(--text-muted)" }}>
-          Ofertas publicadas pelos bancos parceiros no seu convênio. Auto-averbação em 3 cliques.
+          Ofertas dos bancos parceiros para o convênio da <b>{info?.prefeitura ?? "sua matrícula"}</b>. Auto-averbação em 3 cliques.
         </p>
       </header>
 
@@ -36,7 +75,7 @@ export function ServidorMarketplace() {
         <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Carregando ofertas…</div>
       ) : q.error ? (
         <div style={{ color: "var(--danger-500)", fontSize: 14 }}>Falha ao carregar ofertas.</div>
-      ) : (q.data?.ofertas ?? []).length === 0 ? (
+      ) : ofertasFiltradas.length === 0 ? (
         <div
           style={{
             padding: 40,
@@ -54,7 +93,7 @@ export function ServidorMarketplace() {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-          {(q.data?.ofertas ?? []).map((o) => (
+          {ofertasFiltradas.map((o) => (
             <Card key={o.id}>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
                 {o.bancoNome}

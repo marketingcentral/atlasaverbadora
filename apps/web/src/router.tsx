@@ -12,6 +12,7 @@ import { ServidorSimular } from "./routes/servidor/simular";
 import { ServidorPropostas } from "./routes/servidor/propostas";
 import { ServidorContratos } from "./routes/servidor/contratos";
 import { ServidorConta } from "./routes/servidor/conta";
+import { ServidorBeneficios } from "./routes/servidor/beneficios";
 import { AverbadoraLayout } from "./routes/averbadora/layout";
 import { AverbadoraDashboard } from "./routes/averbadora/dashboard";
 import { AdminBancos } from "./routes/averbadora/bancos";
@@ -108,6 +109,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "termo", element: <ServidorTermo /> },
           { path: "propostas", element: <ServidorPropostas /> },
           { path: "contratos", element: <ServidorContratos /> },
+          { path: "beneficios", element: <ServidorBeneficios /> },
           { path: "conta", element: <ServidorConta /> },
         ],
       },

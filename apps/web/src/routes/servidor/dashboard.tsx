@@ -1,8 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, MargemCard, Pill } from "@atlas/ui/web";
+import { Button, Card, Pill } from "@atlas/ui/web";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
+
+const PRODUTO_LABEL: Record<string, string> = {
+  EMPRESTIMO: "Empréstimo",
+  CARTAO_CONSIGNADO: "Cartão Consignado",
+  CARTAO_BENEFICIOS: "Cartão Benefícios",
+};
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -44,9 +50,9 @@ export function ServidorDashboard() {
 
       <MatriculaDropdown info={info} />
 
-      <MargemCard data={info.margem} />
+      <MargensPorProduto info={info} />
 
-      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
         <AtalhoCard
           titulo="Simular"
           descricao="Calcule parcelas e veja ofertas de bancos parceiros."
@@ -68,29 +74,16 @@ export function ServidorDashboard() {
           accent="navy"
           onClick={() => nav("/servidor/contratos")}
         />
+        <AtalhoCard
+          titulo="Benefícios"
+          descricao="Cartão benefícios e ofertas exclusivas do convênio."
+          icon="🎁"
+          accent="emerald"
+          onClick={() => nav("/servidor/beneficios")}
+        />
       </div>
 
-      <div style={{ display: "grid", gap: 16, gridTemplateColumns: "1fr 1fr" }}>
-        <Card>
-          <span className="eyebrow">Margens por tipo</span>
-          <div style={{ marginTop: 12, display: "grid", gap: 10 }}>
-            {info.margem.margens_por_tipo.map((m) => (
-              <div
-                key={m.tipo}
-                style={{
-                  display: "flex", justifyContent: "space-between",
-                  padding: "8px 12px", background: "var(--bg-elev-2)",
-                  borderRadius: 10, fontSize: ".95rem",
-                }}
-              >
-                <span>{m.tipo.replace("_", " ").toLowerCase()}</span>
-                <span style={{ color: "var(--accent)", fontWeight: 700 }}>{fmtBRL(m.disponivel)}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card>
+      <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span className="eyebrow">Contratos ativos</span>
             <button
@@ -131,7 +124,6 @@ export function ServidorDashboard() {
             )}
           </div>
         </Card>
-      </div>
 
       <Card>
         <span className="eyebrow">Fonte</span>
@@ -143,6 +135,91 @@ export function ServidorDashboard() {
           </div>
         </div>
       </Card>
+    </div>
+  );
+}
+
+function MargensPorProduto({ info }: { info: MatriculaInfo }) {
+  const margens = info.margem.margens_por_tipo;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <span className="eyebrow">Margens por produto</span>
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          Salário base: <b style={{ color: "var(--text)" }}>{fmtBRL(info.margem.margem.salario_base)}</b>
+        </span>
+      </div>
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+        {margens.map((m) => {
+          const utilizado = Math.max(0, m.total - m.disponivel);
+          const pct = m.total > 0 ? Math.min(100, Math.round((utilizado / m.total) * 100)) : 0;
+          return (
+            <Card key={m.tipo}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: ".98rem" }}>
+                  {PRODUTO_LABEL[m.tipo] ?? m.tipo.replace(/_/g, " ").toLowerCase()}
+                </span>
+                <span style={{ fontSize: 11, color: "var(--text-dim)", padding: "2px 8px", background: "var(--bg-elev-2)", borderRadius: 999, fontWeight: 600 }}>
+                  {pct}% usado
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginTop: 12, fontSize: ".82rem" }}>
+                <MargemStat label="Total" value={fmtBRL(m.total)} />
+                <MargemStat label="Utilizado" value={fmtBRL(utilizado)} muted />
+                <MargemStat label="Disponível" value={fmtBRL(m.disponivel)} accent />
+              </div>
+
+              <div style={{ marginTop: 12, height: 6, background: "var(--bg-elev-2)", borderRadius: 999, overflow: "hidden" }}>
+                <div
+                  style={{
+                    width: `${pct}%`,
+                    height: "100%",
+                    background: pct > 80 ? "var(--danger-500)" : pct > 60 ? "var(--gold-500)" : "var(--emerald-500)",
+                    transition: "width .4s ease",
+                  }}
+                />
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          padding: "10px 14px",
+          borderRadius: 10,
+          background: "color-mix(in srgb, var(--gold-500) 8%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--gold-500) 30%, transparent)",
+          fontSize: ".82rem",
+          color: "var(--text-muted)",
+          lineHeight: 1.5,
+        }}
+      >
+        <div><b style={{ color: "var(--text)" }}>⚠️ Pré-aprovação:</b> os valores são pré-aprovados e podem variar conforme coeficiente diário e taxas.</div>
+        <div style={{ marginTop: 4 }}>
+          <b style={{ color: "var(--text)" }}>ℹ️ Margem por produto:</b> a margem de empréstimo não pode ser usada para cartão e vice-versa — cada produto tem seu próprio limite.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MargemStat({ label, value, accent, muted }: { label: string; value: string; accent?: boolean; muted?: boolean }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+        {label}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          fontWeight: 700,
+          color: accent ? "var(--emerald-500)" : muted ? "var(--text-muted)" : "var(--text)",
+        }}
+      >
+        {value}
+      </div>
     </div>
   );
 }
