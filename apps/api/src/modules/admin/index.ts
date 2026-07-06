@@ -1340,10 +1340,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const status = url.searchParams.get("status") as PreReservaStatus | null;
     const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
     const bancoId = Number(url.searchParams.get("banco_id"));
+    // Number(null/"") === 0 (finito) — por isso o guard é falsy (0/NaN = sem filtro).
     const list = all.filter((r) =>
       (!status || r.status === status)
-      && (!Number.isFinite(prefeituraId) || r.prefeituraId === prefeituraId)
-      && (!Number.isFinite(bancoId) || r.bancoId === bancoId));
+      && (!prefeituraId || r.prefeituraId === prefeituraId)
+      && (!bancoId || r.bancoId === bancoId));
     return c.json({ preReservas: list, resumo: resumoPreReservas(all) });
   })
   .post("/v1/admin/pre-reservas/:id/cancelar", async (c) => {
