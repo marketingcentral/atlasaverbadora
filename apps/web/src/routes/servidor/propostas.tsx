@@ -5,7 +5,6 @@ import { Card, Pill } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import {
   ESTADO_LABEL,
-  ESTADOS_TIMELINE,
   fmtDateTime,
   type EstadoProposta,
   type Proposta,
@@ -27,6 +26,44 @@ function mapSituacao(situacao: string): EstadoProposta {
   return "em_analise";
 }
 
+// ---- Acompanhamento em tempo real (menuzinho de fases) --------------------
+// Fases reais do fluxo servidor → banco → prefeitura, na ordem em que acontecem.
+const FASES = [
+  { key: "enviada", label: "Proposta enviada", hint: "Sua solicitação chegou ao banco." },
+  { key: "aguardando_banco", label: "Aguardando aprovação", hint: "O banco está analisando a proposta." },
+  { key: "aprovado_banco", label: "Aprovado pelo banco", hint: "O banco liberou o crédito e vai enviar o dinheiro." },
+  { key: "aguardando_adf", label: "Aguardando ADF da prefeitura", hint: "A prefeitura vai confirmar o desconto em folha." },
+  { key: "completa", label: "Autorização completa", hint: "Desconto confirmado em folha. Tudo certo!" },
+] as const;
+
+type FaseInfo = {
+  ativo: number; // índice do passo em andamento (0..4)
+  concluido: boolean; // true quando a autorização está 100% completa
+  falha?: { passo: number; label: string; motivo?: string };
+};
+
+/** Proposta enriquecida com os campos crus do backend usados pelo acompanhamento. */
+type PropostaView = Proposta & {
+  situacaoRaw: string;
+  folhaStatus?: "recebida" | "aplicada" | "falha";
+  folhaMotivo?: string;
+};
+
+/** Deriva a fase atual do fluxo a partir da situação do banco + status da ADF na prefeitura. */
+function faseChain(situacao: string, folhaStatus?: string, motivo?: string): FaseInfo {
+  const s = situacao.toLowerCase();
+  if (s.includes("cancel") || s.includes("recus") || s.includes("suspens"))
+    return { ativo: 1, concluido: false, falha: { passo: 1, label: "Recusada pelo banco", motivo } };
+  if (s.includes("expir"))
+    return { ativo: 1, concluido: false, falha: { passo: 1, label: "Proposta expirada sem resposta" } };
+  if (s.includes("aguard")) return { ativo: 1, concluido: false }; // aguardando aprovação do banco
+  // Banco aprovou (Ativo/averbado/quitado) — agora depende da ADF da prefeitura.
+  if (folhaStatus === "aplicada") return { ativo: 4, concluido: true };
+  if (folhaStatus === "falha")
+    return { ativo: 3, concluido: false, falha: { passo: 3, label: "ADF negada pela prefeitura", motivo } };
+  return { ativo: 3, concluido: false }; // aprovado, aguardando ADF
+}
+
 export function ServidorPropostas() {
   const location = useLocation();
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -43,7 +80,7 @@ export function ServidorPropostas() {
     placeholderData: (prev) => prev,
   });
 
-  const propostas: Proposta[] = useMemo(
+  const propostas: PropostaView[] = useMemo(
     () =>
       (q.data?.propostas ?? []).map((p) => ({
         id: p.id,
@@ -55,6 +92,9 @@ export function ServidorPropostas() {
         taxaAm: p.taxaAm,
         criadaEm: p.data,
         expiraEm: p.expira_em ?? undefined,
+        situacaoRaw: p.situacao,
+        folhaStatus: p.folhaStatus,
+        folhaMotivo: p.folhaMotivo,
       })),
     [q.data],
   );
@@ -113,8 +153,9 @@ export function ServidorPropostas() {
   );
 }
 
-function PropostaCard({ p, highlighted }: { p: Proposta; highlighted?: boolean }) {
+function PropostaCard({ p, highlighted }: { p: PropostaView; highlighted?: boolean }) {
   const terminal = p.estado === "recusada" || p.estado === "expirada" || p.estado === "cancelada";
+  const fase = faseChain(p.situacaoRaw, p.folhaStatus, p.folhaMotivo);
   const pillVariant: "aceita" | "pendente" | "expirado" | "averbado" =
     p.estado === "liberada" || p.estado === "formalizada"
       ? "averbado"
@@ -162,53 +203,62 @@ function PropostaCard({ p, highlighted }: { p: Proposta; highlighted?: boolean }
         {p.expiraEm && !terminal ? <KV label="Trava ate" v={fmtDateTime(p.expiraEm)} /> : null}
       </div>
 
-      {!terminal ? (
-        <div style={{ marginTop: 18 }}>
-          <Timeline atual={p.estado} />
-        </div>
-      ) : null}
+      <div style={{ marginTop: 18 }}>
+        <FaseMenu fase={fase} />
+      </div>
     </Card>
   );
 }
 
-function Timeline({ atual }: { atual: EstadoProposta }) {
-  const idxAtual = ESTADOS_TIMELINE.indexOf(atual);
+/** "Menuzinho" vertical que mostra o processo em tempo real: enviada → aprovação do
+ *  banco → ADF da prefeitura → autorização completa. Reflete o poll de 5s. */
+function FaseMenu({ fase }: { fase: FaseInfo }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      {ESTADOS_TIMELINE.map((s, i) => {
-        const done = i < idxAtual;
-        const active = i === idxAtual;
-        return (
-          <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, flex: "1 1 auto", minWidth: 0 }}>
-            <div
-              style={{
-                width: 22, height: 22, borderRadius: "50%",
-                background: done ? "var(--emerald-500)" : active ? "var(--gold-500)" : "var(--bg-elev-2)",
-                color: done || active ? "var(--navy-900)" : "var(--text-muted)",
-                display: "grid", placeItems: "center", fontWeight: 700, fontSize: ".72rem",
-                flexShrink: 0,
-              }}
-            >
-              {done ? "✓" : i + 1}
-            </div>
-            <span
-              style={{
-                fontSize: ".75rem",
-                color: active ? "var(--text)" : "var(--text-muted)",
-                fontWeight: active ? 600 : 400,
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
-            >
-              {ESTADO_LABEL[s]}
-            </span>
-            {i < ESTADOS_TIMELINE.length - 1 ? (
-              <div style={{ flex: 1, height: 1, background: "var(--border)", minWidth: 12 }} />
-            ) : null}
-          </div>
-        );
-      })}
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 10 }}>
+        Acompanhamento em tempo real
+      </div>
+      <ol style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column" }}>
+        {FASES.map((f, i) => {
+          const isFalha = fase.falha?.passo === i;
+          const done = !isFalha && (fase.concluido || i < fase.ativo);
+          const active = !isFalha && !fase.concluido && i === fase.ativo;
+          const label = isFalha ? fase.falha!.label : f.label;
+          const cor = isFalha ? "var(--rose-500)" : done ? "var(--emerald-500)" : active ? "var(--gold-500)" : "var(--bg-elev-2)";
+          const corTexto = isFalha ? "var(--rose-500)" : active ? "var(--text)" : done ? "var(--text)" : "var(--text-muted)";
+          const last = i === FASES.length - 1;
+          return (
+            <li key={f.key} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+              {/* trilha: bolinha + linha vertical conectando */}
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", alignSelf: "stretch" }}>
+                <div
+                  style={{
+                    width: 20, height: 20, borderRadius: "50%", background: cor,
+                    color: isFalha || done ? "var(--navy-900)" : active ? "var(--navy-900)" : "var(--text-muted)",
+                    display: "grid", placeItems: "center", fontWeight: 700, fontSize: ".68rem", flexShrink: 0,
+                    boxShadow: active ? "0 0 0 4px color-mix(in srgb, var(--gold-500) 22%, transparent)" : "none",
+                    animation: active ? "pulseFase 1.6s ease-in-out infinite" : "none",
+                  }}
+                >
+                  {isFalha ? "!" : done ? "✓" : i + 1}
+                </div>
+                {!last ? (
+                  <div style={{ width: 2, flex: 1, minHeight: 18, background: done ? "var(--emerald-500)" : "var(--border)", margin: "2px 0" }} />
+                ) : null}
+              </div>
+              <div style={{ paddingBottom: last ? 0 : 12, minWidth: 0 }}>
+                <div style={{ fontSize: ".82rem", fontWeight: active || isFalha ? 700 : done ? 600 : 400, color: corTexto }}>
+                  {label}
+                  {active ? <span style={{ marginLeft: 8, fontSize: ".66rem", fontWeight: 700, color: "var(--gold-500)" }}>● agora</span> : null}
+                </div>
+                <div style={{ fontSize: ".72rem", color: "var(--text-muted)", marginTop: 2 }}>
+                  {isFalha ? (fase.falha!.motivo ? `Motivo: ${fase.falha!.motivo}` : "Entre em contato com o banco para resolver.") : FASES[i]!.hint}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

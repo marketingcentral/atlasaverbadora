@@ -330,6 +330,8 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         parcela: round2(ct.valorParcela),
         taxaAm: round2(ct.taxaAm * 100),
         situacao: ct.situacao,
+        folhaStatus: ct.folhaStatus, // "recebida" | "aplicada" | "falha" — estágio da ADF na prefeitura
+        folhaMotivo: ct.folhaMotivo, // motivo quando a prefeitura nega a ADF
         data: ct.lancamento,
         expira_em: ct.expiracao,
       }));

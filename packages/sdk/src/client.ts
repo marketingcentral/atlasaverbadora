@@ -666,7 +666,7 @@ export class AtlasClient {
       ),
     /** Propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê). */
     propostas: () =>
-      this.request<{ propostas: { id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number; situacao: string; data: string; expira_em: string | null }[] }>(
+      this.request<{ propostas: { id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number; situacao: string; folhaStatus?: "recebida" | "aplicada" | "falha"; folhaMotivo?: string; data: string; expira_em: string | null }[] }>(
         "/v1/servidores/me/propostas",
       ),
   };

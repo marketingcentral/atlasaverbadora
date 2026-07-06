@@ -56,3 +56,10 @@ button { font-family: inherit; }
 .nav-side a:hover, .nav-side a.active { background: var(--bg-elev-2); color: var(--text); }
 
 .eyebrow { font-size: .75rem; letter-spacing: .12em; text-transform: uppercase; color: var(--text-dim); font-weight: 700; }
+
+/* Pulso do passo ativo no acompanhamento de propostas (servidor). */
+@keyframes pulseFase {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold-500) 45%, transparent); }
+  70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--gold-500) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold-500) 0%, transparent); }
+}
