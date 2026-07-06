@@ -5,6 +5,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
+import { refreshConvenios } from "./convenios-store.js";
 import { prefeituras } from "../admin/index.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario } from "./cadastros.js";
@@ -35,6 +36,7 @@ function currentCompetencia(): { mes: number; ano: number; yyyymm: string } {
 const SEM_CONVENIO = "__sem_convenio__";
 
 async function getActiveConvenioId(env: Env, j: JwtClaims): Promise<string> {
+  await refreshConvenios(env); // vê convênios criados pela averbadora (persistidos)
   const key = `banco_convenio:${j.banco_id}:${j.sub}`;
   const stored = env.KV_CACHE ? await env.KV_CACHE.get(key) : null;
   // Só aceita o convênio guardado se ele for DESTE banco (defesa contra vazamento).
@@ -85,6 +87,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   .get("/v1/portal/banco/convenios", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
+    await refreshConvenios(c.env); // vê convênios criados pela averbadora (persistidos)
     const ativos = CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id && cv.ativo !== false);
     const activeId = await getActiveConvenioId(c.env, j);
     return c.json({

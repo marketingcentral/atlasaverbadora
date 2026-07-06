@@ -5,6 +5,7 @@ import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, aplicarAcao, persistContrato } from "../portal-banco/store.js";
+import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
@@ -882,6 +883,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/convenios", async (c) => {
     requireAdmin(c.get("jwt"));
+    await refreshConvenios(c.env);
     const detalhado = CONVENIOS_MOCK.filter((cv) => cv.ativo !== false).map((cv) => ({
       ...cv,
       bancoNome: bancos.find((b) => b.id === cv.bancoId)?.nome ?? "—",
@@ -1310,6 +1312,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(c.get("jwt"));
     const text = await readCsvBody(c);
     const { rows } = parseCsv(text);
+    await refreshConvenios(c.env);
     const out: ImportOutcome<typeof CONVENIOS_MOCK[number]> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
     rows.forEach((r, idx) => {
       const line = idx + 2;
@@ -1321,9 +1324,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const pref = prefeituras.find((p) => p.id === prefeituraId);
       if (!pref) { out.errors.push({ line, message: `prefeitura ${prefeituraId} nao encontrada` }); return; }
       const existing = CONVENIOS_MOCK.find((c) => c.nome.toLowerCase() === r.nome!.toLowerCase());
-      const codigo = `CONV-${String(CONVENIOS_MOCK.length + out.inserted + 1).padStart(3, "0")}`;
       const conv = {
-        id: existing?.id ?? codigo,
+        id: existing?.id ?? nextConvenioId(),
         bancoId,
         prefeituraId,
         nome: r.nome!,
@@ -1334,9 +1336,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         diaRepasse: Number(r.diaRepasse) || 5,
       };
       if (existing) { Object.assign(existing, conv); out.updated++; }
-      else { CONVENIOS_MOCK.push(conv); out.inserted++; }
+      else { CONVENIOS_MOCK.push(conv); out.inserted++; } // push antes do proximo nextConvenioId -> id unico
       out.rows.push(conv);
     });
+    // Write-through: cada convenio importado persiste no Postgres.
+    for (const conv of out.rows) await persistConvenio(c.env, conv);
     pushEvent("info", "admin.convenios.import", `${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros`);
     return c.json(out);
   })
@@ -1354,6 +1358,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         diaRepasse: z.number().int().min(1).max(31),
       })
       .parse(await c.req.json());
+    await refreshConvenios(c.env);
     const pref = prefeituras.find((p) => p.id === body.prefeituraId);
     if (!pref) throw Errors.notFound("prefeitura");
     if (!bancos.find((b) => b.id === body.bancoId)) throw Errors.notFound("banco");
@@ -1362,12 +1367,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (idx < 0) throw Errors.notFound("convenio");
       const current = CONVENIOS_MOCK[idx]!;
       CONVENIOS_MOCK[idx] = { ...current, ...body, id: body.id, prefeitura: pref.nome, uf: pref.uf };
+      await persistConvenio(c.env, CONVENIOS_MOCK[idx]!); // write-through: sobrevive ao reciclo
       pushEvent("info", "admin.convenios", `Convenio "${CONVENIOS_MOCK[idx]!.nome}" atualizado`);
       return c.json({ convenio: CONVENIOS_MOCK[idx] });
     }
-    const id = `CONV-${String(CONVENIOS_MOCK.length + 1).padStart(3, "0")}`;
+    const id = nextConvenioId();
     const novo = { ...body, id, prefeitura: pref.nome, uf: pref.uf };
     CONVENIOS_MOCK.push(novo);
+    await persistConvenio(c.env, novo); // write-through: convenio novo persiste no Postgres
     pushEvent("info", "admin.convenios", `Convenio "${novo.nome}" criado`);
     return c.json({ convenio: novo });
   })
@@ -1375,9 +1382,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .delete("/v1/admin/convenios/:id", async (c) => {
     requireAdmin(c.get("jwt"));
     const id = c.req.param("id");
+    await refreshConvenios(c.env);
     const cv = CONVENIOS_MOCK.find((x) => x.id === id);
     if (!cv) throw Errors.notFound("convenio");
     cv.ativo = false;
+    await persistConvenio(c.env, cv); // write-through: desativacao persiste (nunca some, so ativo=false)
     pushEvent("info", "admin.convenios", `Convenio "${cv.nome}" desativado por user:${c.get("jwt").sub}`);
     return c.body(null, 204);
   })
