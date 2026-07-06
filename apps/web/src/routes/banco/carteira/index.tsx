@@ -42,6 +42,17 @@ function competenciaProximaAtual(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Parseia data em ISO 8601 ou DD/MM/YYYY (formato BR das fixtures do backend).
+ *  Retorna 0 se nao parsear — sort trata como "muito antigo". */
+function parseLancamento(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  const iso = new Date(raw).getTime();
+  if (!Number.isNaN(iso)) return iso;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
+  return 0;
+}
+
 /** Linha da carteira = Contrato + status do ADF na folha da prefeitura (folhaStatus),
  *  pra mostrar "Aplicada em folha" quando a prefeitura confirma (Passo 6). */
 type CarteiraRow = Contrato & { folhaStatus?: "recebida" | "aplicada" | "falha" };
@@ -89,9 +100,12 @@ export function BancoCarteira() {
           valorParcela: ct.valorParcela,
           status: s,
           proximaParcela: competenciaProximaAtual(),
-          // Fallback pra NOW se backend nao devolveu lancamento — mantem
-          // sort estavel (contratos recentes ficam no topo).
-          averbadoEm: ct.lancamento || new Date().toISOString(),
+          // Normaliza pra ISO (backend as vezes manda DD/MM/YYYY). Se nao
+          // parsear, cai em NOW pra manter o contrato visivel no topo.
+          averbadoEm: (() => {
+            const t = parseLancamento(ct.lancamento);
+            return t > 0 ? new Date(t).toISOString() : new Date().toISOString();
+          })(),
           ccbUrl: `https://formaliza.banco.com.br/ccb/${ct.adf}.pdf`,
           folhaStatus: ct.folhaStatus, // Passo 6: prefeitura confirmou em folha?
         };
@@ -114,13 +128,10 @@ export function BancoCarteira() {
         if (status && c.status !== status) return false;
         return true;
       })
-      // Recentes no topo — ordena por averbadoEm desc. NaN vira 0 pra nao
-      // gerar sort indefinido (caso alguma data venha invalida).
-      .sort((a, b) => {
-        const ta = new Date(b.averbadoEm).getTime() || 0;
-        const tb = new Date(a.averbadoEm).getTime() || 0;
-        return ta - tb;
-      });
+      // Recentes no topo — ordena por averbadoEm desc. Aceita ISO e DD/MM/YYYY
+      // (as fixtures do backend usam formato BR "18/03/2026", que new Date()
+      // sozinho retorna NaN e joga o contrato pro fim da lista).
+      .sort((a, b) => parseLancamento(b.averbadoEm) - parseLancamento(a.averbadoEm));
   }, [convenio, produto, status, version, contratosBackend]);
 
   const exportRows = () =>

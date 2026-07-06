@@ -21,6 +21,16 @@ function mapSituacaoBackend(situacao: string): ContratoStatus | null {
   return null;
 }
 
+/** Parseia ISO ou DD/MM/YYYY (formato BR das fixtures do backend). 0 se falhar. */
+function parseLancamento(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  const iso = new Date(raw).getTime();
+  if (!Number.isNaN(iso)) return iso;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
+  return 0;
+}
+
 export function BancoAdf() {
   const perfil = getBancoPerfil();
   const [version, setVersion] = useState(0);
@@ -55,7 +65,10 @@ export function BancoAdf() {
           valorParcela: ct.valorParcela,
           status: s,
           proximaParcela: "",
-          averbadoEm: ct.lancamento || new Date().toISOString(),
+          averbadoEm: (() => {
+            const t = parseLancamento(ct.lancamento);
+            return t > 0 ? new Date(t).toISOString() : new Date().toISOString();
+          })(),
           ccbUrl: `https://formaliza.banco.com.br/ccb/${ct.adf}.pdf`,
         };
       })
@@ -69,11 +82,7 @@ export function BancoAdf() {
     const byId = new Map<string, Contrato>();
     for (const c of seed) byId.set(c.idUnico, c);
     for (const c of contratosBackend) byId.set(c.idUnico, c);
-    return [...byId.values()].sort((a, b) => {
-      const ta = new Date(b.averbadoEm).getTime() || 0;
-      const tb = new Date(a.averbadoEm).getTime() || 0;
-      return ta - tb;
-    });
+    return [...byId.values()].sort((a, b) => parseLancamento(b.averbadoEm) - parseLancamento(a.averbadoEm));
   }, [contratosBackend]);
 
   const contratos = filtro === "todas"
