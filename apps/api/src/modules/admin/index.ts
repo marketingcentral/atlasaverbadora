@@ -21,6 +21,7 @@ import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
+import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -607,6 +608,50 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .post("/v1/admin/ai/test", async (c) => {
     requireAdmin(c.get("jwt"));
     return c.json(await testAiKey(c.env));
+  })
+  // ===== SMTP (envio de e-mails de confirmação) =====
+  .get("/v1/admin/smtp/config", async (c) => {
+    requireAdmin(c.get("jwt"));
+    return c.json(await getSmtpStatus(c.env));
+  })
+  .put("/v1/admin/smtp/config", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z
+      .object({
+        host: z.string().min(1),
+        port: z.number().int().min(1).max(65535),
+        user: z.string().min(1),
+        password: z.string().optional(),
+        fromEmail: z.string().email(),
+        fromName: z.string().optional(),
+        secure: z.boolean().optional(),
+      })
+      .parse(await c.req.json());
+    const status = await setSmtpConfig(c.env, body);
+    appendAudit({
+      trace_id: c.get("trace_id"),
+      categoria: "convenio_config",
+      acao: "smtp.config.set",
+      userId: c.get("jwt").sub,
+      userRole: "averbadora",
+      ip: c.req.header("cf-connecting-ip") ?? undefined,
+      detalhes: `SMTP configurado (${body.host}:${body.port}, from ${body.fromEmail})`,
+    });
+    return c.json(status);
+  })
+  .delete("/v1/admin/smtp/config", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await clearSmtpConfig(c.env);
+    appendAudit({
+      trace_id: c.get("trace_id"),
+      categoria: "convenio_config",
+      acao: "smtp.config.clear",
+      userId: c.get("jwt").sub,
+      userRole: "averbadora",
+      ip: c.req.header("cf-connecting-ip") ?? undefined,
+      detalhes: "Configuração SMTP removida",
+    });
+    return c.body(null, 204);
   })
   .post("/v1/admin/ai/normalize-csv", async (c) => {
     requireAdmin(c.get("jwt"));

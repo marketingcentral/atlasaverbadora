@@ -22,7 +22,7 @@ import { AdminServidores } from "./routes/averbadora/servidores";
 import { AdminFolhas } from "./routes/averbadora/folhas";
 import { AdminComunicados } from "./routes/averbadora/comunicados";
 import { AdminHealth } from "./routes/averbadora/health";
-import { AverbadoraIA } from "./routes/averbadora/ia";
+import { AverbadoraConfiguracoes } from "./routes/averbadora/configuracoes";
 import { AdminLogs } from "./routes/averbadora/logs";
 import { AdminVitrine } from "./routes/averbadora/vitrine";
 import { AverbadoraApiDocs } from "./routes/averbadora/api/docs";
@@ -179,7 +179,8 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "perfis", element: <AdminPerfis /> },
           { path: "comunicados", element: <AdminComunicados /> },
           { path: "health", element: <AdminHealth /> },
-          { path: "ia", element: <AverbadoraIA /> },
+          { path: "configuracoes", element: <AverbadoraConfiguracoes /> },
+          { path: "ia", element: <AverbadoraConfiguracoes /> },
           { path: "logs", element: <AdminLogs /> },
           { path: "vitrine", element: <AdminVitrine /> },
           { path: "api/docs", element: <AverbadoraApiDocs /> },

@@ -787,6 +787,12 @@ export class AtlasClient {
       this.request<{ hasKey: boolean; keyPrefix: string | null; keySuffix: string | null; updatedAt: string | null }>("/v1/admin/ai/config", { method: "PUT", body: { apiKey } }),
     aiClearKey: () => this.request<void>("/v1/admin/ai/config", { method: "DELETE" }),
     aiTest: () => this.request<{ ok: boolean; message: string; latencyMs?: number }>("/v1/admin/ai/test", { method: "POST" }),
+    // ===== SMTP (e-mails de confirmação) =====
+    smtpConfig: () =>
+      this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config"),
+    smtpSave: (input: { host: string; port: number; user: string; password?: string; fromEmail: string; fromName?: string; secure?: boolean }) =>
+      this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
+    smtpClear: () => this.request<void>("/v1/admin/smtp/config", { method: "DELETE" }),
     aiNormalizeCsv: (body: { csv: string; expectedHeaders: string[]; contextHint?: string; model?: string }) =>
       this.request<{ csv: string; mapping: Record<string, string>; summary: string; usage: { input: number; output: number } }>(
         "/v1/admin/ai/normalize-csv",

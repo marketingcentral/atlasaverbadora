@@ -18,7 +18,6 @@ const NAV = [
   { key: "perfis", label: "Usuários", href: "/averbadora/perfis", icon: "⚙" },
   { key: "comunicados", label: "Comunicados", href: "/averbadora/comunicados", icon: "❐" },
   { key: "health", label: "Health", href: "/averbadora/health", icon: "♥" },
-  { key: "ia", label: "IA", href: "/averbadora/ia", icon: "✧" },
   { key: "logs", label: "Logs", href: "/averbadora/logs", icon: "≡" },
   { key: "vitrine", label: "Vitrine", href: "/averbadora/vitrine", icon: "▢" },
   {
@@ -31,6 +30,7 @@ const NAV = [
       { key: "api-webhooks", label: "Webhooks", href: "/averbadora/api/webhooks" },
     ],
   },
+  { key: "configuracoes", label: "Configurações", href: "/averbadora/configuracoes", icon: "⚙" },
 ];
 
 export function AverbadoraLayout() {

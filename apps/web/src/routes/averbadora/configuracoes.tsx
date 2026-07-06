@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Input, Pill } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 
-export function AverbadoraIA() {
+export function AverbadoraConfiguracoes() {
   const qc = useQueryClient();
   const status = useQuery({
     queryKey: ["admin", "ai", "config"],
@@ -54,15 +54,18 @@ export function AverbadoraIA() {
             textTransform: "uppercase",
           }}
         >
-          Averbadora · Inteligência Artificial
+          Averbadora · Configurações
         </span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Configuração da IA</h1>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Configurações</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 4 }}>
-          A IA é usada para normalizar planilhas de importação que não seguem o modelo esperado. Quando um CSV chega com
-          cabeçalhos diferentes, colunas em ordem trocada ou nomes traduzidos, a IA transforma no formato canônico antes
-          de importar.
+          Chaves de API da IA e o servidor de e-mail (SMTP) usado para enviar os e-mails de confirmação (2FA, primeiro acesso, OTP).
         </p>
       </header>
+
+      <h2 style={{ margin: "8px 0 -4px", fontSize: "1.15rem" }}>Inteligência Artificial</h2>
+      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
+        A IA normaliza planilhas de importação que não seguem o modelo esperado (cabeçalhos diferentes, ordem trocada) antes de importar.
+      </p>
 
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
@@ -219,6 +222,139 @@ export function AverbadoraIA() {
           de carteira.
         </p>
       </Card>
+
+      <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
+      <h2 style={{ margin: "0 0 -4px", fontSize: "1.15rem" }}>Servidor de e-mail (SMTP)</h2>
+      <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
+        Configuração do servidor de envio dos e-mails de confirmação (2FA, primeiro acesso, OTP). A senha fica no KV do
+        Cloudflare, protegida por role averbadora — nunca é devolvida em texto claro.
+      </p>
+      <SmtpSection />
     </div>
+  );
+}
+
+function SmtpSection() {
+  const qc = useQueryClient();
+  const status = useQuery({ queryKey: ["admin", "smtp", "config"], queryFn: () => atlas.admin.smtpConfig() });
+  const cfg = status.data;
+
+  const [form, setForm] = useState({ host: "", port: 587, user: "", password: "", fromEmail: "", fromName: "", secure: true });
+  const [hydrated, setHydrated] = useState(false);
+  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // Preenche o formulário com a config salva (uma vez), sem a senha.
+  if (cfg && !hydrated) {
+    setHydrated(true);
+    setForm({
+      host: cfg.host,
+      port: cfg.port,
+      user: cfg.user,
+      password: "",
+      fromEmail: cfg.fromEmail,
+      fromName: cfg.fromName,
+      secure: cfg.secure,
+    });
+  }
+
+  const save = useMutation({
+    mutationFn: () => atlas.admin.smtpSave({
+      host: form.host.trim(),
+      port: Number(form.port),
+      user: form.user.trim(),
+      password: form.password || undefined, // vazio = mantém a senha atual
+      fromEmail: form.fromEmail.trim(),
+      fromName: form.fromName.trim() || undefined,
+      secure: form.secure,
+    }),
+    onSuccess: () => {
+      setForm((f) => ({ ...f, password: "" }));
+      setMsg({ kind: "ok", text: "SMTP salvo." });
+      qc.invalidateQueries({ queryKey: ["admin", "smtp", "config"] });
+    },
+    onError: (err) => setMsg({ kind: "err", text: err instanceof Error ? err.message : "Falha ao salvar" }),
+  });
+
+  const clear = useMutation({
+    mutationFn: () => atlas.admin.smtpClear(),
+    onSuccess: () => {
+      setForm({ host: "", port: 587, user: "", password: "", fromEmail: "", fromName: "", secure: true });
+      setMsg({ kind: "ok", text: "Configuração SMTP removida." });
+      qc.invalidateQueries({ queryKey: ["admin", "smtp", "config"] });
+    },
+  });
+
+  const podeSalvar = form.host.trim() && form.user.trim() && form.fromEmail.trim() && (form.password || cfg?.hasPassword);
+
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <h3 style={{ margin: 0 }}>{cfg?.configured ? "Editar SMTP" : "Configurar SMTP"}</h3>
+        {status.isLoading ? (
+          <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Carregando…</span>
+        ) : cfg?.configured ? (
+          <div style={{ textAlign: "right" }}>
+            <Pill variant="averbado">Configurado</Pill>
+            <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+              atualizado em {cfg.updatedAt ? new Date(cfg.updatedAt).toLocaleString("pt-BR") : "—"}
+            </div>
+          </div>
+        ) : (
+          <Pill variant="pendente">Não configurado</Pill>
+        )}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        <Input label="Host SMTP" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} placeholder="smtp.seudominio.com" autoComplete="off" spellCheck={false} />
+        <Input label="Porta" type="number" value={String(form.port)} onChange={(e) => setForm({ ...form, port: Number(e.target.value) || 0 })} placeholder="587" />
+        <Input label="Usuário" value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} placeholder="apikey / usuario@dominio" autoComplete="off" spellCheck={false} />
+        <Input
+          label={cfg?.hasPassword ? "Senha (deixe em branco p/ manter)" : "Senha"}
+          type="password"
+          value={form.password}
+          onChange={(e) => setForm({ ...form, password: e.target.value })}
+          placeholder={cfg?.hasPassword ? "••••••••" : "senha SMTP"}
+          autoComplete="off"
+        />
+        <Input label="E-mail remetente (from)" value={form.fromEmail} onChange={(e) => setForm({ ...form, fromEmail: e.target.value })} placeholder="nao-responda@seudominio.com" autoComplete="off" spellCheck={false} />
+        <Input label="Nome remetente" value={form.fromName} onChange={(e) => setForm({ ...form, fromName: e.target.value })} placeholder="Atlas Averbadora" />
+      </div>
+
+      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14, color: "var(--text-muted)", cursor: "pointer" }}>
+        <input type="checkbox" checked={form.secure} onChange={(e) => setForm({ ...form, secure: e.target.checked })} />
+        Conexão segura (TLS/SSL) — recomendado nas portas 465/587
+      </label>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <Button onClick={() => save.mutate()} disabled={!podeSalvar || save.isPending}>
+          {save.isPending ? "Salvando…" : "Salvar SMTP"}
+        </Button>
+        {cfg?.configured ? (
+          <Button
+            variant="ghost"
+            onClick={() => { if (confirm("Remover a configuração SMTP? Os e-mails de confirmação deixarão de ser enviados.")) clear.mutate(); }}
+            disabled={clear.isPending}
+            style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
+          >
+            {clear.isPending ? "Removendo…" : "✕ Remover"}
+          </Button>
+        ) : null}
+      </div>
+
+      {msg ? (
+        <div
+          style={{
+            marginTop: 14,
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: `1px solid ${msg.kind === "ok" ? "var(--emerald-500)" : "var(--danger-500)"}`,
+            background: msg.kind === "ok" ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+            fontSize: ".88rem",
+          }}
+        >
+          {msg.text}
+        </div>
+      ) : null}
+    </Card>
   );
 }
