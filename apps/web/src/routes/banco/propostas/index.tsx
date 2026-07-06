@@ -241,7 +241,10 @@ export function BancoPropostas() {
           // Trava expirada: banco perdeu a janela — nao pode mais decidir.
           const travaExp = travaInfo(r)?.expirada;
           if (r._api) {
-            if (travaExp) return <span style={{ fontSize: 11, color: "var(--danger-500)" }}>Expirada</span>;
+            // Trava expirada: nao mostra rotulo aqui — a coluna "Trava
+            // restante" ja indica "expirou" em vermelho. Actions vazio evita
+            // duplicar a mesma informacao.
+            if (travaExp) return null;
             if (r.status === "recebida") {
               return (
                 <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
