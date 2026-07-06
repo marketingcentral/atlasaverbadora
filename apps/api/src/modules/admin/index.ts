@@ -271,13 +271,65 @@ const pushEvent = (level: "info" | "warn" | "error", source: string, message: st
   return entry;
 };
 
+/** Traduz método+rota numa frase PT-BR legível ("Banco aprovou a proposta X"),
+ *  pra qualquer um entender no log o que aconteceu em cada perfil. */
+function descreverMutacao(perfil: LogPerfil, method: string, path: string, ok: boolean): string {
+  const ator = perfil === "averbadora" ? "Averbadora" : perfil === "banco" ? "Banco" : perfil === "prefeitura" ? "Prefeitura" : perfil === "servidor" ? "Servidor" : "Sistema";
+  const p = path.replace(/^\/v1\//, "");
+  const seg = p.split("/");
+  const adf = seg[3] ?? "";
+  let acao: string;
+  // ---- Fluxo da proposta (servidor ↔ banco) ----
+  if (p === "servidores/me/propostas" && method === "POST") acao = "solicitou uma nova proposta de empréstimo ao banco";
+  else if (/^portal\/banco\/contratos\/[^/]+\/confirmar$/.test(p)) acao = `aprovou/averbou a proposta ${adf}`;
+  else if (/^portal\/banco\/contratos\/[^/]+\/cancelar$/.test(p)) acao = `recusou/cancelou a proposta ${adf}`;
+  else if (/^portal\/banco\/contratos\/[^/]+\/(quitar|suspender|alongar|alterar)$/.test(p)) {
+    const v = seg[4] === "quitar" ? "quitou" : seg[4] === "suspender" ? "suspendeu" : seg[4] === "alongar" ? "alongou" : "alterou";
+    acao = `${v} o contrato ${adf}`;
+  } else if (/^portal\/banco\/contratos\/averbar\//.test(p)) acao = "averbou um novo contrato";
+  else if (/^portal\/banco\/contratos\/reservar\//.test(p)) acao = "reservou margem para um contrato";
+  else if (p === "portal/banco/convenio-ativo") acao = "trocou o convênio ativo";
+  // ---- Prefeitura: ADF / folha ----
+  else if (p === "prefeitura/adf/confirmar") acao = "confirmou ADF(s) em folha — desconto aplicado";
+  else if (p === "prefeitura/adf/falha") acao = "reprovou ADF(s) — falha na folha";
+  else if (/^prefeitura\/folhas\/[^/]+\/movimentacao$/.test(p)) acao = "importou movimentações da folha";
+  else if (p === "prefeitura/folhas" && method === "POST") acao = "abriu uma competência de folha";
+  else if (/^prefeitura\/folhas\//.test(p) && method === "PATCH") acao = "atualizou o status da folha";
+  else if (p === "prefeitura/config") acao = "ajustou exigências de averbação (CCB/2FA)";
+  else if (/^prefeitura\/servidores/.test(p)) acao = "importou/atualizou a base de servidores";
+  else if (/^prefeitura\/tombamento/.test(p)) acao = "processou um lote de tombamento";
+  // ---- Averbadora (admin) ----
+  else if (p === "admin/bancos" && method === "POST") acao = "criou/atualizou um banco parceiro";
+  else if (/^admin\/bancos\/\d+$/.test(p) && method === "DELETE") acao = "desativou um banco";
+  else if (/^admin\/bancos\/\d+\/reset-password$/.test(p)) acao = "trocou a senha de um banco";
+  else if (p === "admin/prefeituras" && method === "POST") acao = "criou/atualizou uma prefeitura";
+  else if (/^admin\/prefeituras\/\d+$/.test(p) && method === "DELETE") acao = "desativou uma prefeitura";
+  else if (p === "admin/api-tokens" && method === "POST") acao = "criou um token de acesso à API";
+  else if (/^admin\/api-tokens\/[^/]+\/pause$/.test(p)) acao = "desativou/reativou um token de acesso";
+  else if (p === "admin/webhooks" && method === "POST") acao = "cadastrou um webhook";
+  else if (p === "admin/convenios" && method === "POST") acao = "criou/atualizou um convênio";
+  else if (/^admin\/convenios\//.test(p) && method === "DELETE") acao = "desativou um convênio";
+  else if (/^admin\/pre-reservas\/[^/]+\/cancelar$/.test(p)) acao = `cancelou a pré-reserva ${seg[2] ?? ""}`;
+  else if (/^admin\/tombamento/.test(p)) acao = "processou tombamento de contratos";
+  else if (/^admin\/servidores\/importar/.test(p)) acao = "importou base de servidores";
+  else if (/^admin\/servidores/.test(p)) acao = "atualizou um servidor";
+  else if (p === "admin/confirmacao/solicitar") acao = "solicitou um código de confirmação por e-mail";
+  else if (p === "admin/vitrine" && method === "POST") acao = "atualizou a vitrine de ofertas";
+  else if (p === "admin/comunicados" && method === "POST") acao = "publicou um comunicado";
+  // ---- Servidor: conta ----
+  else if (/^servidores\/me\/(conta|contato|senha)/.test(p)) acao = "atualizou os dados da conta";
+  // ---- fallback amigável ----
+  else acao = `fez uma alteração (${method} ${p})`;
+  return `${ator} ${acao}${ok ? "" : " — FALHOU"}`;
+}
+
 /** Registra uma mutação (POST/PATCH/DELETE) no log do perfil correspondente,
  *  em memória. Usado pelo middleware global. Ver logMutacaoPersistido para o
  *  write-through compartilhado entre isolates. */
 export function logMutacao(role: string | undefined, method: string, path: string, ok: boolean): void {
   const perfil: LogPerfil = role === "averbadora" ? "averbadora" : role === "banco" ? "banco" : role === "prefeitura" ? "prefeitura" : role === "servidor" ? "servidor" : "sistema";
   const source = perfil === "averbadora" ? "admin.mutacao" : `${perfil}.mutacao`;
-  pushEvent(ok ? "info" : "warn", source, `${method} ${path}${ok ? "" : " (falhou)"}`);
+  pushEvent(ok ? "info" : "warn", source, descreverMutacao(perfil, method, path, ok));
 }
 
 /** Igual a logMutacao, mas também persiste no Postgres (app_logs) via waitUntil,
@@ -286,7 +338,7 @@ export function logMutacao(role: string | undefined, method: string, path: strin
 export function logMutacaoPersistido(env: Env, waitUntil: ((p: Promise<unknown>) => void) | undefined, role: string | undefined, method: string, path: string, ok: boolean): void {
   const perfil: LogPerfil = role === "averbadora" ? "averbadora" : role === "banco" ? "banco" : role === "prefeitura" ? "prefeitura" : role === "servidor" ? "servidor" : "sistema";
   const source = perfil === "averbadora" ? "admin.mutacao" : `${perfil}.mutacao`;
-  const entry = pushEvent(ok ? "info" : "warn", source, `${method} ${path}${ok ? "" : " (falhou)"}`);
+  const entry = pushEvent(ok ? "info" : "warn", source, descreverMutacao(perfil, method, path, ok));
   const p = appendLog(env, entry).catch(() => undefined);
   if (waitUntil) waitUntil(p); else void p;
 }
