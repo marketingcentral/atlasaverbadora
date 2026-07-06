@@ -6,7 +6,7 @@ import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
-import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
@@ -51,7 +51,9 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
   const pref = prefeituras.find((p) => p.id === prefId);
   const servidorId = Number(e.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
   const contratos = listContratos({ matricula: e.matricula });
-  const ativos = contratos.filter((ct) => !["cancelado", "quitado"].includes(ct.situacao.toLowerCase()));
+  // Margem comprometida só após o BANCO APROVAR (situacao vigente) — proposta/reserva
+  // pendente do banco ("Aguardando…") ainda não consome margem.
+  const ativos = contratos.filter((ct) => comprometeMargem(ct.situacao));
   const comprometido = ativos.reduce((a, ct) => a + ct.valorParcela, 0);
   const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
     tipo,

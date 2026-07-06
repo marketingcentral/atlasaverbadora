@@ -6,7 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
 import { prefeituras } from "../admin/index.js";
-import { aplicarAcao, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
+import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario } from "./cadastros.js";
 
 function requireBancoRole(j: JwtClaims): void {
@@ -153,8 +153,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const found = SERVIDORES_BUSCA_MOCK.find((s) => contatos.has(s.matricula) && matchPred(s));
     if (found) {
       // LGPD: o banco não vê o salário líquido — só a MARGEM disponível.
+      // Comprometido = parcelas de operações já APROVADAS pelo banco (não conta
+      // reserva/proposta pendente) — assim o banco enxerga a margem real que sobra.
       const { salarioLiquido, ...ficha } = found;
-      const margemDisponivelValor = Math.round(margemDisponivel(salarioLiquido, 0, "EMPRESTIMO") * 100) / 100;
+      const comprometido = listContratos({ matricula: found.matricula })
+        .filter((ct) => comprometeMargem(ct.situacao))
+        .reduce((a, ct) => a + ct.valorParcela, 0);
+      const margemDisponivelValor = Math.round(margemDisponivel(salarioLiquido, comprometido, "EMPRESTIMO") * 100) / 100;
       return c.json({ ficha: { ...ficha, margemDisponivel: margemDisponivelValor } });
     }
     throw new HttpError(
@@ -197,7 +202,12 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       throw Errors.forbidden("Este servidor não entrou em contato com o banco.");
     }
     const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
-    const comprometido = Math.round(total * 0.93 * 100) / 100;
+    // Comprometido real = parcelas de operações já aprovadas pelo banco.
+    const comprometido = Math.round(
+      listContratos({ matricula: s.matricula })
+        .filter((ct) => comprometeMargem(ct.situacao))
+        .reduce((a, ct) => a + ct.valorParcela, 0) * 100,
+    ) / 100;
     const disponivel = margemDisponivel(s.salarioLiquido, comprometido, "EMPRESTIMO");
     const projecao = projecoesQuatroMeses(body.mes, body.ano).map((p, idx) => ({
       competencia: p.yyyymm,

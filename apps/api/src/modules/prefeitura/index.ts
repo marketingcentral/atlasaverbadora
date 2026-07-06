@@ -13,7 +13,7 @@ import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, persistContrato } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig } from "../admin/id-unico.js";
@@ -61,7 +61,7 @@ function contratosDaPrefeitura(prefeituraId: number) {
 /** Comprometido (soma de parcelas ativas) por matrícula. */
 function comprometidoDe(matricula: string, contratos: ReturnType<typeof listContratos>): number {
   return contratos
-    .filter((ct) => ct.matricula === matricula && !["cancelado", "quitado"].includes(ct.situacao.toLowerCase()))
+    .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao)) // só após aprovação do banco
     .reduce((acc, ct) => acc + ct.valorParcela, 0);
 }
 

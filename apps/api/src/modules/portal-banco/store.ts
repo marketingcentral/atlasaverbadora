@@ -200,6 +200,21 @@ export function normalizeContrato(c: ContratoFull): ContratoFull {
   return c;
 }
 
+/**
+ * A margem do servidor é comprometida QUANDO O BANCO APROVA (averba) a operação —
+ * é aí que o dinheiro sai para o servidor. A proposta/reserva ainda pendente da
+ * decisão do banco ("Aguardando…") NÃO consome margem, e a ADF da prefeitura
+ * (confirmar/negar em folha) também não altera a margem — só o estado em folha
+ * (`folhaStatus`). Estados que NÃO comprometem: reserva pendente, expirada,
+ * cancelado e quitado. Comprometem: Ativo/averbado/suspenso (operação vigente).
+ */
+export function comprometeMargem(situacao: string): boolean {
+  const s = situacao.toLowerCase();
+  if (s.includes("aguard")) return false; // proposta/reserva pendente de aprovação do banco
+  if (s === "expirado" || s === "cancelado" || s === "quitado") return false;
+  return true; // banco aprovou e a operação está vigente
+}
+
 export function listContratos(filters: { convenioId?: string; matricula?: string; situacao?: string[] } = {}): ContratoFull[] {
   return Array.from(_contratos.values()).map(normalizeContrato).filter((c) => {
     if (filters.convenioId && c.convenioId !== filters.convenioId) return false;

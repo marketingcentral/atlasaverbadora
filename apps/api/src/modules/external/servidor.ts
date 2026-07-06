@@ -9,7 +9,7 @@ import { apiTokenAuth } from "../../middleware/api-token.js";
 import { Errors } from "../../_shared/errors.js";
 import { calcCET, margemDisponivel, margemTotal } from "@atlas/domain";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos } from "../portal-banco/store.js";
+import { listContratos, comprometeMargem } from "../portal-banco/store.js";
 
 const meta = (t: { environment: "production" | "sandbox"; partnerId: number }) => ({ ambiente: t.environment, servidor_id: t.partnerId });
 
@@ -33,7 +33,7 @@ export const externalServidorRoutes = new Hono<{ Bindings: Env }>()
     const t = c.get("apiToken");
     const s = resolveServidor(t.partnerId);
     const comprometido = listContratos({ matricula: s.matricula })
-      .filter((ct) => ct.situacao.toLowerCase() !== "cancelado" && ct.situacao.toLowerCase() !== "quitado")
+      .filter((ct) => comprometeMargem(ct.situacao)) // só após aprovação do banco
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
     const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
       tipo,
@@ -70,7 +70,7 @@ export const externalServidorRoutes = new Hono<{ Bindings: Env }>()
       taxa_am: z.number().positive().default(0.0179),
     }).parse(await c.req.json());
     const comprometido = listContratos({ matricula: s.matricula })
-      .filter((ct) => ct.situacao.toLowerCase() !== "cancelado" && ct.situacao.toLowerCase() !== "quitado")
+      .filter((ct) => comprometeMargem(ct.situacao)) // só após aprovação do banco
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
     const disponivel = margemDisponivel(s.salarioLiquido, comprometido, "EMPRESTIMO");
     const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxa_am });
