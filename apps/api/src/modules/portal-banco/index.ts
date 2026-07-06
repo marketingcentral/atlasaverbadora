@@ -29,12 +29,20 @@ function currentCompetencia(): { mes: number; ano: number; yyyymm: string } {
   return { mes, ano, yyyymm: `${ano}${String(mes).padStart(2, "0")}` };
 }
 
+// Sentinela para "banco sem convênio próprio". NÃO casa com nenhum contrato, então
+// listContratos({ convenioId: SEM_CONVENIO }) retorna [] — um banco novo/sem convênio
+// vê NADA, em vez de cair no convênio de outro banco e vazar os clientes dele.
+const SEM_CONVENIO = "__sem_convenio__";
+
 async function getActiveConvenioId(env: Env, j: JwtClaims): Promise<string> {
   const key = `banco_convenio:${j.banco_id}:${j.sub}`;
   const stored = env.KV_CACHE ? await env.KV_CACHE.get(key) : null;
-  if (stored) return stored;
-  const first = CONVENIOS_MOCK.find((c) => c.bancoId === j.banco_id);
-  return first?.id ?? CONVENIOS_MOCK[0]!.id;
+  // Só aceita o convênio guardado se ele for DESTE banco (defesa contra vazamento).
+  if (stored && CONVENIOS_MOCK.some((c) => c.id === stored && c.bancoId === j.banco_id)) return stored;
+  const first = CONVENIOS_MOCK.find((c) => c.bancoId === j.banco_id && c.ativo !== false);
+  // Sem fallback para o convênio de outro banco (era CONVENIOS_MOCK[0] = CONV-001 do
+  // Banco Atlas). Banco sem convênio próprio → sentinela → não vê contrato nenhum.
+  return first?.id ?? SEM_CONVENIO;
 }
 
 function monthLabel(mes: number): string {
@@ -106,21 +114,24 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const j = c.get("jwt");
     requireBancoRole(j);
     const activeId = await getActiveConvenioId(c.env, j);
-    const conv = CONVENIOS_MOCK.find((cv) => cv.id === activeId)!;
-    const contratos = listContratos({ convenioId: activeId });
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === activeId);
+    // Banco sem convênio próprio: sem contratos e sem dados de outro banco.
+    const contratos = conv ? listContratos({ convenioId: activeId }) : [];
     const ativos = contratos.filter((ct) => ct.situacao === "Ativo").length;
     const pendentes = contratos.filter((ct) => ct.situacao.startsWith("Aguardando")).length;
     return c.json({
-      convenio: { id: conv.id, nome: conv.nome, prefeitura: conv.prefeitura },
+      convenio: conv
+        ? { id: conv.id, nome: conv.nome, prefeitura: conv.prefeitura }
+        : { id: "", nome: "Sem convênio", prefeitura: "—" },
       kpis: {
-        carteira: { count: ativos, percentual: 1 },
+        carteira: { count: ativos, percentual: ativos > 0 ? 1 : 0 },
         novosNoMes: { count: contratos.filter((ct) => ct.lancamento.includes("/06/")).length },
         pendencias: { count: pendentes },
       },
       dataCorte: {
-        dia: conv.dataCorte,
+        dia: conv?.dataCorte ?? 15,
         mes: monthLabel(currentCompetencia().mes),
-        origem: conv.prefeitura.toUpperCase(),
+        origem: (conv?.prefeitura ?? "—").toUpperCase(),
         operacoes: "EMPRESTIMO",
       },
     });
@@ -175,7 +186,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const j = c.get("jwt");
     requireBancoRole(j);
     const activeConv = await getActiveConvenioId(c.env, j);
-    const activeConvNome = CONVENIOS_MOCK.find((cv) => cv.id === activeConv)?.nome ?? activeConv;
+    const activeConvNome = CONVENIOS_MOCK.find((cv) => cv.id === activeConv)?.nome ?? "Sem convênio";
     // Só os servidores que entraram em contato com o banco (não a base da prefeitura).
     await refreshContratos(c.env);
     const contatos = matriculasContato(j.banco_id ?? 1);
