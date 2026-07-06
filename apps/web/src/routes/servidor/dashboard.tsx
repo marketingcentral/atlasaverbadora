@@ -141,72 +141,22 @@ export function ServidorDashboard() {
 
 function MargensPorProduto({ info }: { info: MatriculaInfo }) {
   const margens = info.margem.margens_por_tipo;
+  const emp = margens.find((m) => m.tipo === "EMPRESTIMO");
+  const outros = margens.filter((m) => m.tipo !== "EMPRESTIMO");
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Hero navy-gradient — mesmo peso visual do MargemCard antigo,
-          mas dentro contem os 3 produtos (Emprestimo, Cartao Consignado,
-          Cartao Beneficios). */}
-      <article
-        style={{
-          background: "linear-gradient(160deg, var(--navy-700), var(--navy-900))",
-          border: "1px solid var(--border)",
-          borderRadius: 16,
-          padding: 24,
-          color: "#EAF0FA",
-          boxShadow: "var(--shadow-md)",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#9BAAC2" }}>
-            Margens por produto
-          </div>
-          <div style={{ fontSize: 12, color: "#C7D2E0" }}>
-            Salário base <b style={{ color: "#EAF0FA" }}>{fmtBRL(info.margem.margem.salario_base)}</b>
-          </div>
+      {/* HERO — so Emprestimo, com destaque igual ao MargemCard antigo. */}
+      {emp ? <MargemHero data={emp} salarioBase={info.margem.margem.salario_base} /> : null}
+
+      {/* Cartoes menores lado a lado abaixo. */}
+      {outros.length > 0 ? (
+        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          {outros.map((m) => (
+            <MargemCartaoMini key={m.tipo} data={m} />
+          ))}
         </div>
-
-        <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", marginTop: 16 }}>
-          {margens.map((m) => {
-            const utilizado = Math.max(0, m.total - m.disponivel);
-            const pct = m.total > 0 ? Math.min(100, Math.round((utilizado / m.total) * 100)) : 0;
-            const barra = pct > 80 ? "#EF4444" : pct > 60 ? "#C9A961" : "#10B981";
-            return (
-              <div
-                key={m.tipo}
-                style={{
-                  background: "rgba(255,255,255,.04)",
-                  border: "1px solid rgba(255,255,255,.08)",
-                  borderRadius: 12,
-                  padding: 16,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontWeight: 700, fontSize: ".95rem", color: "#EAF0FA" }}>
-                    {PRODUTO_LABEL[m.tipo] ?? m.tipo.replace(/_/g, " ").toLowerCase()}
-                  </span>
-                  <span style={{ fontSize: 11, color: "#9BAAC2", padding: "2px 8px", background: "rgba(255,255,255,.06)", borderRadius: 999, fontWeight: 600 }}>
-                    {pct}% usado
-                  </span>
-                </div>
-
-                <div style={{ fontSize: 26, fontWeight: 800, marginTop: 10, color: "#10B981", lineHeight: 1 }}>
-                  {fmtBRL(m.disponivel)}
-                </div>
-                <div style={{ fontSize: 11, color: "#9BAAC2", marginTop: 2 }}>disponível</div>
-
-                <div style={{ height: 6, background: "rgba(255,255,255,.06)", borderRadius: 3, marginTop: 14, overflow: "hidden" }}>
-                  <div style={{ width: `${pct}%`, height: "100%", background: `linear-gradient(90deg, #C9A961, ${barra})`, transition: "width .4s ease" }} />
-                </div>
-
-                <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 12, color: "#C7D2E0" }}>
-                  <span>Total <b style={{ color: "#EAF0FA" }}>{fmtBRL(m.total)}</b></span>
-                  <span>Utilizado <b style={{ color: "#EAF0FA" }}>{fmtBRL(utilizado)}</b></span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </article>
+      ) : null}
 
       <div
         style={{
@@ -225,6 +175,71 @@ function MargensPorProduto({ info }: { info: MatriculaInfo }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function MargemHero({ data, salarioBase }: { data: { tipo: string; total: number; disponivel: number }; salarioBase: number }) {
+  const utilizado = Math.max(0, data.total - data.disponivel);
+  const pct = data.total > 0 ? Math.min(100, Math.round((utilizado / data.total) * 100)) : 0;
+  return (
+    <article
+      style={{
+        background: "linear-gradient(160deg, var(--navy-700), var(--navy-900))",
+        border: "1px solid var(--border)",
+        borderRadius: 16,
+        padding: 24,
+        color: "#EAF0FA",
+        boxShadow: "var(--shadow-md)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#9BAAC2" }}>
+          Margem de empréstimo · disponível
+        </div>
+        <div style={{ fontSize: 12, color: "#C7D2E0" }}>
+          Salário base <b style={{ color: "#EAF0FA" }}>{fmtBRL(salarioBase)}</b>
+        </div>
+      </div>
+      <div style={{ fontSize: 36, fontWeight: 800, marginTop: 6, color: "#10B981" }}>
+        {fmtBRL(data.disponivel)}
+      </div>
+      <div style={{ height: 6, background: "rgba(255,255,255,.06)", borderRadius: 3, marginTop: 14, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: "linear-gradient(90deg, #C9A961, #10B981)" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 13, color: "#C7D2E0" }}>
+        <span>Utilizada <b style={{ color: "#EAF0FA" }}>{fmtBRL(utilizado)}</b></span>
+        <span>Total <b style={{ color: "#EAF0FA" }}>{fmtBRL(data.total)}</b></span>
+      </div>
+    </article>
+  );
+}
+
+function MargemCartaoMini({ data }: { data: { tipo: string; total: number; disponivel: number } }) {
+  const utilizado = Math.max(0, data.total - data.disponivel);
+  const pct = data.total > 0 ? Math.min(100, Math.round((utilizado / data.total) * 100)) : 0;
+  const barra = pct > 80 ? "var(--danger-500)" : pct > 60 ? "var(--gold-500)" : "var(--emerald-500)";
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span style={{ fontWeight: 700, fontSize: ".95rem" }}>
+          {PRODUTO_LABEL[data.tipo] ?? data.tipo.replace(/_/g, " ").toLowerCase()}
+        </span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)", padding: "2px 8px", background: "var(--bg-elev-2)", borderRadius: 999, fontWeight: 600 }}>
+          {pct}% usado
+        </span>
+      </div>
+      <div style={{ fontSize: 20, fontWeight: 800, marginTop: 8, color: "var(--emerald-500)", lineHeight: 1 }}>
+        {fmtBRL(data.disponivel)}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>disponível</div>
+      <div style={{ height: 5, background: "var(--bg-elev-2)", borderRadius: 999, marginTop: 12, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: barra, transition: "width .4s ease" }} />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
+        <span>Total <b style={{ color: "var(--text)" }}>{fmtBRL(data.total)}</b></span>
+        <span>Utilizado <b style={{ color: "var(--text)" }}>{fmtBRL(utilizado)}</b></span>
+      </div>
+    </Card>
   );
 }
 
