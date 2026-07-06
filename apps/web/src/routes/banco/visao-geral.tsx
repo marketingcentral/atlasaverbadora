@@ -8,15 +8,34 @@ import { fmtBRL, getAllPropostas } from "../../lib/banco-propostas";
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
 /** Gera lista de cortes navegaveis: 6 meses passados + atual + 3 futuros.
- *  O corte cai no `dia` de cada mes (com fallback para o ultimo dia do mes). */
+ *  Cada corte inclui a competencia (Mmm/AAAA) e um marcador de posicao temporal
+ *  (Encerrada / Em andamento / Prevista) — assim o card muda de estado ao
+ *  navegar, nao so o dia/mes. */
 function buildCortes(diaCorte: number, origem: string, operacoes: string) {
   const hoje = new Date();
-  const lista: { dia: number; mes: string; origem: string; operacoes: string }[] = [];
+  const lista: {
+    dia: number;
+    mes: string;
+    competencia: string;
+    origem: string;
+    operacoes: string;
+  }[] = [];
   for (let offset = -6; offset <= 3; offset++) {
     const ref = new Date(hoje.getFullYear(), hoje.getMonth() + offset, 1);
     const ultimoDia = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate();
     const dia = Math.min(diaCorte, ultimoDia);
-    lista.push({ dia, mes: MESES_PT[ref.getMonth()]!, origem, operacoes });
+    const competencia = `${MESES_PT[ref.getMonth()]}/${ref.getFullYear()}`;
+    // Rotulo do estado do periodo — inclui dia especifico pra deixar claro
+    // que a data e daquele mes, nao um valor generico repetido.
+    const dataFmt = `${String(dia).padStart(2, "0")}/${String(ref.getMonth() + 1).padStart(2, "0")}/${ref.getFullYear()}`;
+    const estado = offset < 0 ? "Encerrada em" : offset === 0 ? "Em andamento — corte" : "Prevista para";
+    lista.push({
+      dia,
+      mes: MESES_PT[ref.getMonth()]!,
+      competencia,
+      origem: `${origem} · ${estado} ${dataFmt}`,
+      operacoes,
+    });
   }
   return lista; // index 6 = corte atual
 }
@@ -94,6 +113,7 @@ export function BancoVisaoGeral() {
             <DataCorteCard
               dia={c.dia}
               mes={c.mes}
+              competencia={c.competencia}
               origem={c.origem}
               operacoes={c.operacoes}
               canPrev={idx > 0}

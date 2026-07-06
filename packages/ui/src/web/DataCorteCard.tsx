@@ -3,13 +3,16 @@ interface Props {
   mes: string;
   origem: string;
   operacoes: string;
+  /** Rotulo da competencia (ex.: "Ago/2026") — mostrado no cabecalho do card,
+   *  ao lado de "Data de Corte", pra deixar claro qual periodo esta ativo. */
+  competencia?: string;
   canPrev?: boolean;
   canNext?: boolean;
   onPrev?: () => void;
   onNext?: () => void;
 }
 
-export function DataCorteCard({ dia, mes, origem, operacoes, canPrev, canNext, onPrev, onNext }: Props) {
+export function DataCorteCard({ dia, mes, origem, operacoes, competencia, canPrev, canNext, onPrev, onNext }: Props) {
   return (
     <article
       style={{
@@ -28,8 +31,15 @@ export function DataCorteCard({ dia, mes, origem, operacoes, canPrev, canNext, o
         <span style={{ fontSize: 12, fontWeight: 700, color: "var(--accent)", marginTop: 4 }}>{mes}</span>
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Data de Corte
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+            Data de Corte
+          </div>
+          {competencia ? (
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "color-mix(in srgb, var(--accent) 15%, transparent)", color: "var(--accent)" }}>
+              {competencia}
+            </span>
+          ) : null}
         </div>
         <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-muted)" }}>
           <div>Origem</div>
