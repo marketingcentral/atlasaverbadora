@@ -93,3 +93,9 @@ export async function setSmtpConfig(env: Env, input: SmtpInput): Promise<SmtpSta
 export async function clearSmtpConfig(env: Env): Promise<void> {
   await assertKv(env).delete(KV_KEY);
 }
+
+/** Config COMPLETA (com senha) — uso interno do mailer para enviar. */
+export async function getSmtpConfigForSend(env: Env): Promise<SmtpConfig | null> {
+  const cfg = await readConfig(env);
+  return cfg && cfg.host ? cfg : null;
+}

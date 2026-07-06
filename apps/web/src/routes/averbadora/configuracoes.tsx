@@ -284,6 +284,17 @@ function SmtpSection() {
     },
   });
 
+  const [testTo, setTestTo] = useState("");
+  const [testMsg, setTestMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const testar = useMutation({
+    mutationFn: () => atlas.admin.smtpTest(testTo.trim()),
+    onSuccess: (r) =>
+      setTestMsg(r.sent
+        ? { kind: "ok", text: `E-mail de teste enviado para ${testTo}. Cheque a caixa (e o spam).` }
+        : { kind: "err", text: `Não enviou: ${r.reason ?? "erro"}. Confira host/porta/usuário/senha/TLS.` }),
+    onError: (err) => setTestMsg({ kind: "err", text: err instanceof Error ? err.message : "Falha no teste" }),
+  });
+
   const podeSalvar = form.host.trim() && form.user.trim() && form.fromEmail.trim() && (form.password || cfg?.hasPassword);
 
   return (
@@ -353,6 +364,34 @@ function SmtpSection() {
           }}
         >
           {msg.text}
+        </div>
+      ) : null}
+
+      {cfg?.configured ? (
+        <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Enviar e-mail de teste</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 260px" }}>
+              <Input label="" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="voce@email.com" autoComplete="off" />
+            </div>
+            <Button variant="ghost" onClick={() => testar.mutate()} disabled={!testTo.trim() || testar.isPending}>
+              {testar.isPending ? "Enviando…" : "✉ Enviar teste"}
+            </Button>
+          </div>
+          {testMsg ? (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 14px",
+                borderRadius: 10,
+                border: `1px solid ${testMsg.kind === "ok" ? "var(--emerald-500)" : "var(--danger-500)"}`,
+                background: testMsg.kind === "ok" ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+                fontSize: ".88rem",
+              }}
+            >
+              {testMsg.text}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </Card>

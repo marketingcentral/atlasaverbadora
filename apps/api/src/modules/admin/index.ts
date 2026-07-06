@@ -22,6 +22,7 @@ import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./
 import { deleteAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
+import { sendMail } from "./mailer.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -652,6 +653,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       detalhes: "Configuração SMTP removida",
     });
     return c.body(null, 204);
+  })
+  // Envia um e-mail de teste com a config SMTP salva — para o operador validar.
+  .post("/v1/admin/smtp/test", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const { to } = z.object({ to: z.string().email() }).parse(await c.req.json());
+    const r = await sendMail(c.env, {
+      to,
+      subject: "Atlas — teste de SMTP",
+      text: "Este é um e-mail de teste do Atlas Averbadora.\n\nSe você recebeu, o servidor de e-mail (SMTP) está configurado corretamente e os e-mails de confirmação vão funcionar.\n\n— Atlas Averbadora",
+    });
+    return c.json(r);
   })
   .post("/v1/admin/ai/normalize-csv", async (c) => {
     requireAdmin(c.get("jwt"));

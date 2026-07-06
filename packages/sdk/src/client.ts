@@ -793,6 +793,7 @@ export class AtlasClient {
     smtpSave: (input: { host: string; port: number; user: string; password?: string; fromEmail: string; fromName?: string; secure?: boolean }) =>
       this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
     smtpClear: () => this.request<void>("/v1/admin/smtp/config", { method: "DELETE" }),
+    smtpTest: (to: string) => this.request<{ sent: boolean; reason?: string }>("/v1/admin/smtp/test", { method: "POST", body: { to } }),
     aiNormalizeCsv: (body: { csv: string; expectedHeaders: string[]; contextHint?: string; model?: string }) =>
       this.request<{ csv: string; mapping: Record<string, string>; summary: string; usage: { input: number; output: number } }>(
         "/v1/admin/ai/normalize-csv",
