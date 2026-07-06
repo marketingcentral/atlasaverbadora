@@ -119,6 +119,21 @@ export function BancoPropostas() {
   }, [apiQ.data]);
 
   const filtradas = useMemo(() => {
+    // Prioridade de status: propostas pendentes de acao do banco (recebida,
+    // em_analise, mais_info) vem primeiro, depois aprovadas aguardando algo,
+    // depois formalizadas/averbadas, por ultimo terminais negativas. Dentro
+    // de cada bloco, mais recentes primeiro.
+    const prioridade: Record<BancoPropostaStatus, number> = {
+      recebida: 0,
+      em_analise: 0,
+      mais_info: 0,
+      aprovada: 1,
+      aguardando_formalizacao: 1,
+      formalizada: 2,
+      averbada: 2,
+      recusada: 3,
+      expirada: 3,
+    };
     return todas
       .filter((p) => {
         if (convenio && p.convenio !== convenio) return false;
@@ -130,9 +145,12 @@ export function BancoPropostas() {
         }
         return true;
       })
-      // Recentes no topo — sort desc por criadaEm. Ao chegar uma proposta
-      // nova do servidor via poll de 5s, ela pula pro topo automaticamente.
-      .sort((a, b) => new Date(b.criadaEm).getTime() - new Date(a.criadaEm).getTime());
+      .sort((a, b) => {
+        const pa = prioridade[a.status] ?? 9;
+        const pb = prioridade[b.status] ?? 9;
+        if (pa !== pb) return pa - pb; // pendentes primeiro
+        return new Date(b.criadaEm).getTime() - new Date(a.criadaEm).getTime(); // dentro do bloco, mais recentes primeiro
+      });
   }, [todas, convenio, produto, status, expirando]);
 
   const columns: Column<PropostaRow>[] = [
