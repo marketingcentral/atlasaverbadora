@@ -266,9 +266,16 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         bancoNome: z.string().optional(),
       })
       .parse(await c.req.json());
+    // A matricula ATIVA no app do servidor eh a fonte de verdade — e vem no
+    // body.matricula. Antes o backend priorizava a matricula do JWT (fixada
+    // no login) e o body era so fallback, entao servidor com acumulacao de
+    // cargos que trocava de matricula no dropdown continuava criando
+    // proposta na matricula do login. Agora body.matricula > JWT > primeira.
     const entry =
+      (body.matricula
+        ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === body.matricula)
+        : undefined) ??
       SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === s.matricula) ??
-      SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && (!body.matricula || x.matricula === body.matricula)) ??
       SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
     if (!entry) throw Errors.notFound("matricula");
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
