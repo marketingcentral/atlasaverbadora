@@ -6,6 +6,7 @@ import { AtlasBrand } from "../../components/AtlasBrand";
 import { clearAtlasState } from "../../lib/session";
 import { readActiveIdMatricula, hydrateMatriculas } from "../../lib/matricula-data";
 import { NotificationBell } from "../../components/NotificationBell";
+import { MatriculaSwitcher } from "../../components/MatriculaSwitcher";
 
 const NAV = [
   { key: "dashboard", label: "Início", href: "/servidor/dashboard" },
@@ -88,6 +89,7 @@ export function ServidorLayout() {
             </nav>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <MatriculaSwitcher />
             <NotificationBell />
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
