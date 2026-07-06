@@ -2,6 +2,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShellAdmin, Button, ConvenioSwitcher, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { AtlasBrand } from "../../components/AtlasBrand";
 
 const NAV = [
   { key: "visao-geral", label: "Visão Geral", href: "/banco/visao-geral", icon: "◉" },
@@ -50,21 +51,7 @@ export function BancoLayout() {
 
   return (
     <AppShellAdmin
-      brand={
-        <div style={{ display: "flex", alignItems: "center", gap: 12, fontWeight: 700, fontSize: "1.05rem" }}>
-          <span
-            style={{
-              width: 32, height: 32, borderRadius: 8,
-              background: "linear-gradient(135deg, var(--gold-500), var(--gold-400) 40%, var(--emerald-500))",
-              display: "grid", placeItems: "center", color: "var(--navy-900)", fontWeight: 800,
-              boxShadow: "var(--shadow-gold)",
-            }}
-          >
-            A
-          </span>
-          <span>Atlas <small style={{ opacity: 0.6, fontSize: ".8rem" }}>Banco</small></span>
-        </div>
-      }
+      brand={<AtlasBrand sub="Banco" />}
       convenioSlot={
         convenios.data ? (
           <ConvenioSwitcher

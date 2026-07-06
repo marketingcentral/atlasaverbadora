@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Button, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { AtlasBrand } from "../../components/AtlasBrand";
 import { clearAtlasState } from "../../lib/session";
 import { readActiveIdMatricula, hydrateMatriculas } from "../../lib/matricula-data";
 import { NotificationBell } from "../../components/NotificationBell";
@@ -59,19 +60,7 @@ export function ServidorLayout() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 16, minWidth: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, fontWeight: 700 }}>
-              <span
-                style={{
-                  width: 32, height: 32, borderRadius: 8,
-                  background: "linear-gradient(135deg, var(--gold-500), var(--gold-400) 40%, var(--emerald-500))",
-                  display: "grid", placeItems: "center", color: "var(--navy-900)", fontWeight: 800,
-                  boxShadow: "var(--shadow-gold)",
-                }}
-              >
-                A
-              </span>
-              Atlas
-            </div>
+            <AtlasBrand />
 
             <nav style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {NAV.map((n) => {

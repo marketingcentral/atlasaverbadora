@@ -63,3 +63,7 @@ button { font-family: inherit; }
   70% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--gold-500) 0%, transparent); }
   100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gold-500) 0%, transparent); }
 }
+
+/* Logo Atlas: assets sao brancos (tema escuro). No tema claro, inverte para
+   preto preservando a transparencia — assim a marca aparece nos dois temas. */
+[data-theme="light"] .atlas-brand-img { filter: brightness(0) saturate(100%); }

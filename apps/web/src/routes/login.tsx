@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Button, Card, Input } from "@atlas/ui/web";
 import { atlas, storeRole } from "../lib/sdk";
 import { TwoFactorModal } from "../components/TwoFactorModal";
+import { AtlasLogo } from "../components/AtlasBrand";
 
 type PendingLogin = {
   role: "servidor" | "banco" | "averbadora" | "prefeitura";
@@ -51,21 +52,9 @@ export function LoginPage() {
   return (
     <div className="auth-shell">
       <Card style={{ background: "var(--surface)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-          <span
-            style={{
-              width: 36, height: 36, borderRadius: 10,
-              background: "linear-gradient(135deg, var(--gold-500), var(--gold-400) 40%, var(--emerald-500))",
-              display: "grid", placeItems: "center", color: "var(--navy-900)", fontWeight: 800,
-              boxShadow: "var(--shadow-gold)",
-            }}
-          >
-            A
-          </span>
-          <div>
-            <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Atlas Averbadora</div>
-            <div style={{ fontSize: ".82rem", color: "var(--text-dim)" }}>Entre com seu CPF (servidor) ou e-mail (banco / averbadora / prefeitura)</div>
-          </div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, marginBottom: 24, textAlign: "center" }}>
+          <AtlasLogo height={96} />
+          <div style={{ fontSize: ".82rem", color: "var(--text-dim)" }}>Entre com seu CPF (servidor) ou e-mail (banco / averbadora / prefeitura)</div>
         </div>
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
           <Input
