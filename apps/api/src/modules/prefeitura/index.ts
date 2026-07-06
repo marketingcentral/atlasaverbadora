@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import type { Context } from "hono";
 import { z } from "zod";
 import { authRequired, type JwtClaims } from "../../middleware/auth.js";
-import { Errors } from "../../_shared/errors.js";
+import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
@@ -26,9 +26,15 @@ import {
 } from "./store.js";
 import { upsertPrefeitura, upsertServidor } from "../../db/repos.js";
 
-/** Write-through best-effort do servidor no Postgres (não quebra a request). */
+/**
+ * Write-through do servidor no Postgres. NÃO engole erro (antes fazia
+ * `catch { /* fail-safe *\/ }` e o import reportava "sucesso" mesmo quando nada
+ * era persistido — daí os dados importados "sumirem" no reciclo do isolate).
+ * O chamador decide como reportar: o import coleta falhas por linha; a edição
+ * avulsa devolve 500.
+ */
 async function persistServidorPref(env: Env, s: ServidorBuscaMock): Promise<void> {
-  try { await upsertServidor(env, s); } catch { /* fail-safe: segue com memória */ }
+  await upsertServidor(env, s);
 }
 
 function requirePrefeitura(j: JwtClaims): number {
@@ -282,10 +288,21 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (existing) { Object.assign(existing, rec); out.updated++; toPersist.push(existing); } else { SERVIDORES_BUSCA_MOCK.push(rec); out.inserted++; toPersist.push(rec); }
       out.rows.push({ matricula: rec.matricula, nome: rec.nome, cpfMasked: rec.cpfMasked });
     });
-    // Write-through: persiste a base importada no Postgres (durável e consistente entre isolates).
-    for (const s of toPersist) await persistServidorPref(c.env, s);
-    appendAudit({ categoria: "dados_pessoais", acao: "base_importada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: base importada — ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros.` });
-    return c.json(out);
+    // Write-through NÃO-silencioso: persiste no Postgres e COLETA as falhas por
+    // linha. Antes, um erro de persistência era engolido e o import respondia
+    // sucesso mesmo sem nada ter ido pro banco — por isso a base "sumia" no dia
+    // seguinte (reciclo de isolate). Agora, se `persistFailures` vier preenchido,
+    // NÃO persistiu de verdade e o chamador fica sabendo.
+    const persistFailures: { matricula: string; message: string }[] = [];
+    for (const s of toPersist) {
+      try { await persistServidorPref(c.env, s); }
+      catch (e) { persistFailures.push({ matricula: s.matricula, message: (e as Error).message }); }
+    }
+    const notaFalha = persistFailures.length > 0
+      ? ` — ATENCAO: ${persistFailures.length} falha(s) de persistencia (1a: ${persistFailures[0]?.message})`
+      : "";
+    appendAudit({ categoria: "dados_pessoais", acao: "base_importada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: base importada — ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros${notaFalha}.` });
+    return c.json({ ...out, persistFailures });
   })
 
   // ===== Passo 6 — Editar campos críticos (só a prefeitura) =====
@@ -328,7 +345,8 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (dup) throw Errors.validation({ matriculaNova: `matricula ${body.matriculaNova} já em uso` });
       s.matricula = body.matriculaNova; s.idMatricula = `MAT-${body.matriculaNova}`; changed.push("matricula");
     }
-    await persistServidorPref(c.env, s);
+    try { await persistServidorPref(c.env, s); }
+    catch (e) { throw new HttpError(500, "persist_failed", `Servidor editado em memória, mas falhou ao salvar no banco: ${(e as Error).message}`); }
     appendAudit({ categoria: "dados_pessoais", acao: "servidor_editado", matricula: s.matricula, cpf: s.cpfMasked, userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Servidor ${s.matricula} editado pela prefeitura (${changed.join(",")}).` });
     return c.json({ servidor: { matricula: s.matricula, nome: s.nome, cpf: s.cpf, cpfMasked: s.cpfMasked, cargo: s.cargo ?? "", endereco: s.endereco ?? "", vinculo: s.vinculo, email: s.email ?? "", telefone: s.telefone ?? "", codigoIbge: s.codigoIbge ?? null } });
   })
