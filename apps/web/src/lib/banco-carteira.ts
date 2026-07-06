@@ -110,7 +110,11 @@ export function getCarteira(): Contrato[] {
       valorParcela: p.parcela,
       status: "em_dia",
       proximaParcela: proximaCompetencia(),
-      averbadoEm: new Date().toISOString(),
+      // Usa a data de criacao real da proposta como averbadoEm — antes era
+      // new Date().toISOString() e todas as seed propostas ficavam empatadas
+      // em "agora", empurrando contratos reais do backend (com data antiga)
+      // pro fim da lista no sort desc.
+      averbadoEm: p.criadaEm,
       ccbUrl: p.ccbUrl ?? `https://formaliza.bancodelta.com.br/ccb/${p.idUnico}.pdf`,
     }));
   const byId = new Map<string, Contrato>();
