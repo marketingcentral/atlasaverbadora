@@ -282,11 +282,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
 
   // --------- Detalhe contrato ----------
   .get("/v1/portal/banco/contratos/:adf", async (c) => {
-    requireBancoRole(c.get("jwt"));
+    const j = c.get("jwt");
+    requireBancoRole(j);
     const adf = c.req.param("adf");
     await refreshContratos(c.env);
     const ct = getContrato(adf);
-    if (!ct) throw Errors.notFound("contrato");
+    // Isolamento: banco so acessa contrato proprio. Antes qualquer banco lia
+    // contrato de outro adivinhando o ADF (formato numerico curto).
+    if (!ct || ct.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
     return c.json({
       contrato: ct,
       parcelas: getContratoParcelas(ct),
@@ -325,6 +328,10 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       .object({ motivo: z.string().optional(), parcelasExtras: z.number().int().optional(), observacoes: z.string().optional(), codigoVerba: z.string().optional() })
       .parse(raw);
     await refreshContratos(c.env); // garante que o contrato/reserva (de outro isolate) esteja no Map antes de agir
+    // Isolamento: verifica dono antes de aplicar acao. Sem isso qualquer banco
+    // podia cancelar/aprovar/suspender contrato de outro adivinhando o ADF.
+    const owner = getContrato(adf);
+    if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
     const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
     if (!r) throw Errors.notFound("contrato");
     await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
@@ -333,10 +340,12 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
 
   // --------- Comprovante PDF ----------
   .get("/v1/portal/banco/contratos/:adf/comprovante.pdf", async (c) => {
-    requireBancoRole(c.get("jwt"));
+    const j = c.get("jwt");
+    requireBancoRole(j);
     const adf = c.req.param("adf");
     const ct = getContrato(adf);
-    if (!ct) throw Errors.notFound("contrato");
+    // Isolamento: comprovante e documento contratual — nao pode vazar entre bancos.
+    if (!ct || ct.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
     // Minimal PDF placeholder. Production would render via @react-pdf/renderer + upload to R2 + signed URL.
     const pdf = miniPdf(`COMPROVANTE ATLAS\n\nADF: ${ct.adf}\nNome: ${ct.nome}\nMatricula: ${ct.matricula}\nValor parcela: R$ ${ct.valorParcela.toFixed(2)}\nParcelas: ${ct.totalParcelas}\nTaxa: ${(ct.taxaAm * 100).toFixed(2)}% a.m.\nCET: ${(ct.cetAm * 100).toFixed(2)}% a.m.`);
     return new Response(pdf, {
@@ -348,18 +357,28 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   })
 
   // --------- Cadastros: Tabela de Emprestimos ----------
+  // Isolamento: TabelaEmprestimo nao guarda bancoId (so convenioId), entao
+  // consideramos que uma tabela pertence ao banco cujo convenio a referencia.
+  // Banco novo (sem convenios proprios) → 0 tabelas visiveis. Ao criar tabela,
+  // convenio informado tem que ser do proprio banco.
   .get("/v1/portal/banco/cadastros/tabela-emprestimos", async (c) => {
-    requireBancoRole(c.get("jwt"));
-    return c.json({ tabelas: await listTabelas(c.env) });
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
+    const tabelas = (await listTabelas(c.env)).filter((t) => meusConvenios.has(t.convenioId));
+    return c.json({ tabelas });
   })
   .get("/v1/portal/banco/cadastros/tabela-emprestimos/:id", async (c) => {
-    requireBancoRole(c.get("jwt"));
+    const j = c.get("jwt");
+    requireBancoRole(j);
     const t = await getTabela(c.env, c.req.param("id"));
-    if (!t) throw Errors.notFound("tabela");
+    const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
+    if (!t || !meusConvenios.has(t.convenioId)) throw Errors.notFound("tabela");
     return c.json({ tabela: t });
   })
   .post("/v1/portal/banco/cadastros/tabela-emprestimos", async (c) => {
-    requireBancoRole(c.get("jwt"));
+    const j = c.get("jwt");
+    requireBancoRole(j);
     const body = z
       .object({
         id: z.string().optional(),
@@ -373,28 +392,47 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         ativo: z.boolean().default(true),
       })
       .parse(await c.req.json());
+    // Isolamento: so pode criar/editar tabela em convenio proprio.
+    const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
+    if (!meusConvenios.has(body.convenioId)) throw Errors.notFound("convenio");
+    // Se editando (id), tabela existente tambem tem que ser de convenio proprio.
+    if (body.id) {
+      const existente = await getTabela(c.env, body.id);
+      if (existente && !meusConvenios.has(existente.convenioId)) throw Errors.notFound("tabela");
+    }
     return c.json({ tabela: await upsertTabela(c.env, body) });
   })
   .delete("/v1/portal/banco/cadastros/tabela-emprestimos/:id", async (c) => {
-    requireBancoRole(c.get("jwt"));
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    // Isolamento: so desativa se a tabela for de convenio proprio.
+    const t = await getTabela(c.env, c.req.param("id"));
+    const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
+    if (!t || !meusConvenios.has(t.convenioId)) throw Errors.notFound("tabela");
     if (!(await removerTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
     return c.body(null, 204);
   })
 
   // --------- Cadastros: Usuarios do banco ----------
+  // Isolamento: BancoUsuario tem bancoId — banco novo (bancoId proprio) so
+  // enxerga seus usuarios, nunca os do Banco Atlas (bancoId=1) nem de outros.
   .get("/v1/portal/banco/cadastros/usuarios", async (c) => {
-    requireBancoRole(c.get("jwt"));
-    const u = new URL(c.req.url);
-    const perfil = u.searchParams.get("perfil") as "admin" | "operador" | "consulta" | "relatorios" | null;
-    const somenteAdmin = u.searchParams.get("somenteAdmin") === "true";
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const url = new URL(c.req.url);
+    const perfil = url.searchParams.get("perfil") as "admin" | "operador" | "consulta" | "relatorios" | null;
+    const somenteAdmin = url.searchParams.get("somenteAdmin") === "true";
     // PII hygiene: nunca devolver cpf na listagem; so cpfMasked.
-    const usuarios = listUsuarios({ perfil: perfil ?? undefined, somenteAdmin }).map(({ cpf: _cpf, ...rest }) => rest);
+    const usuarios = listUsuarios({ perfil: perfil ?? undefined, somenteAdmin })
+      .filter((u) => u.bancoId === (j.banco_id ?? -1))
+      .map(({ cpf: _cpf, ...rest }) => rest);
     return c.json({ usuarios });
   })
   .get("/v1/portal/banco/cadastros/usuarios/:id", async (c) => {
-    requireBancoRole(c.get("jwt"));
+    const j = c.get("jwt");
+    requireBancoRole(j);
     const u = getUsuario(c.req.param("id"));
-    if (!u) throw Errors.notFound("usuario");
+    if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     const { cpf: _cpf, ...rest } = u;
     return c.json({ usuario: rest });
   })
@@ -402,7 +440,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const j = c.get("jwt");
     requireBancoRole(j);
     const u = getUsuario(c.req.param("id"));
-    if (!u) throw Errors.notFound("usuario");
+    // Isolamento CRITICO (LGPD): antes qualquer banco revelava CPF de qualquer
+    // usuario de outro banco, com log audit mas sem barrar a leitura.
+    if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     // Audit append-only para acesso a PII (LGPD).
     console.info(JSON.stringify({
       ts: new Date().toISOString(),
@@ -433,12 +473,23 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         ativo: z.boolean().default(true),
       })
       .parse(await c.req.json());
-    const saved = upsertUsuario({ ...body, bancoId: j.banco_id ?? 1 });
+    // Isolamento: se editando, usuario existente tem que ser do proprio banco.
+    if (body.id) {
+      const existente = getUsuario(body.id);
+      if (existente && existente.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
+    }
+    // Fallback bancoId=1 removido — banco sem banco_id nao pode criar usuario.
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const saved = upsertUsuario({ ...body, bancoId: j.banco_id });
     const { cpf: _cpf, ...rest } = saved;
     return c.json({ usuario: rest });
   })
   .delete("/v1/portal/banco/cadastros/usuarios/:id", async (c) => {
-    requireBancoRole(c.get("jwt"));
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    // Isolamento CRITICO: antes qualquer banco apagava usuario de outro.
+    const u = getUsuario(c.req.param("id"));
+    if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     if (!removerUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
     return c.body(null, 204);
   })
