@@ -286,7 +286,7 @@ function SmtpSection() {
     },
   });
 
-  const [testTo, setTestTo] = useState("");
+  const [testTo, setTestTo] = useState("marketingcentral.mkt@gmail.com");
   const [testMsg, setTestMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const testar = useMutation({
     mutationFn: () => atlas.admin.smtpTest(testTo.trim()),
@@ -385,12 +385,15 @@ function SmtpSection() {
 
       {cfg?.configured ? (
         <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Enviar e-mail de teste</div>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>Enviar e-mail de teste</div>
+          <div style={{ fontSize: 11.5, color: "var(--text-dim)", marginBottom: 8 }}>
+            Digite um <b>endereço de e-mail</b> válido para receber o teste (ex.: seu Gmail).
+          </div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 260px" }}>
-              <Input label="" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="voce@email.com" autoComplete="off" />
+              <Input label="E-mail para receber o teste" type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="voce@email.com" autoComplete="off" spellCheck={false} />
             </div>
-            <Button variant="ghost" onClick={() => testar.mutate()} disabled={!testTo.trim() || testar.isPending}>
+            <Button variant="ghost" onClick={() => testar.mutate()} disabled={!/^\S+@\S+\.\S+$/.test(testTo.trim()) || testar.isPending}>
               {testar.isPending ? "Enviando…" : "✉ Enviar teste"}
             </Button>
           </div>
