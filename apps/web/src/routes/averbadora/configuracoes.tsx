@@ -226,8 +226,10 @@ export function AverbadoraConfiguracoes() {
       <div style={{ height: 1, background: "var(--border)", margin: "8px 0" }} />
       <h2 style={{ margin: "0 0 -4px", fontSize: "1.15rem" }}>Servidor de e-mail (SMTP)</h2>
       <p style={{ color: "var(--text-muted)", marginTop: 0, fontSize: 14 }}>
-        Configuração do servidor de envio dos e-mails de confirmação (2FA, primeiro acesso, OTP). A senha fica no KV do
-        Cloudflare, protegida por role averbadora — nunca é devolvida em texto claro.
+        Envio dos e-mails de confirmação (2FA, primeiro acesso, OTP) por SMTP — igual ao PHPMailer, sem custo:
+        informe servidor, porta, usuário e senha do seu provedor. A senha fica no KV do Cloudflare, protegida por role
+        averbadora — nunca é devolvida em texto claro. Use porta <b>587</b> (TLS/STARTTLS) ou <b>465</b> (SSL); a porta 25 é
+        bloqueada pelo Cloudflare.
       </p>
       <SmtpSection />
     </div>
@@ -239,7 +241,7 @@ function SmtpSection() {
   const status = useQuery({ queryKey: ["admin", "smtp", "config"], queryFn: () => atlas.admin.smtpConfig() });
   const cfg = status.data;
 
-  const DEFAULT_FORM = { provider: "resend" as "smtp" | "resend", host: "", port: 587, user: "", password: "", resendApiKey: "", fromEmail: "", fromName: "Atlas Averbadora", secure: true, notifyEmail: "marketingcentral.mkt@gmail.com" };
+  const DEFAULT_FORM = { provider: "smtp" as "smtp" | "resend", host: "", port: 587, user: "", password: "", resendApiKey: "", fromEmail: "", fromName: "Atlas Averbadora", secure: true, notifyEmail: "marketingcentral.mkt@gmail.com" };
   const [form, setForm] = useState(DEFAULT_FORM);
   const [hydrated, setHydrated] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -326,7 +328,7 @@ function SmtpSection() {
 
       {/* Seletor de provedor */}
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-        {(["resend", "smtp"] as const).map((p) => {
+        {(["smtp", "resend"] as const).map((p) => {
           const on = form.provider === p;
           return (
             <button
@@ -340,9 +342,9 @@ function SmtpSection() {
                 border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
               }}
             >
-              <div style={{ fontWeight: 700, fontSize: 13 }}>{p === "resend" ? "Resend (API) — recomendado" : "Servidor SMTP"}</div>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{p === "smtp" ? "Servidor SMTP (grátis) — recomendado" : "Resend (API)"}</div>
               <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-                {p === "resend" ? "1 chave de API, sem senha de app" : "host/porta/usuário/senha (ex.: Gmail)"}
+                {p === "smtp" ? "servidor/porta/usuário/senha — sem custo" : "1 chave de API, sem senha de app"}
               </div>
             </button>
           );
@@ -371,15 +373,15 @@ function SmtpSection() {
         </>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-          <Input label="Host SMTP" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} placeholder="smtp.gmail.com" autoComplete="off" spellCheck={false} />
+          <Input label="Servidor (host)" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} placeholder="smtp.seuprovedor.com" autoComplete="off" spellCheck={false} />
           <Input label="Porta" type="number" value={String(form.port)} onChange={(e) => setForm({ ...form, port: Number(e.target.value) || 0 })} placeholder="587" />
-          <Input label="Usuário" value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} placeholder="voce@gmail.com" autoComplete="off" spellCheck={false} />
+          <Input label="Usuário" value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} placeholder="usuario@seuprovedor.com" autoComplete="off" spellCheck={false} />
           <Input
             label={cfg?.hasPassword ? "Senha (deixe em branco p/ manter)" : "Senha"}
             type="password"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
-            placeholder={cfg?.hasPassword ? "••••••••" : "senha de app SMTP"}
+            placeholder={cfg?.hasPassword ? "••••••••" : "senha SMTP"}
             autoComplete="off"
           />
           <Input label="E-mail remetente (from)" value={form.fromEmail} onChange={(e) => setForm({ ...form, fromEmail: e.target.value })} placeholder="voce@gmail.com" autoComplete="off" spellCheck={false} />
