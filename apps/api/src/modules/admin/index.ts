@@ -876,7 +876,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         contatoEmail: z.string().email().optional().or(z.literal("")),
         password: z.string().min(6).optional(),
         servidoresCount: z.number().int().default(0),
-        folhaSincUrl: z.string().url().optional().or(z.literal("")),
+        folhaSincUrl: z.string().optional().or(z.literal("")).refine(
+          (v) => !v || /^https?:\/\//i.test(v),
+          { message: "URL da folha deve começar com http:// ou https://" },
+        ),
       })
       .parse(await c.req.json());
     const { password, loginEmail, ...rest } = body;
