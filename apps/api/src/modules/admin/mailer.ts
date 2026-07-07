@@ -150,6 +150,23 @@ export async function sendMail(
   }
 }
 
+/**
+ * Envia um código de confirmação. O destino é o `notifyEmail` do SMTP (se
+ * configurado — útil quando os e-mails dos servidores são fictícios); senão, o
+ * `destinoPadrao` (e-mail do próprio usuário). Retorna também o destino real.
+ */
+export async function enviarCodigo(
+  env: Env,
+  opts: { destinoPadrao?: string; contexto: string; codigo: string },
+): Promise<SendResult & { destino: string }> {
+  const cfg = await getSmtpConfigForSend(env);
+  const destino = (cfg?.notifyEmail && cfg.notifyEmail.trim()) || opts.destinoPadrao || "";
+  if (!destino) return { sent: false, reason: "sem destino", destino: "" };
+  const { subject, text } = codigoEmail(opts.codigo, opts.contexto);
+  const r = await sendMail(env, { to: destino, subject, text });
+  return { ...r, destino };
+}
+
 /** E-mail padrão de código de confirmação. */
 export function codigoEmail(codigo: string, contexto: string): { subject: string; text: string } {
   return {

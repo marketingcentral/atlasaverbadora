@@ -9,7 +9,8 @@ import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from 
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
-import { sendMail, codigoEmail } from "../admin/mailer.js";
+import { enviarCodigo } from "../admin/mailer.js";
+import { gerarCodigoUnico } from "../admin/codes.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
@@ -361,15 +362,14 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
-    const codigo = code6();
+    const codigo = await gerarCodigoUnico(c.env); // 6 dígitos, sem reuso por 30 dias
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`chg:${s.cpf}`, codigo, { expirationTtl: 600 });
-    // Envia por e-mail de verdade se o SMTP estiver configurado. Se não estiver
-    // (ou falhar), cai no modo teste e devolve o código na resposta.
-    const email = codigoEmail(codigo, "atualizar seus dados de contato");
-    const r = entry?.email ? await sendMail(c.env, { to: entry.email, ...email }) : { sent: false, reason: "sem e-mail" };
+    // Envia por e-mail de verdade se o SMTP estiver configurado (para o destino
+    // de notificação, se definido). Senão, modo teste (código na resposta).
+    const r = await enviarCodigo(c.env, { destinoPadrao: entry?.email, contexto: "atualizar seus dados de contato", codigo });
     return c.json({
       enviado: r.sent,
-      destino: maskEmailSrv(entry?.email),
+      destino: maskEmailSrv(r.destino || entry?.email),
       ...(r.sent ? {} : { codigo_teste: codigo, aviso: `E-mail não enviado (${r.reason}) — modo teste.` }),
     });
   })

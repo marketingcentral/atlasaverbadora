@@ -626,6 +626,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         fromEmail: z.string().email(),
         fromName: z.string().optional(),
         secure: z.boolean().optional(),
+        notifyEmail: z.string().email().optional().or(z.literal("")),
       })
       .parse(await c.req.json());
     const status = await setSmtpConfig(c.env, body);

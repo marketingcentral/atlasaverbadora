@@ -5,7 +5,8 @@ import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { generateRefreshToken, signAccessToken } from "./jwt.js";
 import { sha256Hex } from "../admin/api-tokens.js";
-import { sendMail, codigoEmail } from "../admin/mailer.js";
+import { enviarCodigo } from "../admin/mailer.js";
+import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded } from "../admin/index.js";
 import { setServidorPassword } from "../../db/repos.js";
@@ -226,15 +227,14 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     await ensureServidoresLoaded(c.env);
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
     if (!s) throw Errors.notFound("servidor");
-    const codigo = randomCode();
+    const codigo = await gerarCodigoUnico(c.env); // 6 dígitos, sem reuso por 30 dias
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`pa:${digits}`, codigo, { expirationTtl: 600 });
-    // Envia por e-mail de verdade se o SMTP estiver configurado; senão, modo teste
-    // (código na resposta) para o fluxo/demo continuar funcionando.
-    const email = codigoEmail(codigo, "ativar seu primeiro acesso");
-    const r = s.email ? await sendMail(c.env, { to: s.email, ...email }) : { sent: false, reason: "sem e-mail" };
+    // Envia por e-mail de verdade se o SMTP estiver configurado (para o destino
+    // de notificação, se definido). Senão, modo teste (código na resposta).
+    const r = await enviarCodigo(c.env, { destinoPadrao: s.email, contexto: "ativar seu primeiro acesso", codigo });
     return c.json({
       enviado: r.sent,
-      destino: maskEmail(s.email),
+      destino: maskEmail(r.destino || s.email),
       ...(r.sent ? {} : { codigo_teste: codigo, aviso: `E-mail não enviado (${r.reason}) — modo teste.` }),
     });
   })

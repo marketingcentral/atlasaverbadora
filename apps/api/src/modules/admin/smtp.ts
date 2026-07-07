@@ -22,6 +22,9 @@ export interface SmtpConfig {
   fromEmail: string;
   fromName: string;
   secure: boolean; // TLS/SSL
+  /** Se preenchido, TODOS os e-mails de código de confirmação vão para cá (útil
+   *  quando os e-mails dos servidores são fictícios). Vazio = e-mail do próprio usuário. */
+  notifyEmail: string;
   updatedAt: string;
 }
 
@@ -33,6 +36,7 @@ export interface SmtpStatus {
   fromEmail: string;
   fromName: string;
   secure: boolean;
+  notifyEmail: string;
   hasPassword: boolean;
   configured: boolean;
   updatedAt: string | null;
@@ -57,6 +61,7 @@ export async function getSmtpStatus(env: Env): Promise<SmtpStatus> {
     fromEmail: cfg?.fromEmail ?? "",
     fromName: cfg?.fromName ?? "",
     secure: cfg?.secure ?? true,
+    notifyEmail: cfg?.notifyEmail ?? "",
     hasPassword: !!cfg?.password,
     configured: !!cfg?.host,
     updatedAt: cfg?.updatedAt ?? null,
@@ -71,6 +76,7 @@ export interface SmtpInput {
   fromEmail: string;
   fromName?: string;
   secure?: boolean;
+  notifyEmail?: string;
 }
 
 export async function setSmtpConfig(env: Env, input: SmtpInput): Promise<SmtpStatus> {
@@ -84,6 +90,7 @@ export async function setSmtpConfig(env: Env, input: SmtpInput): Promise<SmtpSta
     fromEmail: input.fromEmail.trim(),
     fromName: (input.fromName ?? current?.fromName ?? "Atlas Averbadora").trim(),
     secure: input.secure ?? current?.secure ?? true,
+    notifyEmail: (input.notifyEmail ?? current?.notifyEmail ?? "").trim(),
     updatedAt: new Date().toISOString(),
   };
   await assertKv(env).put(KV_KEY, JSON.stringify(cfg));
