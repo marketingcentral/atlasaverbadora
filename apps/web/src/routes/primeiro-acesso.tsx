@@ -190,8 +190,8 @@ export function PrimeiroAcessoPage() {
                 </div>
               </InfoCard>
               <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
-                Enviamos um codigo de 6 digitos para:<br />
-                <b>{profile.emailMasked}</b>{profile.telefoneMasked ? <> e <b>{profile.telefoneMasked}</b></> : null}
+                Enviamos um codigo de 6 digitos por e-mail para:<br />
+                <b>{profile.emailMasked}</b>
               </p>
               {avisoCodigo ? <InfoBox>{avisoCodigo}</InfoBox> : null}
               <Input
