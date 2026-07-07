@@ -789,9 +789,9 @@ export class AtlasClient {
     aiTest: () => this.request<{ ok: boolean; message: string; latencyMs?: number }>("/v1/admin/ai/test", { method: "POST" }),
     // ===== SMTP (e-mails de confirmação) =====
     smtpConfig: () =>
-      this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config"),
-    smtpSave: (input: { host: string; port: number; user: string; password?: string; fromEmail: string; fromName?: string; secure?: boolean; notifyEmail?: string }) =>
-      this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
+      this.request<{ provider: "smtp" | "resend"; host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; hasResendKey: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config"),
+    smtpSave: (input: { provider?: "smtp" | "resend"; host?: string; port?: number; user?: string; password?: string; secure?: boolean; resendApiKey?: string; fromEmail?: string; fromName?: string; notifyEmail?: string }) =>
+      this.request<{ provider: "smtp" | "resend"; host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; hasResendKey: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
     smtpClear: () => this.request<void>("/v1/admin/smtp/config", { method: "DELETE" }),
     smtpTest: (to: string) => this.request<{ sent: boolean; reason?: string }>("/v1/admin/smtp/test", { method: "POST", body: { to } }),
     aiNormalizeCsv: (body: { csv: string; expectedHeaders: string[]; contextHint?: string; model?: string }) =>

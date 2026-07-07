@@ -239,18 +239,21 @@ function SmtpSection() {
   const status = useQuery({ queryKey: ["admin", "smtp", "config"], queryFn: () => atlas.admin.smtpConfig() });
   const cfg = status.data;
 
-  const [form, setForm] = useState({ host: "", port: 587, user: "", password: "", fromEmail: "", fromName: "", secure: true, notifyEmail: "marketingcentral.mkt@gmail.com" });
+  const DEFAULT_FORM = { provider: "resend" as "smtp" | "resend", host: "", port: 587, user: "", password: "", resendApiKey: "", fromEmail: "", fromName: "Atlas Averbadora", secure: true, notifyEmail: "marketingcentral.mkt@gmail.com" };
+  const [form, setForm] = useState(DEFAULT_FORM);
   const [hydrated, setHydrated] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  // Preenche o formulário com a config salva (uma vez), sem a senha.
+  // Preenche o formulário com a config salva (uma vez), sem os segredos.
   if (cfg && !hydrated) {
     setHydrated(true);
     setForm({
+      provider: cfg.provider,
       host: cfg.host,
       port: cfg.port,
       user: cfg.user,
       password: "",
+      resendApiKey: "",
       fromEmail: cfg.fromEmail,
       fromName: cfg.fromName,
       secure: cfg.secure,
@@ -260,18 +263,20 @@ function SmtpSection() {
 
   const save = useMutation({
     mutationFn: () => atlas.admin.smtpSave({
+      provider: form.provider,
       host: form.host.trim(),
       port: Number(form.port),
       user: form.user.trim(),
       password: form.password || undefined, // vazio = mantém a senha atual
-      fromEmail: form.fromEmail.trim(),
-      fromName: form.fromName.trim() || undefined,
+      resendApiKey: form.resendApiKey || undefined, // vazio = mantém a chave atual
       secure: form.secure,
+      fromEmail: form.fromEmail.trim() || undefined,
+      fromName: form.fromName.trim() || undefined,
       notifyEmail: form.notifyEmail.trim(),
     }),
     onSuccess: () => {
-      setForm((f) => ({ ...f, password: "" }));
-      setMsg({ kind: "ok", text: "SMTP salvo." });
+      setForm((f) => ({ ...f, password: "", resendApiKey: "" }));
+      setMsg({ kind: "ok", text: "Configuração salva." });
       qc.invalidateQueries({ queryKey: ["admin", "smtp", "config"] });
     },
     onError: (err) => setMsg({ kind: "err", text: err instanceof Error ? err.message : "Falha ao salvar" }),
@@ -280,8 +285,8 @@ function SmtpSection() {
   const clear = useMutation({
     mutationFn: () => atlas.admin.smtpClear(),
     onSuccess: () => {
-      setForm({ host: "", port: 587, user: "", password: "", fromEmail: "", fromName: "", secure: true, notifyEmail: "marketingcentral.mkt@gmail.com" });
-      setMsg({ kind: "ok", text: "Configuração SMTP removida." });
+      setForm(DEFAULT_FORM);
+      setMsg({ kind: "ok", text: "Configuração removida." });
       qc.invalidateQueries({ queryKey: ["admin", "smtp", "config"] });
     },
   });
@@ -293,16 +298,18 @@ function SmtpSection() {
     onSuccess: (r) =>
       setTestMsg(r.sent
         ? { kind: "ok", text: `E-mail de teste enviado para ${testTo}. Cheque a caixa (e o spam).` }
-        : { kind: "err", text: `Não enviou: ${r.reason ?? "erro"}. Confira host/porta/usuário/senha/TLS.` }),
+        : { kind: "err", text: `Não enviou: ${r.reason ?? "erro"}. Confira a chave/credenciais e o remetente.` }),
     onError: (err) => setTestMsg({ kind: "err", text: err instanceof Error ? err.message : "Falha no teste" }),
   });
 
-  const podeSalvar = form.host.trim() && form.user.trim() && form.fromEmail.trim() && (form.password || cfg?.hasPassword);
+  const podeSalvar = form.provider === "resend"
+    ? Boolean(form.resendApiKey.trim() || cfg?.hasResendKey)
+    : Boolean(form.host.trim() && form.user.trim() && (form.password || cfg?.hasPassword));
 
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
-        <h3 style={{ margin: 0 }}>{cfg?.configured ? "Editar SMTP" : "Configurar SMTP"}</h3>
+        <h3 style={{ margin: 0 }}>{cfg?.configured ? "Editar envio de e-mail" : "Configurar envio de e-mail"}</h3>
         {status.isLoading ? (
           <span style={{ color: "var(--text-muted)", fontSize: 13 }}>Carregando…</span>
         ) : cfg?.configured ? (
@@ -317,21 +324,68 @@ function SmtpSection() {
         )}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-        <Input label="Host SMTP" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} placeholder="smtp.seudominio.com" autoComplete="off" spellCheck={false} />
-        <Input label="Porta" type="number" value={String(form.port)} onChange={(e) => setForm({ ...form, port: Number(e.target.value) || 0 })} placeholder="587" />
-        <Input label="Usuário" value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} placeholder="apikey / usuario@dominio" autoComplete="off" spellCheck={false} />
-        <Input
-          label={cfg?.hasPassword ? "Senha (deixe em branco p/ manter)" : "Senha"}
-          type="password"
-          value={form.password}
-          onChange={(e) => setForm({ ...form, password: e.target.value })}
-          placeholder={cfg?.hasPassword ? "••••••••" : "senha SMTP"}
-          autoComplete="off"
-        />
-        <Input label="E-mail remetente (from)" value={form.fromEmail} onChange={(e) => setForm({ ...form, fromEmail: e.target.value })} placeholder="nao-responda@seudominio.com" autoComplete="off" spellCheck={false} />
-        <Input label="Nome remetente" value={form.fromName} onChange={(e) => setForm({ ...form, fromName: e.target.value })} placeholder="Atlas Averbadora" />
+      {/* Seletor de provedor */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {(["resend", "smtp"] as const).map((p) => {
+          const on = form.provider === p;
+          return (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setForm({ ...form, provider: p })}
+              style={{
+                flex: "1 1 0", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+                textAlign: "left", color: "var(--text)",
+                background: on ? "color-mix(in srgb, var(--accent) 10%, var(--bg-elev))" : "var(--surface)",
+                border: `1px solid ${on ? "var(--accent)" : "var(--border)"}`,
+              }}
+            >
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{p === "resend" ? "Resend (API) — recomendado" : "Servidor SMTP"}</div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+                {p === "resend" ? "1 chave de API, sem senha de app" : "host/porta/usuário/senha (ex.: Gmail)"}
+              </div>
+            </button>
+          );
+        })}
       </div>
+
+      {form.provider === "resend" ? (
+        <>
+          <Input
+            label={cfg?.hasResendKey ? "Chave de API do Resend (deixe em branco p/ manter)" : "Chave de API do Resend"}
+            type="password"
+            value={form.resendApiKey}
+            onChange={(e) => setForm({ ...form, resendApiKey: e.target.value })}
+            placeholder={cfg?.hasResendKey ? "re_••••••••" : "re_..."}
+            autoComplete="off"
+            spellCheck={false}
+          />
+          <div style={{ fontSize: 11.5, color: "var(--text-dim)", marginTop: 4 }}>
+            Crie a chave em <b>resend.com</b> → API Keys. Sem domínio verificado, o Resend envia do remetente
+            <code> onboarding@resend.dev</code> e só para o e-mail da sua conta Resend (que deve ser o destino abaixo).
+            Para enviar a qualquer e-mail, verifique um domínio no Resend e preencha o "E-mail remetente".
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <Input label="E-mail remetente (opcional — só com domínio verificado)" value={form.fromEmail} onChange={(e) => setForm({ ...form, fromEmail: e.target.value })} placeholder="nao-responda@seudominio.com" autoComplete="off" spellCheck={false} />
+          </div>
+        </>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <Input label="Host SMTP" value={form.host} onChange={(e) => setForm({ ...form, host: e.target.value })} placeholder="smtp.gmail.com" autoComplete="off" spellCheck={false} />
+          <Input label="Porta" type="number" value={String(form.port)} onChange={(e) => setForm({ ...form, port: Number(e.target.value) || 0 })} placeholder="587" />
+          <Input label="Usuário" value={form.user} onChange={(e) => setForm({ ...form, user: e.target.value })} placeholder="voce@gmail.com" autoComplete="off" spellCheck={false} />
+          <Input
+            label={cfg?.hasPassword ? "Senha (deixe em branco p/ manter)" : "Senha"}
+            type="password"
+            value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            placeholder={cfg?.hasPassword ? "••••••••" : "senha de app SMTP"}
+            autoComplete="off"
+          />
+          <Input label="E-mail remetente (from)" value={form.fromEmail} onChange={(e) => setForm({ ...form, fromEmail: e.target.value })} placeholder="voce@gmail.com" autoComplete="off" spellCheck={false} />
+          <Input label="Nome remetente" value={form.fromName} onChange={(e) => setForm({ ...form, fromName: e.target.value })} placeholder="Atlas Averbadora" />
+        </div>
+      )}
 
       <div style={{ marginTop: 12 }}>
         <Input
@@ -347,14 +401,16 @@ function SmtpSection() {
         </div>
       </div>
 
-      <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14, color: "var(--text-muted)", cursor: "pointer" }}>
-        <input type="checkbox" checked={form.secure} onChange={(e) => setForm({ ...form, secure: e.target.checked })} />
-        Conexão segura (TLS/SSL) — recomendado nas portas 465/587
-      </label>
+      {form.provider === "smtp" ? (
+        <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 14, color: "var(--text-muted)", cursor: "pointer" }}>
+          <input type="checkbox" checked={form.secure} onChange={(e) => setForm({ ...form, secure: e.target.checked })} />
+          Conexão segura (TLS/SSL) — recomendado nas portas 465/587
+        </label>
+      ) : null}
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
         <Button onClick={() => save.mutate()} disabled={!podeSalvar || save.isPending}>
-          {save.isPending ? "Salvando…" : "Salvar SMTP"}
+          {save.isPending ? "Salvando…" : "Salvar"}
         </Button>
         {cfg?.configured ? (
           <Button

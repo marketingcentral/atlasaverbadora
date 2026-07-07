@@ -619,13 +619,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(c.get("jwt"));
     const body = z
       .object({
-        host: z.string().min(1),
-        port: z.number().int().min(1).max(65535),
-        user: z.string().min(1),
+        provider: z.enum(["smtp", "resend"]).optional(),
+        host: z.string().optional(),
+        port: z.number().int().min(1).max(65535).optional(),
+        user: z.string().optional(),
         password: z.string().optional(),
-        fromEmail: z.string().email(),
-        fromName: z.string().optional(),
         secure: z.boolean().optional(),
+        resendApiKey: z.string().optional(),
+        fromEmail: z.string().email().optional().or(z.literal("")),
+        fromName: z.string().optional(),
         notifyEmail: z.string().email().optional().or(z.literal("")),
       })
       .parse(await c.req.json());
