@@ -30,69 +30,13 @@ export const CONTRATO_STATUS_LABEL: Record<ContratoStatus, string> = {
   inadimplente: "Inadimplente",
 };
 
-// Seed historico da carteira (contratos ja averbados em competencias anteriores).
-const CARTEIRA_SEED: Contrato[] = [
-  {
-    idUnico: "OP-2025-0009912",
-    cpfMasked: "***.301.774-**",
-    nome: "Sônia Maria Batista",
-    convenio: "Prefeitura de Palhoça",
-    matricula: "PALH-51002",
-    produto: "novo",
-    valor: 14000,
-    parcelas: 60,
-    valorParcela: 312.5,
-    status: "em_dia",
-    proximaParcela: "2026-08",
-    averbadoEm: "2025-11-12T14:30:00.000Z",
-    ccbUrl: "https://formaliza.bancodelta.com.br/ccb/OP-2025-0009912.pdf",
-  },
-  {
-    idUnico: "OP-2025-0010455",
-    cpfMasked: "***.882.190-**",
-    nome: "Paulo Henrique Costa",
-    convenio: "Prefeitura de Biguaçu",
-    matricula: "BIG-22811",
-    produto: "portabilidade",
-    valor: 27800,
-    parcelas: 84,
-    valorParcela: 489.9,
-    status: "em_dia",
-    proximaParcela: "2026-08",
-    averbadoEm: "2025-12-03T10:05:00.000Z",
-    ccbUrl: "https://formaliza.bancodelta.com.br/ccb/OP-2025-0010455.pdf",
-  },
-  {
-    idUnico: "OP-2025-0008120",
-    cpfMasked: "***.447.663-**",
-    nome: "Regina Célia Andrade",
-    convenio: "Prefeitura de São José",
-    matricula: "SJ-30990",
-    produto: "novo",
-    valor: 9800,
-    parcelas: 48,
-    valorParcela: 268.0,
-    status: "inadimplente",
-    proximaParcela: "2026-07",
-    averbadoEm: "2025-09-20T09:00:00.000Z",
-    ccbUrl: "https://formaliza.bancodelta.com.br/ccb/OP-2025-0008120.pdf",
-  },
-  {
-    idUnico: "OP-2024-0071233",
-    cpfMasked: "***.115.902-**",
-    nome: "Antônio Marcos Ferreira",
-    convenio: "Prefeitura de Palhoça",
-    matricula: "PALH-40012",
-    produto: "novo",
-    valor: 6000,
-    parcelas: 24,
-    valorParcela: 291.4,
-    status: "quitado",
-    proximaParcela: "—",
-    averbadoEm: "2024-06-15T11:20:00.000Z",
-    ccbUrl: "https://formaliza.bancodelta.com.br/ccb/OP-2024-0071233.pdf",
-  },
-];
+// CARTEIRA_SEED zerada. Antes tinha 4 clientes hardcoded (Sonia, Paulo,
+// Regina, Antonio) que apareciam em bate-carteira/convenios/getCarteira
+// pra QUALQUER banco logado — incluindo bancos recem criados pela averbadora,
+// que deveriam ficar zerados. Fonte de verdade agora e o backend
+// (atlas.banco.contratos()) — carteira/adf ja passaram por isso; agora
+// bate-carteira e convenios tambem.
+const CARTEIRA_SEED: Contrato[] = [];
 
 /** Carteira = seed historico + propostas averbadas no fluxo (dedup por idUnico). */
 export function getCarteira(): Contrato[] {
