@@ -21,7 +21,7 @@ import { getSmtpConfigForSend } from "../admin/smtp.js";
 import { sendMail, codigoEmail } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
-import { devUserCpfById } from "../auth/index.js";
+import { devUserById } from "../auth/index.js";
 
 const TTL_S = 600; // 10 min
 
@@ -50,19 +50,17 @@ function emailDoOperador(j: JwtClaims): { email: string; nome: string } {
     return { email: (p?.contatoEmail || p?.loginEmail || "").trim(), nome: p?.nome ?? "Prefeitura" };
   }
   if (j.role === "servidor") {
-    // Dois caminhos possiveis pra achar o servidor logado:
-    //  (a) login normal — servidor_id = Number(idMatricula.slice(-5)), match derivado
-    //  (b) login DEV — servidor_id = DEV_USERS.id (1, 2, ...); casa via CPF
+    // (a) login DEV — id do DEV_USERS traz email cadastrado direto.
+    const dev = devUserById(Number(j.sub));
+    if (dev?.email) return { email: dev.email.trim(), nome: dev.nome };
+    // (b) login normal (servidor com senha real) — servidor_id vem de idMatricula.slice(-5).
     const target = j.servidor_id;
     let s = SERVIDORES_BUSCA_MOCK.find((x) => {
       const derived = Number(x.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
       return derived === target;
     });
-    if (!s) {
-      const cpf = devUserCpfById(Number(j.sub));
-      if (cpf) s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === cpf);
-    }
-    return { email: (s?.email ?? "").trim(), nome: s?.nome ?? "Servidor" };
+    if (!s && dev?.cpf) s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === dev.cpf && x.email);
+    return { email: (s?.email ?? "").trim(), nome: s?.nome ?? dev?.nome ?? "Servidor" };
   }
   return { email: "", nome: "Operador" };
 }
