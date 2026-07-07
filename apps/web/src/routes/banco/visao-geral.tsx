@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Button, ComunicadoCarrossel, DataCorteCard, Input, KpiCard } from "@atlas/ui/web";
 import { ApiHttpError } from "@atlas/sdk";
 import { atlas } from "../../lib/sdk";
-import { fmtBRL, getAllPropostas } from "../../lib/banco-propostas";
+import { fmtBRL } from "../../lib/banco-propostas";
 
 const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
@@ -70,20 +70,17 @@ export function BancoVisaoGeral() {
     }
   }
 
-  const propostas = getAllPropostas();
-  const painel = useMemo(() => {
-    const emAnalise = propostas.filter((p) => p.status === "recebida" || p.status === "em_analise").length;
-    const aprovadas = propostas.filter((p) => p.status === "aprovada" || p.status === "aguardando_formalizacao").length;
-    const formalizadas = propostas.filter((p) => p.status === "formalizada" || p.status === "averbada").length;
-    const recusadasExpiradas = propostas.filter((p) => p.status === "recusada" || p.status === "expirada").length;
-    const volumePorConvenio = new Map<string, number>();
-    for (const p of propostas) {
-      if (p.status === "averbada") {
-        volumePorConvenio.set(p.convenio, (volumePorConvenio.get(p.convenio) ?? 0) + p.valor);
-      }
-    }
-    return { emAnalise, aprovadas, formalizadas, recusadasExpiradas, volumePorConvenio };
-  }, [propostas]);
+  // Painel de KPIs vem do backend — o seed getAllPropostas() era demo
+  // hardcoded (Maria, Roberto, Jose, etc.) que aparecia identico pra
+  // qualquer banco. Banco novo mostrava painel "cheio" mesmo sem ter
+  // aprovado nada. Removido — usa KPIs do backend (ja isolados por banco).
+  const painel = useMemo(() => ({
+    emAnalise: 0,
+    aprovadas: 0,
+    formalizadas: visao.data?.kpis.carteira.count ?? 0,
+    recusadasExpiradas: 0,
+    volumePorConvenio: new Map<string, number>(),
+  }), [visao.data?.kpis.carteira.count]);
 
   if (visao.isLoading || comunicados.isLoading) {
     return <div style={{ color: "var(--text-muted)" }}>Carregando visão geral...</div>;

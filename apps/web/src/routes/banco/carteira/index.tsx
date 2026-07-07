@@ -14,7 +14,6 @@ import {
   CONTRATO_STATUS_LABEL,
   gerarAdf,
   getAdf,
-  getCarteira,
   type Contrato,
   type ContratoStatus,
 } from "../../../lib/banco-carteira";
@@ -117,11 +116,11 @@ export function BancoCarteira() {
 
   const contratos = useMemo(() => {
     void version;
-    // Dedupe por idUnico: backend eh a fonte de verdade quando conflita com
-    // o seed antigo do localStorage.
-    const seed = getCarteira();
+    // Fonte unica = backend. Antes concatenavamos CARTEIRA_SEED (Sonia,
+    // Paulo, Regina, etc. hardcoded) — visivel para QUALQUER banco logado,
+    // incluindo recem criado pela averbadora que deveria estar zerado.
+    // Removido: um banco so ve os contratos que ele proprio averbou.
     const byId = new Map<string, CarteiraRow>();
-    for (const c of seed) byId.set(c.idUnico, c);
     for (const c of contratosBackend) byId.set(c.idUnico, c);
     return [...byId.values()]
       .filter((c) => {

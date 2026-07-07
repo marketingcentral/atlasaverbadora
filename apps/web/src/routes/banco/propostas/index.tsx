@@ -8,7 +8,6 @@ import {
   PRODUTO_LABEL,
   STATUS_LABEL,
   fmtBRL,
-  getAllPropostas,
   getBancoPerfil,
   setBancoPerfil,
   BANCO_PERFIS,
@@ -116,10 +115,12 @@ export function BancoPropostas() {
     },
   });
 
-  // Fila = propostas reais do backend (primeiro) + o seed de demonstração (localStorage).
+  // Fila = SO propostas reais do backend. Antes concatenavamos o seed
+  // (getAllPropostas) — hardcoded no frontend com Maria Aparecida, Roberto
+  // Silva, etc. — que aparecia identico pra QUALQUER banco logado, incluindo
+  // um recem criado pela averbadora que deveria estar zerado. Removido.
   const todas: PropostaRow[] = useMemo(() => {
-    const api = (apiQ.data?.contratos ?? []).map(contratoToProposta);
-    return [...api, ...(getAllPropostas() as PropostaRow[])];
+    return (apiQ.data?.contratos ?? []).map(contratoToProposta);
   }, [apiQ.data]);
 
   const filtradas = useMemo(() => {

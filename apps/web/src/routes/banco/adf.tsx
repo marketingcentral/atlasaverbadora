@@ -4,7 +4,7 @@ import { Button, DataTable, Pill, SelectField, type Column } from "@atlas/ui/web
 import { atlas } from "../../lib/sdk";
 import { buildSimplePdf, downloadPdf } from "../../lib/pdf";
 import { fmtBRL, fmtDateTime, getBancoPerfil, type BancoProduto } from "../../lib/banco-propostas";
-import { gerarAdf, getAdf, getCarteira, type Contrato, type ContratoStatus } from "../../lib/banco-carteira";
+import { gerarAdf, getAdf, type Contrato, type ContratoStatus } from "../../lib/banco-carteira";
 
 type FiltroAdf = "todas" | "geradas" | "pendentes";
 
@@ -76,12 +76,12 @@ export function BancoAdf() {
       .filter((c): c is Contrato => c !== null);
   }, [q.data]);
 
-  // Merge SEED + backend, dedupe por idUnico, recentes no topo.
+  // Fonte unica = backend. Antes concatenavamos CARTEIRA_SEED (Sonia,
+  // Paulo, Regina, etc. hardcoded) — visivel para QUALQUER banco logado,
+  // incluindo recem criado. Removido: banco novo comeca com ADF zerado.
   void version;
   const todosContratos = useMemo(() => {
-    const seed = getCarteira();
     const byId = new Map<string, Contrato>();
-    for (const c of seed) byId.set(c.idUnico, c);
     for (const c of contratosBackend) byId.set(c.idUnico, c);
     return [...byId.values()].sort((a, b) => parseLancamento(b.averbadoEm) - parseLancamento(a.averbadoEm));
   }, [contratosBackend]);
