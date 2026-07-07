@@ -614,6 +614,19 @@ export class AtlasClient {
     return res;
   }
 
+  // ===== Primeiro acesso do servidor (ativa a conta a partir do cadastro da prefeitura) =====
+  readonly primeiroAcesso = {
+    buscar: (cpf: string) =>
+      this.request<{ encontrado: boolean; nome?: string; matricula?: string; cargo?: string | null; origem?: string | null; email_masked?: string; telefone_masked?: string; ja_tem_senha?: boolean }>(
+        "/v1/auth/primeiro-acesso/buscar", { method: "POST", body: { cpf }, skipAuth: true }),
+    codigo: (cpf: string) =>
+      this.request<{ enviado: boolean; destino: string; codigo_teste?: string; aviso?: string }>(
+        "/v1/auth/primeiro-acesso/codigo", { method: "POST", body: { cpf }, skipAuth: true }),
+    senha: (cpf: string, codigo: string, senha: string) =>
+      this.request<{ ok: boolean }>(
+        "/v1/auth/primeiro-acesso/senha", { method: "POST", body: { cpf, codigo, senha }, skipAuth: true }),
+  };
+
   async logout(): Promise<void> {
     try {
       await this.request("/v1/auth/logout", { method: "POST" });
