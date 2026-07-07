@@ -392,7 +392,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     return c.json({ folha: f });
   })
   .get("/v1/prefeitura/folhas/:id/movimentacoes", (c) => {
-    requirePrefeitura(c.get("jwt"));
+    const pid = requirePrefeitura(c.get("jwt"));
+    // Isolamento: prefeitura so ve movimentacoes de folha propria. Antes qualquer
+    // prefeitura logada podia ler movimentacao de folha de outra adivinhando o id.
+    const f = folhas.find((x) => x.id === c.req.param("id") && x.prefeituraId === pid);
+    if (!f) throw Errors.notFound("folha");
     return c.json({ movimentacoes: listMovimentacoes(c.req.param("id")) });
   })
   .post("/v1/prefeitura/folhas/:id/movimentacao", async (c) => {
@@ -506,7 +510,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     return c.json({ lotes: listLotes({ prefeituraId: id }) });
   })
   .get("/v1/prefeitura/tombamento/lotes/:id/linhas", (c) => {
-    requirePrefeitura(c.get("jwt"));
+    const pid = requirePrefeitura(c.get("jwt"));
+    // Isolamento: prefeitura so ve linhas de lote proprio. Antes qualquer
+    // prefeitura lia linhas de tombamento de outra adivinhando o id do lote.
+    const lote = listLotes({ prefeituraId: pid }).find((l) => l.id === c.req.param("id"));
+    if (!lote) throw Errors.notFound("lote");
     return c.json({ linhas: listLinhas(c.req.param("id")) });
   })
   .post("/v1/prefeitura/tombamento/importar", async (c) => {
