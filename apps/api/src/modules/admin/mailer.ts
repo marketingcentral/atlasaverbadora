@@ -161,9 +161,9 @@ export async function enviarCodigo(
   opts: { destinoPadrao?: string; contexto: string; codigo: string },
 ): Promise<SendResult & { destino: string }> {
   const cfg = await getSmtpConfigForSend(env);
-  // destinoPadrao (email real da persona) tem prioridade. notifyEmail e SO fallback
-  // quando a persona nao tem email cadastrado (ex.: servidores importados sem contato).
-  const destino = (opts.destinoPadrao || "").trim() || (cfg?.notifyEmail ?? "").trim();
+  // notifyEmail global (Configuracoes → SMTP → "Destino dos codigos") funciona como
+  // override de teste: quando preenchido, TUDO vai pra la. Vazio = destinoPadrao real.
+  const destino = (cfg?.notifyEmail ?? "").trim() || (opts.destinoPadrao ?? "").trim();
   if (!destino) return { sent: false, reason: "sem destino", destino: "" };
   const { subject, text } = codigoEmail(opts.codigo, opts.contexto);
   const r = await sendMail(env, { to: destino, subject, text });

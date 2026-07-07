@@ -75,11 +75,11 @@ export const confirmacaoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       .parse(await c.req.json().catch(() => ({ acao: "confirmar esta ação" })));
 
     const { email } = emailDoOperador(j);
-    // Prioriza o e-mail cadastrado do operador; se não houver, usa o notifyEmail
-    // global (útil quando o e-mail do servidor é fictício).
+    // Se o admin preencheu notifyEmail (override de teste em Configuracoes → SMTP),
+    // TUDO vai pra la — util pra fase de teste. Vazio = vai pro e-mail cadastrado da persona.
     const smtp = await getSmtpConfigForSend(c.env);
     const notify = (smtp?.notifyEmail ?? "").trim();
-    const destino = email || notify;
+    const destino = notify || email;
 
     const challengeId = crypto.randomUUID();
     const codigo = await gerarCodigoUnico(c.env);
