@@ -161,7 +161,9 @@ export async function enviarCodigo(
   opts: { destinoPadrao?: string; contexto: string; codigo: string },
 ): Promise<SendResult & { destino: string }> {
   const cfg = await getSmtpConfigForSend(env);
-  const destino = (cfg?.notifyEmail && cfg.notifyEmail.trim()) || opts.destinoPadrao || "";
+  // destinoPadrao (email real da persona) tem prioridade. notifyEmail e SO fallback
+  // quando a persona nao tem email cadastrado (ex.: servidores importados sem contato).
+  const destino = (opts.destinoPadrao || "").trim() || (cfg?.notifyEmail ?? "").trim();
   if (!destino) return { sent: false, reason: "sem destino", destino: "" };
   const { subject, text } = codigoEmail(opts.codigo, opts.contexto);
   const r = await sendMail(env, { to: destino, subject, text });
