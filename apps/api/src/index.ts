@@ -8,6 +8,7 @@ import { ensureTombamentoLoaded } from "./modules/admin/tombamento.js";
 import { ensureContratosLoaded } from "./modules/portal-banco/store.js";
 import type { JwtClaims } from "./middleware/auth.js";
 import { externalRoutes } from "./modules/external/index.js";
+import { confirmacaoRoutes } from "./modules/confirmacao/index.js";
 import { prefeituraRoutes, prefeituraPublicRoutes } from "./modules/prefeitura/index.js";
 import { errorHandler } from "./middleware/error.js";
 import { loggerMiddleware } from "./middleware/logger.js";
@@ -57,6 +58,7 @@ app.route("/", servidoresRoutes);
 app.route("/", portalBancoRoutes);
 app.route("/", adminRoutes);
 app.route("/", prefeituraRoutes);
+app.route("/", confirmacaoRoutes);
 app.route("/", externalRoutes);
 
 app.notFound((c) => c.json({ error: { code: "not_found", message: "Rota nao encontrada" } }, 404));
