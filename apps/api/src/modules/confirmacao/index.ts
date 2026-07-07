@@ -40,11 +40,12 @@ function emailDoOperador(j: JwtClaims): { email: string; nome: string } {
   }
   if (j.role === "banco") {
     const b = bancos.find((x) => x.id === j.banco_id);
-    return { email: (b?.loginEmail || b?.contatoEmail || "").trim(), nome: b?.nome ?? "Banco" };
+    // contatoEmail e o canal oficial de comunicacoes; loginEmail e so p/ autenticar.
+    return { email: (b?.contatoEmail || b?.loginEmail || "").trim(), nome: b?.nome ?? "Banco" };
   }
   if (j.role === "prefeitura") {
     const p = prefeituras.find((x) => x.id === j.prefeitura_id);
-    return { email: (p?.loginEmail || p?.contatoEmail || "").trim(), nome: p?.nome ?? "Prefeitura" };
+    return { email: (p?.contatoEmail || p?.loginEmail || "").trim(), nome: p?.nome ?? "Prefeitura" };
   }
   // servidor: e-mail próprio nem sempre cadastrado — cai no notifyEmail (fallback).
   return { email: "", nome: "Servidor" };
