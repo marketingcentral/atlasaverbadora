@@ -20,6 +20,7 @@ import { getAverbadoraUser } from "../admin/perfis-admin.js";
 import { getSmtpConfigForSend } from "../admin/smtp.js";
 import { sendMail, codigoEmail } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
+import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 
 const TTL_S = 600; // 10 min
 
@@ -47,8 +48,17 @@ function emailDoOperador(j: JwtClaims): { email: string; nome: string } {
     const p = prefeituras.find((x) => x.id === j.prefeitura_id);
     return { email: (p?.contatoEmail || p?.loginEmail || "").trim(), nome: p?.nome ?? "Prefeitura" };
   }
-  // servidor: e-mail próprio nem sempre cadastrado — cai no notifyEmail (fallback).
-  return { email: "", nome: "Servidor" };
+  if (j.role === "servidor") {
+    // servidor_id foi derivado a partir de idMatricula.slice(-5) no auth (auth/index.ts).
+    // Refaz o match para achar o servidor logado e recuperar o e-mail cadastrado.
+    const target = j.servidor_id;
+    const s = SERVIDORES_BUSCA_MOCK.find((x) => {
+      const derived = Number(x.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
+      return derived === target;
+    });
+    return { email: (s?.email ?? "").trim(), nome: s?.nome ?? "Servidor" };
+  }
+  return { email: "", nome: "Operador" };
 }
 
 export const confirmacaoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims; trace_id: string } }>()
