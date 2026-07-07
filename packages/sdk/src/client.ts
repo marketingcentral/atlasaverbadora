@@ -170,6 +170,7 @@ export interface AdminConvenio {
   diaRepasse: number;
   bancoNome: string;
   prefeituraNome: string;
+  ativo: boolean;
 }
 
 export interface AdminConvenioInput {
@@ -771,12 +772,14 @@ export class AtlasClient {
     getTabela: (id: string) => this.request<{ tabela: BancoTabela }>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}`),
     upsertTabela: (body: BancoTabelaInput) => this.request<{ tabela: BancoTabela }>("/v1/portal/banco/cadastros/tabela-emprestimos", { method: "POST", body }),
     removerTabela: (id: string) => this.request<void>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}`, { method: "DELETE" }),
+    reativarTabela: (id: string) => this.request<{ ok: boolean }>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}/reativar`, { method: "POST" }),
 
     listUsuarios: (q?: { perfil?: BancoPerfil; somenteAdmin?: boolean }) =>
       this.request<{ usuarios: BancoUsuario[] }>("/v1/portal/banco/cadastros/usuarios", { query: q ?? {} }),
     getUsuario: (id: string) => this.request<{ usuario: BancoUsuario }>(`/v1/portal/banco/cadastros/usuarios/${id}`),
     upsertUsuario: (body: BancoUsuarioInput) => this.request<{ usuario: BancoUsuario }>("/v1/portal/banco/cadastros/usuarios", { method: "POST", body }),
     removerUsuario: (id: string) => this.request<void>(`/v1/portal/banco/cadastros/usuarios/${id}`, { method: "DELETE" }),
+    reativarUsuario: (id: string) => this.request<{ ok: boolean }>(`/v1/portal/banco/cadastros/usuarios/${id}/reativar`, { method: "POST" }),
     /** Devolve o CPF completo do usuario (acesso registrado em audit log no servidor). */
     revealUsuarioCpf: (id: string) =>
       this.request<{ id: string; cpf: string; cpfMasked: string }>(`/v1/portal/banco/cadastros/usuarios/${id}/cpf`),
@@ -848,6 +851,8 @@ export class AtlasClient {
       this.request<{ convenio: AdminConvenio }>("/v1/admin/convenios", { method: "POST", body }),
     deleteConvenio: (id: string) =>
       this.request<void>(`/v1/admin/convenios/${id}`, { method: "DELETE" }),
+    reativarConvenio: (id: string) =>
+      this.request<{ ok: boolean }>(`/v1/admin/convenios/${id}/reativar`, { method: "POST" }),
     getConvenioConfig: (id: string) =>
       this.request<{ config: AdminConvenioConfig | null }>(`/v1/admin/convenios/${id}/config`),
     listConveniosConfigs: () =>
@@ -903,6 +908,8 @@ export class AtlasClient {
       this.request<{ ok: boolean }>(`/v1/admin/perfis/${id}/2fa/disable`, { method: "POST" }),
     deletePerfilAdmin: (id: number) =>
       this.request<void>(`/v1/admin/perfis/${id}`, { method: "DELETE" }),
+    reativarPerfilAdmin: (id: number) =>
+      this.request<{ ok: boolean }>(`/v1/admin/perfis/${id}/reativar`, { method: "POST" }),
     listServidores: (q?: { prefeitura_id?: number; status?: string }) =>
       this.request<{ servidores: AdminServidor[]; total: number }>("/v1/admin/servidores", { query: q ?? {} }),
     updateServidor: (matricula: string, body: AdminServidorUpdate) =>
@@ -1025,6 +1032,7 @@ export class AtlasClient {
     salvarPerfil: (body: { id?: number; nome: string; email: string; area: string; ativo?: boolean }) =>
       this.request<{ perfil: PrefeituraPerfil }>("/v1/prefeitura/perfis", { method: "POST", body }),
     excluirPerfil: (id: number) => this.request<void>(`/v1/prefeitura/perfis/${id}`, { method: "DELETE" }),
+    reativarPerfil: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/reativar`, { method: "POST" }),
     rotate2fa: (id: number) => this.request<{ secret: string; otpauthUrl: string }>(`/v1/prefeitura/perfis/${id}/2fa/rotate`, { method: "POST" }),
     disable2fa: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/2fa/disable`, { method: "POST" }),
 

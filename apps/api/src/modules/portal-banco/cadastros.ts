@@ -148,6 +148,15 @@ export async function removerTabela(env: Env, id: string): Promise<boolean> {
   await upsertTabelaRow(env, t as unknown as { id: string; [k: string]: unknown }).catch(() => undefined);
   return true;
 }
+/** Reativa (ativo=true), reversivel do soft-delete. */
+export async function reativarTabela(env: Env, id: string): Promise<boolean> {
+  await hydrateTabelas(env);
+  const t = _tabelas.find((x) => x.id === id);
+  if (!t) return false;
+  t.ativo = true;
+  await upsertTabelaRow(env, t as unknown as { id: string; [k: string]: unknown }).catch(() => undefined);
+  return true;
+}
 
 export function listUsuarios(opts: { perfil?: BancoUsuario["perfil"]; somenteAdmin?: boolean } = {}): BancoUsuario[] {
   return _usuarios.filter((u) => {
@@ -193,5 +202,12 @@ export function removerUsuario(id: string): boolean {
   const u = _usuarios.find((x) => x.id === id);
   if (!u) return false;
   u.ativo = false;
+  return true;
+}
+/** Reativa usuario (ativo=true). */
+export function reativarUsuario(id: string): boolean {
+  const u = _usuarios.find((x) => x.id === id);
+  if (!u) return false;
+  u.ativo = true;
   return true;
 }

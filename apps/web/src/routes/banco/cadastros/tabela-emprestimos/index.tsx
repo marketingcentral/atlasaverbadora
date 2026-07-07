@@ -19,6 +19,14 @@ export function BancoTabelaEmprestimosLista() {
       qc.invalidateQueries({ queryKey: ["servidor", "ofertas"] });
     },
   });
+  const reactivate = useMutation({
+    mutationFn: (id: string) => atlas.banco.reativarTabela(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["banco", "tabelas"] });
+      qc.invalidateQueries({ queryKey: ["banco", "tabela", id] });
+      qc.invalidateQueries({ queryKey: ["servidor", "ofertas"] });
+    },
+  });
 
   const columns: Column<BancoTabela>[] = [
     {
@@ -54,15 +62,19 @@ export function BancoTabelaEmprestimosLista() {
         actions={(t) => (
           <>
             <IconButton title="Editar" onClick={() => nav(t.id)}>✎</IconButton>
-            <IconButton
-              title="Remover"
-              danger
-              onClick={() => {
-                if (confirm(`Remover tabela ${t.id}?`)) remove.mutate(t.id);
-              }}
-            >
-              🗑
-            </IconButton>
+            {t.ativo ? (
+              <IconButton
+                title="Desativar"
+                danger
+                onClick={() => {
+                  if (confirm(`Desativar tabela ${t.id}?\n\nEla para de aparecer nas simulações, mas nada é apagado — você pode reativar depois.`)) remove.mutate(t.id);
+                }}
+              >
+                ⏸
+              </IconButton>
+            ) : (
+              <IconButton title="Reativar" onClick={() => reactivate.mutate(t.id)}>▶</IconButton>
+            )}
           </>
         )}
       />

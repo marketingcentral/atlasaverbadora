@@ -278,6 +278,13 @@ export function deletePerfil(prefeituraId: number, id: number): boolean {
   p.ativo = false;
   return true;
 }
+/** Reativa (ativo=true). */
+export function reactivatePerfil(prefeituraId: number, id: number): boolean {
+  const p = _perfis.find((x) => x.id === id && x.prefeituraId === prefeituraId);
+  if (!p) return false;
+  p.ativo = true;
+  return true;
+}
 
 /** Rotate the TOTP secret and return the otpauth URL for QR provisioning. */
 export function rotateTotp(prefeituraId: number, id: number): { secret: string; otpauthUrl: string } | null {

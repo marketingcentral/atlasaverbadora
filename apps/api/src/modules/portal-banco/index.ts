@@ -8,7 +8,7 @@ import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtu
 import { refreshConvenios } from "./convenios-store.js";
 import { prefeituras } from "../admin/index.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
-import { listTabelas, getTabela, upsertTabela, removerTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario } from "./cadastros.js";
+import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
 
 function requireBancoRole(j: JwtClaims): void {
   if (j.role !== "banco") throw Errors.forbidden("Requer perfil banco");
@@ -412,6 +412,15 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!(await removerTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
     return c.body(null, 204);
   })
+  .post("/v1/portal/banco/cadastros/tabela-emprestimos/:id/reativar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const t = await getTabela(c.env, c.req.param("id"));
+    const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
+    if (!t || !meusConvenios.has(t.convenioId)) throw Errors.notFound("tabela");
+    if (!(await reativarTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
+    return c.json({ ok: true });
+  })
 
   // --------- Cadastros: Usuarios do banco ----------
   // Isolamento: BancoUsuario tem bancoId — banco novo (bancoId proprio) so
@@ -492,6 +501,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     if (!removerUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
     return c.body(null, 204);
+  })
+  .post("/v1/portal/banco/cadastros/usuarios/:id/reativar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const u = getUsuario(c.req.param("id"));
+    if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
+    if (!reativarUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
+    return c.json({ ok: true });
   })
 
   // --------- Relatorios ----------

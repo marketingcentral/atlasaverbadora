@@ -70,6 +70,13 @@ export function BancoUsuariosLista() {
       qc.invalidateQueries({ queryKey: ["banco", "usuario", id] });
     },
   });
+  const reactivate = useMutation({
+    mutationFn: (id: string) => atlas.banco.reativarUsuario(id),
+    onSuccess: (_data, id) => {
+      qc.invalidateQueries({ queryKey: ["banco", "usuarios"] });
+      qc.invalidateQueries({ queryKey: ["banco", "usuario", id] });
+    },
+  });
 
   const filtered = (data.data?.usuarios ?? []).filter((u) =>
     search ? `${u.nome} ${u.email}`.toLowerCase().includes(search.toLowerCase()) : true,
@@ -126,15 +133,19 @@ export function BancoUsuariosLista() {
           <>
             <IconButton title="Editar" onClick={() => nav(u.id)}>✎</IconButton>
             <CopyCpfButton usuarioId={u.id} />
-            <IconButton
-              title="Remover"
-              danger
-              onClick={() => {
-                if (confirm(`Remover ${u.nome}?`)) remove.mutate(u.id);
-              }}
-            >
-              🗑
-            </IconButton>
+            {u.ativo ? (
+              <IconButton
+                title="Desativar"
+                danger
+                onClick={() => {
+                  if (confirm(`Desativar ${u.nome}?\n\nO usuário para de operar, mas nada é apagado — você pode reativar depois.`)) remove.mutate(u.id);
+                }}
+              >
+                ⏸
+              </IconButton>
+            ) : (
+              <IconButton title="Reativar" onClick={() => reactivate.mutate(u.id)}>▶</IconButton>
+            )}
           </>
         )}
       />

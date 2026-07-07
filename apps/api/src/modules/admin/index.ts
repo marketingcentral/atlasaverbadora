@@ -19,7 +19,7 @@ import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-rese
 import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
-import { deleteAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
+import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail } from "./mailer.js";
@@ -939,11 +939,24 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
 
+  .post("/v1/admin/convenios/:id/reativar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = c.req.param("id");
+    await refreshConvenios(c.env);
+    const cv = CONVENIOS_MOCK.find((x) => x.id === id);
+    if (!cv) throw Errors.notFound("convenio");
+    cv.ativo = true;
+    await persistConvenio(c.env, cv);
+    pushEvent("info", "admin.convenios", `Convenio "${cv.nome}" reativado por user:${c.get("jwt").sub}`);
+    return c.json({ ok: true });
+  })
   .get("/v1/admin/convenios", async (c) => {
     requireAdmin(c.get("jwt"));
     await refreshConvenios(c.env);
-    const detalhado = CONVENIOS_MOCK.filter((cv) => cv.ativo !== false).map((cv) => ({
+    // Retorna TODOS (ativos e inativos) — a UI mostra a situacao e permite reativar.
+    const detalhado = CONVENIOS_MOCK.map((cv) => ({
       ...cv,
+      ativo: cv.ativo !== false,
       bancoNome: bancos.find((b) => b.id === cv.bancoId)?.nome ?? "—",
       prefeituraNome: prefeituras.find((p) => p.id === cv.prefeituraId)?.nome ?? cv.prefeitura,
     }));
@@ -1693,8 +1706,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const id = Number(c.req.param("id"));
     if (!deleteAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "usuario_removido", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} removido.` });
+    appendAudit({ categoria: "acesso", acao: "usuario_removido", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} desativado.` });
     return c.body(null, 204);
+  })
+  .post("/v1/admin/perfis/:id/reativar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = Number(c.req.param("id"));
+    if (!reactivateAverbadoraUser(id)) throw Errors.notFound("usuario");
+    await persistPerfis(c.env);
+    appendAudit({ categoria: "acesso", acao: "usuario_reativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} reativado.` });
+    return c.json({ ok: true });
   })
 
   .post("/v1/admin/servidores/importar", authRequired, async (c) => {

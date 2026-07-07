@@ -22,7 +22,7 @@ import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
   ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus,
   TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia,
-  listPerfis, upsertPerfil, deletePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
+  listPerfis, upsertPerfil, deletePerfil, reactivatePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
 } from "./store.js";
 import { upsertPrefeitura, upsertServidor } from "../../db/repos.js";
 
@@ -670,6 +670,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const id = requirePrefeitura(c.get("jwt"));
     if (!deletePerfil(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
     return c.body(null, 204);
+  })
+  .post("/v1/prefeitura/perfis/:id/reativar", (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    if (!reactivatePerfil(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
+    return c.json({ ok: true });
   })
   .post("/v1/prefeitura/perfis/:id/2fa/rotate", (c) => {
     const id = requirePrefeitura(c.get("jwt"));
