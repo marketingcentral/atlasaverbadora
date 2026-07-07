@@ -640,6 +640,24 @@ export class AtlasClient {
     return this.request<{ matriculas: T[] }>("/v1/servidores/me/matriculas");
   }
 
+  // ============ Confirmação por código (step-up, qualquer persona) ============
+  // Envia um código de 6 dígitos para o e-mail cadastrado de quem está operando
+  // e devolve o destino para o front avisar "código enviado para <e-mail>".
+  readonly confirmacao = {
+    solicitar: (acao: string, recurso?: string) =>
+      this.request<{
+        challengeId: string;
+        destino: string;
+        emailMascarado: string;
+        enviado: boolean;
+        motivo?: string;
+        codigoDemo: string;
+        expiraEmSegundos: number;
+      }>("/v1/confirmacao/solicitar", { method: "POST", body: { acao, recurso } }),
+    verificar: (challengeId: string, codigo: string) =>
+      this.request<{ ok: boolean }>("/v1/confirmacao/verificar", { method: "POST", body: { challengeId, codigo } }),
+  };
+
   // ============ Servidor (marketplace + demais consultas do proprio servidor) ============
   readonly servidor = {
     /** Marketplace de ofertas — derivado das tabelas de emprestimo publicadas pelos bancos. */
@@ -789,9 +807,9 @@ export class AtlasClient {
     aiTest: () => this.request<{ ok: boolean; message: string; latencyMs?: number }>("/v1/admin/ai/test", { method: "POST" }),
     // ===== SMTP (e-mails de confirmação) =====
     smtpConfig: () =>
-      this.request<{ provider: "smtp" | "resend"; host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; hasResendKey: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config"),
-    smtpSave: (input: { provider?: "smtp" | "resend"; host?: string; port?: number; user?: string; password?: string; secure?: boolean; resendApiKey?: string; fromEmail?: string; fromName?: string; notifyEmail?: string }) =>
-      this.request<{ provider: "smtp" | "resend"; host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; hasResendKey: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
+      this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config"),
+    smtpSave: (input: { host?: string; port?: number; user?: string; password?: string; secure?: boolean; fromEmail?: string; fromName?: string; notifyEmail?: string }) =>
+      this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
     smtpClear: () => this.request<void>("/v1/admin/smtp/config", { method: "DELETE" }),
     smtpTest: (to: string) => this.request<{ sent: boolean; reason?: string }>("/v1/admin/smtp/test", { method: "POST", body: { to } }),
     aiNormalizeCsv: (body: { csv: string; expectedHeaders: string[]; contextHint?: string; model?: string }) =>

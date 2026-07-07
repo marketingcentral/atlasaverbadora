@@ -1,16 +1,11 @@
-// Configuração de e-mail dos códigos de confirmação (2FA, primeiro acesso, OTP).
-// Suporta dois provedores:
-//  - "smtp"   → servidor SMTP (host/porta/usuário/senha/TLS) via cloudflare:sockets.
-//  - "resend" → API HTTP do Resend (uma chave de API, sem senha de app; envia pra
-//               qualquer destinatário depois que o remetente/dominio estiver ok).
-// Config vive em KV_CACHE ("smtp:config"). Segredos (senha SMTP / chave Resend)
-// nunca são devolvidos ao front — só flags hasPassword / hasResendKey.
+// Configuração SMTP para envio dos códigos de confirmação (2FA, primeiro acesso, OTP).
+// Fala SMTP nativo via cloudflare:sockets (host/porta/usuário/senha/TLS) — sem serviço
+// externo, sem custo. Config vive em KV_CACHE ("smtp:config"). A senha nunca é devolvida
+// ao front — só a flag `hasPassword`.
 
 import type { Env } from "../../env.js";
 
 const KV_KEY = "smtp:config";
-
-export type EmailProvider = "smtp" | "resend";
 
 function assertKv(env: Env): KVNamespace {
   const kv = env.KV_CACHE;
@@ -19,16 +14,11 @@ function assertKv(env: Env): KVNamespace {
 }
 
 export interface SmtpConfig {
-  provider: EmailProvider;
-  // SMTP
   host: string;
   port: number;
   user: string;
   password: string;
   secure: boolean; // TLS/SSL
-  // Resend
-  resendApiKey: string;
-  // Comuns
   fromEmail: string;
   fromName: string;
   /** Se preenchido, TODOS os códigos de confirmação vão para cá (útil quando os
@@ -39,7 +29,6 @@ export interface SmtpConfig {
 
 /** Status seguro (sem segredos) para exibir no front. */
 export interface SmtpStatus {
-  provider: EmailProvider;
   host: string;
   port: number;
   user: string;
@@ -48,7 +37,6 @@ export interface SmtpStatus {
   secure: boolean;
   notifyEmail: string;
   hasPassword: boolean;
-  hasResendKey: boolean;
   configured: boolean;
   updatedAt: string | null;
 }
@@ -58,21 +46,19 @@ async function readConfig(env: Env): Promise<SmtpConfig | null> {
   if (!raw) return null;
   try {
     const c = JSON.parse(raw) as Partial<SmtpConfig>;
-    return { provider: "smtp", host: "", port: 587, user: "", password: "", secure: true, resendApiKey: "", fromEmail: "", fromName: "", notifyEmail: "", updatedAt: "", ...c } as SmtpConfig;
+    return { host: "", port: 587, user: "", password: "", secure: true, fromEmail: "", fromName: "", notifyEmail: "", updatedAt: "", ...c } as SmtpConfig;
   } catch {
     return null;
   }
 }
 
 function isConfigured(cfg: SmtpConfig | null): boolean {
-  if (!cfg) return false;
-  return cfg.provider === "resend" ? !!cfg.resendApiKey : !!cfg.host;
+  return !!(cfg && cfg.host && cfg.password);
 }
 
 export async function getSmtpStatus(env: Env): Promise<SmtpStatus> {
   const cfg = await readConfig(env);
   return {
-    provider: cfg?.provider ?? "smtp",
     host: cfg?.host ?? "",
     port: cfg?.port ?? 587,
     user: cfg?.user ?? "",
@@ -81,20 +67,17 @@ export async function getSmtpStatus(env: Env): Promise<SmtpStatus> {
     secure: cfg?.secure ?? true,
     notifyEmail: cfg?.notifyEmail ?? "",
     hasPassword: !!cfg?.password,
-    hasResendKey: !!cfg?.resendApiKey,
     configured: isConfigured(cfg),
     updatedAt: cfg?.updatedAt ?? null,
   };
 }
 
 export interface SmtpInput {
-  provider?: EmailProvider;
   host?: string;
   port?: number;
   user?: string;
   password?: string; // vazio = mantém a senha atual
   secure?: boolean;
-  resendApiKey?: string; // vazio = mantém a chave atual
   fromEmail?: string;
   fromName?: string;
   notifyEmail?: string;
@@ -103,14 +86,12 @@ export interface SmtpInput {
 export async function setSmtpConfig(env: Env, input: SmtpInput): Promise<SmtpStatus> {
   const current = await readConfig(env);
   const cfg: SmtpConfig = {
-    provider: input.provider ?? current?.provider ?? "smtp",
     host: (input.host ?? current?.host ?? "").trim(),
     port: input.port ?? current?.port ?? 587,
     user: (input.user ?? current?.user ?? "").trim(),
-    // Segredo em branco no PUT = mantém o atual (não obriga re-digitar).
+    // Segredo em branco no PUT = mantém a senha atual (não obriga re-digitar).
     password: input.password && input.password.length > 0 ? input.password : current?.password ?? "",
     secure: input.secure ?? current?.secure ?? true,
-    resendApiKey: input.resendApiKey && input.resendApiKey.length > 0 ? input.resendApiKey.trim() : current?.resendApiKey ?? "",
     fromEmail: (input.fromEmail ?? current?.fromEmail ?? "").trim(),
     fromName: (input.fromName ?? current?.fromName ?? "Atlas Averbadora").trim(),
     notifyEmail: (input.notifyEmail ?? current?.notifyEmail ?? "").trim(),
@@ -124,7 +105,7 @@ export async function clearSmtpConfig(env: Env): Promise<void> {
   await assertKv(env).delete(KV_KEY);
 }
 
-/** Config COMPLETA (com segredos) — uso interno do mailer para enviar. */
+/** Config COMPLETA (com senha) — uso interno do mailer para enviar. */
 export async function getSmtpConfigForSend(env: Env): Promise<SmtpConfig | null> {
   const cfg = await readConfig(env);
   return isConfigured(cfg) ? cfg : null;
