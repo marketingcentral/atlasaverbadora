@@ -3,7 +3,7 @@ import { authRoutes } from "./modules/auth/index.js";
 import { healthRoutes } from "./modules/health/index.js";
 import { servidoresRoutes } from "./modules/servidores/index.js";
 import { portalBancoRoutes } from "./modules/portal-banco/index.js";
-import { adminRoutes, csvTemplateRoutes, ensureBancosLoaded, ensureServidoresLoaded, logMutacaoPersistido } from "./modules/admin/index.js";
+import { adminRoutes, csvTemplateRoutes, ensureBancosLoaded, ensureServidoresLoaded, ensurePerfisLoaded, logMutacaoPersistido } from "./modules/admin/index.js";
 import { ensureTombamentoLoaded } from "./modules/admin/tombamento.js";
 import { ensureContratosLoaded } from "./modules/portal-banco/store.js";
 import type { JwtClaims } from "./middleware/auth.js";
@@ -48,6 +48,7 @@ app.use("/v1/*", async (c, next) => {
   await Promise.all([
     ensureBancosLoaded(c.env).catch(() => undefined),
     ensureServidoresLoaded(c.env).catch(() => undefined),
+    ensurePerfisLoaded(c.env).catch(() => undefined),
     ensureTombamentoLoaded(c.env).catch(() => undefined),
     ensureContratosLoaded(c.env).catch(() => undefined),
   ]);

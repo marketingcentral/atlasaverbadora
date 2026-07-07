@@ -270,7 +270,7 @@ async function persistVitrine(env: Env, v: VitrineBanner): Promise<void> {
 }
 // Persistência dos usuários da averbadora (perfis).
 let _perfisLoad: Promise<void> | null = null;
-function ensurePerfisLoaded(env: Env): Promise<void> {
+export function ensurePerfisLoaded(env: Env): Promise<void> {
   if (_perfisLoad) return _perfisLoad;
   _perfisLoad = (async () => {
     try {
