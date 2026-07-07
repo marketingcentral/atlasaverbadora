@@ -31,7 +31,9 @@ export function BancoMargemContratacaoFicha() {
   const contratos = useQuery({
     queryKey: ["banco", "contratos", idMatricula],
     queryFn: () =>
-      atlas.banco.contratos({ colaborador: idMatricula.replace(/^MAT-/, "") }),
+      // Ficha de um colaborador especifico: busca em todos os convenios do banco
+      // (o operador pode estar atendendo alguem de convenio diferente do ativo).
+      atlas.banco.contratos({ colaborador: idMatricula.replace(/^MAT-/, ""), incluirTodosConvenios: true }),
     enabled: !!idMatricula,
   });
 

@@ -9,7 +9,9 @@ import { fmtBRL } from "../../lib/banco-propostas";
 // contratos reais do banco (atlas.banco.contratos()).
 export function BancoConvenios() {
   const conveniosQ = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
-  const contratosQ = useQuery({ queryKey: ["banco", "contratos", "convenios-view"], queryFn: () => atlas.banco.contratos() });
+  // Visao geral dos convenios: precisa dos contratos de TODOS os convenios do banco
+  // (nao so do ativo), pra somar por convenio corretamente. Opt-in explicito.
+  const contratosQ = useQuery({ queryKey: ["banco", "contratos", "convenios-view"], queryFn: () => atlas.banco.contratos({ incluirTodosConvenios: true }) });
 
   const cards = useMemo(() => {
     const convenios = conveniosQ.data?.convenios ?? [];

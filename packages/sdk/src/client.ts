@@ -757,7 +757,7 @@ export class AtlasClient {
         disponivel: number;
         projecao: { competencia: string; rotulo: string; valor: number }[];
       }>(`/v1/portal/banco/margem/${idMatricula}/calcular`, { method: "POST", body: input }),
-    contratos: (filtros: { colaborador?: string; situacao?: string[] } = {}) =>
+    contratos: (filtros: { colaborador?: string; situacao?: string[]; incluirTodosConvenios?: boolean } = {}) =>
       this.request<{
         contratos: {
           adf: string; situacao: string; lancamento: string; expiracao: string | null;
@@ -774,6 +774,7 @@ export class AtlasClient {
       }>("/v1/portal/banco/contratos", {
         query: {
           colaborador: filtros.colaborador,
+          ...(filtros.incluirTodosConvenios ? { incluir_todos_convenios: "true" } : {}),
           ...(filtros.situacao ? Object.fromEntries(filtros.situacao.map((s, i) => [`situacao_${i}`, s])) : {}),
         },
       }),
