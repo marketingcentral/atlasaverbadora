@@ -94,22 +94,29 @@ export function BancoVisaoGeral() {
   }
 
   const v = visao.data!;
-  const cortes = buildCortes(v.dataCorte.dia, v.dataCorte.origem, v.dataCorte.operacoes);
-  // Mural de atualizações de margem: retorno dos arquivos pós-fechamento de folha.
-  // Derivado do ciclo de cortes — competência atual "em processamento", passadas
-  // "concluídas" (margens dos servidores já atualizadas para o mês seguinte).
-  const mural = [
-    { competencia: cortes[6]!.competencia, status: "processando" as const },
-    ...[5, 4, 3, 2].map((i) => ({ competencia: cortes[i]!.competencia, status: "concluido" as const })),
-  ];
+  // Banco sem convenio ativo — backend devolve dia=0 e origem "—". Nao ha
+  // ciclo de folha pra derivar cortes/mural: zeramos aqui e mostramos um
+  // estado "Sem convênio ativo" em vez de fabricar competencias fantasmas.
+  const semConvenio = v.dataCorte.dia === 0;
+  const cortes = semConvenio ? [] : buildCortes(v.dataCorte.dia, v.dataCorte.origem, v.dataCorte.operacoes);
+  const mural = semConvenio
+    ? []
+    : [
+        { competencia: cortes[6]!.competencia, status: "processando" as const },
+        ...[5, 4, 3, 2].map((i) => ({ competencia: cortes[i]!.competencia, status: "concluido" as const })),
+      ];
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <header>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Convênio ativo
+          {semConvenio ? "Sem convênio" : "Convênio ativo"}
         </span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>{v.convenio.prefeitura}</h1>
-        <div style={{ color: "var(--text-muted)" }}>{v.convenio.nome}</div>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>
+          {semConvenio ? "Nenhum convênio ativado ainda" : v.convenio.prefeitura}
+        </h1>
+        <div style={{ color: "var(--text-muted)" }}>
+          {semConvenio ? "Solicite a habilitação de um convênio pela averbadora para começar a operar." : v.convenio.nome}
+        </div>
       </header>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
@@ -133,23 +140,31 @@ export function BancoVisaoGeral() {
           cta={{ label: "Minhas pendências", onClick: () => (window.location.href = "/banco/carteira") }}
           accent={v.kpis.pendencias.count > 0 ? "warn" : "success"}
         />
-        {(() => {
-          const idx = Math.min(Math.max(corteIdx, 0), cortes.length - 1);
-          const c = cortes[idx]!;
-          return (
-            <DataCorteCard
-              dia={c.dia}
-              mes={c.mes}
-              competencia={c.competencia}
-              origem={c.origem}
-              operacoes={c.operacoes}
-              canPrev={idx > 0}
-              canNext={idx < cortes.length - 1}
-              onPrev={() => setCorteIdx((i) => Math.max(0, i - 1))}
-              onNext={() => setCorteIdx((i) => Math.min(cortes.length - 1, i + 1))}
-            />
-          );
-        })()}
+        {semConvenio ? (
+          <KpiCard
+            label="Data de corte"
+            value="—"
+            hint="Sem convênio ativo"
+          />
+        ) : (
+          (() => {
+            const idx = Math.min(Math.max(corteIdx, 0), cortes.length - 1);
+            const c = cortes[idx]!;
+            return (
+              <DataCorteCard
+                dia={c.dia}
+                mes={c.mes}
+                competencia={c.competencia}
+                origem={c.origem}
+                operacoes={c.operacoes}
+                canPrev={idx > 0}
+                canNext={idx < cortes.length - 1}
+                onPrev={() => setCorteIdx((i) => Math.max(0, i - 1))}
+                onNext={() => setCorteIdx((i) => Math.min(cortes.length - 1, i + 1))}
+              />
+            );
+          })()
+        )}
       </div>
 
       {/* Próximo passo — atalho para iniciar uma nova operação buscando o servidor */}
@@ -197,7 +212,9 @@ export function BancoVisaoGeral() {
         ) : null}
       </form>
 
-      {/* Mural de atualizações de margem — retorno dos arquivos pós-fechamento de folha */}
+      {/* Mural de atualizações de margem — retorno dos arquivos pós-fechamento de folha.
+          Escondido quando banco nao tem convenio ativo (nao ha folha pra bater). */}
+      {semConvenio ? null : (
       <section style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 16, padding: 20 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -254,6 +271,7 @@ export function BancoVisaoGeral() {
           })}
         </div>
       </section>
+      )}
 
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>

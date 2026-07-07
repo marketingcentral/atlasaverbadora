@@ -131,12 +131,17 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         novosNoMes: { count: contratos.filter((ct) => ct.lancamento.includes("/06/")).length },
         pendencias: { count: pendentes },
       },
-      dataCorte: {
-        dia: conv?.dataCorte ?? 15,
-        mes: monthLabel(currentCompetencia().mes),
-        origem: (conv?.prefeitura ?? "—").toUpperCase(),
-        operacoes: "EMPRESTIMO",
-      },
+      // Data de corte so faz sentido quando ha convenio (o dia vem do convenio
+      // da prefeitura). Banco sem convenio proprio nao tem folha pra bater;
+      // devolve marcadores neutros pra UI mostrar "—".
+      dataCorte: conv
+        ? {
+            dia: conv.dataCorte,
+            mes: monthLabel(currentCompetencia().mes),
+            origem: conv.prefeitura.toUpperCase(),
+            operacoes: "EMPRESTIMO",
+          }
+        : { dia: 0, mes: "—", origem: "—", operacoes: "—" },
     });
   })
 
