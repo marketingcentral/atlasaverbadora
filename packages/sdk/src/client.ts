@@ -143,6 +143,8 @@ export interface AdminPrefeitura {
   hasPassword: boolean;
   servidoresCount: number;
   ultimaSincronizacao?: string;
+  folhaSincUrl?: string;
+  ultimaSincResultado?: { novos: number; atualizados: number; erro?: string; ts: string };
 }
 
 export interface AdminPrefeituraInput {
@@ -156,6 +158,7 @@ export interface AdminPrefeituraInput {
   contatoEmail?: string;
   password?: string;
   servidoresCount?: number;
+  folhaSincUrl?: string;
 }
 
 export interface AdminConvenio {
@@ -585,6 +588,8 @@ export interface RequestOptions {
   body?: unknown;
   signal?: AbortSignal;
   skipAuth?: boolean;
+  /** Quando true, `body` e enviado como esta (ex.: FormData). Sem JSON.stringify + sem Content-Type manual (o fetch seta multipart/form-data com boundary). */
+  isFormData?: boolean;
 }
 
 /** Minimal in-memory storage used as default. Replace in app code with SecureStore / localStorage. */
@@ -613,6 +618,16 @@ export class AtlasClient {
     await this.storage.set({ access_token: res.access_token, refresh_token: res.refresh_token, expires_in: res.expires_in });
     return res;
   }
+
+  // ===== Recuperar senha do servidor =====
+  readonly esqueciSenha = {
+    solicitar: (cpf: string) =>
+      this.request<{ enviado: boolean; destino: string; codigo_teste?: string; aviso?: string }>(
+        "/v1/auth/esqueci-senha/solicitar", { method: "POST", body: { cpf }, skipAuth: true }),
+    redefinir: (cpf: string, codigo: string, senha: string) =>
+      this.request<{ ok: boolean }>(
+        "/v1/auth/esqueci-senha/redefinir", { method: "POST", body: { cpf, codigo, senha }, skipAuth: true }),
+  };
 
   // ===== Primeiro acesso do servidor (ativa a conta a partir do cadastro da prefeitura) =====
   readonly primeiroAcesso = {
@@ -785,6 +800,15 @@ export class AtlasClient {
     getTabela: (id: string) => this.request<{ tabela: BancoTabela }>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}`),
     upsertTabela: (body: BancoTabelaInput) => this.request<{ tabela: BancoTabela }>("/v1/portal/banco/cadastros/tabela-emprestimos", { method: "POST", body }),
     removerTabela: (id: string) => this.request<void>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}`, { method: "DELETE" }),
+    /** Faz upload da CCB assinada (PDF) pro R2. Retorna a chave persistida. */
+    uploadCcb: async (adf: string, file: File): Promise<{ key: string; size: number; contentType: string }> => {
+      const fd = new FormData();
+      fd.append("adf", adf);
+      fd.append("file", file);
+      return this.request<{ key: string; size: number; contentType: string }>("/v1/portal/banco/ccb/upload", { method: "POST", body: fd, isFormData: true });
+    },
+    /** URL absoluta para visualizar a CCB (requer sessao do proprio banco). */
+    ccbUrl: (key: string): string => new URL(`/v1/portal/banco/ccb/${key}`, this.opts.baseUrl).toString(),
     reativarTabela: (id: string) => this.request<{ ok: boolean }>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}/reativar`, { method: "POST" }),
 
     listUsuarios: (q?: { perfil?: BancoPerfil; somenteAdmin?: boolean }) =>
@@ -850,7 +874,7 @@ export class AtlasClient {
       this.request<void>(`/v1/admin/bancos/${id}`, { method: "DELETE", body: confirm }),
     listPrefeituras: () => this.request<{ prefeituras: AdminPrefeitura[] }>("/v1/admin/prefeituras"),
     upsertPrefeitura: (p: AdminPrefeituraInput) => this.request<{ prefeitura: AdminPrefeitura }>("/v1/admin/prefeituras", { method: "POST", body: p }),
-    sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
+    sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura; resultado: { novos: number; atualizados: number; erro?: string; ts: string } }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
     resetPrefeituraPassword: (id: number, password: string) =>
       this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/reset-password`, { method: "POST", body: { password } }),
     deletePrefeitura: (id: number, confirm: { challengeId: string; codigo: string }) =>
@@ -1055,19 +1079,22 @@ export class AtlasClient {
   // ============ Internal ============
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = this.buildUrl(path, options.query);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    };
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (!options.isFormData) headers["Content-Type"] = "application/json";
     if (!options.skipAuth) {
       const token = await this.storage.getAccess();
       if (token) headers.Authorization = `Bearer ${token}`;
     }
+    const buildBody = (): string | FormData | undefined => {
+      if (options.body === undefined) return undefined;
+      if (options.isFormData) return options.body as FormData;
+      return JSON.stringify(options.body);
+    };
 
     let res = await this.fetchImpl(url, {
       method: options.method ?? "GET",
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: buildBody(),
       signal: options.signal,
     });
 
@@ -1079,7 +1106,7 @@ export class AtlasClient {
         res = await this.fetchImpl(url, {
           method: options.method ?? "GET",
           headers,
-          body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+          body: buildBody(),
           signal: options.signal,
         });
       } else {

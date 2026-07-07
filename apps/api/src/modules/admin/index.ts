@@ -102,6 +102,10 @@ export interface PrefeituraAdmin {
   passwordHash?: string;
   servidoresCount: number;
   ultimaSincronizacao?: string;
+  /** URL publica de CSV da folha (modo CSV). GET faz fetch, parseia e upserta. */
+  folhaSincUrl?: string;
+  /** Resultado da ultima sincronizacao (novos/atualizados/removidos/erro). */
+  ultimaSincResultado?: { novos: number; atualizados: number; erro?: string; ts: string };
   /** Exigências que a prefeitura impõe ao banco na averbação (algumas exigem, outras não). */
   exigeCcb?: boolean;
   exigeBanco2FA?: boolean;
@@ -872,6 +876,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         contatoEmail: z.string().email().optional().or(z.literal("")),
         password: z.string().min(6).optional(),
         servidoresCount: z.number().int().default(0),
+        folhaSincUrl: z.string().url().optional().or(z.literal("")),
       })
       .parse(await c.req.json());
     const { password, loginEmail, ...rest } = body;
@@ -910,10 +915,80 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(c.get("jwt"));
     const p = prefeituras.find((x) => x.id === Number(c.req.param("id")));
     if (!p) throw Errors.notFound("prefeitura");
-    p.ultimaSincronizacao = new Date().toISOString();
-    pushEvent("info", "cron", `Folha ${p.nome} sincronizada manualmente`);
+    const ts = new Date().toISOString();
+    // MANUAL: nao ha origem automatica de dados; apenas registra o timestamp.
+    if (p.modoIntegracao === "MANUAL") {
+      p.ultimaSincronizacao = ts;
+      p.ultimaSincResultado = { novos: 0, atualizados: 0, ts, erro: "modo MANUAL — importe via CSV" };
+      pushEvent("info", "cron", `Prefeitura ${p.nome}: sincronizacao pulada (modo MANUAL)`);
+      await persistPrefeitura(c.env, p);
+      return c.json({ prefeitura: sanitizePrefeitura(p), resultado: p.ultimaSincResultado });
+    }
+    // REST/SOAP: ainda nao implementado (depende do contrato de integracao especifico).
+    if (p.modoIntegracao === "REST" || p.modoIntegracao === "SOAP") {
+      p.ultimaSincronizacao = ts;
+      p.ultimaSincResultado = { novos: 0, atualizados: 0, ts, erro: `adapter ${p.modoIntegracao} ainda nao implementado — use modo CSV com folhaSincUrl` };
+      await persistPrefeitura(c.env, p);
+      return c.json({ prefeitura: sanitizePrefeitura(p), resultado: p.ultimaSincResultado });
+    }
+    // CSV: busca a URL configurada, faz fetch, parseia, upserta cada servidor.
+    if (!p.folhaSincUrl) {
+      p.ultimaSincronizacao = ts;
+      p.ultimaSincResultado = { novos: 0, atualizados: 0, ts, erro: "folhaSincUrl nao configurada — edite a prefeitura" };
+      await persistPrefeitura(c.env, p);
+      return c.json({ prefeitura: sanitizePrefeitura(p), resultado: p.ultimaSincResultado });
+    }
+    let csv = "";
+    try {
+      const res = await fetch(p.folhaSincUrl, { headers: { Accept: "text/csv, text/plain, */*" } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      csv = await res.text();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "falha ao baixar CSV";
+      p.ultimaSincronizacao = ts;
+      p.ultimaSincResultado = { novos: 0, atualizados: 0, ts, erro: `download falhou: ${msg}` };
+      await persistPrefeitura(c.env, p);
+      return c.json({ prefeitura: sanitizePrefeitura(p), resultado: p.ultimaSincResultado });
+    }
+    // Reusa o mesmo parser do import CSV manual.
+    const { rows } = parseCsv(csv);
+    let novos = 0, atualizados = 0;
+    const conveniosPref = CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === p.id);
+    const defaultConvenioId = conveniosPref[0]?.id ?? "";
+    const upserts: ServidorBuscaMock[] = [];
+    for (const r of rows) {
+      let cpf = (r.cpf ?? "").replace(/\D/g, "");
+      if (cpf.length > 0 && cpf.length < 11) cpf = cpf.padStart(11, "0");
+      if (cpf.length !== 11) continue;
+      if (!r.nome || !r.matricula) continue;
+      const vinculo = (r.vinculo || "ESTATUTARIO").toUpperCase();
+      const salario = Number(r.salarioLiquido);
+      const ibge = Number(r.codigoIbge);
+      let idConvenio = (r.idConvenio ?? "").trim();
+      if (!conveniosPref.some((cv) => cv.id === idConvenio)) idConvenio = defaultConvenioId;
+      if (!idConvenio) continue;
+      const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && (s.prefeituraId === p.id || (!s.prefeituraId && (s.origem ?? "").toLowerCase().includes(p.nome.toLowerCase()))));
+      const rec: ServidorBuscaMock = {
+        cpf, cpfMasked: `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}`,
+        matricula: r.matricula, idMatricula: `MAT-${r.matricula}`, prefeituraId: p.id, nome: r.nome,
+        dataAdmissao: r.dataAdmissao ?? "", dataNascimento: r.dataNascimento ?? "",
+        vinculo: vinculo as ServidorBuscaMock["vinculo"], origem: p.nome,
+        situacaoFuncional: (r.situacaoFuncional ?? "TRABALHANDO") as ServidorBuscaMock["situacaoFuncional"],
+        salarioLiquido: Number.isFinite(salario) ? salario : 0, idConvenio,
+        email: r.email || undefined, telefone: r.telefone || undefined, cargo: r.cargo,
+        endereco: r.endereco || undefined, codigoIbge: Number.isFinite(ibge) ? ibge : p.municipioIbge,
+      };
+      if (existing) { Object.assign(existing, rec); atualizados++; upserts.push(existing); }
+      else { SERVIDORES_BUSCA_MOCK.push(rec); novos++; upserts.push(rec); }
+    }
+    // Write-through: persiste no PG (best-effort — falhas nao quebram a sync).
+    try { for (const s of upserts) await upsertServidor(c.env, s); } catch { /* fail-safe */ }
+    p.servidoresCount = SERVIDORES_BUSCA_MOCK.filter((s) => s.prefeituraId === p.id).length;
+    p.ultimaSincronizacao = ts;
+    p.ultimaSincResultado = { novos, atualizados, ts };
+    pushEvent("info", "cron", `Folha ${p.nome} sincronizada: ${novos} novos, ${atualizados} atualizados`);
     await persistPrefeitura(c.env, p);
-    return c.json({ prefeitura: sanitizePrefeitura(p) });
+    return c.json({ prefeitura: sanitizePrefeitura(p), resultado: p.ultimaSincResultado });
   })
   .post("/v1/admin/prefeituras/:id/reset-password", async (c) => {
     requireAdmin(c.get("jwt"));

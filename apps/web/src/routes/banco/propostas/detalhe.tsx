@@ -435,15 +435,20 @@ function EnvioModal({ proposta, onClose, onDone }: { proposta: BancoProposta; on
     }
     setErro(null);
     setEnviando(true);
-    // Mock: em prod faria upload para R2/S3 e receberia URL assinada.
-    await new Promise((r) => setTimeout(r, 800));
-    const ccbUrl = `https://atlas.io/mock/ccb/${proposta.idUnico}.pdf`;
-    // Contrato ja assinado -> transiciona direto para "formalizada" (pula
-    // "aguardando_formalizacao" que fazia sentido no fluxo antigo de envio
-    // de link para o servidor assinar).
-    patchProposta(proposta.idUnico, { status: "formalizada", ccbUrl });
-    setEnviando(false);
-    onDone();
+    try {
+      // Upload REAL pro R2. Retorna a key persistida; a URL de visualizacao
+      // exige a mesma sessao (autorizacao por banco_id).
+      const r = await atlas.banco.uploadCcb(proposta.idUnico, arquivo);
+      const ccbUrl = atlas.banco.ccbUrl(r.key);
+      // Contrato ja assinado -> transiciona direto para "formalizada" (pula
+      // "aguardando_formalizacao" do fluxo antigo).
+      patchProposta(proposta.idUnico, { status: "formalizada", ccbUrl });
+      onDone();
+    } catch (err) {
+      setErro(err instanceof Error ? err.message : "Falha ao enviar arquivo.");
+    } finally {
+      setEnviando(false);
+    }
   }
 
   function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {

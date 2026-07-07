@@ -422,6 +422,55 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     return c.json({ ok: true });
   })
 
+  // --------- Upload de CCB (Cedula de Credito Bancario) pro R2 ---------
+  // Fluxo: banco anexa a CCB assinada, arquivo persiste em R2 sob a chave
+  // ccb/${banco_id}/${adf}/${timestamp}-${nome}.pdf. GET valida isolamento —
+  // banco so consegue baixar CCBs do proprio banco_id.
+  .post("/v1/portal/banco/ccb/upload", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (!c.env.R2_FILES) throw Errors.validation({ r2: "R2 binding indisponivel — configuracao Cloudflare pendente." });
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const form = await c.req.formData().catch(() => null);
+    if (!form) throw Errors.validation({ body: "Envie multipart/form-data com campos adf e file." });
+    const adfRaw = form.get("adf");
+    const file = form.get("file");
+    if (typeof adfRaw !== "string" || !adfRaw.trim()) throw Errors.validation({ adf: "campo 'adf' obrigatorio" });
+    // Duck-type: FormDataEntryValue e string|File; File tem name/size/type/stream/arrayBuffer.
+    const isFile = (v: unknown): v is { name: string; size: number; type: string; arrayBuffer: () => Promise<ArrayBuffer> } =>
+      typeof v === "object" && v !== null && typeof (v as { size?: unknown }).size === "number" && typeof (v as { arrayBuffer?: unknown }).arrayBuffer === "function";
+    if (!isFile(file)) throw Errors.validation({ file: "campo 'file' obrigatorio" });
+    if (file.type && file.type !== "application/pdf") throw Errors.validation({ file: "apenas PDF" });
+    const MAX = 15 * 1024 * 1024; // 15 MB
+    if (file.size > MAX) throw Errors.validation({ file: "arquivo maior que 15 MB" });
+    const adf = adfRaw.replace(/[^\w.-]/g, "").slice(0, 40);
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const safeName = (file.name || "ccb.pdf").replace(/[^\w.-]/g, "_").slice(0, 60);
+    const key = `ccb/${j.banco_id}/${adf}/${ts}-${safeName}`;
+    const buf = await file.arrayBuffer();
+    await c.env.R2_FILES.put(key, buf, { httpMetadata: { contentType: "application/pdf" } });
+    return c.json({ key, size: file.size, contentType: "application/pdf" });
+  })
+  .get("/v1/portal/banco/ccb/*", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (!c.env.R2_FILES) throw Errors.notFound("r2");
+    const url = new URL(c.req.url);
+    const prefix = "/v1/portal/banco/ccb/";
+    const key = decodeURIComponent(url.pathname.slice(prefix.length));
+    // Isolamento: banco so pode baixar arquivos sob ccb/${banco_id}/
+    if (!key.startsWith(`ccb/${j.banco_id}/`)) throw Errors.notFound("ccb");
+    const obj = await c.env.R2_FILES.get(key);
+    if (!obj) throw Errors.notFound("ccb");
+    return new Response(obj.body, {
+      headers: {
+        "Content-Type": obj.httpMetadata?.contentType ?? "application/pdf",
+        "Content-Disposition": `inline; filename="${key.split("/").pop()}"`,
+        "Cache-Control": "private, max-age=60",
+      },
+    });
+  })
+
   // --------- Cadastros: Usuarios do banco ----------
   // Isolamento: BancoUsuario tem bancoId — banco novo (bancoId proprio) so
   // enxerga seus usuarios, nunca os do Banco Atlas (bancoId=1) nem de outros.
