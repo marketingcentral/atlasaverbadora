@@ -1038,6 +1038,10 @@ export class AtlasClient {
     listComunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/admin/comunicados"),
     upsertComunicado: (body: ComunicadoInput) =>
       this.request<{ comunicado: Comunicado }>("/v1/admin/comunicados", { method: "POST", body }),
+    moveComunicado: (id: string, direction: "up" | "down") =>
+      this.request<{ comunicados: Comunicado[] }>(`/v1/admin/comunicados/${id}/mover`, { method: "POST", body: { direction } }),
+    deleteComunicado: (id: string) =>
+      this.request<{ ok: boolean }>(`/v1/admin/comunicados/${id}`, { method: "DELETE" }),
     health: () =>
       this.request<{ checks: { servico: string; uptime: number; p95: number; ok: boolean }[] }>("/v1/admin/health"),
     logs: (q?: { level?: "info" | "warn" | "error"; source?: string; perfil?: "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema" }) =>

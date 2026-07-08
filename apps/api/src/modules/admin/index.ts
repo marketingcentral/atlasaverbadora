@@ -1196,6 +1196,29 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     COMUNICADOS_MOCK.push(novo);
     return c.json({ comunicado: novo });
   })
+  .post("/v1/admin/comunicados/:id/mover", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = c.req.param("id");
+    const { direction } = z.object({ direction: z.enum(["up", "down"]) }).parse(await c.req.json());
+    const idx = COMUNICADOS_MOCK.findIndex((x) => x.id === id);
+    if (idx < 0) throw Errors.notFound("comunicado");
+    const alvo = direction === "up" ? idx - 1 : idx + 1;
+    if (alvo < 0 || alvo >= COMUNICADOS_MOCK.length) {
+      return c.json({ comunicados: COMUNICADOS_MOCK });
+    }
+    const tmp = COMUNICADOS_MOCK[idx]!;
+    COMUNICADOS_MOCK[idx] = COMUNICADOS_MOCK[alvo]!;
+    COMUNICADOS_MOCK[alvo] = tmp;
+    return c.json({ comunicados: COMUNICADOS_MOCK });
+  })
+  .delete("/v1/admin/comunicados/:id", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const id = c.req.param("id");
+    const idx = COMUNICADOS_MOCK.findIndex((x) => x.id === id);
+    if (idx < 0) throw Errors.notFound("comunicado");
+    COMUNICADOS_MOCK.splice(idx, 1);
+    return c.json({ ok: true });
+  })
 
   .get("/v1/admin/health", async (c) => {
     requireAdmin(c.get("jwt"));

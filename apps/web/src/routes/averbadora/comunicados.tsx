@@ -24,13 +24,31 @@ export function AdminComunicados() {
   const data = useQuery({ queryKey: ["admin", "comunicados"], queryFn: () => atlas.admin.listComunicados() });
   const [editing, setEditing] = useState<Comunicado | "new" | null>(null);
 
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin", "comunicados"] });
+
+  const mover = useMutation({
+    mutationFn: ({ id, direction }: { id: string; direction: "up" | "down" }) =>
+      atlas.admin.moveComunicado(id, direction),
+    onSuccess: invalidate,
+  });
+  const remover = useMutation({
+    mutationFn: (id: string) => atlas.admin.deleteComunicado(id),
+    onSuccess: invalidate,
+  });
+
+  const comunicados = data.data?.comunicados ?? [];
+
   const columns: Column<Comunicado>[] = [
     { key: "id", header: "ID", mono: true, width: 100 },
     {
       key: "publico",
       header: "Público",
       width: 120,
-      render: (c) => <Pill variant={c.publico === "servidor" ? "averbado" : "emdia"}>{PUBLICO_LABEL[c.publico]}</Pill>,
+      render: (c) => {
+        // Fallback caso a API ainda esteja num deploy antigo sem o campo publico.
+        const p: ComunicadoPublico = c.publico ?? "banco";
+        return <Pill variant={p === "servidor" ? "averbado" : "emdia"}>{PUBLICO_LABEL[p]}</Pill>;
+      },
     },
     { key: "titulo", header: "Título" },
     {
@@ -45,21 +63,65 @@ export function AdminComunicados() {
     },
     { key: "link", header: "Link", render: (c) => (c.linkHref ? c.linkLabel ?? c.linkHref : "—") },
     {
+      key: "ordem",
+      header: "",
+      width: 90,
+      align: "right",
+      render: (c) => {
+        const idx = comunicados.findIndex((x) => x.id === c.id);
+        const first = idx <= 0;
+        const last = idx < 0 || idx >= comunicados.length - 1;
+        const busy = mover.isPending;
+        return (
+          <div style={{ display: "inline-flex", gap: 4 }}>
+            <button
+              type="button"
+              disabled={first || busy}
+              onClick={() => mover.mutate({ id: c.id, direction: "up" })}
+              aria-label="Mover para cima"
+              title="Mover para cima"
+              style={arrowBtn(first || busy)}
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              disabled={last || busy}
+              onClick={() => mover.mutate({ id: c.id, direction: "down" })}
+              aria-label="Mover para baixo"
+              title="Mover para baixo"
+              style={arrowBtn(last || busy)}
+            >
+              ↓
+            </button>
+          </div>
+        );
+      },
+    },
+    {
       key: "acoes",
       header: "",
-      width: 100,
+      width: 190,
       align: "right",
       render: (c) => (
-        <Button
-          variant="ghost"
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            setEditing(c);
-          }}
-        >
-          Editar
-        </Button>
+        <div style={{ display: "inline-flex", gap: 8 }}>
+          <Button variant="ghost" type="button" onClick={() => setEditing(c)}>
+            Editar
+          </Button>
+          <Button
+            variant="ghost"
+            type="button"
+            disabled={remover.isPending}
+            onClick={() => {
+              if (window.confirm(`Remover o comunicado "${c.titulo}"? Essa acao nao pode ser desfeita.`)) {
+                remover.mutate(c.id);
+              }
+            }}
+            style={{ color: "#F87171" }}
+          >
+            Remover
+          </Button>
+        </div>
       ),
     },
   ];
@@ -192,6 +254,23 @@ function ComunicadoModal({
       </div>
     </div>
   );
+}
+
+function arrowBtn(disabled: boolean): React.CSSProperties {
+  return {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    border: "1px solid var(--border-strong)",
+    background: "var(--bg-elev)",
+    color: disabled ? "var(--text-dim)" : "var(--text-muted)",
+    cursor: disabled ? "not-allowed" : "pointer",
+    fontSize: 14,
+    fontWeight: 700,
+    lineHeight: 1,
+    padding: 0,
+    opacity: disabled ? 0.5 : 1,
+  };
 }
 
 const modalBackdrop: React.CSSProperties = {
