@@ -205,8 +205,10 @@ export function ServidorDashboard() {
           Ações rápidas
         </span>
         <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-          <AtalhoCard titulo="Simular" descricao="Calcule parcelas e veja ofertas." icon="💰" accent="emerald" onClick={() => nav("/servidor/simular")} />
-          <AtalhoCard titulo="Portabilidade" descricao="Consolide em outro banco com taxa menor." icon="🔁" accent="gold" onClick={() => nav("/servidor/portabilidade")} />
+          {/* Atalhos apontam pro MarketPlace unificado — la em cima ficam as
+              ofertas dos bancos + botao de portabilidade + simulador inline. */}
+          <AtalhoCard titulo="Simular" descricao="Calcule parcelas e veja ofertas." icon="💰" accent="emerald" onClick={() => nav("/servidor/marketplace/portabilidade")} />
+          <AtalhoCard titulo="Portabilidade" descricao="Consolide em outro banco com taxa menor." icon="🔁" accent="gold" onClick={() => nav("/servidor/marketplace/portabilidade")} />
           <AtalhoCard titulo="Meus contratos" descricao="Veja progresso e baixe PDFs." icon="📄" accent="navy" onClick={() => nav("/servidor/contratos")} />
           <AtalhoCard titulo="Benefícios" descricao="Cartão benefícios e ofertas." icon="🎁" accent="emerald" onClick={() => nav("/servidor/beneficios")} />
         </div>
