@@ -2,12 +2,10 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, CsvImportPanel, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import type { PrefeituraFolha, FolhaAdfSummary } from "@atlas/sdk";
+import type { PrefeituraFolha } from "@atlas/sdk";
 import { Modal, Field, inp } from "./_ui";
 
-const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
-
-type FolhaRow = PrefeituraFolha & { movimentacoes: number; adfs: FolhaAdfSummary };
+type FolhaRow = PrefeituraFolha & { movimentacoes: number };
 
 export function PrefeituraFolhas() {
   const qc = useQueryClient();
@@ -25,25 +23,6 @@ export function PrefeituraFolhas() {
     { key: "dataCorte", header: "Corte" },
     { key: "dataRepasse", header: "Repasse", render: (f) => f.dataRepasse ?? "—" },
     { key: "movimentacoes", header: "Movimentações", align: "right" },
-    {
-      key: "adfs",
-      header: "Descontos (ADF)",
-      align: "right",
-      render: (f) => {
-        const a = f.adfs ?? { total: 0, recebidas: 0, aplicadas: 0, falhas: 0, totalParcelasAplicadas: 0 };
-        if (a.total === 0) return <span style={{ color: "var(--text-muted)" }}>—</span>;
-        return (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, fontSize: 12 }}>
-            <b style={{ fontSize: 13 }}>{fmtBRL(a.totalParcelasAplicadas)}</b>
-            <span style={{ color: "var(--text-muted)" }}>
-              <span style={{ color: "var(--emerald-500)" }}>{a.aplicadas} aplic.</span>
-              {a.recebidas > 0 ? <> · <span style={{ color: "var(--gold-500)" }}>{a.recebidas} receb.</span></> : null}
-              {a.falhas > 0 ? <> · <span style={{ color: "var(--danger-500)" }}>{a.falhas} falha(s)</span></> : null}
-            </span>
-          </div>
-        );
-      },
-    },
     { key: "status", header: "Status", render: (f) => <Pill variant={f.status === "aberta" ? "pendente" : "averbado"}>{f.status}</Pill> },
     {
       key: "acoes",

@@ -21,7 +21,7 @@ import { getIdUnicoConfig, upsertIdUnicoConfig } from "../admin/id-unico.js";
 import { importTombamento, listLotes, listLinhas } from "../admin/tombamento.js";
 import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
-  ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus, folhaAdfSummary,
+  ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus,
   TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia,
   listPerfis, upsertPerfil, deletePerfil, reactivatePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
 } from "./store.js";
@@ -357,21 +357,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 4 — Folha mensal =====
-  .get("/v1/prefeitura/folhas", async (c) => {
+  .get("/v1/prefeitura/folhas", (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    // Precisa dos contratos frescos + ADFs materializados para poder contar
-    // "aplicadas" na coluna Descontos — senão o count fica 0 mesmo depois de o
-    // averbador aprovar o ADF (cross-isolate: cada Worker roda no seu proprio _adfs).
-    await refreshContratos(c.env);
-    const now = new Date().toISOString();
-    const bancoNomeById = (bid: number) => bancos.find((b) => b.id === bid)?.nome ?? `Banco ${bid}`;
-    const propria = folhas.filter((f) => f.prefeituraId === id);
-    for (const f of propria) ensureAdfs(id, f.competencia, bancoNomeById, now);
-    const rows = propria.map((f) => ({
-      ...f,
-      movimentacoes: countMovimentacoes(f.id),
-      adfs: folhaAdfSummary(id, f.competencia),
-    }));
+    const rows = folhas.filter((f) => f.prefeituraId === id).map((f) => ({ ...f, movimentacoes: countMovimentacoes(f.id) }));
     return c.json({ folhas: rows });
   })
   .post("/v1/prefeitura/folhas", async (c) => {
