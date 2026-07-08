@@ -9,7 +9,7 @@ import { enviarCodigo } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded } from "../admin/index.js";
-import { setServidorPassword } from "../../db/repos.js";
+import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
 function maskEmail(email?: string): string {
