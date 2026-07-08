@@ -17,11 +17,15 @@ export function ServidorSelecionarMatricula() {
   const [search] = useSearchParams();
   const forceShow = search.get("trocar") === "1";
 
-  const [ready, setReady] = useState(MATRICULAS.length > 0);
+  // ready SEMPRE inicia falso pra a tela nao piscar antes do redirect: se o
+  // servidor tem 1 matricula so, vamos direto pro dashboard e a tela de
+  // "selecione sua matricula" nunca aparece. Enquanto ready=false, retornamos
+  // null (nao a lista) — antes o JSX renderizava MATRICULAS.map mesmo sem ready,
+  // entao um servidor com 1 matricula via o card por 1 frame.
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    // Hidrata as matriculas reais do backend antes de decidir o fluxo.
     hydrateMatriculas().then(() => {
       if (cancelled) return;
       if (!forceShow) {
@@ -41,7 +45,9 @@ export function ServidorSelecionarMatricula() {
     return () => { cancelled = true; };
   }, [nav, forceShow]);
 
-  void ready;
+  // Enquanto nao sabemos se vai redirecionar ou nao, nao renderiza nada — evita
+  // o flash da tela "Voce tem mais de uma matricula" pra quem so tem uma.
+  if (!ready) return null;
 
   function escolher(idMatricula: string) {
     setActiveMatricula(idMatricula);
