@@ -33,6 +33,7 @@ const ICONS: Record<NotifType, string> = {
   proposta_cancelada: "🚫",
   proposta_expirando: "⏰",
   folha_processada: "💼",
+  oferta_banco: "🎁",
 };
 
 export function NotificationBell() {
@@ -66,6 +67,16 @@ export function NotificationBell() {
     placeholderData: (prev) => prev,
   });
 
+  // Ofertas de credito criadas pelos bancos que casam com o perfil da matricula.
+  // Poll de 30s (elas mudam pouco).
+  const ofertasQ = useQuery({
+    queryKey: ["servidor", "ofertas-banco", matAtiva],
+    queryFn: () => atlas.servidor.getMyOfertasBanco(),
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    placeholderData: (prev) => prev,
+  });
+
   const propostas: Proposta[] = useMemo(
     () =>
       (q.data?.propostas ?? []).map((p) => ({
@@ -83,12 +94,13 @@ export function NotificationBell() {
   );
 
   const [tickKey, setTickKey] = useState(0);
+  const ofertas = ofertasQ.data?.ofertas ?? [];
   const notifs = useMemo(
     () => {
       void tickKey; // usado pra re-render periodico dos "ha Xmin"
-      return buildNotificationsFromPropostas(propostas);
+      return buildNotificationsFromPropostas(propostas, ofertas);
     },
-    [propostas, tickKey],
+    [propostas, ofertas, tickKey],
   );
 
   // Recalcula os "ha Xmin/Xh" a cada 30s sem refetch.

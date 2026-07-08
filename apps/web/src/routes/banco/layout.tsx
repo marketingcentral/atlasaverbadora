@@ -7,6 +7,7 @@ import { AtlasBrand } from "../../components/AtlasBrand";
 const NAV = [
   { key: "visao-geral", label: "Visão Geral", href: "/banco/visao-geral", icon: "◉" },
   { key: "propostas", label: "Minhas Propostas", href: "/banco/propostas", icon: "◈" },
+  { key: "ofertas", label: "Ofertas", href: "/banco/ofertas", icon: "◇" },
   {
     key: "cadastros",
     label: "Cadastros",

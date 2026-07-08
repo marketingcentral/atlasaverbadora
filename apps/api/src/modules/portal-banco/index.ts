@@ -9,6 +9,7 @@ import { refreshConvenios } from "./convenios-store.js";
 import { prefeituras } from "../admin/index.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
+import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
 
 function requireBancoRole(j: JwtClaims): void {
   if (j.role !== "banco") throw Errors.forbidden("Requer perfil banco");
@@ -470,6 +471,86 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         "Cache-Control": "private, max-age=60",
       },
     });
+  })
+
+  // --------- Ofertas de credito (banco → servidores) ----------
+  // Banco cria uma oferta filtrada (por convenio/vinculo/situacao/prefeitura/salario/idade);
+  // servidores cujo perfil casa recebem no sino. Nao existe hard-delete — pausar/reativar.
+  .get("/v1/portal/banco/ofertas", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    await refreshOfertas(c.env);
+    const bancoId = j.banco_id ?? -1;
+    const list = (await loadOfertas(c.env)).filter((o) => o.bancoId === bancoId);
+    return c.json({ ofertas: list });
+  })
+  .post("/v1/portal/banco/ofertas", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    await refreshOfertas(c.env);
+    const body = z.object({
+      id: z.string().optional(),
+      titulo: z.string().min(3).max(120),
+      mensagem: z.string().min(3).max(500),
+      taxaAm: z.number().positive().max(20),
+      parcelasMax: z.number().int().positive().max(120),
+      valorMax: z.number().positive(),
+      expiraEm: z.string().optional().or(z.literal("")),
+      ativo: z.boolean().default(true),
+      filtro: z.object({
+        convenioIds: z.array(z.string()).optional(),
+        vinculos: z.array(z.string()).optional(),
+        situacaoFuncional: z.array(z.string()).optional(),
+        prefeituraIds: z.array(z.number().int()).optional(),
+        salarioMin: z.number().optional(),
+        salarioMax: z.number().optional(),
+        idadeMin: z.number().int().optional(),
+        idadeMax: z.number().int().optional(),
+      }).default({}),
+    }).parse(await c.req.json());
+    // Isolamento por bancoId: se editando, precisa ser oferta do proprio banco.
+    if (body.id) {
+      const existing = (await loadOfertas(c.env)).find((o) => o.id === body.id);
+      if (!existing) throw Errors.notFound("oferta");
+      if (existing.bancoId !== j.banco_id) throw Errors.forbidden("oferta de outro banco");
+    }
+    const oferta: Oferta = {
+      id: body.id ?? nextOfertaId(j.banco_id),
+      bancoId: j.banco_id,
+      titulo: body.titulo,
+      mensagem: body.mensagem,
+      taxaAm: body.taxaAm,
+      parcelasMax: body.parcelasMax,
+      valorMax: body.valorMax,
+      filtro: body.filtro as OfertaFiltro,
+      ativo: body.ativo,
+      criadoEm: body.id ? (await loadOfertas(c.env)).find((o) => o.id === body.id)!.criadoEm : new Date().toISOString(),
+      expiraEm: body.expiraEm || undefined,
+      criadoPor: String(j.sub),
+    };
+    await persistOferta(c.env, oferta);
+    return c.json({ oferta });
+  })
+  .patch("/v1/portal/banco/ofertas/:id/pausar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    await refreshOfertas(c.env);
+    const o = (await loadOfertas(c.env)).find((x) => x.id === c.req.param("id"));
+    if (!o || o.bancoId !== j.banco_id) throw Errors.notFound("oferta");
+    o.ativo = false;
+    await persistOferta(c.env, o);
+    return c.json({ oferta: o });
+  })
+  .patch("/v1/portal/banco/ofertas/:id/reativar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    await refreshOfertas(c.env);
+    const o = (await loadOfertas(c.env)).find((x) => x.id === c.req.param("id"));
+    if (!o || o.bancoId !== j.banco_id) throw Errors.notFound("oferta");
+    o.ativo = true;
+    await persistOferta(c.env, o);
+    return c.json({ oferta: o });
   })
 
   // --------- Cadastros: Usuarios do banco ----------

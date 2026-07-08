@@ -51,6 +51,54 @@ export interface NovoContratoBody {
 
 export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios";
 
+export interface BancoOfertaFiltro {
+  convenioIds?: string[];
+  vinculos?: string[];
+  situacaoFuncional?: string[];
+  prefeituraIds?: number[];
+  salarioMin?: number;
+  salarioMax?: number;
+  idadeMin?: number;
+  idadeMax?: number;
+}
+export interface BancoOferta {
+  id: string;
+  bancoId: number;
+  titulo: string;
+  mensagem: string;
+  taxaAm: number;
+  parcelasMax: number;
+  valorMax: number;
+  filtro: BancoOfertaFiltro;
+  ativo: boolean;
+  criadoEm: string;
+  expiraEm?: string;
+  criadoPor: string;
+}
+export interface BancoOfertaInput {
+  id?: string;
+  titulo: string;
+  mensagem: string;
+  taxaAm: number;
+  parcelasMax: number;
+  valorMax: number;
+  filtro?: BancoOfertaFiltro;
+  ativo?: boolean;
+  expiraEm?: string;
+}
+export interface ServidorOfertaBanco {
+  id: string;
+  bancoId: number;
+  bancoNome: string;
+  titulo: string;
+  mensagem: string;
+  taxaAm: number;
+  parcelasMax: number;
+  valorMax: number;
+  criadoEm: string;
+  expiraEm: string | null;
+}
+
 export interface BancoTabela {
   id: string;
   convenioId: string;
@@ -705,6 +753,9 @@ export class AtlasClient {
           vigenciaFim: string | null;
         }[];
       }>("/v1/servidores/me/ofertas"),
+    /** Ofertas ativas criadas pelos bancos que casam com o perfil do servidor. */
+    getMyOfertasBanco: () =>
+      this.request<{ ofertas: ServidorOfertaBanco[] }>("/v1/servidores/me/ofertas-banco"),
     /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
     criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string }) =>
       this.request<{ id: string; situacao: string; banco: string; valor: number; parcelas: number; parcela: number; expira_em: string | null }>(
@@ -835,6 +886,14 @@ export class AtlasClient {
         convenioId: string;
         meses: { competencia: string; contratos: number; valorFinanciado: number; comissaoEstimada: number }[];
       }>("/v1/portal/banco/relatorios/faturamento"),
+
+    // ===== Ofertas de credito (banco -> servidores) =====
+    ofertas: {
+      list: () => this.request<{ ofertas: BancoOferta[] }>("/v1/portal/banco/ofertas"),
+      upsert: (body: BancoOfertaInput) => this.request<{ oferta: BancoOferta }>("/v1/portal/banco/ofertas", { method: "POST", body }),
+      pausar: (id: string) => this.request<{ oferta: BancoOferta }>(`/v1/portal/banco/ofertas/${id}/pausar`, { method: "PATCH" }),
+      reativar: (id: string) => this.request<{ oferta: BancoOferta }>(`/v1/portal/banco/ofertas/${id}/reativar`, { method: "PATCH" }),
+    },
   };
 
   // ============ Admin (Averbadora) ============
