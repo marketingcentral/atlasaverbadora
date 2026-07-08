@@ -4,11 +4,13 @@ import { LoginRequestSchema, RefreshRequestSchema } from "@atlas/types";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { generateRefreshToken, signAccessToken } from "./jwt.js";
+import type { JwtClaims } from "../../middleware/auth.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
-import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded } from "../admin/index.js";
+import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded } from "../admin/index.js";
+import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
@@ -88,6 +90,34 @@ async function resolveBancoByCredentials(
 }
 
 /**
+ * Auth-resolve subusuario da averbadora (Carla operadora, Rafael comercial, etc)
+ * pelo email + senha SHA-256. Todos entram como role="averbadora" no JWT; o
+ * campo `perfil` (operador/supervisor/comercial/financeiro/auditoria) vai como
+ * claim pra o front decidir gating de tela.
+ *
+ * Nao inclui o dev-user "admin@atlas.test" (esse continua vindo do DEV_USERS
+ * fallback); aqui e apenas pros usuarios cadastrados no painel /averbadora/perfis.
+ */
+async function resolveAverbadoraByCredentials(
+  identifier: string,
+  password: string,
+): Promise<{ match: ResolvedUser | null; claimedBy: boolean; perfil?: string; userId?: number }> {
+  const email = identifier.trim().toLowerCase();
+  if (!email.includes("@")) return { match: null, claimedBy: false };
+  const u = findAverbadoraByEmail(email);
+  if (!u || !u.passwordHash) return { match: null, claimedBy: false };
+  if (!u.ativo) return { match: null, claimedBy: true };
+  const hash = await sha256Hex(password);
+  if (hash !== u.passwordHash) return { match: null, claimedBy: true };
+  return {
+    match: { id: u.id, nome: u.nome, role: "averbadora" },
+    claimedBy: true,
+    perfil: u.perfil,
+    userId: u.id,
+  };
+}
+
+/**
  * Auth-resolve uma prefeitura do admin `prefeituras` store pelo loginEmail (sha256 da senha).
  */
 async function resolvePrefeituraByCredentials(
@@ -153,11 +183,15 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     // passwordHash) antes de resolver as credenciais — login costuma ser a primeira
     // request do isolate, então sem isso o servidor cadastrado só no banco fica invisível.
     await ensureServidoresLoaded(c.env);
+    // Perfis da averbadora tambem sao persistidos (admin_perfis) — hidrata antes
+    // de tentar resolver senao Carla/Rafael/Sandra/etc ficariam invisiveis.
+    await ensurePerfisLoaded(c.env);
 
     // 1) Servidor cadastrado via averbadora (login = CPF) com senha SHA-256.
     const servidorAuth = await resolveServidorByCredentials(body.identifier, body.password);
     let resolved: ResolvedUser | null = servidorAuth.match;
     let claimed = servidorAuth.claimedBy;
+    let averbadoraPerfil: string | undefined;
 
     // 2) Banco cadastrado via averbadora (login = email + senha SHA-256).
     if (!resolved && !claimed) {
@@ -173,7 +207,20 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       claimed = claimed || prefAuth.claimedBy;
     }
 
-    // 4) Fallback DEV_USERS — só se o identifier NÃO foi reivindicado por servidor/banco/prefeitura
+    // 4) Subusuario da averbadora (Carla/Rafael/Sandra/etc) — login = email do painel.
+    if (!resolved && !claimed) {
+      const avAuth = await resolveAverbadoraByCredentials(body.identifier, body.password);
+      resolved = avAuth.match;
+      claimed = claimed || avAuth.claimedBy;
+      averbadoraPerfil = avAuth.perfil;
+      if (resolved && avAuth.userId != null) {
+        // Atualiza ultimoLogin na fixture (write-through persiste na proxima mutacao).
+        const u = exportAverbadoraUsers().find((x) => x.id === avAuth.userId);
+        if (u) u.ultimoLogin = new Date().toISOString();
+      }
+    }
+
+    // 5) Fallback DEV_USERS — só se o identifier NÃO foi reivindicado por servidor/banco/prefeitura/averbadora
     //    cadastrado (caso contrário a senha demo continuaria valendo mesmo após o admin trocar).
     if (!resolved && !claimed) {
       const dev = DEV_USERS.find((u) => u.identifier === identifier);
@@ -197,6 +244,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       servidor_id: resolved.servidor_id,
       banco_id: resolved.banco_id,
       prefeitura_id: resolved.prefeitura_id,
+      averbadora_perfil: averbadoraPerfil as JwtClaims["averbadora_perfil"] | undefined,
       device_id: body.device_id,
     });
     const refreshToken = generateRefreshToken();

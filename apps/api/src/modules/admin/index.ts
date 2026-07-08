@@ -291,8 +291,20 @@ export function ensurePerfisLoaded(env: Env): Promise<void> {
   if (_perfisLoad) return _perfisLoad;
   _perfisLoad = (async () => {
     try {
-      await seedCollectionIfEmpty(env, "admin_perfis", exportUsersRaw().map((u) => ({ id: String(u.id), data: u })));
+      const seed = exportUsersRaw();
+      await seedCollectionIfEmpty(env, "admin_perfis", seed.map((u) => ({ id: String(u.id), data: u })));
       const rows = await loadCollection<AverbadoraUser>(env, "admin_perfis");
+      // Migracao suave: se o PG ja tem os 5 seed users MAS sem passwordHash
+      // (populados antes de existir seed com senha), preenche o hash do seed
+      // atual pra o login funcionar. Nao mexe em nada mais — nome/perfil/2FA
+      // continuam vindo do PG. So chega aqui pros ids que existem no seed.
+      const seedById = new Map(seed.map((u) => [u.id, u]));
+      for (const r of rows) {
+        if (!r.passwordHash) {
+          const s = seedById.get(r.id);
+          if (s?.passwordHash) r.passwordHash = s.passwordHash;
+        }
+      }
       hydrateUsers(rows);
     } catch { _perfisLoad = null; }
   })();

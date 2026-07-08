@@ -21,12 +21,19 @@ export interface AverbadoraUser {
   ultimoLogin?: string;
 }
 
+// SHA-256 de "teste123" — mesma senha demo dos outros perfis (banco, prefeitura).
+// Assim admin pode logar como Carla/Rafael/Sandra/Auditor no ambiente sandbox
+// sem passar por reset. Pra prod: cada usuario definiria a propria via "primeiro
+// acesso" ou o supervisor cadastra com senha inicial. Nao registre isso como
+// segredo — e literalmente o placeholder publico.
+const SEED_PASSWORD_HASH = "289160db0d9f39f9ae1754c4ec9c16f90b50e32e09c5fb5481ae642b3d3d1a36";
+
 const _users: AverbadoraUser[] = [
-  { id: 200, nome: "Admin Atlas", email: "admin@atlas.io", perfil: "supervisor", ativo: true, twoFactorEnabled: false, criadoEm: "2026-01-01T00:00:00Z" },
-  { id: 201, nome: "Carla Mendes", email: "carla.mendes@atlas.io", perfil: "operador", ativo: true, twoFactorEnabled: false, criadoEm: "2026-02-10T00:00:00Z", ultimoLogin: "2026-06-22T14:30:00Z" },
-  { id: 202, nome: "Rafael Pinto", email: "rafael@atlas.io", perfil: "comercial", ativo: true, twoFactorEnabled: false, criadoEm: "2026-02-10T00:00:00Z", ultimoLogin: "2026-06-21T17:08:00Z" },
-  { id: 203, nome: "Sandra Lopes", email: "sandra@atlas.io", perfil: "financeiro", ativo: true, twoFactorEnabled: true, twoFactorSecret: "JBSWY3DPEHPK3PXP", criadoEm: "2026-03-01T00:00:00Z", ultimoLogin: "2026-06-22T09:11:00Z" },
-  { id: 204, nome: "Auditor LGPD", email: "auditoria@atlas.io", perfil: "auditoria", ativo: true, twoFactorEnabled: true, twoFactorSecret: "KRSXG5DJOZSXE6JANRQXEYK7", criadoEm: "2026-04-01T00:00:00Z" },
+  { id: 200, nome: "Admin Atlas", email: "admin@atlas.io", perfil: "supervisor", ativo: true, twoFactorEnabled: false, criadoEm: "2026-01-01T00:00:00Z", passwordHash: SEED_PASSWORD_HASH },
+  { id: 201, nome: "Carla Mendes", email: "carla.mendes@atlas.io", perfil: "operador", ativo: true, twoFactorEnabled: false, criadoEm: "2026-02-10T00:00:00Z", ultimoLogin: "2026-06-22T14:30:00Z", passwordHash: SEED_PASSWORD_HASH },
+  { id: 202, nome: "Rafael Pinto", email: "rafael@atlas.io", perfil: "comercial", ativo: true, twoFactorEnabled: false, criadoEm: "2026-02-10T00:00:00Z", ultimoLogin: "2026-06-21T17:08:00Z", passwordHash: SEED_PASSWORD_HASH },
+  { id: 203, nome: "Sandra Lopes", email: "sandra@atlas.io", perfil: "financeiro", ativo: true, twoFactorEnabled: true, twoFactorSecret: "JBSWY3DPEHPK3PXP", criadoEm: "2026-03-01T00:00:00Z", ultimoLogin: "2026-06-22T09:11:00Z", passwordHash: SEED_PASSWORD_HASH },
+  { id: 204, nome: "Auditor LGPD", email: "auditoria@atlas.io", perfil: "auditoria", ativo: true, twoFactorEnabled: true, twoFactorSecret: "KRSXG5DJOZSXE6JANRQXEYK7", criadoEm: "2026-04-01T00:00:00Z", passwordHash: SEED_PASSWORD_HASH },
 ];
 
 /** Usuários crus (com hash/secret) — para persistência write-through. */
