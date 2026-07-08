@@ -25,5 +25,6 @@ export type {
   ApiEnvironment, ApiAudience, ApiPartnerType, ApiScope,
   CsvImportOutcome,
   PrefeituraServidor, PrefeituraFolha, PrefeituraConvenio, PrefeituraContrato, PrefeituraAdf, PrefeituraPerfil,
+  FolhaAdfSummary,
 } from "./client.js";
 export { ApiHttpError } from "./errors.js";
