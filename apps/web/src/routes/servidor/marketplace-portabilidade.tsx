@@ -103,11 +103,38 @@ export function ServidorMarketplacePortabilidade() {
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
           Portal do servidor
         </span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>MarketPlace · Portabilidade</h1>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>MarketPlace</h1>
         <p style={{ color: "var(--text-muted)", margin: "6px 0 0" }}>
-          Propostas de portabilidade de crédito consignado disponíveis
+          Simule um novo crédito, solicite portabilidade ou responda às propostas que os bancos criaram pra você.
         </p>
       </header>
+
+      {/* Acoes rapidas: Simular + Solicitar Portabilidade */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+        <AcaoCard
+          icone="💰"
+          titulo="Simular empréstimo"
+          descricao="Descubra quanto de crédito você tem disponível e compare taxas de bancos parceiros."
+          cor="var(--emerald-500)"
+          onClick={() => nav("/servidor/simular")}
+        />
+        <AcaoCard
+          icone="🔁"
+          titulo="Solicitar portabilidade"
+          descricao="Consolide seus contratos em outro banco com taxa menor e libere margem."
+          cor="var(--gold-500)"
+          onClick={() => nav("/servidor/portabilidade")}
+        />
+      </div>
+
+      {/* Divisor entre acoes e propostas recebidas */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+        <span style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+          Propostas de portabilidade dos bancos
+        </span>
+        <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+      </div>
 
       {/* Tabs de filtro */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -382,4 +409,52 @@ function pillStyle(tone: "gold" | "emerald" | "danger" | "neutro"): React.CSSPro
     padding: "3px 10px",
     textTransform: "uppercase",
   };
+}
+
+/** Card grande de acao rapida (Simular / Solicitar portabilidade). */
+function AcaoCard({
+  icone, titulo, descricao, cor, onClick,
+}: {
+  icone: string; titulo: string; descricao: string; cor: string; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        textAlign: "left",
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 14,
+        padding: 18,
+        display: "flex",
+        gap: 14,
+        alignItems: "flex-start",
+        cursor: "pointer",
+        transition: "border-color .12s ease, transform .12s ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = cor;
+        e.currentTarget.style.transform = "translateY(-2px)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = "var(--border)";
+        e.currentTarget.style.transform = "translateY(0)";
+      }}
+    >
+      <div style={{
+        width: 44, height: 44, borderRadius: 12,
+        background: `color-mix(in srgb, ${cor} 15%, transparent)`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 22, flexShrink: 0,
+      }}>{icone}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{titulo}</div>
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
+          {descricao}
+        </div>
+      </div>
+      <span style={{ fontSize: 22, color: cor, alignSelf: "center" }}>→</span>
+    </button>
+  );
 }

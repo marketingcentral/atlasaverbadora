@@ -12,10 +12,12 @@ const NAV = [
   { key: "dashboard", label: "Início", href: "/servidor/dashboard" },
   { key: "minha-margem", label: "Minha Margem", href: "/servidor/minha-margem" },
   { key: "marketplace", label: "Ofertas", href: "/servidor/marketplace" },
-  { key: "marketplace-port", label: "MarketPlace · Portabilidade", href: "/servidor/marketplace/portabilidade", badge: "NOVO" },
-  { key: "simular", label: "Simular", href: "/servidor/simular" },
-  { key: "portabilidade", label: "Portabilidade", href: "/servidor/portabilidade" },
-  { key: "propostas", label: "Propostas", href: "/servidor/propostas" },
+  // MarketPlace unificado: simular + portabilidade + propostas de portabilidade
+  // dos bancos. Simular/Portabilidade/Propostas foram removidos do menu (as
+  // rotas continuam existindo pra backward compat de links diretos).
+  { key: "marketplace-port", label: "MarketPlace", href: "/servidor/marketplace/portabilidade" },
+  // Contratos passa a mostrar propostas em andamento no topo (o servidor ve
+  // sua solicitacao virar contrato depois que o banco aprova).
   { key: "contratos", label: "Contratos", href: "/servidor/contratos" },
   { key: "saude", label: "Saúde", href: "/servidor/saude" },
   { key: "beneficios", label: "Descontos e Benefícios", href: "/servidor/beneficios" },
