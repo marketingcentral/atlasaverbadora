@@ -11,10 +11,10 @@ import { MatriculaSwitcher } from "../../components/MatriculaSwitcher";
 const NAV = [
   { key: "dashboard", label: "Início", href: "/servidor/dashboard" },
   { key: "minha-margem", label: "Minha Margem", href: "/servidor/minha-margem" },
-  { key: "marketplace", label: "Ofertas", href: "/servidor/marketplace" },
-  // MarketPlace unificado: simular + portabilidade + propostas de portabilidade
-  // dos bancos. Simular/Portabilidade/Propostas foram removidos do menu (as
-  // rotas continuam existindo pra backward compat de links diretos).
+  // MarketPlace unificado: ofertas de bancos + simular + portabilidade +
+  // propostas de portabilidade dos bancos. Ofertas/Simular/Portabilidade/
+  // Propostas foram removidos do menu (as rotas continuam existindo pra
+  // backward compat de links diretos).
   { key: "marketplace-port", label: "MarketPlace", href: "/servidor/marketplace/portabilidade" },
   // Contratos passa a mostrar propostas em andamento no topo (o servidor ve
   // sua solicitacao virar contrato depois que o banco aprova).

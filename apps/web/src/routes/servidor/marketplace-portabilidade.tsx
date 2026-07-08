@@ -1,11 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID, type MatriculaInfo } from "../../lib/matricula-data";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+
+const pct = (n: number) => `${(n * 100).toFixed(2)}% a.m.`;
+
+/** Normaliza nome de prefeitura/cidade pra matching case-insensitive
+ *  sem acentos e sem prefixo "Prefeitura de". Usado no filtro de ofertas. */
+function slug(s: string): string {
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/\bprefeitura\s+de\s+/g, "")
+    .replace(/[^a-z0-9]+/g, "");
+}
 
 type Proposta = {
   id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number;
@@ -67,7 +81,7 @@ export function ServidorMarketplacePortabilidade() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Re-render a cada minuto pra atualizar countdown.
+  // Re-render a cada minuto pra atualizar countdown das propostas.
   const [, setTick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 60_000);
@@ -75,7 +89,30 @@ export function ServidorMarketplacePortabilidade() {
   }, []);
 
   const matAtiva = info?.matricula;
-  const q = useQuery({
+
+  // Ofertas dos bancos parceiros (tabelas de emprestimo publicadas pro convenio).
+  const ofertasQ = useQuery({
+    queryKey: ["servidor", "ofertas"],
+    queryFn: () => atlas.servidor.ofertas(),
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true,
+  });
+
+  const ofertas = useMemo(() => {
+    const todas = ofertasQ.data?.ofertas ?? [];
+    if (!info) return todas;
+    const alvo = slug(info.prefeitura);
+    if (!alvo) return todas;
+    return todas.filter((o) => {
+      const cidade = slug(o.cidade ?? "");
+      const conv = slug(o.convenio ?? "");
+      return cidade.includes(alvo) || conv.includes(alvo);
+    });
+  }, [ofertasQ.data, info]);
+
+  // Propostas de portabilidade que os bancos criaram pro servidor.
+  const propostasQ = useQuery({
     queryKey: ["servidor", "propostas", matAtiva],
     queryFn: () => atlas.servidor.propostas(matAtiva),
     refetchInterval: 15_000,
@@ -83,82 +120,173 @@ export function ServidorMarketplacePortabilidade() {
     enabled: !!matAtiva,
   });
 
-  const propostas = useMemo(() => (q.data?.propostas ?? []).filter(ehPortabilidade), [q.data]);
+  const propostas = useMemo(() => (propostasQ.data?.propostas ?? []).filter(ehPortabilidade), [propostasQ.data]);
   const comTroco = useMemo(() => propostas.filter(temTroco), [propostas]);
   const simples = useMemo(() => propostas.filter((p) => !temTroco(p)), [propostas]);
 
   const filtradas = useMemo(() => {
     if (tab === "com_troco") return comTroco;
     if (tab === "simples") return simples;
-    // Ordena: com troco primeiro (mais destaque), depois simples.
     return [...comTroco, ...simples];
-  }, [tab, comTroco, simples, propostas]);
+  }, [tab, comTroco, simples]);
 
   if (!info) return null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 1080, width: "100%", margin: "0 auto" }}>
-      {/* Header modelo */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 1080, width: "100%", margin: "0 auto" }}>
+      {/* Header */}
       <header>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
           Portal do servidor
         </span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>MarketPlace</h1>
         <p style={{ color: "var(--text-muted)", margin: "6px 0 0" }}>
-          Simule um novo crédito, solicite portabilidade ou responda às propostas que os bancos criaram pra você.
+          Ofertas dos bancos parceiros para o convênio da <b>{info.prefeitura}</b>. Simule ou solicite portabilidade abaixo.
         </p>
       </header>
 
-      {/* Acoes rapidas: Simular + Solicitar Portabilidade */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
-        <AcaoCard
-          icone="💰"
-          titulo="Simular empréstimo"
-          descricao="Descubra quanto de crédito você tem disponível e compare taxas de bancos parceiros."
-          cor="var(--emerald-500)"
-          onClick={() => nav("/servidor/simular")}
-        />
-        <AcaoCard
-          icone="🔁"
-          titulo="Solicitar portabilidade"
-          descricao="Consolide seus contratos em outro banco com taxa menor e libere margem."
-          cor="var(--gold-500)"
-          onClick={() => nav("/servidor/portabilidade")}
-        />
-      </div>
-
-      {/* Divisor entre acoes e propostas recebidas */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+      {/* 1. OFERTAS DOS BANCOS PARCEIROS (primeira secao — cards com tabelas) */}
+      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <span style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Propostas de portabilidade dos bancos
+          Ofertas para você
         </span>
-        <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-      </div>
-
-      {/* Tabs de filtro */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <TabBtn active={tab === "todas"} tone="emerald" onClick={() => setTab("todas")} label={`Todas (${propostas.length})`} />
-        <TabBtn active={tab === "com_troco"} tone="gold" onClick={() => setTab("com_troco")} label={`Com Troco (${comTroco.length})`} />
-        <TabBtn active={tab === "simples"} tone="neutro" onClick={() => setTab("simples")} label={`Simples (${simples.length})`} />
-      </div>
-
-      {/* Lista de propostas */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        {q.isLoading ? (
-          <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>Carregando propostas...</div>
-        ) : filtradas.length === 0 ? (
-          <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
-            Nenhuma proposta de portabilidade disponível no momento. Quando um banco criar uma intenção pra você, aparece aqui.
+        {ofertasQ.isLoading ? (
+          <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Carregando ofertas…</div>
+        ) : ofertasQ.error ? (
+          <div style={{ color: "var(--danger-500)", fontSize: 14 }}>Falha ao carregar ofertas.</div>
+        ) : ofertas.length === 0 ? (
+          <div
+            style={{
+              padding: 32,
+              textAlign: "center",
+              border: "1px dashed var(--border-strong)",
+              borderRadius: 12,
+              color: "var(--text-muted)",
+            }}
+          >
+            <div style={{ fontSize: 24, marginBottom: 6 }}>📭</div>
+            <div style={{ fontWeight: 600 }}>Nenhuma oferta ativa no momento</div>
+            <p style={{ fontSize: 13, margin: "6px auto 0", maxWidth: 480 }}>
+              Assim que um banco parceiro publicar uma tabela pro seu convênio, ela aparece aqui.
+            </p>
           </div>
         ) : (
-          filtradas.map((p) => (
-            temTroco(p)
-              ? <FeaturedComTrocoCard key={p.id} proposta={p} onConfirmar={() => nav(`/servidor/termo?adf=${p.id}`)} />
-              : <SimplesCard key={p.id} proposta={p} onSolicitar={() => nav(`/servidor/termo?adf=${p.id}`)} />
-          ))
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+            {ofertas.map((o) => (
+              <Card key={o.id}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
+                  {o.bancoNome}
+                </div>
+                <h3 style={{ margin: "6px 0", fontSize: "1.1rem" }}>Crédito consignado</h3>
+                <p style={{ color: "var(--text-muted)", margin: "4px 0", fontSize: 14 }}>
+                  Convênio {o.convenio}. Vigência a partir de{" "}
+                  {new Date(o.vigenciaInicio + "T00:00:00").toLocaleDateString("pt-BR")}
+                  {o.vigenciaFim ? ` até ${new Date(o.vigenciaFim + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}.
+                </p>
+                <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <span style={chip}>{pct(o.taxaMinAm)} a {pct(o.taxaMaxAm)}</span>
+                  <span style={chip}>Até {o.prazoMaxMeses}×</span>
+                </div>
+                <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      nav(
+                        `/servidor/simular?valor=10000&parcelas=${Math.min(o.prazoMaxMeses, 60)}&taxa=${(o.taxaMinAm * 100).toFixed(2)}`,
+                      )
+                    }
+                  >
+                    Simular →
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() =>
+                      nav(
+                        `/servidor/termo?tipo=novo&valor=10000&parcelas=${Math.min(o.prazoMaxMeses, 60)}&taxaAm=${(o.taxaMinAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`,
+                      )
+                    }
+                  >
+                    Aceitar oferta →
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
         )}
-      </div>
+      </section>
+
+      {/* 2. Botao de PORTABILIDADE (destaque medio) */}
+      <AcaoCard
+        icone="🔁"
+        titulo="Solicitar portabilidade"
+        descricao="Consolide seus contratos em outro banco com taxa menor e libere margem."
+        cor="var(--gold-500)"
+        onClick={() => nav("/servidor/portabilidade")}
+      />
+
+      {/* 3. Botao de SIMULAR (linha compacta) */}
+      <button
+        type="button"
+        onClick={() => nav("/servidor/simular")}
+        style={{
+          textAlign: "left",
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          borderRadius: 10,
+          padding: "12px 16px",
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+          cursor: "pointer",
+          fontSize: 13,
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--emerald-500)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
+      >
+        <span style={{ fontSize: 18 }}>💰</span>
+        <span style={{ color: "var(--text)" }}>
+          <b>Simular empréstimo</b>
+          <span style={{ color: "var(--text-muted)", marginLeft: 8 }}>Descubra quanto de crédito você tem e compare taxas.</span>
+        </span>
+        <span style={{ flex: 1 }} />
+        <span style={{ color: "var(--emerald-500)", fontSize: 18 }}>→</span>
+      </button>
+
+      {/* 4. Propostas de portabilidade dos bancos (mantidas aqui por hierarquia — mais no fim) */}
+      {propostas.length > 0 || propostasQ.isLoading ? (
+        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+            <span style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+              Propostas de portabilidade dos bancos
+            </span>
+            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <TabBtn active={tab === "todas"} tone="emerald" onClick={() => setTab("todas")} label={`Todas (${propostas.length})`} />
+            <TabBtn active={tab === "com_troco"} tone="gold" onClick={() => setTab("com_troco")} label={`Com Troco (${comTroco.length})`} />
+            <TabBtn active={tab === "simples"} tone="neutro" onClick={() => setTab("simples")} label={`Simples (${simples.length})`} />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {propostasQ.isLoading ? (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>Carregando propostas...</div>
+            ) : filtradas.length === 0 ? (
+              <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
+                Nenhuma proposta nesta categoria.
+              </div>
+            ) : (
+              filtradas.map((p) => (
+                temTroco(p)
+                  ? <FeaturedComTrocoCard key={p.id} proposta={p} onConfirmar={() => nav(`/servidor/termo?adf=${p.id}`)} />
+                  : <SimplesCard key={p.id} proposta={p} onSolicitar={() => nav(`/servidor/termo?adf=${p.id}`)} />
+              ))
+            )}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }
@@ -168,7 +296,7 @@ function FeaturedComTrocoCard({ proposta: p, onConfirmar }: { proposta: Proposta
   const troco = trocoValor(p);
   const dias = diasRestantes(p);
   const parcelaAtualEstim = p.saldoDevedorOrigem != null && p.parcelas > 0
-    ? (p.saldoDevedorOrigem * 0.024) // heuristica visual pra parcela atual — em prod virá do backend do banco de origem
+    ? (p.saldoDevedorOrigem * 0.024)
     : p.parcela;
   const economiaEstim = Math.max(0, parcelaAtualEstim - p.parcela);
 
@@ -196,7 +324,6 @@ function FeaturedComTrocoCard({ proposta: p, onConfirmar }: { proposta: Proposta
         Exclusivo para <b style={{ color: "var(--text)" }}>{p.banco}</b> durante o período de intenção · Outras instituições <b style={{ color: "var(--text)" }}>não podem averbar</b>
       </div>
 
-      {/* 4 sub-cards: CONTRATO ATUAL / NOVA PROPOSTA / TROCO / TEMPORIZADOR */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 14 }}>
         <SubCard
           label="CONTRATO ATUAL"
@@ -411,7 +538,7 @@ function pillStyle(tone: "gold" | "emerald" | "danger" | "neutro"): React.CSSPro
   };
 }
 
-/** Card grande de acao rapida (Simular / Solicitar portabilidade). */
+/** Card grande de acao — usado agora so pra "Solicitar portabilidade". */
 function AcaoCard({
   icone, titulo, descricao, cor, onClick,
 }: {
@@ -458,3 +585,12 @@ function AcaoCard({
     </button>
   );
 }
+
+const chip: React.CSSProperties = {
+  padding: "4px 10px",
+  borderRadius: 999,
+  background: "var(--bg-elev-2)",
+  color: "var(--text-muted)",
+  fontSize: 11,
+  fontWeight: 600,
+};
