@@ -110,12 +110,21 @@ function OfertaModal({
     filtro: initial?.filtro ?? {},
   });
   const [error, setError] = useState<string | null>(null);
+  // Promocao relampago: duracao em horas a partir de agora. Se preenchido,
+  // sobrescreve a data absoluta acima (calcula expiraEm = now + horas).
+  const [duracaoHoras, setDuracaoHoras] = useState<string>("");
   const save = useMutation({
-    mutationFn: () => atlas.banco.ofertas.upsert({
-      ...form,
-      expiraEm: form.expiraEm || undefined,
-      filtro: form.filtro ?? {},
-    }),
+    mutationFn: () => {
+      const horas = Number(duracaoHoras);
+      const expiraCalc = duracaoHoras && Number.isFinite(horas) && horas > 0
+        ? new Date(Date.now() + horas * 3600 * 1000).toISOString()
+        : (form.expiraEm || undefined);
+      return atlas.banco.ofertas.upsert({
+        ...form,
+        expiraEm: expiraCalc,
+        filtro: form.filtro ?? {},
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["banco", "ofertas"] });
       onClose();
@@ -148,7 +157,31 @@ function OfertaModal({
             <TextField label="Prazo máx. (x)" type="number" value={String(form.parcelasMax)} onChange={(e) => setForm({ ...form, parcelasMax: Number(e.target.value) })} />
             <TextField label="Valor máx. (R$)" type="number" value={String(form.valorMax)} onChange={(e) => setForm({ ...form, valorMax: Number(e.target.value) })} />
           </div>
-          <TextField label="Expira em (opcional)" type="date" value={form.expiraEm ?? ""} onChange={(e) => setForm({ ...form, expiraEm: e.target.value })} hint="Após essa data, para de aparecer no sino." />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <TextField
+              label="Expira em (opcional)"
+              type="date"
+              value={form.expiraEm ?? ""}
+              onChange={(e) => setForm({ ...form, expiraEm: e.target.value })}
+              hint="Ideal para ofertas mensais/sazonais."
+              disabled={!!duracaoHoras && Number(duracaoHoras) > 0}
+            />
+            <TextField
+              label="Ou duração em horas (promoção relâmpago)"
+              type="number"
+              min="0"
+              step="0.5"
+              value={duracaoHoras}
+              onChange={(e) => setDuracaoHoras(e.target.value)}
+              placeholder="Ex.: 24"
+              hint="Se preenchido, começa a contar a partir de agora."
+            />
+          </div>
+          {duracaoHoras && Number(duracaoHoras) > 0 ? (
+            <div style={{ padding: "8px 12px", borderRadius: 8, border: "1px dashed var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 10%, transparent)", fontSize: 12 }}>
+              ⏱ Promoção relâmpago: expira em <b>{new Date(Date.now() + Number(duracaoHoras) * 3600 * 1000).toLocaleString("pt-BR")}</b>. O servidor vê um contador regressivo.
+            </div>
+          ) : null}
         </section>
 
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
