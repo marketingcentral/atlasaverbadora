@@ -40,6 +40,7 @@ import io.atlas.servidor.ui.theme.Verde
 fun LoginScreen(
     onLoggedIn: () -> Unit,
     onPrimeiroAcesso: () -> Unit,
+    onEsqueciSenha: () -> Unit,
     vm: LoginViewModel = viewModel(),
 ) {
     Box(
@@ -103,7 +104,7 @@ fun LoginScreen(
             }
 
             Spacer(Modifier.height(6.dp))
-            TextButton(onClick = onPrimeiroAcesso, modifier = Modifier.align(Alignment.End)) {
+            TextButton(onClick = onEsqueciSenha, modifier = Modifier.align(Alignment.End)) {
                 Text("Esqueci minha senha", color = Verde, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
 

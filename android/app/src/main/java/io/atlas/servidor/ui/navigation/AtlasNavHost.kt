@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import io.atlas.servidor.ui.auth.EsqueciSenhaScreen
 import io.atlas.servidor.ui.auth.LoginScreen
 import io.atlas.servidor.ui.auth.PrimeiroAcessoScreen
 import io.atlas.servidor.ui.matricula.SelecionarMatriculaScreen
@@ -24,11 +25,16 @@ fun AtlasNavHost(startDestination: String) {
                     }
                 },
                 onPrimeiroAcesso = { nav.navigate(Routes.PRIMEIRO_ACESSO) },
+                onEsqueciSenha = { nav.navigate(Routes.ESQUECI_SENHA) },
             )
         }
 
         composable(Routes.PRIMEIRO_ACESSO) {
             PrimeiroAcessoScreen(onBack = { nav.popBackStack() })
+        }
+
+        composable(Routes.ESQUECI_SENHA) {
+            EsqueciSenhaScreen(onBack = { nav.popBackStack() })
         }
 
         composable(Routes.SELECIONAR_MATRICULA) {

@@ -62,4 +62,10 @@ interface AuthApi {
 
     @POST("v1/auth/primeiro-acesso/senha")
     suspend fun primeiroAcessoSenha(@Body body: io.atlas.servidor.data.remote.dto.PaConfirmarRequest): OkResponse
+
+    @POST("v1/auth/esqueci-senha/solicitar-email")
+    suspend fun esqueciSolicitarEmail(@Body body: io.atlas.servidor.data.remote.dto.EsqueciEmailRequest): io.atlas.servidor.data.remote.dto.EsqueciSolicitarResponse
+
+    @POST("v1/auth/esqueci-senha/redefinir")
+    suspend fun esqueciRedefinir(@Body body: io.atlas.servidor.data.remote.dto.RedefinirSenhaRequest): OkResponse
 }

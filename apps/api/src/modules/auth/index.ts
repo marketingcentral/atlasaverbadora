@@ -384,6 +384,27 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       ...(r.sent ? {} : { codigo_teste: codigo, aviso: `E-mail não enviado (${r.reason}) — modo teste.` }),
     });
   })
+  // 1b) Variante por E-MAIL: o servidor informa o e-mail que usou no primeiro acesso.
+  //     Se bater com uma conta ativa, envia o código pra esse e-mail; senão, erro claro.
+  .post("/v1/auth/esqueci-senha/solicitar-email", async (c) => {
+    const { email } = z.object({ email: z.string().email("E-mail inválido") }).parse(await c.req.json());
+    await ensureServidoresLoaded(c.env);
+    const alvo = email.trim().toLowerCase();
+    // Só conta ATIVA (com senha) — o e-mail tem que ser o mesmo do primeiro acesso.
+    const s = SERVIDORES_BUSCA_MOCK.find(
+      (x) => (x.email ?? "").trim().toLowerCase() === alvo && (Boolean(x.passwordHash) || devUserTemSenhaPorCpf(x.cpf)),
+    );
+    if (!s) throw Errors.validation({ email: "E-mail errado ou inexistente. Use o e-mail do seu primeiro acesso." });
+    const codigo = await gerarCodigoUnico(c.env);
+    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`rs:${s.cpf}`, codigo, { expirationTtl: 600 });
+    const r = await enviarCodigo(c.env, { destinoPadrao: s.email, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false });
+    return c.json({
+      enviado: r.sent,
+      cpf: s.cpf, // o app usa no passo de redefinir
+      destino: maskEmail(r.destino || s.email),
+      ...(r.sent ? {} : { codigo_teste: codigo, aviso: `E-mail não enviado (${r.reason}) — modo teste.` }),
+    });
+  })
   // 2) Valida o codigo e define a nova senha.
   .post("/v1/auth/esqueci-senha/redefinir", async (c) => {
     const { cpf, codigo, senha } = z

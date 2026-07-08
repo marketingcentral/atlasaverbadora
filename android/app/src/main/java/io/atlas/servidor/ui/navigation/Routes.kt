@@ -3,6 +3,7 @@ package io.atlas.servidor.ui.navigation
 object Routes {
     const val LOGIN = "login"
     const val PRIMEIRO_ACESSO = "primeiro_acesso"
+    const val ESQUECI_SENHA = "esqueci_senha"
     const val SELECIONAR_MATRICULA = "selecionar_matricula"
     const val MAIN = "main"
     const val SIMULAR = "simular"

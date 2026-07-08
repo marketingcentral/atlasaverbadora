@@ -49,6 +49,13 @@ data class PaCodigoRequest(val cpf: String, val email: String, val senha: String
 /** Primeiro acesso — passo Código: confirma o código e efetiva o cadastro. */
 data class PaConfirmarRequest(val cpf: String, val codigo: String)
 
+/** Esqueci minha senha (por e-mail): valida o e-mail e envia o código pra ele. */
+data class EsqueciEmailRequest(val email: String)
+data class EsqueciSolicitarResponse(val enviado: Boolean = false, val cpf: String? = null, val destino: String? = null)
+
+/** Redefinir senha: valida o código e grava a nova senha. */
+data class RedefinirSenhaRequest(val cpf: String, val codigo: String, val senha: String)
+
 data class PrimeiroAcessoBuscarResponse(
     val encontrado: Boolean,
     val nome: String? = null,
