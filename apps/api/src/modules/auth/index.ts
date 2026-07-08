@@ -270,7 +270,10 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     const pending = { codigo, email: email.trim().toLowerCase(), senhaHash };
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`pa:${digits}`, JSON.stringify(pending), { expirationTtl: 600 });
     // Envia pro email QUE O SERVIDOR ESCOLHEU (nao pro cadastrado).
-    const r = await enviarCodigo(c.env, { destinoPadrao: email, contexto: "ativar seu acesso Atlas", codigo });
+    // Primeiro-acesso: e o proprio servidor provando que aquele email e dele.
+    // Nao respeitar o notifyEmail (override de teste dos perfis admin) — o codigo
+    // TEM que ir pro email que o servidor digitou, senao ele nunca recebe.
+    const r = await enviarCodigo(c.env, { destinoPadrao: email, contexto: "ativar seu acesso Atlas", codigo, respeitaOverride: false });
     return c.json({
       enviado: r.sent,
       destino: maskEmail(r.destino || email),
@@ -315,7 +318,8 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     if (!s) return c.json({ enviado: false, destino: "", aviso: "Se este CPF existir, o codigo foi enviado." });
     const codigo = await gerarCodigoUnico(c.env);
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`rs:${digits}`, codigo, { expirationTtl: 600 });
-    const r = await enviarCodigo(c.env, { destinoPadrao: s.email, contexto: "redefinir sua senha Atlas", codigo });
+    // Esqueci-senha: dono da conta recebe direto. Bypass do notifyEmail global.
+    const r = await enviarCodigo(c.env, { destinoPadrao: s.email, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false });
     return c.json({
       enviado: r.sent,
       destino: maskEmail(r.destino || s.email),

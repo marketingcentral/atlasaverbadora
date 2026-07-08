@@ -402,7 +402,9 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`chg:${s.cpf}`, codigo, { expirationTtl: 600 });
     // Envia por e-mail de verdade se o SMTP estiver configurado (para o destino
     // de notificação, se definido). Senão, modo teste (código na resposta).
-    const r = await enviarCodigo(c.env, { destinoPadrao: entry?.email, contexto: "atualizar seus dados de contato", codigo });
+    // Servidor atualizando o proprio contato — codigo vai pro email atual dele,
+    // sem passar pelo notifyEmail (que e override de teste dos perfis admin).
+    const r = await enviarCodigo(c.env, { destinoPadrao: entry?.email, contexto: "atualizar seus dados de contato", codigo, respeitaOverride: false });
     return c.json({
       enviado: r.sent,
       destino: maskEmailSrv(r.destino || entry?.email),

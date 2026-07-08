@@ -158,12 +158,22 @@ export async function sendMail(
  */
 export async function enviarCodigo(
   env: Env,
-  opts: { destinoPadrao?: string; contexto: string; codigo: string },
+  opts: {
+    destinoPadrao?: string;
+    contexto: string;
+    codigo: string;
+    /** true (padrao) = notifyEmail global ganha do destinoPadrao — util pra testar
+     *  perfis admin (banco/prefeitura/averbadora) com contas ficticias.
+     *  false = manda DIRETO pro destinoPadrao (fluxos de servidor: primeiro-acesso,
+     *  esqueci-senha, editar contato — o proprio dono da conta e quem tem que receber). */
+    respeitaOverride?: boolean;
+  },
 ): Promise<SendResult & { destino: string }> {
   const cfg = await getSmtpConfigForSend(env);
-  // notifyEmail global (Configuracoes → SMTP → "Destino dos codigos") funciona como
-  // override de teste: quando preenchido, TUDO vai pra la. Vazio = destinoPadrao real.
-  const destino = (cfg?.notifyEmail ?? "").trim() || (opts.destinoPadrao ?? "").trim();
+  const notify = (cfg?.notifyEmail ?? "").trim();
+  const padrao = (opts.destinoPadrao ?? "").trim();
+  const respeita = opts.respeitaOverride ?? true;
+  const destino = respeita ? (notify || padrao) : (padrao || notify);
   if (!destino) return { sent: false, reason: "sem destino", destino: "" };
   const { subject, text } = codigoEmail(opts.codigo, opts.contexto);
   const r = await sendMail(env, { to: destino, subject, text });
