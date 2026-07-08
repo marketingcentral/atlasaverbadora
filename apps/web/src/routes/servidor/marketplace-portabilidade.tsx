@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID, type MatriculaInfo } from "../../lib/matricula-data";
+import { SimuladorInline } from "./_simulador-inline";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -225,33 +226,21 @@ export function ServidorMarketplacePortabilidade() {
         onClick={() => nav("/servidor/portabilidade")}
       />
 
-      {/* 3. Botao de SIMULAR (linha compacta) */}
-      <button
-        type="button"
-        onClick={() => nav("/servidor/simular")}
-        style={{
-          textAlign: "left",
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 10,
-          padding: "12px 16px",
-          display: "flex",
-          gap: 12,
-          alignItems: "center",
-          cursor: "pointer",
-          fontSize: 13,
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.borderColor = "var(--emerald-500)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
-      >
-        <span style={{ fontSize: 18 }}>💰</span>
-        <span style={{ color: "var(--text)" }}>
-          <b>Simular empréstimo</b>
-          <span style={{ color: "var(--text-muted)", marginLeft: 8 }}>Descubra quanto de crédito você tem e compare taxas.</span>
-        </span>
-        <span style={{ flex: 1 }} />
-        <span style={{ color: "var(--emerald-500)", fontSize: 18 }}>→</span>
-      </button>
+      {/* 3. Simulador inline — o cliente pediu o "menuzinho" aqui em vez de um botao. */}
+      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 20 }}>💰</span>
+          <div>
+            <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+              Simular empréstimo
+            </div>
+            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+              Ajuste valor e parcelas para ver se cabe na sua margem — a solicitação já sai daqui.
+            </div>
+          </div>
+        </div>
+        <SimuladorInline info={info} compact />
+      </section>
 
       {/* 4. Propostas de portabilidade dos bancos (mantidas aqui por hierarquia — mais no fim) */}
       {propostas.length > 0 || propostasQ.isLoading ? (
