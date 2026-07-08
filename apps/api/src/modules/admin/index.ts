@@ -1883,7 +1883,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === prefId);
       const salario = Number(r.salarioLiquido);
       const ibge = Number(r.codigoIbge);
-      const s = {
+      const s: ServidorBuscaMock = {
         cpf,
         cpfMasked: cpf.slice(0, 3) + ".***.***-" + cpf.slice(-2),
         matricula: r.matricula!,
@@ -1892,9 +1892,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         nome: r.nome!,
         dataAdmissao: r.dataAdmissao ?? "",
         dataNascimento: r.dataNascimento ?? "",
-        vinculo: r.vinculo ?? "ESTATUTARIO",
+        vinculo: (r.vinculo ?? "ESTATUTARIO") as ServidorBuscaMock["vinculo"],
         origem: pref.nome,
-        situacaoFuncional: r.situacaoFuncional ?? "TRABALHANDO",
+        situacaoFuncional: (r.situacaoFuncional ?? "TRABALHANDO") as ServidorBuscaMock["situacaoFuncional"],
         salarioLiquido: Number.isFinite(salario) ? salario : 0,
         idConvenio,
         codigoIbge: Number.isFinite(ibge) ? ibge : undefined,
