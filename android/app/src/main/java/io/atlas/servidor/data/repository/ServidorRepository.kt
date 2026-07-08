@@ -31,6 +31,9 @@ class ServidorRepository(
     /** Cache keys são escopadas ao usuário logado — nunca compartilham entre contas. */
     private fun userKey(base: String) = "$base:${tokenStore.userId}"
 
+    /** Lista as propostas do servidor direto do servidor (mesma fonte que o banco lê). */
+    suspend fun getPropostas(matricula: String?) = safeApi(gson) { api.propostas(matricula) }
+
     /** Envia a proposta ao ecossistema — cria a pré-reserva que o banco recebe. */
     suspend fun criarProposta(valor: Double, parcelas: Int, taxaAm: Double, matricula: String, bancoNome: String) =
         safeApi(gson) {

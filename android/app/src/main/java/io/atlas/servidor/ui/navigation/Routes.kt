@@ -8,6 +8,7 @@ object Routes {
     const val SIMULAR = "simular"
     const val EM_ANALISE = "em_analise"
     const val MARGEM_TRAVADA = "margem_travada"
+    const val PORTABILIDADE = "portabilidade"
 
     // Bottom-tab destinations (inner graph)
     const val TAB_INICIO = "tab_inicio"

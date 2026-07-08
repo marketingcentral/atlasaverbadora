@@ -7,6 +7,7 @@ import androidx.navigation.compose.rememberNavController
 import io.atlas.servidor.ui.auth.LoginScreen
 import io.atlas.servidor.ui.auth.PrimeiroAcessoScreen
 import io.atlas.servidor.ui.matricula.SelecionarMatriculaScreen
+import io.atlas.servidor.ui.portabilidade.PortabilidadeScreen
 import io.atlas.servidor.ui.shell.MainShell
 
 @Composable
@@ -44,11 +45,19 @@ fun AtlasNavHost(startDestination: String) {
         composable(Routes.MAIN) {
             MainShell(
                 onSwitchMatricula = { nav.navigate(Routes.SELECIONAR_MATRICULA) },
+                onOpenPortabilidade = { nav.navigate(Routes.PORTABILIDADE) },
                 onLoggedOut = {
                     nav.navigate(Routes.LOGIN) {
                         popUpTo(Routes.MAIN) { inclusive = true }
                     }
                 },
+            )
+        }
+
+        composable(Routes.PORTABILIDADE) {
+            PortabilidadeScreen(
+                onBack = { nav.popBackStack() },
+                onSolicitado = { nav.popBackStack() },
             )
         }
     }

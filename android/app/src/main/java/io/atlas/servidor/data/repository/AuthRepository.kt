@@ -44,8 +44,8 @@ class AuthRepository(
     suspend fun paBuscar(cpf: String) =
         safeApi(gson) { authApi.primeiroAcessoBuscar(io.atlas.servidor.data.remote.dto.CpfRequest(cpf)) }
 
-    suspend fun paEnviarCodigo(cpf: String) =
-        safeApi(gson) { authApi.primeiroAcessoCodigo(io.atlas.servidor.data.remote.dto.CpfRequest(cpf)) }
+    suspend fun paEnviarCodigo(cpf: String, email: String? = null, telefone: String? = null) =
+        safeApi(gson) { authApi.primeiroAcessoCodigo(io.atlas.servidor.data.remote.dto.PaCodigoRequest(cpf, email, telefone)) }
 
     suspend fun paDefinirSenha(cpf: String, codigo: String, senha: String) =
         safeApi(gson) {

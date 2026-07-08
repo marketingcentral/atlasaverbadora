@@ -50,6 +50,7 @@ private val tabs = listOf(
 @Composable
 fun MainShell(
     onSwitchMatricula: () -> Unit,
+    onOpenPortabilidade: () -> Unit,
     onLoggedOut: () -> Unit,
     vm: HomeViewModel = viewModel(),
 ) {
@@ -99,6 +100,7 @@ fun MainShell(
                     vm = vm,
                     onOpenSimular = { goTab(Routes.TAB_SIMULAR) },
                     onOpenAnalise = { goTab(Routes.TAB_ANALISE) },
+                    onOpenPortabilidade = onOpenPortabilidade,
                 )
             }
             composable(Routes.TAB_SIMULAR) {

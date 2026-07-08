@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.atlas.servidor.core.ApiException
 import io.atlas.servidor.core.ServiceLocator
+import io.atlas.servidor.core.isReservaPendente
 import io.atlas.servidor.data.local.ProposalRequestEntity
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
 import io.atlas.servidor.data.remote.dto.OfertaDto
@@ -23,6 +24,8 @@ class SimularViewModel : ViewModel() {
     var error by mutableStateOf<String?>(null)
         private set
     var submitting by mutableStateOf(false)
+        private set
+    var submitError by mutableStateOf<String?>(null)
         private set
 
     var matricula by mutableStateOf<MatriculaInfoDto?>(null)
@@ -53,6 +56,13 @@ class SimularViewModel : ViewModel() {
                     ?: mres.data.matriculas.firstOrNull()
                 ofertas = try { repo.ofertas().data.ofertas } catch (e: ApiException) { emptyList() }
                 ofertas.firstOrNull()?.let { selectOferta(it) }
+                // Banco aprovou / proposta encerrou → sem reserva pendente → libera a trava.
+                try {
+                    val props = repo.getPropostas(prefs.selectedMatricula).propostas
+                    if (props.none { isReservaPendente(it.situacao) }) {
+                        (matricula?.matricula ?: prefs.selectedMatricula)?.let { prefs.clearSimLock(it) }
+                    }
+                } catch (_: ApiException) { /* sem rede: mantém a trava */ }
                 // Start at ~60% of the maximum that fits the margin.
                 valor = round((valorMaximo * 0.6).coerceIn(500.0, maxOf(500.0, valorMaximo)))
             } catch (e: ApiException) {
@@ -66,8 +76,12 @@ class SimularViewModel : ViewModel() {
     val margemDisponivel: Double get() = matricula?.margem?.margem?.disponivel ?: 0.0
     val valorMaximo: Double get() = Simulation.valorMaximo(margemDisponivel, parcelas, taxaAm)
 
-    /** Expiração da trava de 48h da matrícula atual (null se liberada). Chave = matrícula. */
-    fun lockExpiry(): Long? = matricula?.matricula?.let { prefs.simLockExpiry(it) }
+    /** Expiração da trava de 48h da matrícula atual (null se liberada). Chave = matrícula.
+     *  Usa a matrícula do VM ou, se ainda não carregou, a selecionada nas prefs. */
+    fun lockExpiry(): Long? {
+        val mat = matricula?.matricula ?: prefs.selectedMatricula ?: return null
+        return prefs.simLockExpiry(mat)
+    }
 
     fun result(): Simulation.Result = Simulation.simular(valor, parcelas, taxaAm, margemDisponivel)
 
@@ -82,7 +96,8 @@ class SimularViewModel : ViewModel() {
 
     fun selectOferta(o: OfertaDto) {
         taxaAm = o.taxaMinAm
-        bancoNome = o.bancoNome
+        // A averbadora opera, por ora, apenas com o Banco Atlas — nome exibido fixo.
+        bancoNome = "Banco Atlas"
         cidade = o.cidade
         if (parcelas > o.prazoMaxMeses) parcelas = o.prazoMaxMeses
         valor = valor.coerceAtMost(maxOf(500.0, valorMaximo))
@@ -92,32 +107,23 @@ class SimularViewModel : ViewModel() {
         val m = matricula ?: return
         if (lockExpiry() != null) return // já há uma pré-reserva ativa (trava de 48h)
         submitting = true
+        submitError = null
+        val r = result()
         viewModelScope.launch {
-            val r = result()
-            repo.createProposal(
-                ProposalRequestEntity(
-                    matricula = m.matricula,
-                    bancoNome = "Banco Atlas",
-                    cidade = cidade,
-                    valor = r.valor,
-                    parcelas = r.parcelas,
-                    parcelaMensal = r.parcelaMensal,
-                    taxaAm = taxaAm,
-                    createdAt = System.currentTimeMillis(),
-                    status = "EM_ANALISE",
-                ),
-            )
-            // Envia a solicitação ao ecossistema (banco recebe a pré-reserva). Best-effort:
-            // mesmo offline a pré-reserva local + trava garantem a UX; sincroniza quando houver rede.
             try {
+                // Envia ao ecossistema: cria a proposta que PERSISTE no Postgres e o BANCO recebe.
                 repo.criarProposta(r.valor, r.parcelas, taxaAm, m.matricula, "Banco Atlas")
+                // SÓ trava a margem e avança se a proposta REALMENTE foi criada no servidor.
+                prefs.setSimLock(m.matricula)
+                submitting = false
+                onDone()
             } catch (e: ApiException) {
-                // silencioso — a pré-reserva local já foi registrada
+                // Falhou de verdade — NÃO trava, NÃO avança, e mostra o erro pro servidor.
+                submitting = false
+                submitError = "Não foi possível enviar sua solicitação ao banco: ${e.userMessage}"
             }
-            // Trava a margem por 48h (uma pré-reserva por vez), como no sistema web.
-            prefs.setSimLock(m.matricula)
-            submitting = false
-            onDone()
         }
     }
+
+    fun limparErro() { submitError = null }
 }

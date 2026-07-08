@@ -110,32 +110,44 @@ private fun StepNaoEncontrado(vm: PrimeiroAcessoViewModel, onBack: () -> Unit) {
 
 @Composable
 private fun StepConfirmar(vm: PrimeiroAcessoViewModel) {
-    Title("Confirme seus dados", "Encontramos seu cadastro. Vamos enviar um código de verificação.")
+    Title("Confirme seu cadastro", "Encontramos seu cadastro. Informe seu e-mail e telefone — o código de verificação será enviado para o e-mail.")
     AtlasCard {
         Text(vm.nome, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(6.dp))
         if (vm.cargo != null) InfoRow("Cargo", vm.cargo!!)
         if (vm.origem != null) InfoRow("Órgão", vm.origem!!)
-        InfoRow("E-mail", vm.emailMasked)
-        InfoRow("Telefone", vm.telefoneMasked)
     }
+    Spacer(Modifier.height(16.dp))
+    OutlinedTextField(
+        value = vm.email,
+        onValueChange = vm::onEmailChange,
+        label = { Text("E-mail") },
+        placeholder = { Text("voce@exemplo.com") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.telefone,
+        onValueChange = vm::onTelefoneChange,
+        label = { Text("Telefone (com DDD)") },
+        placeholder = { Text("48999998888") },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(8.dp))
+    Text("Enviaremos um código de 6 dígitos para o e-mail informado.", color = InkMuted, fontSize = 12.sp)
     Spacer(Modifier.height(20.dp))
     AtlasPrimaryButton("Enviar código", onClick = vm::enviarCodigo, loading = vm.loading)
 }
 
 @Composable
 private fun StepCodigo(vm: PrimeiroAcessoViewModel) {
-    Title("Verifique o código", "Enviamos um código de 6 dígitos para ${vm.emailMasked}.")
-    val teste = vm.codigoTeste
-    if (teste != null) {
-        AtlasCard {
-            Text("Modo de teste", color = Verde, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-            Spacer(Modifier.height(4.dp))
-            Text("Sem envio de e-mail nesta fase — seu código é:", color = InkMuted, fontSize = 13.sp)
-            Text(teste, color = Ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-        }
-        Spacer(Modifier.height(16.dp))
-    }
+    Title("Verifique o código", "Enviamos um código de 6 dígitos para ${vm.emailMasked}. Confira sua caixa de entrada (e o spam).")
     OutlinedTextField(
         value = vm.codigo,
         onValueChange = vm::onCodigoChange,

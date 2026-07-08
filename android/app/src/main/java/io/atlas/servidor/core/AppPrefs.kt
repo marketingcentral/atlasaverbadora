@@ -3,6 +3,15 @@ package io.atlas.servidor.core
 import android.content.Context
 import java.util.UUID
 
+/**
+ * A margem só fica bloqueada enquanto a proposta está EM ANÁLISE (situação "aguardando").
+ * Assim que o banco aprova (Ativo/Averbado/Vigente) ou a proposta encerra
+ * (recusada/expirada/cancelada), a reserva deixa de ser pendente e a margem é liberada —
+ * sem precisar esperar as 48h. As 48h são só o teto enquanto continua em análise.
+ */
+fun isReservaPendente(situacao: String?): Boolean =
+    situacao?.contains("aguard", ignoreCase = true) == true
+
 /** Non-secret device/app preferences (stable device id, last selected matrícula). */
 class AppPrefs(context: Context) {
     private val prefs = context.getSharedPreferences("atlas_prefs", Context.MODE_PRIVATE)
@@ -21,6 +30,24 @@ class AppPrefs(context: Context) {
         set(value) = prefs.edit().putString("selected_matricula", value).apply()
 
     fun clearSelection() = prefs.edit().remove("selected_matricula").apply()
+
+    // ---- Notificações: estado lida/não-lida por ID (espelha o notifications.ts do web) ----
+    fun readNotifIds(): Set<String> = prefs.getStringSet("notif_read", emptySet()) ?: emptySet()
+
+    fun markNotifsRead(ids: Collection<String>) {
+        val set = readNotifIds().toMutableSet()
+        set.addAll(ids)
+        prefs.edit().putStringSet("notif_read", set).apply()
+    }
+
+    /** Notificações "limpas" (dispensadas) — somem da lista até um novo evento gerar novo ID. */
+    fun dismissedNotifIds(): Set<String> = prefs.getStringSet("notif_dismissed", emptySet()) ?: emptySet()
+
+    fun dismissNotifs(ids: Collection<String>) {
+        val set = dismissedNotifIds().toMutableSet()
+        set.addAll(ids)
+        prefs.edit().putStringSet("notif_dismissed", set).apply()
+    }
 
     // ---- Trava de simulação (48h por idMatricula) — espelha o simulation-lock.ts do web ----
 

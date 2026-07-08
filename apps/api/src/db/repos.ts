@@ -34,6 +34,13 @@ export function ensureSchema(env: Env): Promise<void> {
       data jsonb NOT NULL,
       updated_at timestamptz DEFAULT now()
     )`);
+    // Contratos/reservas do portal do banco (adf PK + data jsonb). A proposta do
+    // servidor grava aqui (write-through) pra chegar no banco entre isolates.
+    await db.execute(sql`CREATE TABLE IF NOT EXISTS portal_banco_contratos (
+      adf text PRIMARY KEY,
+      data jsonb NOT NULL,
+      updated_at timestamptz DEFAULT now()
+    )`);
     // Tombamento: um registro por lote com o lote + suas linhas em jsonb.
     await db.execute(sql`CREATE TABLE IF NOT EXISTS tombamento_lotes (
       id text PRIMARY KEY,
@@ -334,21 +341,25 @@ export async function deleteCollectionRow(env: Env, table: string, id: string): 
 // ============================================================
 interface ContratoLike { adf: string; [k: string]: unknown }
 
+// Persistência dos contratos/reservas do portal do banco num tabela jsonb DEDICADA
+// (adf PK + data jsonb) — mesma pauta de portal_banco_tabelas. A tabela `contratos`
+// do schema Drizzle é estruturada (sem coluna `data`), então gravar lá falhava em
+// silêncio e a proposta ficava só em memória (o banco em outro isolate não via).
 export async function loadContratos(env: Env): Promise<ContratoLike[]> {
-  const rows = (await getDb(env).execute(sql`SELECT data FROM contratos ORDER BY updated_at`)) as unknown as { data: ContratoLike }[];
+  const rows = (await getDb(env).execute(sql`SELECT data FROM portal_banco_contratos ORDER BY updated_at`)) as unknown as { data: ContratoLike }[];
   return rows.map((r) => r.data).filter((d): d is ContratoLike => !!d && typeof d.adf === "string");
 }
 
 export async function upsertContrato(env: Env, c: ContratoLike): Promise<void> {
   await getDb(env).execute(sql`
-    INSERT INTO contratos (adf, data, updated_at)
+    INSERT INTO portal_banco_contratos (adf, data, updated_at)
     VALUES (${c.adf}, ${c as unknown as Record<string, unknown>}::jsonb, now())
     ON CONFLICT (adf) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
 }
 
 export async function seedContratosIfEmpty(env: Env, seed: ContratoLike[]): Promise<boolean> {
   const db = getDb(env);
-  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM contratos`)) as unknown as { n: number }[];
+  const c = (await db.execute(sql`SELECT count(*)::int AS n FROM portal_banco_contratos`)) as unknown as { n: number }[];
   if ((c[0]?.n ?? 0) > 0 || seed.length === 0) return false;
   for (const row of seed) await upsertContrato(env, row);
   return true;

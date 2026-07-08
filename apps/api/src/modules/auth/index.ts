@@ -315,6 +315,12 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     if (!s) throw Errors.notFound("servidor");
     // Bloqueia hijack: se ja tem senha (real ou de seed DEV), so aceita "Esqueci senha".
     if (s.passwordHash || devUserTemSenhaPorCpf(digits)) throw Errors.validation({ cpf: "Este CPF ja fez o primeiro acesso. Use 'Esqueci minha senha'." });
+    // E-mail unico: nao pode pertencer a OUTRA conta ja ativada (outro CPF).
+    const emailAlvo = email.trim().toLowerCase();
+    const emUso = SERVIDORES_BUSCA_MOCK.some(
+      (x) => x.cpf !== digits && (x.email ?? "").trim().toLowerCase() === emailAlvo && (Boolean(x.passwordHash) || devUserTemSenhaPorCpf(x.cpf)),
+    );
+    if (emUso) throw Errors.validation({ email: "E-mail em uso por outra conta. Use outro e-mail." });
     const codigo = await gerarCodigoUnico(c.env);
     const senhaHash = await sha256Hex(senha);
     // Guarda o pacote pendente ate a confirmacao (10 min). Telefone normalizado (so digitos).

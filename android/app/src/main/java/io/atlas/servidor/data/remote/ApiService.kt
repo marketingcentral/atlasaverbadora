@@ -30,6 +30,9 @@ interface ApiService {
     @POST("v1/servidores/me/propostas")
     suspend fun criarProposta(@Body body: io.atlas.servidor.data.remote.dto.CriarPropostaRequest): io.atlas.servidor.data.remote.dto.PropostaResponse
 
+    @GET("v1/servidores/me/propostas")
+    suspend fun propostas(@retrofit2.http.Query("matricula") matricula: String?): io.atlas.servidor.data.remote.dto.PropostasResponse
+
     @POST("v1/servidores/me/codigo")
     suspend fun contaCodigo(): io.atlas.servidor.data.remote.dto.CodigoResponse
 
@@ -55,7 +58,7 @@ interface AuthApi {
     suspend fun primeiroAcessoBuscar(@Body body: CpfRequest): PrimeiroAcessoBuscarResponse
 
     @POST("v1/auth/primeiro-acesso/codigo")
-    suspend fun primeiroAcessoCodigo(@Body body: CpfRequest): CodigoResponse
+    suspend fun primeiroAcessoCodigo(@Body body: io.atlas.servidor.data.remote.dto.PaCodigoRequest): CodigoResponse
 
     @POST("v1/auth/primeiro-acesso/senha")
     suspend fun primeiroAcessoSenha(@Body body: DefinirSenhaRequest): OkResponse

@@ -36,6 +36,12 @@ class PrimeiroAcessoViewModel : ViewModel() {
     var telefoneMasked by mutableStateOf("")
         private set
 
+    // O servidor informa o e-mail (e telefone) que vai receber o código de verificação.
+    var email by mutableStateOf("")
+        private set
+    var telefone by mutableStateOf("")
+        private set
+
     var codigoTeste by mutableStateOf<String?>(null)
         private set
     var codigo by mutableStateOf("")
@@ -46,6 +52,8 @@ class PrimeiroAcessoViewModel : ViewModel() {
         private set
 
     fun onCpfChange(v: String) { cpf = v.filter { it.isDigit() }.take(11); error = null }
+    fun onEmailChange(v: String) { email = v.trim(); error = null }
+    fun onTelefoneChange(v: String) { telefone = v.filter { it.isDigit() }.take(11); error = null }
     fun onCodigoChange(v: String) { codigo = v.filter { it.isDigit() }.take(6); error = null }
     fun onSenhaChange(v: String) { senha = v; error = null }
     fun onSenhaConfirmChange(v: String) { senhaConfirm = v; error = null }
@@ -73,11 +81,16 @@ class PrimeiroAcessoViewModel : ViewModel() {
     }
 
     fun enviarCodigo() {
+        val emailOk = email.contains("@") && email.contains(".") && email.length >= 6
+        if (!emailOk) { error = "Informe um e-mail válido para receber o código."; return }
+        if (telefone.length < 10) { error = "Informe um telefone válido com DDD."; return }
         loading = true; error = null
         viewModelScope.launch {
             try {
-                val r = auth.paEnviarCodigo(cpf)
+                // Envia o código para o e-mail informado pelo servidor.
+                val r = auth.paEnviarCodigo(cpf, email, telefone)
                 codigoTeste = r.codigoTeste
+                emailMasked = r.destino ?: email
                 step = PaStep.CODIGO
             } catch (e: ApiException) {
                 error = e.userMessage

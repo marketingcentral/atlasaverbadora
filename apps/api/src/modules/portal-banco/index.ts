@@ -11,9 +11,56 @@ import { prefeituras, bancos, pushEvent } from "../admin/index.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
+import { enviarNotificacao } from "../admin/mailer.js";
+import type { ContratoFull } from "./store.js";
 
 function requireBancoRole(j: JwtClaims): void {
   if (j.role !== "banco") throw Errors.forbidden("Requer perfil banco");
+}
+
+const brlNotif = (n: number) => `R$ ${(Math.round(n * 100) / 100).toFixed(2).replace(".", ",")}`;
+
+/** Notifica o servidor (e-mail, best-effort) sobre uma ação do banco no contrato. */
+function notifyMovimentacao(
+  c: { env: Env; executionCtx: { waitUntil(p: Promise<unknown>): void } },
+  ct: ContratoFull,
+  acao: string,
+  motivo?: string,
+): void {
+  const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
+  if (!srv?.email) return;
+  const mapa: Record<string, { titulo: string; mensagem: string }> = {
+    confirmar: {
+      titulo: `Proposta ${ct.adf} aprovada`,
+      mensagem: "Boa notícia! O banco aprovou seu empréstimo. Aguarde a confirmação do desconto em folha pela prefeitura.",
+    },
+    cancelar: {
+      titulo: `Proposta ${ct.adf} cancelada`,
+      mensagem: motivo ? `Sua proposta foi cancelada. Motivo: ${motivo}.` : "Sua proposta foi cancelada e a margem voltou a ficar disponível.",
+    },
+    suspender: { titulo: `Contrato ${ct.adf} suspenso`, mensagem: motivo ? `Seu contrato foi suspenso. Motivo: ${motivo}.` : "Seu contrato foi suspenso pelo banco." },
+    quitar: { titulo: `Contrato ${ct.adf} quitado`, mensagem: "Seu contrato foi quitado. A margem correspondente foi liberada." },
+    alongar: { titulo: `Contrato ${ct.adf} atualizado`, mensagem: "Seu contrato teve o prazo alterado pelo banco." },
+    alterar: { titulo: `Contrato ${ct.adf} atualizado`, mensagem: "Seu contrato foi atualizado pelo banco." },
+  };
+  const info = mapa[acao];
+  if (!info) return;
+  const p = enviarNotificacao(c.env, {
+    destinoPadrao: srv.email,
+    titulo: info.titulo,
+    mensagem: info.mensagem,
+    detalhes: [
+      { label: "Banco", valor: ct.convenio ?? "Banco Atlas" },
+      { label: "Valor", valor: brlNotif(ct.valorFinanciado) },
+      { label: "Parcela", valor: `${ct.totalParcelas}x de ${brlNotif(ct.valorParcela)}` },
+      { label: "Situação", valor: ct.situacao },
+    ],
+  });
+  try {
+    c.executionCtx.waitUntil(p);
+  } catch {
+    void p;
+  }
 }
 
 /**
@@ -366,6 +413,8 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         `${bancoNome} averbou a proposta ${adf} (matricula ${r.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
       );
     }
+    // Notifica o servidor da movimentação (in-app + e-mail).
+    notifyMovimentacao(c, r, acao, body.motivo);
     return c.json({ contrato: r });
   })
 

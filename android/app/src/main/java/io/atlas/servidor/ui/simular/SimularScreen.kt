@@ -133,8 +133,13 @@ private fun MargemTravadaLock(remainingMs: Long, onVerAnalise: () -> Unit) {
 
 @Composable
 private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit) {
-    val result = vm.result()
     var showTermo by remember { mutableStateOf(false) }
+    val result = vm.result()
+    // Sem margem consignável disponível → não é permitido simular/solicitar.
+    if (vm.margemDisponivel < 0.01) {
+        SemMargemView()
+        return
+    }
 
     if (showTermo) {
         TermoDialog(
@@ -255,7 +260,48 @@ private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit) {
             enabled = result.cabeNaMargem && vm.valor >= 500.0,
             loading = vm.submitting,
         )
+        if (!result.cabeNaMargem) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "A parcela ultrapassa sua margem disponível (${Format.money(vm.margemDisponivel)}). " +
+                    "Reduza o valor ou aumente o número de parcelas.",
+                color = io.atlas.servidor.ui.theme.DangerRed,
+                fontSize = 13.sp,
+            )
+        }
+        vm.submitError?.let {
+            Spacer(Modifier.height(10.dp))
+            Text(it, color = io.atlas.servidor.ui.theme.DangerRed, fontSize = 13.sp)
+        }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun SemMargemView() {
+    Column(
+        modifier = Modifier.fillMaxSize().background(Fundo).padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("Simular empréstimo", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.fillMaxWidth())
+        Spacer(Modifier.height(48.dp))
+        Text("🔒", fontSize = 44.sp)
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "Sem margem disponível",
+            color = Ink,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.ExtraBold,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Você não tem margem consignável disponível para novos empréstimos. " +
+                "A margem é liberada conforme seus contratos são quitados.",
+            color = InkMuted,
+            fontSize = 14.sp,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -295,8 +341,15 @@ private fun TermoDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onAceitar) {
-                Text("Aceitar e reservar", color = Verde, fontWeight = FontWeight.Bold)
+            androidx.compose.material3.Button(
+                onClick = onAceitar,
+                shape = RoundedCornerShape(12.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Verde,
+                    contentColor = Superficie,
+                ),
+            ) {
+                Text("Aceitar e reservar", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

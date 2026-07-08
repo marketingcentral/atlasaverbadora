@@ -197,7 +197,7 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     idConvenio: "CONV-001",
     cargo: "Programador",
     endereco: "Rua dos Programadores, 100 - Centro, Palhoca/SC",
-    email: "diego.ferreira@palhoca.sc.gov.br",
+    email: "marketingcentral.mkt2@gmail.com", // e-mail de teste p/ receber notificações reais
     telefone: "48991073451",
     codigoIbge: 4211900,
     passwordHash: "289160db0d9f39f9ae1754c4ec9c16f90b50e32e09c5fb5481ae642b3d3d1a36", // sha256("teste123")
@@ -222,6 +222,78 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     email: "mariana.lima@joinville.sc.gov.br",
     telefone: "47992018745",
     codigoIbge: 4209102,
+  },
+  // --- Servidores de teste (primeiro acesso) — cadastrados em 2026-07-08. Sem e-mail/senha:
+  // o servidor informa o e-mail no primeiro acesso e recebe o código de verificação nele. ---
+  {
+    cpf: "01844730808", cpfMasked: "***.***.***-08", rg: "30000000-0",
+    matricula: "700100001", idMatricula: "MAT-700100001", prefeituraId: 1,
+    nome: "CARLOS EDUARDO SOUZA", dataAdmissao: "12/03/2016", dataNascimento: "1988-03-12",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE PALHOCA", situacaoFuncional: "ATIVO", salarioLiquido: 3200,
+    idConvenio: "CONV-001", cargo: "Auxiliar Administrativo", endereco: "Rua Central, 100 - Palhoca/SC", codigoIbge: 4211900,
+  },
+  {
+    cpf: "93025100850", cpfMasked: "***.***.***-50", rg: "30111111-1",
+    matricula: "700100002", idMatricula: "MAT-700100002", prefeituraId: 2,
+    nome: "MARIA APARECIDA LIMA", dataAdmissao: "01/02/2012", dataNascimento: "1985-07-25",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE FLORIANOPOLIS", situacaoFuncional: "ATIVO", salarioLiquido: 4800,
+    idConvenio: "CONV-002", cargo: "Professora", endereco: "Rua Central, 101 - Florianopolis/SC", codigoIbge: 4205407,
+  },
+  {
+    cpf: "40800297806", cpfMasked: "***.***.***-06", rg: "30222222-2",
+    matricula: "700100003", idMatricula: "MAT-700100003", prefeituraId: 3,
+    nome: "JOAO PEDRO ALVES", dataAdmissao: "15/08/2019", dataNascimento: "1992-11-03",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE JOINVILLE", situacaoFuncional: "ATIVO", salarioLiquido: 5600,
+    idConvenio: "CONV-003", cargo: "Agente de Saude", endereco: "Rua Central, 102 - Joinville/SC", codigoIbge: 4209102,
+  },
+  {
+    cpf: "22421560802", cpfMasked: "***.***.***-02", rg: "30333333-3",
+    matricula: "700100004", idMatricula: "MAT-700100004", prefeituraId: 1,
+    nome: "ANA BEATRIZ ROCHA", dataAdmissao: "20/04/2017", dataNascimento: "1990-01-18",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE PALHOCA", situacaoFuncional: "ATIVO", salarioLiquido: 3900,
+    idConvenio: "CONV-001", cargo: "Fiscal Municipal", endereco: "Rua Central, 103 - Palhoca/SC", codigoIbge: 4211900,
+  },
+  {
+    cpf: "88549417866", cpfMasked: "***.***.***-66", rg: "30444444-4",
+    matricula: "700100005", idMatricula: "MAT-700100005", prefeituraId: 2,
+    nome: "RAFAEL MOREIRA DIAS", dataAdmissao: "05/06/2014", dataNascimento: "1987-09-30",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE FLORIANOPOLIS", situacaoFuncional: "ATIVO", salarioLiquido: 6200,
+    idConvenio: "CONV-002", cargo: "Motorista", endereco: "Rua Central, 104 - Florianopolis/SC", codigoIbge: 4205407,
+  },
+  {
+    cpf: "72430314800", cpfMasked: "***.***.***-00", rg: "30555555-5",
+    matricula: "700100006", idMatricula: "MAT-700100006", prefeituraId: 3,
+    nome: "JULIANA SANTOS CRUZ", dataAdmissao: "10/09/2020", dataNascimento: "1993-05-14",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE JOINVILLE", situacaoFuncional: "ATIVO", salarioLiquido: 7100,
+    idConvenio: "CONV-003", cargo: "Enfermeira", endereco: "Rua Central, 105 - Joinville/SC", codigoIbge: 4209102,
+  },
+  {
+    cpf: "43012777814", cpfMasked: "***.***.***-14", rg: "30666666-6",
+    matricula: "700100007", idMatricula: "MAT-700100007", prefeituraId: 1,
+    nome: "BRUNO HENRIQUE GOMES", dataAdmissao: "02/01/2018", dataNascimento: "1991-02-27",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE PALHOCA", situacaoFuncional: "ATIVO", salarioLiquido: 4400,
+    idConvenio: "CONV-001", cargo: "Tecnico de TI", endereco: "Rua Central, 106 - Palhoca/SC", codigoIbge: 4211900,
+  },
+  {
+    cpf: "76568969885", cpfMasked: "***.***.***-85", rg: "30777777-7",
+    matricula: "700100008", idMatricula: "MAT-700100008", prefeituraId: 2,
+    nome: "PATRICIA REGINA MELO", dataAdmissao: "18/07/2011", dataNascimento: "1986-12-08",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE FLORIANOPOLIS", situacaoFuncional: "ATIVO", salarioLiquido: 5200,
+    idConvenio: "CONV-002", cargo: "Assistente Social", endereco: "Rua Central, 107 - Florianopolis/SC", codigoIbge: 4205407,
+  },
+  {
+    cpf: "45668163890", cpfMasked: "***.***.***-90", rg: "30888888-8",
+    matricula: "700100009", idMatricula: "MAT-700100009", prefeituraId: 3,
+    nome: "FELIPE AUGUSTO NUNES", dataAdmissao: "25/03/2021", dataNascimento: "1994-06-21",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE JOINVILLE", situacaoFuncional: "ATIVO", salarioLiquido: 8300,
+    idConvenio: "CONV-003", cargo: "Guarda Municipal", endereco: "Rua Central, 108 - Joinville/SC", codigoIbge: 4209102,
+  },
+  {
+    cpf: "44334721826", cpfMasked: "***.***.***-26", rg: "30999999-0",
+    matricula: "700100010", idMatricula: "MAT-700100010", prefeituraId: 1,
+    nome: "CAMILA FERREIRA PINTO", dataAdmissao: "30/10/2015", dataNascimento: "1989-08-05",
+    vinculo: "ESTATUTARIO", origem: "PREFEITURA DE PALHOCA", situacaoFuncional: "ATIVO", salarioLiquido: 6800,
+    idConvenio: "CONV-001", cargo: "Contadora", endereco: "Rua Central, 109 - Palhoca/SC", codigoIbge: 4211900,
   },
 ];
 

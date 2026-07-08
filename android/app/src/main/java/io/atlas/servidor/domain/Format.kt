@@ -41,6 +41,16 @@ object Format {
         return "${nf.format(fraction * 100)}%"
     }
 
+    /** Telefone BR: "48991073451" -> "(48) 99107-3451". Retorna o original se não bater. */
+    fun phone(raw: String): String {
+        val d = raw.filter { it.isDigit() }
+        return when {
+            d.length >= 11 -> "(${d.substring(0, 2)}) ${d.substring(2, 7)}-${d.substring(7, 11)}"
+            d.length == 10 -> "(${d.substring(0, 2)}) ${d.substring(2, 6)}-${d.substring(6, 10)}"
+            else -> raw
+        }
+    }
+
     /** Masks an 11-digit CPF -> "047.***.***-04". Accepts already-masked input untouched. */
     fun maskCpf(cpf: String): String {
         val digits = cpf.filter { it.isDigit() }

@@ -42,6 +42,9 @@ data class ApiErrorDetail(
 
 data class CpfRequest(val cpf: String)
 
+/** Primeiro acesso: o servidor informa o e-mail (e telefone) que vai receber o código. */
+data class PaCodigoRequest(val cpf: String, val email: String? = null, val telefone: String? = null)
+
 data class PrimeiroAcessoBuscarResponse(
     val encontrado: Boolean,
     val nome: String? = null,
@@ -88,7 +91,25 @@ data class PropostaResponse(
     val valor: Double = 0.0,
     val parcelas: Int = 0,
     val parcela: Double = 0.0,
+    @SerializedName("expira_em") val expiraEm: String? = null,
 )
+
+/** Proposta como o BANCO vê (fonte compartilhada, persistida no Postgres). */
+data class PropostaDto(
+    val id: String,
+    val banco: String? = null,
+    val valor: Double = 0.0,
+    val parcelas: Int = 0,
+    val parcela: Double = 0.0,
+    val taxaAm: Double = 0.0, // já em % (ex.: 1.79)
+    val situacao: String? = null,
+    val folhaStatus: String? = null,
+    val folhaMotivo: String? = null,
+    val data: String? = null,
+    @SerializedName("expira_em") val expiraEm: String? = null,
+)
+
+data class PropostasResponse(val propostas: List<PropostaDto> = emptyList())
 
 // ---------- Servidor profile ----------
 
@@ -182,6 +203,9 @@ data class ContratoDto(
     val taxaAm: Double,
     val valorFinanciado: Double,
     val pdfUrl: String? = null,
+    // Documento do contrato anexado pelo banco (quando disponível). Enquanto o banco não
+    // anexa, fica null e o app mostra o contrato montado a partir dos dados da operação.
+    @SerializedName("anexoUrl") val anexoUrl: String? = null,
 )
 
 data class ElegivelDto(

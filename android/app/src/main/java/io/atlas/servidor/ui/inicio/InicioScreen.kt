@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -43,6 +45,7 @@ import io.atlas.servidor.data.remote.dto.OfertasResponse
 import io.atlas.servidor.domain.Format
 import io.atlas.servidor.ui.components.AtlasCard
 import io.atlas.servidor.ui.components.AtlasPrimaryButton
+import io.atlas.servidor.ui.components.AtlasSecondaryButton
 import io.atlas.servidor.ui.components.ChipTone
 import io.atlas.servidor.ui.components.ErrorBox
 import io.atlas.servidor.ui.components.LoadingBox
@@ -51,6 +54,8 @@ import io.atlas.servidor.ui.components.StaleBanner
 import io.atlas.servidor.ui.components.StatusChip
 import io.atlas.servidor.ui.shell.HomeViewModel
 import io.atlas.servidor.ui.theme.Ambar
+import io.atlas.servidor.ui.theme.DangerRed
+import io.atlas.servidor.ui.theme.Divider
 import io.atlas.servidor.ui.theme.Fundo
 import io.atlas.servidor.ui.theme.Ink
 import io.atlas.servidor.ui.theme.InkMuted
@@ -74,9 +79,28 @@ fun InicioScreen(
     vm: HomeViewModel,
     onOpenSimular: () -> Unit,
     onOpenAnalise: () -> Unit,
+    onOpenPortabilidade: () -> Unit,
 ) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while (true) { now = System.currentTimeMillis(); delay(1000) } }
+
+    // A margem é dado de segurança. Ao (re)entrar no Início, revalida no servidor
+    // (network-first) para refletir aprovações recentes — depois de o banco aprovar,
+    // a parcela do contrato já sai da margem disponível.
+    LaunchedEffect(Unit) {
+        if (vm.matriculasState is UiState.Success) vm.load(force = true)
+    }
+
+    var showNotifs by remember { mutableStateOf(false) }
+    if (showNotifs) {
+        NotificacoesDialog(
+            notifs = vm.notificacoes,
+            isLida = { vm.notifLida(it) },
+            onMarcarLidas = { vm.marcarNotificacoesLidas() },
+            onLimpar = { vm.limparNotificacoes() },
+            onFechar = { showNotifs = false },
+        )
+    }
 
     when (val s = vm.matriculasState) {
         is UiState.Loading -> LoadingBox(Modifier.background(Fundo))
@@ -92,7 +116,7 @@ fun InicioScreen(
                     .verticalScroll(rememberScrollState())
                     .padding(20.dp),
             ) {
-                Header(name = vm.userName)
+                Header(name = vm.userName, unread = vm.notifNaoLidas, onBell = { showNotifs = true })
                 Spacer(Modifier.height(20.dp))
 
                 if (s.stale) {
@@ -116,6 +140,25 @@ fun InicioScreen(
                 Spacer(Modifier.height(12.dp))
                 OfertaAtlas(vm.ofertasState, onOpenSimular)
 
+                Spacer(Modifier.height(16.dp))
+                AtlasCard {
+                    Text("Portabilidade", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Traga contratos de outros bancos para o Atlas com taxa menor.",
+                        color = InkMuted,
+                        fontSize = 13.sp,
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    AtlasSecondaryButton(text = "Ver portabilidade", onClick = onOpenPortabilidade)
+                }
+
+                if (info != null) {
+                    Spacer(Modifier.height(24.dp))
+                    SectionLabel("Cartões e benefícios")
+                    Spacer(Modifier.height(12.dp))
+                    BeneficiosSection(info)
+                }
+
                 // "Acompanhar análise" só aparece quando há uma pré-reserva em andamento.
                 if (locked) {
                     Spacer(Modifier.height(16.dp))
@@ -128,19 +171,42 @@ fun InicioScreen(
 }
 
 @Composable
-private fun Header(name: String) {
+private fun Header(name: String, unread: Int, onBell: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(greeting(), color = InkMuted, fontSize = 14.sp)
             Text(firstName(name), color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
         }
-        Icon(
-            imageVector = Icons.Outlined.Notifications,
-            contentDescription = "Notificações",
-            tint = Ink,
-            modifier = Modifier.size(24.dp),
-        )
-        Spacer(Modifier.size(14.dp))
+        // Sino com badge de não-lidas — abre o popup de notificações.
+        Box(
+            modifier = Modifier.size(40.dp).clip(CircleShape).clickable(onClick = onBell),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Notifications,
+                contentDescription = "Notificações",
+                tint = Ink,
+                modifier = Modifier.size(24.dp),
+            )
+            if (unread > 0) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(18.dp)
+                        .clip(CircleShape)
+                        .background(io.atlas.servidor.ui.theme.DangerRed),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        if (unread > 9) "9+" else "$unread",
+                        color = Superficie,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.size(12.dp))
         Box(
             modifier = Modifier.size(46.dp).clip(CircleShape).background(Ink),
             contentAlignment = Alignment.Center,
@@ -148,6 +214,79 @@ private fun Header(name: String) {
             Text(initials(name), color = Superficie, fontWeight = FontWeight.Bold)
         }
     }
+}
+
+@Composable
+private fun NotificacoesDialog(
+    notifs: List<io.atlas.servidor.domain.AppNotif>,
+    isLida: (String) -> Boolean,
+    onMarcarLidas: () -> Unit,
+    onLimpar: () -> Unit,
+    onFechar: () -> Unit,
+) {
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onFechar,
+        containerColor = Superficie,
+        title = {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Notificações", fontWeight = FontWeight.ExtraBold, color = Ink, modifier = Modifier.weight(1f))
+                if (notifs.isNotEmpty()) {
+                    Text(
+                        "Limpar",
+                        color = io.atlas.servidor.ui.theme.DangerRed,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onLimpar),
+                    )
+                }
+            }
+        },
+        text = {
+            if (notifs.isEmpty()) {
+                Text("Nenhuma notificação por enquanto.", color = InkMuted, fontSize = 14.sp)
+            } else {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    notifs.forEachIndexed { i, n ->
+                        Row(verticalAlignment = Alignment.Top) {
+                            Box(
+                                modifier = Modifier
+                                    .padding(top = 6.dp, end = 10.dp)
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isLida(n.id)) io.atlas.servidor.ui.theme.Divider else Verde),
+                            )
+                            Column(Modifier.weight(1f)) {
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                                    Text(n.titulo, color = Ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                    if (n.quando.isNotBlank()) {
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(n.quando, color = InkMuted, fontSize = 11.sp)
+                                    }
+                                }
+                                Spacer(Modifier.height(2.dp))
+                                Text(n.mensagem, color = InkMuted, fontSize = 13.sp)
+                            }
+                        }
+                        if (i < notifs.lastIndex) {
+                            Spacer(Modifier.height(10.dp))
+                            androidx.compose.material3.Divider(color = io.atlas.servidor.ui.theme.Divider)
+                            Spacer(Modifier.height(10.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(onClick = { onMarcarLidas(); onFechar() }) {
+                Text("Marcar como lidas", color = Verde, fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onFechar) {
+                Text("Fechar", color = InkMuted, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            }
+        },
+    )
 }
 
 /** Apenas o primeiro nome, em Title Case (ex.: "DIEGO PEREZ FERREIRA" -> "Diego"). */
@@ -262,15 +401,99 @@ private fun OfertaAtlas(state: UiState<OfertasResponse>, onSimular: () -> Unit) 
     val prazoMax = ofertas.maxOfOrNull { it.prazoMaxMeses } ?: 96
 
     AtlasCard {
+        // Nome/subtítulo e a taxa em linhas próprias — evita a quebra de linha feia do chip.
+        Text("Banco Atlas", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+        Text("Crédito consignado · até ${prazoMax}×", color = InkMuted, fontSize = 13.sp)
+        Spacer(Modifier.height(12.dp))
+        StatusChip("A partir de ${Format.rateAm(taxaMin)}", ChipTone.Verde)
+        Spacer(Modifier.height(16.dp))
+        AtlasPrimaryButton(text = "Simular", onClick = onSimular)
+    }
+}
+
+/** Cartão Consignado e Cartão Benefícios — margens independentes da margem de empréstimo.
+ *  Mesma lógica do web (`beneficios.tsx`): lê `margens_por_tipo` da matrícula ativa. */
+@Composable
+private fun BeneficiosSection(info: MatriculaInfoDto) {
+    val consig = info.margem.margensPorTipo.firstOrNull { it.tipo == "CARTAO_CONSIGNADO" }
+    val benef = info.margem.margensPorTipo.firstOrNull { it.tipo == "CARTAO_BENEFICIOS" }
+    CartaoCard(
+        icon = "💳",
+        titulo = "Cartão Consignado",
+        descricao = "Limite recorrente com desconto em folha das faturas.",
+        total = consig?.total ?: 0.0,
+        disponivel = consig?.disponivel ?: 0.0,
+    )
+    Spacer(Modifier.height(12.dp))
+    CartaoCard(
+        icon = "🎁",
+        titulo = "Cartão Benefícios",
+        descricao = "Compras em farmácias, mercado e postos parceiros do convênio.",
+        total = benef?.total ?: 0.0,
+        disponivel = benef?.disponivel ?: 0.0,
+    )
+}
+
+@Composable
+private fun CartaoCard(icon: String, titulo: String, descricao: String, total: Double, disponivel: Double) {
+    val utilizado = (total - disponivel).coerceAtLeast(0.0)
+    val pct = if (total > 0) (utilizado / total).coerceIn(0.0, 1.0) else 0.0
+    val barColor = when {
+        pct > 0.8 -> DangerRed
+        pct > 0.6 -> Ambar
+        else -> Verde
+    }
+    AtlasCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("Banco Atlas", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                Text("Crédito consignado · até ${prazoMax}×", color = InkMuted, fontSize = 13.sp)
+            Text(icon, fontSize = 24.sp)
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(titulo, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(descricao, color = InkMuted, fontSize = 12.sp)
             }
-            StatusChip("A partir de ${Format.rateAm(taxaMin)}", ChipTone.Verde)
         }
         Spacer(Modifier.height(14.dp))
-        AtlasPrimaryButton(text = "Simular", onClick = onSimular)
+        Row(Modifier.fillMaxWidth()) {
+            MiniStat("Total", Format.money(total), Modifier.weight(1f))
+            MiniStat("Utilizado", Format.money(utilizado), Modifier.weight(1f), muted = true)
+            MiniStat("Disponível", Format.money(disponivel), Modifier.weight(1f), accent = true)
+        }
+        Spacer(Modifier.height(12.dp))
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(RoundedCornerShape(999.dp))
+                .background(Divider),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(pct.toFloat())
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(barColor),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MiniStat(label: String, value: String, modifier: Modifier = Modifier, accent: Boolean = false, muted: Boolean = false) {
+    Column(modifier = modifier) {
+        Text(
+            label.uppercase(),
+            color = InkMuted,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.5.sp,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            value,
+            color = if (accent) Verde else if (muted) InkMuted else Ink,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 

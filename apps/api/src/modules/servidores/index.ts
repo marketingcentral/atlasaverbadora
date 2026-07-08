@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { maskCPF, margemDisponivel, margemTotal, percentualUso, calcCET } from "@atlas/domain";
 import { authRequired, requireRole, type JwtClaims } from "../../middleware/auth.js";
-import { Errors } from "../../_shared/errors.js";
+import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, getServidorStatus } from "../admin/index.js";
@@ -12,7 +12,7 @@ import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js"
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
-import { enviarCodigo } from "../admin/mailer.js";
+import { enviarCodigo, enviarNotificacao } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
@@ -38,6 +38,22 @@ const DEV_SERVIDORES = [
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const bancoNome = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
+const brlFmt = (n: number) => `R$ ${round2(n).toFixed(2).replace(".", ",")}`;
+
+/** Dispara uma notificação por e-mail sem segurar a resposta (best-effort). */
+function notifyServidor(
+  c: { env: Env; executionCtx: { waitUntil(p: Promise<unknown>): void } },
+  email: string | undefined,
+  n: { titulo: string; mensagem: string; detalhes?: { label: string; valor: string }[] },
+): void {
+  if (!email) return;
+  const p = enviarNotificacao(c.env, { destinoPadrao: email, ...n });
+  try {
+    c.executionCtx.waitUntil(p);
+  } catch {
+    void p; // sem executionCtx: dispara e esquece
+  }
+}
 
 function mapContratoStatus(situacao: string): "Averbado" | "Em dia" | "Quitado" {
   const s = situacao.toLowerCase();
@@ -66,7 +82,18 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     disponivel: round2(margemDisponivel(e.salarioLiquido, tipo === "EMPRESTIMO" ? comprometido : 0, tipo)),
   }));
   const emp = margens.find((m) => m.tipo === "EMPRESTIMO")!;
-  const contratosMock = contratos.map((ct) => ({
+  // A aba Contratos mostra só contratos REAIS: aprovados (vigentes) ou quitados.
+  // Pendentes ("Aguardando") vivem em "Em análise"; recusados/cancelados/expirados/suspensos
+  // no Histórico (via lista de propostas). Sem este filtro, uma proposta pendente ou recusada
+  // aparecia como "contrato ativo" — e duplicava no Histórico.
+  const isContratoReal = (situacao: string) => {
+    const s = situacao.toLowerCase();
+    if (s.includes("aguard") || s.includes("cancel") || s.includes("recus") || s.includes("expir") || s.includes("suspens")) {
+      return false;
+    }
+    return true; // ativo / averbado / vigente / quitado
+  };
+  const contratosMock = contratos.filter((ct) => isContratoReal(ct.situacao)).map((ct) => ({
     id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
     total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: ct.folhaUltimoDesconto || "—",
     taxaAm: ct.taxaAm, valorFinanciado: round2(ct.valorFinanciado), pdfUrl: `/v1/portal/banco/contratos/${ct.adf}/comprovante.pdf`,
@@ -391,6 +418,21 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
     const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxaAm });
     await refreshContratos(c.env); // sincroniza o contador de adf entre isolates antes de criar
+    // SEGURANÇA (server-side): a parcela nunca pode exceder a margem consignável
+    // disponível da matrícula. O cliente já limita o valor, mas o backend é a fonte
+    // de verdade — sem isto, uma chamada adulterada criaria empréstimo acima da margem.
+    const comprometidoAtual = listContratos({ matricula: entry.matricula })
+      .filter((ct) => comprometeMargem(ct.situacao))
+      .reduce((acc, ct) => acc + ct.valorParcela, 0);
+    const margemDisp = margemDisponivel(entry.salarioLiquido, comprometidoAtual, "EMPRESTIMO");
+    if (round2(cet.parcela) > round2(margemDisp) + 0.01) {
+      const brl = (n: number) => `R$ ${round2(n).toFixed(2).replace(".", ",")}`;
+      throw new HttpError(
+        422,
+        "margem_insuficiente",
+        `A parcela de ${brl(cet.parcela)} excede sua margem disponível de ${brl(margemDisp)}.`,
+      );
+    }
     const contrato = criarContratoOuReserva({
       bancoId: conv?.bancoId ?? 1,
       servidorId: s.id,
@@ -414,6 +456,16 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ator: `servidor:${s.id}`,
     });
     await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh
+    // Notificação de movimentação (in-app + e-mail): solicitação enviada ao banco.
+    notifyServidor(c, entry.email, {
+      titulo: `Solicitação ${contrato.adf} enviada ao banco`,
+      mensagem: `Sua solicitação de empréstimo foi enviada ao ${bancoNome(contrato.bancoId)} e está em análise. Você será avisado quando houver uma atualização.`,
+      detalhes: [
+        { label: "Valor", valor: brlFmt(contrato.valorFinanciado) },
+        { label: "Parcelas", valor: `${contrato.totalParcelas}x de ${brlFmt(contrato.valorParcela)}` },
+        { label: "Situação", valor: contrato.situacao },
+      ],
+    });
     return c.json(
       {
         id: contrato.adf,

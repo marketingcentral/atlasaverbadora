@@ -73,24 +73,38 @@ interface SmtpConfigFull {
   fromEmail: string; fromName: string; secure: boolean;
 }
 
-function buildMessage(cfg: SmtpConfigFull, to: string, subject: string, text: string, dateStr: string): string {
-  // dot-stuffing: linha iniciada com "." recebe um "." extra (RFC 5321).
-  const body = text.replace(/\r?\n/g, "\r\n").replace(/\r\n\./g, "\r\n..");
+// dot-stuffing: linha iniciada com "." recebe um "." extra (RFC 5321).
+const dotStuff = (s: string) => s.replace(/\r?\n/g, "\r\n").replace(/\r\n\./g, "\r\n..");
+
+function buildMessage(cfg: SmtpConfigFull, to: string, subject: string, text: string, dateStr: string, html?: string): string {
   const from = cfg.fromName ? `${cfg.fromName} <${cfg.fromEmail}>` : cfg.fromEmail;
-  return [
-    `From: ${from}`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    `Date: ${dateStr}`,
-    "MIME-Version: 1.0",
-    'Content-Type: text/plain; charset="utf-8"',
-    "Content-Transfer-Encoding: 8bit",
-    "",
-    body,
-  ].join("\r\n");
+  const headers = [`From: ${from}`, `To: ${to}`, `Subject: ${subject}`, `Date: ${dateStr}`, "MIME-Version: 1.0"];
+  if (html) {
+    // multipart/alternative: cliente escolhe HTML (com o rodapé/logo Atlas) ou texto puro.
+    const boundary = "atlas_alt_boundary_2026";
+    return [
+      ...headers,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      'Content-Type: text/plain; charset="utf-8"',
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      dotStuff(text),
+      "",
+      `--${boundary}`,
+      'Content-Type: text/html; charset="utf-8"',
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      dotStuff(html),
+      "",
+      `--${boundary}--`,
+    ].join("\r\n");
+  }
+  return [...headers, 'Content-Type: text/plain; charset="utf-8"', "Content-Transfer-Encoding: 8bit", "", dotStuff(text)].join("\r\n");
 }
 
-async function deliver(cfg: SmtpConfigFull, to: string, subject: string, text: string, dateStr: string): Promise<void> {
+async function deliver(cfg: SmtpConfigFull, to: string, subject: string, text: string, dateStr: string, html?: string): Promise<void> {
   const implicitTls = cfg.port === 465;
   // secureTransport: "on" = TLS implícito (465); "starttls" = sobe TLS depois (587);
   // "off" = sem TLS.
@@ -113,7 +127,7 @@ async function deliver(cfg: SmtpConfigFull, to: string, subject: string, text: s
     await s.cmd(`MAIL FROM:<${cfg.fromEmail}>\r\n`, 250);
     await s.cmd(`RCPT TO:<${to}>\r\n`, 250, 251);
     await s.cmd(`DATA\r\n`, 354);
-    await s.cmd(`${buildMessage(cfg, to, subject, text, dateStr)}\r\n.\r\n`, 250);
+    await s.cmd(`${buildMessage(cfg, to, subject, text, dateStr, html)}\r\n.\r\n`, 250);
     try { await s.cmd(`QUIT\r\n`, 221); } catch { /* alguns servidores fecham antes */ }
   } finally {
     s.release();
@@ -132,7 +146,7 @@ export interface SendResult {
  */
 export async function sendMail(
   env: Env,
-  mail: { to: string; subject: string; text: string },
+  mail: { to: string; subject: string; text: string; html?: string },
 ): Promise<SendResult> {
   try {
     const cfg = await getSmtpConfigForSend(env);
@@ -142,7 +156,7 @@ export async function sendMail(
     const dateStr = new Date().toUTCString().replace("GMT", "+0000");
     // Timeout de guarda: envio de e-mail não pode segurar a request.
     await Promise.race([
-      deliver(cfg, mail.to, mail.subject, mail.text, dateStr),
+      deliver(cfg, mail.to, mail.subject, mail.text, dateStr, mail.html),
       new Promise((_r, rej) => setTimeout(() => rej(new Error("SMTP timeout (12s)")), 12_000)),
     ]);
     return { sent: true };
@@ -189,4 +203,71 @@ export function codigoEmail(codigo: string, contexto: string): { subject: string
       `Use este código para ${contexto}. Ele expira em 10 minutos.\n\n` +
       `Se você não solicitou, ignore este e-mail.\n\n— Atlas Averbadora`,
   };
+}
+
+const esc = (s: string) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c);
+
+/** Rodapé HTML com a marca Atlas (wordmark + tagline). Renderiza em qualquer cliente. */
+function atlasFooter(): string {
+  return (
+    `<div style="margin-top:32px;padding-top:20px;border-top:1px solid #E7E5E0;text-align:center">` +
+    `<div style="font-size:24px;font-weight:800;letter-spacing:8px;color:#16181C">ATLAS</div>` +
+    `<div style="display:inline-block;font-size:11px;letter-spacing:5px;color:#6B7078;margin-top:2px;border-top:1px solid #E7E5E0;padding-top:4px">AVERBADORA</div>` +
+    `<div style="font-size:12px;color:#6B7078;margin-top:12px">Empréstimo consignado público — direto da sua margem.</div>` +
+    `<div style="font-size:11px;color:#9aa0a8;margin-top:8px">Este é um e-mail automático de notificação. Por favor, não responda.</div>` +
+    `</div>`
+  );
+}
+
+/** E-mail de movimentação de proposta/contrato (in-app + este e-mail vêm da mesma ação). */
+export function movimentacaoEmail(
+  titulo: string,
+  mensagem: string,
+  detalhes: { label: string; valor: string }[] = [],
+): { subject: string; text: string; html: string } {
+  const linhasTexto = detalhes.map((d) => `  ${d.label}: ${d.valor}`).join("\n");
+  const text =
+    `${titulo}\n\n${mensagem}\n\n` +
+    (detalhes.length ? `${linhasTexto}\n\n` : "") +
+    `Acompanhe pelo app Atlas Servidor.\n\n— Atlas Averbadora`;
+  const linhasHtml = detalhes
+    .map(
+      (d) =>
+        `<tr><td style="padding:4px 0;color:#6B7078;font-size:13px">${esc(d.label)}</td>` +
+        `<td style="padding:4px 0;color:#16181C;font-size:13px;font-weight:600;text-align:right">${esc(d.valor)}</td></tr>`,
+    )
+    .join("");
+  // Quebra em várias linhas (cada uma < 998 chars — limite SMTP RFC 5321). HTML ignora
+  // o whitespace entre as tags, então é seguro juntar com \r\n.
+  const html = [
+    `<div style="max-width:520px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#F6F5F2;padding:24px;border-radius:16px">`,
+    `<div style="background:#12936A;color:#fff;padding:14px 20px;border-radius:12px 12px 0 0;font-weight:800;font-size:15px">Atlas — atualização da sua solicitação</div>`,
+    `<div style="background:#fff;padding:22px 20px;border-radius:0 0 12px 12px;border:1px solid #E7E5E0;border-top:0">`,
+    `<div style="font-size:18px;font-weight:800;color:#16181C">${esc(titulo)}</div>`,
+    `<div style="font-size:14px;color:#3a3f47;margin-top:8px;line-height:1.5">${esc(mensagem)}</div>`,
+    detalhes.length
+      ? `<table style="width:100%;margin-top:16px;border-top:1px solid #E7E5E0;padding-top:8px">${linhasHtml}</table>`
+      : "",
+    `</div>`,
+    atlasFooter(),
+    `</div>`,
+  ].join("\r\n");
+  return { subject: `Atlas — ${titulo}`, text, html };
+}
+
+/**
+ * Envia uma notificação de movimentação por e-mail. Mesmo esquema de destino do
+ * `enviarCodigo`: usa o `notifyEmail` global se configurado (override de teste),
+ * senão o e-mail real do servidor (`destinoPadrao`). Best-effort — nunca lança.
+ */
+export async function enviarNotificacao(
+  env: Env,
+  opts: { destinoPadrao?: string; titulo: string; mensagem: string; detalhes?: { label: string; valor: string }[] },
+): Promise<SendResult & { destino: string }> {
+  const cfg = await getSmtpConfigForSend(env);
+  const destino = (cfg?.notifyEmail ?? "").trim() || (opts.destinoPadrao ?? "").trim();
+  if (!destino) return { sent: false, reason: "sem destino", destino: "" };
+  const { subject, text, html } = movimentacaoEmail(opts.titulo, opts.mensagem, opts.detalhes ?? []);
+  const r = await sendMail(env, { to: destino, subject, text, html });
+  return { ...r, destino };
 }

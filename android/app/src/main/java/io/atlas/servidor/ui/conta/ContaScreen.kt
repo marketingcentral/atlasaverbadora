@@ -102,7 +102,7 @@ fun ContaScreen(
                     AtlasCard {
                         ContatoItem("E-mail", info.email, editavel = true) { contaVm.abrirEmail(info.email) }
                         RowDivider()
-                        ContatoItem("Telefone", info.telefone, editavel = true) { contaVm.abrirTelefone(info.telefone) }
+                        ContatoItem("Telefone", io.atlas.servidor.domain.Format.phone(info.telefone), editavel = true) { contaVm.abrirTelefone(info.telefone) }
                         RowDivider()
                         ContatoItem("Endereço", info.endereco, editavel = false) {}
                     }
@@ -154,14 +154,10 @@ private fun ContatoItem(label: String, value: String, editavel: Boolean, onClick
         ) {
             Text(label, color = InkMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             if (editavel) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Editar", color = Verde, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.size(4.dp))
-                    Icon(Icons.Filled.Edit, contentDescription = null, tint = Verde, modifier = Modifier.size(14.dp))
-                }
+                Icon(Icons.Filled.Edit, contentDescription = "Editar", tint = Verde, modifier = Modifier.size(16.dp))
             }
         }
-        Spacer(Modifier.height(3.dp))
+        Spacer(Modifier.height(4.dp))
         Text(value, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
 }
