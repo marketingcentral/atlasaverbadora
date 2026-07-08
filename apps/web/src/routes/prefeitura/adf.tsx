@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button, Card, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraAdf } from "@atlas/sdk";
@@ -7,24 +7,30 @@ import { PageHeader, downloadAuthed } from "./_ui";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
+// Prefeitura APENAS RECEBE/CONSULTA as ADFs. Cliente disse: "a averbadora que
+// faz a adf, a prefeitura so recebe". Botoes de Confirmar / Reportar falha
+// foram movidos para a averbadora (/averbadora/adf).
+
 export function PrefeituraAdf() {
-  const qc = useQueryClient();
   const comps = useQuery({ queryKey: ["prefeitura", "adf-comps"], queryFn: () => atlas.prefeitura.adfCompetencias() });
   const [competencia, setCompetencia] = useState<string>("");
   useEffect(() => { if (!competencia && comps.data?.competenciaAtual) setCompetencia(comps.data.competenciaAtual); }, [comps.data, competencia]);
 
-  const adfs = useQuery({ queryKey: ["prefeitura", "adf", competencia], queryFn: () => atlas.prefeitura.adf(competencia), enabled: !!competencia });
-  const [sel, setSel] = useState<Set<string>>(new Set());
+  const adfs = useQuery({ queryKey: ["prefeitura", "adf", competencia], queryFn: () => atlas.prefeitura.adf(competencia), enabled: !!competencia, refetchInterval: 10_000, refetchOnWindowFocus: true });
   const rows = adfs.data?.adfs ?? [];
-  useEffect(() => { setSel(new Set()); }, [competencia]);
-
-  const confirmar = useMutation({ mutationFn: (ids: string[]) => atlas.prefeitura.confirmarAdf(ids), onSuccess: () => { setSel(new Set()); qc.invalidateQueries({ queryKey: ["prefeitura", "adf"] }); qc.invalidateQueries({ queryKey: ["prefeitura", "adf-comps"] }); } });
-  const falha = useMutation({ mutationFn: (ids: string[]) => atlas.prefeitura.reportarFalhaAdf(ids, prompt("Motivo da falha?") || "não informado"), onSuccess: () => { setSel(new Set()); qc.invalidateQueries({ queryKey: ["prefeitura", "adf"] }); } });
 
   const totalParcelas = useMemo(() => rows.reduce((s, a) => s + a.valorParcela, 0), [rows]);
+  const resumo = useMemo(() => {
+    let r = 0, a = 0, f = 0;
+    for (const x of rows) {
+      if (x.status === "recebida") r++;
+      else if (x.status === "aplicada") a++;
+      else if (x.status === "falha") f++;
+    }
+    return { r, a, f };
+  }, [rows]);
 
   const columns: Column<PrefeituraAdf>[] = [
-    { key: "sel", header: "", render: (a) => <input type="checkbox" checked={sel.has(a.id)} onChange={(e) => { const n = new Set(sel); e.target.checked ? n.add(a.id) : n.delete(a.id); setSel(n); }} /> },
     { key: "adf", header: "ADF", mono: true },
     { key: "idUnico", header: "ID único", mono: true },
     { key: "cpfMasked", header: "CPF", mono: true },
@@ -36,13 +42,37 @@ export function PrefeituraAdf() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <PageHeader title="ADF — Descontos em folha" subtitle="Lote mensal de ADFs (CPF + ID único + dados) gerado pelos bancos. Confirme a aplicação em folha ou reporte falhas." />
+      <PageHeader
+        title="ADF — Descontos em folha"
+        subtitle="Lote mensal de ADFs recebidas. A averbadora é quem aplica em folha e reporta falhas — esta tela é para consulta e download."
+      />
+
+      <div style={{
+        padding: "10px 14px",
+        borderRadius: 10,
+        background: "color-mix(in srgb, var(--accent) 6%, transparent)",
+        border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
+        fontSize: 12.5,
+        color: "var(--text-muted)",
+        lineHeight: 1.5,
+      }}>
+        <b style={{ color: "var(--text)" }}>ℹ️ Só recebimento:</b> a averbadora executa a aplicação em folha e reporta falhas. Esta prefeitura consulta o lote e baixa CSV/PDF para conferência interna. Qualquer alteração de status vem da averbadora e reflete aqui automaticamente.
+      </div>
 
       <Card>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Competência:</span>
           {(comps.data?.competencias ?? []).map((c) => (
-            <button key={c.competencia} onClick={() => setCompetencia(c.competencia)} style={{ padding: "6px 12px", borderRadius: 999, cursor: "pointer", fontSize: 13, border: `1px solid ${competencia === c.competencia ? "var(--accent)" : "var(--border)"}`, background: competencia === c.competencia ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "var(--surface)", color: "var(--text)" }}>
+            <button
+              key={c.competencia}
+              onClick={() => setCompetencia(c.competencia)}
+              style={{
+                padding: "6px 12px", borderRadius: 999, cursor: "pointer", fontSize: 13,
+                border: `1px solid ${competencia === c.competencia ? "var(--accent)" : "var(--border)"}`,
+                background: competencia === c.competencia ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "var(--surface)",
+                color: "var(--text)",
+              }}
+            >
               {c.competencia} <span style={{ color: "var(--text-muted)" }}>({c.aplicadas}/{c.total})</span>
             </button>
           ))}
@@ -54,18 +84,17 @@ export function PrefeituraAdf() {
             <Button size="sm" variant="ghost" onClick={() => downloadAuthed(atlas.prefeitura.adfPdfUrl(competencia), `adf-lote-${competencia}.pdf`)}>Baixar PDF</Button>
           </> : null}
           <span style={{ flex: 1 }} />
-          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{rows.length} ADFs · total parcelas {fmtBRL(totalParcelas)}</span>
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            {rows.length} ADFs · total parcelas <b style={{ color: "var(--text)" }}>{fmtBRL(totalParcelas)}</b>
+            {" · "}
+            <span style={{ color: "var(--gold-500)" }}>{resumo.r} recebidas</span>
+            {" / "}
+            <span style={{ color: "var(--emerald-500)" }}>{resumo.a} aplicadas</span>
+            {" / "}
+            <span style={{ color: "var(--danger-500)" }}>{resumo.f} falhas</span>
+          </span>
         </div>
       </Card>
-
-      {sel.size > 0 ? (
-        <Card style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <b style={{ fontSize: 14 }}>{sel.size} selecionada(s)</b>
-          <span style={{ flex: 1 }} />
-          <Button size="sm" onClick={() => confirmar.mutate([...sel])} disabled={confirmar.isPending}>Confirmar aplicação em folha</Button>
-          <Button size="sm" variant="ghost" onClick={() => falha.mutate([...sel])} disabled={falha.isPending}>Reportar falha</Button>
-        </Card>
-      ) : null}
 
       <DataTable columns={columns} rows={rows} rowKey={(a) => a.id} loading={adfs.isLoading} emptyState="Nenhuma ADF nesta competência." />
     </div>

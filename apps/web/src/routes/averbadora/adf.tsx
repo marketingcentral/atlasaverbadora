@@ -1,232 +1,212 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Button, DataTable, Pill, SelectField, type Column } from "@atlas/ui/web";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Card, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import { buildSimplePdf, downloadPdf } from "../../lib/pdf";
-import { fmtBRL, fmtDateTime } from "../../lib/banco-propostas";
-import { gerarAdf, getAdf, type Contrato, type ContratoStatus } from "../../lib/banco-carteira";
 
-// ADF da averbadora — visao GLOBAL de todos os bancos. Reaproveita:
-// - lib/banco-carteira: gerarAdf/getAdf (localStorage) — o numero da ADF vive
-//   no dispositivo de quem gera (o admin no caso), igual banco fazia.
-// - lib/pdf: mesmo PDF Courier oficial.
-// Diferenca vs banco/adf.tsx: chama atlas.admin.contratos() (sem filtro por
-// banco) e adiciona coluna "Banco" no lugar de nenhuma.
+// ADF pela averbadora — a averbadora aplica/reporta falha em folha; prefeitura
+// so recebe/consulta. Cliente disse: "a averbadora que faz a adf, a prefeitura
+// so recebe". Substitui o fluxo antigo (que era de gerar PDFs individuais).
 
-type FiltroAdf = "todas" | "geradas" | "pendentes";
+const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
-/** Uma linha da ADF admin: contrato + banco dono. */
-interface ContratoComBanco extends Contrato {
-  bancoNome: string;
-}
-
-function mapSituacaoBackend(situacao: string): ContratoStatus | null {
-  const t = situacao.toLowerCase();
-  if (t.includes("quitad")) return "quitado";
-  if (t.includes("inadimpl")) return "inadimplente";
-  if (t.includes("ativo") || t.includes("averb") || t.includes("libera")) return "em_dia";
-  return null;
-}
-
-/** Parseia ISO ou DD/MM/YYYY (formato BR das fixtures do backend). 0 se falhar. */
-function parseLancamento(raw: string | null | undefined): number {
-  if (!raw) return 0;
-  const iso = new Date(raw).getTime();
-  if (!Number.isNaN(iso)) return iso;
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
-  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
-  return 0;
-}
+type AdfRow = {
+  id: string; adf: string; idUnico: string; cpfMasked: string; matricula: string; nome: string;
+  bancoNome: string; prefeituraId: number; prefeituraNome: string; competencia: string;
+  valorParcela: number; totalParcelas: number;
+  status: "recebida" | "aplicada" | "falha"; motivo?: string;
+};
 
 export function AdminAdf() {
-  const [version, setVersion] = useState(0);
-  const [filtro, setFiltro] = useState<FiltroAdf>("todas");
-  const [bancoFiltro, setBancoFiltro] = useState<string>("");
+  const qc = useQueryClient();
+  const comps = useQuery({ queryKey: ["admin", "adf-comps"], queryFn: () => atlas.admin.adfCompetencias() });
+  const [competencia, setCompetencia] = useState<string>("");
+  const [prefeituraFiltro, setPrefeituraFiltro] = useState<string>("");
+  useEffect(() => {
+    if (!competencia && comps.data?.competenciaAtual) setCompetencia(comps.data.competenciaAtual);
+  }, [comps.data, competencia]);
 
-  const q = useQuery({
-    queryKey: ["admin", "contratos"],
-    queryFn: () => atlas.admin.contratos(),
+  const adfsQ = useQuery({
+    queryKey: ["admin", "adf", competencia],
+    queryFn: () => atlas.admin.adfList({ competencia }),
+    enabled: !!competencia,
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
-    placeholderData: (prev) => prev,
   });
 
-  const contratosBackend: ContratoComBanco[] = useMemo(() => {
-    const list = q.data?.contratos ?? [];
-    return list
-      .map((ct): ContratoComBanco | null => {
-        const s = mapSituacaoBackend(ct.situacao);
-        if (!s) return null;
-        return {
-          idUnico: ct.adf,
-          cpfMasked: ct.cpfMasked,
-          nome: ct.nome,
-          convenio: ct.convenio,
-          matricula: ct.matricula,
-          produto: ct.tipoContrato?.toLowerCase().includes("portab") ? "portabilidade" : "novo",
-          valor: ct.valorFinanciado,
-          parcelas: ct.totalParcelas,
-          valorParcela: ct.valorParcela,
-          status: s,
-          proximaParcela: "",
-          averbadoEm: ct.atualizadoEm ?? (() => {
-            const t = parseLancamento(ct.lancamento);
-            return t > 0 ? new Date(t).toISOString() : new Date().toISOString();
-          })(),
-          ccbUrl: `https://formaliza.banco.com.br/ccb/${ct.adf}.pdf`,
-          bancoNome: ct.bancoNome,
-        };
-      })
-      .filter((c): c is ContratoComBanco => c !== null);
-  }, [q.data]);
-
-  void version;
-  const todosContratos = useMemo(() => {
-    const byId = new Map<string, ContratoComBanco>();
-    for (const c of contratosBackend) byId.set(c.idUnico, c);
-    return [...byId.values()].sort(
-      (a, b) => parseLancamento(b.averbadoEm) - parseLancamento(a.averbadoEm),
-    );
-  }, [contratosBackend]);
-
-  const bancosUnicos = useMemo(
-    () => Array.from(new Set(todosContratos.map((c) => c.bancoNome))).sort(),
-    [todosContratos],
+  const rows: AdfRow[] = adfsQ.data?.adfs ?? [];
+  const prefsUnicas = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.prefeituraNome))).sort(),
+    [rows],
+  );
+  const filtradas = useMemo(
+    () => (prefeituraFiltro ? rows.filter((r) => r.prefeituraNome === prefeituraFiltro) : rows),
+    [rows, prefeituraFiltro],
   );
 
-  const contratos = todosContratos.filter((c) => {
-    if (bancoFiltro && c.bancoNome !== bancoFiltro) return false;
-    if (filtro === "geradas") return !!getAdf(c.idUnico);
-    if (filtro === "pendentes") return !getAdf(c.idUnico);
-    return true;
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  useEffect(() => { setSel(new Set()); }, [competencia, prefeituraFiltro]);
+
+  const confirmar = useMutation({
+    mutationFn: (ids: string[]) => atlas.admin.confirmarAdfAdmin(ids),
+    onSuccess: () => {
+      setSel(new Set());
+      qc.invalidateQueries({ queryKey: ["admin", "adf"] });
+      qc.invalidateQueries({ queryKey: ["admin", "adf-comps"] });
+    },
+  });
+  const falha = useMutation({
+    mutationFn: ({ ids, motivo }: { ids: string[]; motivo: string }) => atlas.admin.reportarFalhaAdfAdmin(ids, motivo),
+    onSuccess: () => {
+      setSel(new Set());
+      qc.invalidateQueries({ queryKey: ["admin", "adf"] });
+      qc.invalidateQueries({ queryKey: ["admin", "adf-comps"] });
+    },
   });
 
-  const baixar = (c: ContratoComBanco) => {
-    const adf = gerarAdf(c.idUnico);
-    setVersion((v) => v + 1);
-    const pdf = buildSimplePdf("AUTORIZACAO DE DESCONTO EM FOLHA (ADF)", [
-      { text: `Numero: ${adf.numero}`, bold: true },
-      `ID unico da operacao: ${c.idUnico}`,
-      `Gerada em: ${fmtDateTime(adf.geradaEm)}`,
-      "",
-      { text: "SERVIDOR", bold: true },
-      `Nome: ${c.nome}`,
-      `CPF: ${c.cpfMasked}`,
-      `Matricula: ${c.matricula}`,
-      `Convenio: ${c.convenio}`,
-      "",
-      { text: "BANCO", bold: true },
-      `Instituicao: ${c.bancoNome}`,
-      "",
-      { text: "OPERACAO", bold: true },
-      `Valor total: ${fmtBRL(c.valor).replace(/\s/g, " ")}`,
-      `Parcelas: ${c.parcelas}x de ${fmtBRL(c.valorParcela).replace(/\s/g, " ")}`,
-      `CCB: ${c.ccbUrl}`,
-      "",
-      "Este documento autoriza o desconto em folha das parcelas descritas",
-      "acima, conforme convenio vigente entre o banco e a prefeitura.",
-      "A conformidade da averbacao e responsabilidade da Atlas Averbadora.",
-    ]);
-    downloadPdf(`${adf.numero}.pdf`, pdf);
-  };
+  const totalParcelas = useMemo(() => filtradas.reduce((s, a) => s + a.valorParcela, 0), [filtradas]);
+  const resumo = useMemo(() => {
+    let r = 0, a = 0, f = 0;
+    for (const x of filtradas) {
+      if (x.status === "recebida") r++;
+      else if (x.status === "aplicada") a++;
+      else if (x.status === "falha") f++;
+    }
+    return { r, a, f };
+  }, [filtradas]);
 
-  const geradasCount = todosContratos.filter((c) => getAdf(c.idUnico)).length;
-  const contadores = {
-    geradas: geradasCount,
-    pendentes: todosContratos.length - geradasCount,
-    total: todosContratos.length,
-  };
-
-  const columns: Column<ContratoComBanco>[] = [
-    { key: "idUnico", header: "ID único", mono: true },
+  const columns: Column<AdfRow>[] = [
     {
-      key: "bancoNome",
-      header: "Banco",
-      render: (r) => <span style={{ fontSize: 12 }}>{r.bancoNome}</span>,
-    },
-    {
-      key: "nome",
-      header: "Servidor",
-      render: (r) => (
-        <>
-          <div>{r.nome}</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            {r.cpfMasked} / {r.matricula}
-          </div>
-        </>
+      key: "sel",
+      header: "",
+      render: (a) => (
+        a.status === "recebida" ? (
+          <input
+            type="checkbox"
+            checked={sel.has(a.id)}
+            onChange={(e) => {
+              const n = new Set(sel);
+              e.target.checked ? n.add(a.id) : n.delete(a.id);
+              setSel(n);
+            }}
+          />
+        ) : null
       ),
     },
-    { key: "convenio", header: "Convênio" },
-    { key: "valorParcela", header: "Parcela", align: "right", render: (r) => fmtBRL(r.valorParcela) },
+    { key: "adf", header: "ADF", mono: true },
+    { key: "idUnico", header: "ID único", mono: true },
+    { key: "prefeitura", header: "Prefeitura", render: (a) => a.prefeituraNome },
+    { key: "banco", header: "Banco", render: (a) => a.bancoNome },
+    { key: "cpfMasked", header: "CPF", mono: true },
+    { key: "nome", header: "Servidor" },
+    { key: "valorParcela", header: "Parcela", align: "right", render: (a) => fmtBRL(a.valorParcela) },
     {
-      key: "adf",
-      header: "ADF",
-      render: (r) => {
-        const adf = getAdf(r.idUnico);
-        return adf ? (
-          <>
-            <div style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}>{adf.numero}</div>
-            <div style={{ fontSize: 11, color: "var(--text-dim)" }}>{fmtDateTime(adf.geradaEm)}</div>
-          </>
-        ) : (
-          <Pill variant="pendente">Não gerada</Pill>
-        );
-      },
+      key: "status",
+      header: "Status",
+      render: (a) => (
+        <div>
+          <Pill variant={a.status === "aplicada" ? "averbado" : a.status === "falha" ? "expirado" : "pendente"}>
+            {a.status}
+          </Pill>
+          {a.motivo ? <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 2 }}>{a.motivo}</div> : null}
+        </div>
+      ),
     },
   ];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <header>
-        <span
-          style={{
-            fontSize: 12,
-            letterSpacing: "0.1em",
-            fontWeight: 700,
-            color: "var(--text-dim)",
-            textTransform: "uppercase",
-          }}
-        >
-          Conformidade
+        <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+          Averbadora
         </span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>
-          ADF — Autorização de Desconto em Folha
-        </h1>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>ADF — Autorização de Desconto em Folha</h1>
         <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 720 }}>
-          Visão consolidada de todos os bancos: cada operação averbada gera e armazena sua ADF.
-          O documento carrega o <strong>ID único da operação</strong>. A ADF é baixada em PDF oficial.
+          Visão consolidada de todas as prefeituras. A averbadora aplica em folha ou reporta falha —
+          a prefeitura só recebe/consulta. O banco vê o estado da ADF automaticamente pelo contrato.
         </p>
       </header>
 
-      <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
-        <SelectField
-          label="Situação"
-          value={filtro}
-          onChange={(e) => setFiltro(e.target.value as FiltroAdf)}
-          options={[
-            { value: "todas", label: `Todas (${contadores.total})` },
-            { value: "geradas", label: `Geradas (${contadores.geradas})` },
-            { value: "pendentes", label: `Pendentes (${contadores.pendentes})` },
-          ]}
-        />
-        <SelectField
-          label="Banco"
-          value={bancoFiltro}
-          onChange={(e) => setBancoFiltro(e.target.value)}
-          options={[{ value: "", label: "Todos" }, ...bancosUnicos.map((b) => ({ value: b, label: b }))]}
-        />
-      </div>
+      <Card>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>Competência:</span>
+          {(comps.data?.competencias ?? []).map((c) => (
+            <button
+              key={c.competencia}
+              onClick={() => setCompetencia(c.competencia)}
+              style={{
+                padding: "6px 12px", borderRadius: 999, cursor: "pointer", fontSize: 13,
+                border: `1px solid ${competencia === c.competencia ? "var(--accent)" : "var(--border)"}`,
+                background: competencia === c.competencia ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "var(--surface)",
+                color: "var(--text)",
+              }}
+            >
+              {c.competencia} <span style={{ color: "var(--text-muted)" }}>({c.aplicadas}/{c.total})</span>
+            </button>
+          ))}
+          {(comps.data?.competencias.length ?? 0) === 0 ? (
+            <span style={{ fontSize: 13 }}>{comps.data?.competenciaAtual ?? "—"}</span>
+          ) : null}
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ fontSize: 13, color: "var(--text-muted)", display: "flex", gap: 6, alignItems: "center" }}>
+            Prefeitura:
+            <select
+              value={prefeituraFiltro}
+              onChange={(e) => setPrefeituraFiltro(e.target.value)}
+              style={{
+                padding: "6px 10px", borderRadius: 8,
+                border: "1px solid var(--border-strong)",
+                background: "var(--bg-elev)", color: "var(--text)", fontSize: 13,
+              }}
+            >
+              <option value="">Todas</option>
+              {prefsUnicas.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </label>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            {filtradas.length} ADFs · total parcelas <b style={{ color: "var(--text)" }}>{fmtBRL(totalParcelas)}</b>
+            {" · "}
+            <span style={{ color: "var(--gold-500)" }}>{resumo.r} recebidas</span>
+            {" / "}
+            <span style={{ color: "var(--emerald-500)" }}>{resumo.a} aplicadas</span>
+            {" / "}
+            <span style={{ color: "var(--danger-500)" }}>{resumo.f} falhas</span>
+          </span>
+        </div>
+      </Card>
+
+      {sel.size > 0 ? (
+        <Card style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <b style={{ fontSize: 14 }}>{sel.size} selecionada(s)</b>
+          <span style={{ flex: 1 }} />
+          <Button
+            size="sm"
+            onClick={() => confirmar.mutate([...sel])}
+            disabled={confirmar.isPending}
+          >
+            Aplicar em folha
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              const motivo = prompt("Motivo da falha?");
+              if (motivo && motivo.trim().length >= 3) falha.mutate({ ids: [...sel], motivo: motivo.trim() });
+            }}
+            disabled={falha.isPending}
+          >
+            Reportar falha
+          </Button>
+        </Card>
+      ) : null}
 
       <DataTable
         columns={columns}
-        rows={contratos}
-        rowKey={(r) => r.idUnico}
-        emptyState="Nenhuma operação averbada."
-        actions={(r) => (
-          <Button variant="ghost" size="sm" onClick={() => baixar(r)}>
-            {getAdf(r.idUnico) ? "Baixar ADF" : "Gerar e baixar"}
-          </Button>
-        )}
+        rows={filtradas}
+        rowKey={(a) => a.id}
+        loading={adfsQ.isLoading}
+        emptyState="Nenhuma ADF nesta competência/prefeitura."
       />
     </div>
   );

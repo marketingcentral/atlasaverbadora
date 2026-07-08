@@ -1095,6 +1095,21 @@ export class AtlasClient {
     reativarPerfilAdmin: (id: number) =>
       this.request<{ ok: boolean }>(`/v1/admin/perfis/${id}/reativar`, { method: "POST" }),
 
+    // ===== ADF — averbadora aplica/reporta falha (prefeitura so recebe) =====
+    adfCompetencias: () =>
+      this.request<{ competencias: { competencia: string; total: number; aplicadas: number; falhas: number }[]; competenciaAtual: string }>("/v1/admin/adf/competencias"),
+    adfList: (q?: { competencia?: string; prefeitura_id?: number }) =>
+      this.request<{ adfs: {
+        id: string; adf: string; idUnico: string; cpfMasked: string; matricula: string; nome: string;
+        bancoNome: string; prefeituraId: number; prefeituraNome: string; competencia: string;
+        valorParcela: number; totalParcelas: number;
+        status: "recebida" | "aplicada" | "falha"; motivo?: string;
+      }[] }>("/v1/admin/adf", { query: q ?? {} }),
+    confirmarAdfAdmin: (ids: string[]) =>
+      this.request<{ aplicadas: number }>("/v1/admin/adf/confirmar", { method: "POST", body: { ids } }),
+    reportarFalhaAdfAdmin: (ids: string[], motivo: string) =>
+      this.request<{ falhas: number }>("/v1/admin/adf/falha", { method: "POST", body: { ids, motivo } }),
+
     // ===== Beneficios / descontos por prefeitura =====
     beneficios: {
       list: () => this.request<{ beneficios: AdminBeneficio[] }>("/v1/admin/beneficios"),

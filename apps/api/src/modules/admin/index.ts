@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContratoEventos } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -22,6 +22,7 @@ import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
+import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail } from "./mailer.js";
@@ -1965,6 +1966,58 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.ativo = true;
     await persistBeneficio(c.env, b);
     return c.json({ beneficio: b });
+  })
+  // ============================================================
+  // ADF — a averbadora aplica/reporta falha; prefeitura so recebe/consulta.
+  // Cliente disse: "a averbadora que faz a adf, a prefeitura so recebe".
+  // ============================================================
+  .get("/v1/admin/adf/competencias", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await refreshContratos(c.env);
+    const now = new Date().toISOString();
+    const compAtual = folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", "");
+    // Materializa para TODAS as prefeituras da competencia atual.
+    ensureAdfsGlobal(compAtual, (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, now, prefeituras.map((p) => p.id));
+    return c.json({ competencias: listAdfCompetenciasGlobal(), competenciaAtual: compAtual });
+  })
+  .get("/v1/admin/adf", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await refreshContratos(c.env);
+    const now = new Date().toISOString();
+    const url = new URL(c.req.url);
+    const competencia = url.searchParams.get("competencia") ?? undefined;
+    const prefFiltro = url.searchParams.get("prefeitura_id");
+    const compAtual = competencia ?? (folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", ""));
+    ensureAdfsGlobal(compAtual, (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, now, prefeituras.map((p) => p.id));
+    let list = listAdfsGlobal(competencia);
+    if (prefFiltro) {
+      const pid = Number(prefFiltro);
+      list = list.filter((a) => a.prefeituraId === pid);
+    }
+    // Enriquece com nome da prefeitura pra UI.
+    const enriched = list.map((a) => ({
+      ...a,
+      prefeituraNome: prefeituras.find((p) => p.id === a.prefeituraId)?.nome ?? `Pref ${a.prefeituraId}`,
+    }));
+    return c.json({ adfs: enriched });
+  })
+  .post("/v1/admin/adf/confirmar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
+    await refreshContratos(c.env);
+    const adfs = setAdfStatusGlobal(body.ids, "aplicada", undefined, new Date().toISOString());
+    for (const adf of adfs) await persistContrato(c.env, adf);
+    appendAudit({ categoria: "margem", acao: "adf_aplicada_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
+    return c.json({ aplicadas: adfs.length });
+  })
+  .post("/v1/admin/adf/falha", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
+    await refreshContratos(c.env);
+    const adfs = setAdfStatusGlobal(body.ids, "falha", body.motivo, new Date().toISOString());
+    for (const adf of adfs) await persistContrato(c.env, adf);
+    appendAudit({ categoria: "margem", acao: "adf_falha_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
+    return c.json({ falhas: adfs.length });
   })
 
   .post("/v1/admin/servidores/importar", authRequired, async (c) => {

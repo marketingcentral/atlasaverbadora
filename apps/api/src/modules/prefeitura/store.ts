@@ -186,6 +186,42 @@ export function setAdfStatus(prefeituraId: number, adfIds: string[], status: Adf
   return contratoAdfs;
 }
 
+/** Averbadora: aplica/reporta falha sem filtrar por prefeituraId. */
+export function setAdfStatusGlobal(adfIds: string[], status: AdfStatus, motivo: string | undefined, now: string): string[] {
+  const contratoAdfs: string[] = [];
+  for (const a of _adfs) {
+    if (adfIds.includes(a.id)) {
+      a.status = status; a.motivo = motivo; a.atualizadoEm = now;
+      setContratoFolhaStatus(a.adf, status, motivo);
+      contratoAdfs.push(a.adf);
+    }
+  }
+  return contratoAdfs;
+}
+
+/** Todas as ADFs de todas as prefeituras (visao averbadora). */
+export function listAdfsGlobal(competencia?: string): AdfEntry[] {
+  return _adfs.filter((a) => !competencia || a.competencia === competencia);
+}
+
+/** Materializa ADFs para TODAS as prefeituras da competencia. Usado pela averbadora. */
+export function ensureAdfsGlobal(competencia: string, bancoNomeById: (id: number) => string, now: string, prefeituraIds: number[]): void {
+  for (const pid of prefeituraIds) ensureAdfs(pid, competencia, bancoNomeById, now);
+}
+
+/** Todas as competencias com resumo. Sem filtro por prefeitura. */
+export function listAdfCompetenciasGlobal(): { competencia: string; total: number; aplicadas: number; falhas: number }[] {
+  const map = new Map<string, { competencia: string; total: number; aplicadas: number; falhas: number }>();
+  for (const a of _adfs) {
+    const g = map.get(a.competencia) ?? { competencia: a.competencia, total: 0, aplicadas: 0, falhas: 0 };
+    g.total++;
+    if (a.status === "aplicada") g.aplicadas++;
+    else if (a.status === "falha") g.falhas++;
+    map.set(a.competencia, g);
+  }
+  return Array.from(map.values()).sort((a, b) => b.competencia.localeCompare(a.competencia));
+}
+
 // ============================================================
 // Anuência de dados (opt-in auditável)
 // ============================================================
