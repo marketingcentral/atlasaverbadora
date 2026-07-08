@@ -84,8 +84,11 @@ private fun ContratosContent(info: MatriculaInfoDto, recusadas: List<PropostaDto
     var tab by remember { mutableIntStateOf(0) }
     var lerContrato by remember { mutableStateOf<ContratoDto?>(null) }
     val saldoById = info.elegiveisPortabilidade.associate { it.id to it.saldoDevedor }
-    val ativos = info.contratos.filter { !it.status.equals("Quitado", ignoreCase = true) }
-    val quitados = info.contratos.filter { it.status.equals("Quitado", ignoreCase = true) }
+    // Uma proposta recusada/cancelada/expirada NÃO é contrato ativo — mesmo que o backend
+    // ainda a devolva em `contratos`. Ela vive só no Histórico (via lista de propostas).
+    val recusadasIds = recusadas.map { it.id }.toSet()
+    val ativos = info.contratos.filter { !it.status.equals("Quitado", ignoreCase = true) && it.id !in recusadasIds }
+    val quitados = info.contratos.filter { it.status.equals("Quitado", ignoreCase = true) && it.id !in recusadasIds }
     val histCount = quitados.size + recusadas.size
 
     lerContrato?.let { c ->

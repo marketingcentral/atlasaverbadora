@@ -61,5 +61,5 @@ interface AuthApi {
     suspend fun primeiroAcessoCodigo(@Body body: io.atlas.servidor.data.remote.dto.PaCodigoRequest): CodigoResponse
 
     @POST("v1/auth/primeiro-acesso/senha")
-    suspend fun primeiroAcessoSenha(@Body body: DefinirSenhaRequest): OkResponse
+    suspend fun primeiroAcessoSenha(@Body body: io.atlas.servidor.data.remote.dto.PaConfirmarRequest): OkResponse
 }

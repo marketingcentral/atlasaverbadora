@@ -1,7 +1,9 @@
 package io.atlas.servidor.ui.auth
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,9 +13,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -30,8 +35,10 @@ import io.atlas.servidor.ui.theme.DangerRed
 import io.atlas.servidor.ui.theme.Fundo
 import io.atlas.servidor.ui.theme.Ink
 import io.atlas.servidor.ui.theme.InkMuted
+import io.atlas.servidor.ui.theme.Superficie
 import io.atlas.servidor.ui.theme.Verde
 import io.atlas.servidor.ui.util.CpfVisualTransformation
+import io.atlas.servidor.ui.util.PhoneVisualTransformation
 
 @Composable
 fun PrimeiroAcessoScreen(
@@ -51,14 +58,14 @@ fun PrimeiroAcessoScreen(
         when (vm.step) {
             PaStep.CPF -> StepCpf(vm)
             PaStep.NAO_ENCONTRADO -> StepNaoEncontrado(vm, onBack)
-            PaStep.CONFIRMAR -> StepConfirmar(vm)
-            PaStep.CODIGO -> StepCodigo(vm)
-            PaStep.SENHA -> StepSenha(vm, onBack)
+            PaStep.CONTA_EXISTENTE -> StepContaExistente(vm, onBack)
+            PaStep.DADOS -> StepDados(vm)
+            PaStep.CODIGO -> StepCodigo(vm, onBack)
             PaStep.CONCLUIDO -> StepConcluido(onBack)
         }
 
         val err = vm.error
-        if (err != null && vm.step != PaStep.NAO_ENCONTRADO) {
+        if (err != null && vm.step != PaStep.NAO_ENCONTRADO && vm.step != PaStep.CONTA_EXISTENTE) {
             Spacer(Modifier.height(10.dp))
             Text(err, color = DangerRed, fontSize = 13.sp)
         }
@@ -109,20 +116,43 @@ private fun StepNaoEncontrado(vm: PrimeiroAcessoViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun StepConfirmar(vm: PrimeiroAcessoViewModel) {
-    Title("Confirme seu cadastro", "Encontramos seu cadastro. Informe seu e-mail e telefone — o código de verificação será enviado para o e-mail.")
+private fun StepContaExistente(vm: PrimeiroAcessoViewModel, onBack: () -> Unit) {
+    Title("Conta existente", "Este CPF já possui cadastro na Atlas.")
+    AtlasCard {
+        Text(
+            "${vm.nome.ifBlank { "Este servidor" }} já fez o primeiro acesso e tem uma conta ativa. " +
+                "Entre com seu CPF e senha. Se esqueceu a senha, use \"Esqueci minha senha\" na tela de login.",
+            color = InkMuted,
+            fontSize = 14.sp,
+        )
+    }
+    Spacer(Modifier.height(20.dp))
+    AtlasPrimaryButton("Ir para o login", onClick = onBack)
+    Spacer(Modifier.height(10.dp))
+    AtlasSecondaryButton("Tentar outro CPF", onClick = vm::voltarParaCpf)
+}
+
+@Composable
+private fun StepDados(vm: PrimeiroAcessoViewModel) {
+    Title(
+        "Confirme seu cadastro",
+        "Informe um e-mail seu (pode ser pessoal), seu telefone e escolha uma senha. " +
+            "Enviaremos um código para o e-mail para confirmar que é seu.",
+    )
     AtlasCard {
         Text(vm.nome, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-        Spacer(Modifier.height(6.dp))
-        if (vm.cargo != null) InfoRow("Cargo", vm.cargo!!)
-        if (vm.origem != null) InfoRow("Órgão", vm.origem!!)
+        val sub = listOfNotNull(vm.cargo, vm.origem).joinToString(" · ")
+        if (sub.isNotBlank()) {
+            Spacer(Modifier.height(4.dp))
+            Text(sub, color = InkMuted, fontSize = 13.sp)
+        }
     }
     Spacer(Modifier.height(16.dp))
     OutlinedTextField(
         value = vm.email,
         onValueChange = vm::onEmailChange,
-        label = { Text("E-mail") },
-        placeholder = { Text("voce@exemplo.com") },
+        label = { Text("Seu e-mail") },
+        placeholder = { Text("voce@gmail.com") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
         shape = RoundedCornerShape(14.dp),
@@ -133,21 +163,81 @@ private fun StepConfirmar(vm: PrimeiroAcessoViewModel) {
         value = vm.telefone,
         onValueChange = vm::onTelefoneChange,
         label = { Text("Telefone (com DDD)") },
-        placeholder = { Text("48999998888") },
+        placeholder = { Text("(48) 99999-8888") },
         singleLine = true,
+        visualTransformation = PhoneVisualTransformation(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth(),
     )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.senha,
+        onValueChange = vm::onSenhaChange,
+        label = { Text("Nova senha") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(12.dp))
+    OutlinedTextField(
+        value = vm.senhaConfirm,
+        onValueChange = vm::onSenhaConfirmChange,
+        label = { Text("Confirmar senha") },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(6.dp))
+    Text("Mínimo de 8 caracteres.", color = InkMuted, fontSize = 12.sp)
+
+    Spacer(Modifier.height(16.dp))
+    AtlasCard {
+        Text(
+            "Termos. Ao ativar, você autoriza a Atlas a consultar sua margem e intermediar " +
+                "averbações junto à prefeitura e bancos parceiros.\n\nLGPD. Seus dados (nome, CPF, " +
+                "e-mail, telefone, matrícula, salário, contratos) são tratados conforme a Lei 13.709/2018. " +
+                "Você pode pedir exclusão a qualquer momento.",
+            color = InkMuted,
+            fontSize = 12.sp,
+            lineHeight = 17.sp,
+        )
+    }
+    Spacer(Modifier.height(10.dp))
+    CheckRow("Li e aceito os Termos de uso", vm.aceiteTermos, vm::toggleTermos)
+    CheckRow("Concordo com a Política de Privacidade (LGPD)", vm.aceiteLgpd, vm::toggleLgpd)
+
+    Spacer(Modifier.height(28.dp))
+    AtlasPrimaryButton("Enviar código para meu e-mail", onClick = vm::enviarCodigo, loading = vm.loading)
     Spacer(Modifier.height(8.dp))
-    Text("Enviaremos um código de 6 dígitos para o e-mail informado.", color = InkMuted, fontSize = 12.sp)
-    Spacer(Modifier.height(20.dp))
-    AtlasPrimaryButton("Enviar código", onClick = vm::enviarCodigo, loading = vm.loading)
 }
 
 @Composable
-private fun StepCodigo(vm: PrimeiroAcessoViewModel) {
-    Title("Verifique o código", "Enviamos um código de 6 dígitos para ${vm.emailMasked}. Confira sua caixa de entrada (e o spam).")
+private fun CheckRow(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = CheckboxDefaults.colors(checkedColor = Verde, checkmarkColor = Superficie),
+        )
+        Spacer(Modifier.height(0.dp))
+        Text(text, color = Ink, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun StepCodigo(vm: PrimeiroAcessoViewModel, onBack: () -> Unit) {
+    Title(
+        "Verifique o código",
+        "Enviamos um código de 6 dígitos para ${vm.destinoMasked}. Confira sua caixa de entrada (e o spam).",
+    )
     OutlinedTextField(
         value = vm.codigo,
         onValueChange = vm::onCodigoChange,
@@ -159,41 +249,23 @@ private fun StepCodigo(vm: PrimeiroAcessoViewModel) {
         modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(20.dp))
-    AtlasPrimaryButton("Validar", onClick = vm::validarCodigo)
-}
-
-@Composable
-private fun StepSenha(vm: PrimeiroAcessoViewModel, onBack: () -> Unit) {
-    Title("Crie sua senha", "Você usará essa senha para acessar o aplicativo.")
-    OutlinedTextField(
-        value = vm.senha,
-        onValueChange = vm::onSenhaChange,
-        label = { Text("Senha") },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(Modifier.height(12.dp))
-    OutlinedTextField(
-        value = vm.senhaConfirm,
-        onValueChange = vm::onSenhaConfirmChange,
-        label = { Text("Repetir senha") },
-        singleLine = true,
-        visualTransformation = PasswordVisualTransformation(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-        shape = RoundedCornerShape(14.dp),
-        modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(Modifier.height(8.dp))
-    Text("Mínimo de 8 caracteres.", color = InkMuted, fontSize = 12.sp)
-    Spacer(Modifier.height(20.dp))
-    AtlasPrimaryButton("Criar senha e acessar", onClick = { vm.definirSenha(onBack) }, loading = vm.loading)
+    AtlasPrimaryButton("Confirmar e ativar", onClick = { vm.confirmarCodigo() }, loading = vm.loading)
+    Spacer(Modifier.height(10.dp))
+    AtlasSecondaryButton("Voltar", onClick = vm::voltarParaDados)
 }
 
 @Composable
 private fun StepConcluido(onBack: () -> Unit) {
-    Title("Senha criada! ✅", "Agora é só entrar com seu CPF e a senha que você acabou de criar.")
-    AtlasPrimaryButton("Ir para o login", onClick = onBack)
+    Spacer(Modifier.height(24.dp))
+    Text("✅", fontSize = 52.sp)
+    Spacer(Modifier.height(16.dp))
+    Text("Conta criada!", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "Seu acesso foi ativado com sucesso. Agora é só entrar com seu CPF e a senha que você criou.",
+        color = InkMuted,
+        fontSize = 15.sp,
+    )
+    Spacer(Modifier.height(28.dp))
+    AtlasPrimaryButton("Acessar", onClick = onBack)
 }

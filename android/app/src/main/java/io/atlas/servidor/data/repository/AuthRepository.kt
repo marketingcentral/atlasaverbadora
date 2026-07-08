@@ -44,12 +44,12 @@ class AuthRepository(
     suspend fun paBuscar(cpf: String) =
         safeApi(gson) { authApi.primeiroAcessoBuscar(io.atlas.servidor.data.remote.dto.CpfRequest(cpf)) }
 
-    suspend fun paEnviarCodigo(cpf: String, email: String? = null, telefone: String? = null) =
-        safeApi(gson) { authApi.primeiroAcessoCodigo(io.atlas.servidor.data.remote.dto.PaCodigoRequest(cpf, email, telefone)) }
+    suspend fun paEnviarCodigo(cpf: String, email: String, senha: String, telefone: String? = null) =
+        safeApi(gson) { authApi.primeiroAcessoCodigo(io.atlas.servidor.data.remote.dto.PaCodigoRequest(cpf, email, senha, telefone)) }
 
-    suspend fun paDefinirSenha(cpf: String, codigo: String, senha: String) =
+    suspend fun paConfirmar(cpf: String, codigo: String) =
         safeApi(gson) {
-            authApi.primeiroAcessoSenha(io.atlas.servidor.data.remote.dto.DefinirSenhaRequest(cpf, codigo, senha))
+            authApi.primeiroAcessoSenha(io.atlas.servidor.data.remote.dto.PaConfirmarRequest(cpf, codigo))
         }
 
     suspend fun logout() {

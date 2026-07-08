@@ -42,8 +42,12 @@ data class ApiErrorDetail(
 
 data class CpfRequest(val cpf: String)
 
-/** Primeiro acesso: o servidor informa o e-mail (e telefone) que vai receber o código. */
-data class PaCodigoRequest(val cpf: String, val email: String? = null, val telefone: String? = null)
+/** Primeiro acesso — passo Dados: e-mail + senha (guardados pendentes) + telefone; o código
+ *  de verificação é enviado para o e-mail informado. */
+data class PaCodigoRequest(val cpf: String, val email: String, val senha: String, val telefone: String? = null)
+
+/** Primeiro acesso — passo Código: confirma o código e efetiva o cadastro. */
+data class PaConfirmarRequest(val cpf: String, val codigo: String)
 
 data class PrimeiroAcessoBuscarResponse(
     val encontrado: Boolean,
