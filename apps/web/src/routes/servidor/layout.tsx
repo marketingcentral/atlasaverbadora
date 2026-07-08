@@ -28,7 +28,13 @@ export function ServidorLayout() {
   const nav = useNavigate();
   const location = useLocation();
   const { resolved, setMode } = useThemeMode();
-  const active = location.pathname.split("/")[2] ?? "dashboard";
+  // As rotas Ofertas/Simular/Portabilidade/Propostas foram fundidas dentro do
+  // MarketPlace — quando o servidor cai numa dessas (via link direto ou botao),
+  // o menu deve destacar MarketPlace ("marketplace-port"), nao a chave da URL.
+  const seg2 = location.pathname.split("/")[2] ?? "dashboard";
+  const active = (seg2 === "marketplace" || seg2 === "simular" || seg2 === "portabilidade" || seg2 === "propostas")
+    ? "marketplace-port"
+    : seg2;
 
   useLayoutEffect(() => {
     if (!readActiveIdMatricula()) {
