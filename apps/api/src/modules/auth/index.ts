@@ -251,11 +251,14 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
   //    (nao pro cadastrado pela prefeitura — que pode ser institucional).
   //    O email so e considerado valido apos o codigo ser confirmado.
   .post("/v1/auth/primeiro-acesso/codigo", async (c) => {
-    const { cpf, email, senha } = z
+    const { cpf, email, senha, telefone } = z
       .object({
         cpf: z.string(),
         email: z.string().email("E-mail invalido"),
         senha: z.string().min(8, "Senha precisa de ao menos 8 caracteres"),
+        telefone: z.string().refine((v) => v.replace(/\D/g, "").length >= 10 && v.replace(/\D/g, "").length <= 11, {
+          message: "Telefone deve ter DDD + numero (10 ou 11 digitos)",
+        }),
       })
       .parse(await c.req.json());
     const digits = cpf.replace(/\D/g, "");
@@ -266,8 +269,8 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     if (s.passwordHash || devUserTemSenhaPorCpf(digits)) throw Errors.validation({ cpf: "Este CPF ja fez o primeiro acesso. Use 'Esqueci minha senha'." });
     const codigo = await gerarCodigoUnico(c.env);
     const senhaHash = await sha256Hex(senha);
-    // Guarda o pacote pendente ate a confirmacao (10 min).
-    const pending = { codigo, email: email.trim().toLowerCase(), senhaHash };
+    // Guarda o pacote pendente ate a confirmacao (10 min). Telefone normalizado (so digitos).
+    const pending = { codigo, email: email.trim().toLowerCase(), senhaHash, telefone: telefone.replace(/\D/g, "") };
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`pa:${digits}`, JSON.stringify(pending), { expirationTtl: 600 });
     // Envia pro email QUE O SERVIDOR ESCOLHEU (nao pro cadastrado).
     // Primeiro-acesso: e o proprio servidor provando que aquele email e dele.
@@ -289,17 +292,18 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     if (!c.env.KV_SESSIONS) throw Errors.validation({ kv: "sessoes indisponiveis" });
     const raw = await c.env.KV_SESSIONS.get(`pa:${digits}`);
     if (!raw) throw Errors.unauthorized("Codigo expirado. Solicite um novo.");
-    let pending: { codigo: string; email: string; senhaHash: string };
+    let pending: { codigo: string; email: string; senhaHash: string; telefone?: string };
     try { pending = JSON.parse(raw); } catch { throw Errors.unauthorized("Sessao invalida — solicite um novo codigo."); }
     if (pending.codigo !== codigo) throw Errors.unauthorized("Codigo invalido");
-    // Grava senha + email (novo) em TODAS as matriculas desse CPF.
+    // Grava senha + email + telefone (novos) em TODAS as matriculas desse CPF.
     const n = await setServidorPassword(c.env, digits, pending.senhaHash);
     if (n === 0) throw Errors.notFound("servidor");
-    await setServidorContato(c.env, digits, { email: pending.email });
+    await setServidorContato(c.env, digits, { email: pending.email, telefone: pending.telefone });
     // Cache in-memory do isolate — login e 2FA funcionam imediatamente.
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => {
       x.passwordHash = pending.senhaHash;
       x.email = pending.email;
+      if (pending.telefone) x.telefone = pending.telefone;
     });
     await c.env.KV_SESSIONS.delete(`pa:${digits}`);
     return c.json({ ok: true });

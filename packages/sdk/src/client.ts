@@ -702,10 +702,10 @@ export class AtlasClient {
     buscar: (cpf: string) =>
       this.request<{ encontrado: boolean; nome?: string; matricula?: string; cargo?: string | null; origem?: string | null; email_masked?: string; telefone_masked?: string; ja_tem_senha?: boolean }>(
         "/v1/auth/primeiro-acesso/buscar", { method: "POST", body: { cpf }, skipAuth: true }),
-    /** Servidor escolhe seu proprio email + senha; codigo vai pra esse email. */
-    codigo: (cpf: string, email: string, senha: string) =>
+    /** Servidor escolhe email + senha + telefone; codigo vai pra esse email. */
+    codigo: (cpf: string, email: string, senha: string, telefone: string) =>
       this.request<{ enviado: boolean; destino: string; codigo_teste?: string; aviso?: string }>(
-        "/v1/auth/primeiro-acesso/codigo", { method: "POST", body: { cpf, email, senha }, skipAuth: true }),
+        "/v1/auth/primeiro-acesso/codigo", { method: "POST", body: { cpf, email, senha, telefone }, skipAuth: true }),
     /** Confirma o codigo — grava passwordHash + o novo email no servidor. */
     confirmar: (cpf: string, codigo: string) =>
       this.request<{ ok: boolean }>(

@@ -20,11 +20,21 @@ function formatCpf(v: string): string {
   return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
 }
 
+// Formata (48) 99101-2233 (11 digitos) ou (48) 3234-5678 (10 digitos).
+function formatTelefone(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 2) return d.length ? `(${d}` : "";
+  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
+  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+}
+
 export function PrimeiroAcessoPage() {
   const nav = useNavigate();
   const [step, setStep] = useState<Step>("cpf");
   const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
+  const [telefone, setTelefone] = useState("");
   const [senha, setSenha] = useState("");
   const [senha2, setSenha2] = useState("");
   const [codigo, setCodigo] = useState("");
@@ -65,6 +75,8 @@ export function PrimeiroAcessoPage() {
     e.preventDefault();
     setError(null);
     if (!/^\S+@\S+\.\S+$/.test(email)) { setError("Informe um e-mail válido."); return; }
+    const telDigits = telefone.replace(/\D/g, "");
+    if (telDigits.length < 10 || telDigits.length > 11) { setError("Informe um telefone com DDD (10 ou 11 dígitos)."); return; }
     if (senha.length < 8) { setError("A senha deve ter no mínimo 8 caracteres."); return; }
     if (!/[a-zA-Z]/.test(senha) || !/\d/.test(senha)) { setError("A senha deve conter letras e números."); return; }
     if (senha !== senha2) { setError("As senhas não conferem."); return; }
@@ -72,7 +84,7 @@ export function PrimeiroAcessoPage() {
     setLoading(true);
     try {
       const digits = cpf.replace(/\D/g, "");
-      const r = await atlas.primeiroAcesso.codigo(digits, email.trim().toLowerCase(), senha);
+      const r = await atlas.primeiroAcesso.codigo(digits, email.trim().toLowerCase(), senha, telDigits);
       setDestinoMasked(r.destino || email);
       setAvisoCodigo(r.enviado ? null : (r.aviso || `Código de teste: ${r.codigo_teste ?? "—"}`));
       setStep("codigo");
@@ -88,7 +100,8 @@ export function PrimeiroAcessoPage() {
     setLoading(true);
     try {
       const digits = cpf.replace(/\D/g, "");
-      const r = await atlas.primeiroAcesso.codigo(digits, email.trim().toLowerCase(), senha);
+      const telDigits = telefone.replace(/\D/g, "");
+      const r = await atlas.primeiroAcesso.codigo(digits, email.trim().toLowerCase(), senha, telDigits);
       setAvisoCodigo(r.enviado ? "Código reenviado." : (r.aviso || `Código de teste: ${r.codigo_teste ?? "—"}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao reenviar.");
@@ -179,6 +192,20 @@ export function PrimeiroAcessoPage() {
                 autoComplete="email"
                 required
               />
+              <Input
+                label="Seu telefone (com DDD)"
+                type="tel"
+                value={telefone}
+                onChange={(e) => setTelefone(formatTelefone(e.target.value))}
+                placeholder="(48) 99101-2233"
+                autoComplete="tel"
+                inputMode="tel"
+                maxLength={16}
+                required
+              />
+              <p style={{ margin: "-6px 0 0", fontSize: ".76rem", color: "var(--text-dim)" }}>
+                Ficará no seu cadastro para que os bancos parceiros possam entrar em contato quando necessário.
+              </p>
               <Input
                 label="Nova senha"
                 type="password"
