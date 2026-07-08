@@ -32,6 +32,7 @@ import { AdminPreReservas } from "./routes/averbadora/pre-reservas";
 import { AdminTombamento } from "./routes/averbadora/tombamento";
 import { AdminIdUnico } from "./routes/averbadora/id-unico";
 import { AdminBateCarteira } from "./routes/averbadora/bate-carteira";
+import { AdminAdf } from "./routes/averbadora/adf";
 import { AdminAuditoria } from "./routes/averbadora/auditoria";
 import { AdminPerfis } from "./routes/averbadora/perfis";
 import { PrefeituraLayout } from "./routes/prefeitura/layout";
@@ -54,7 +55,6 @@ import { BancoPropostaDetalhe } from "./routes/banco/propostas/detalhe";
 import { BancoOfertas } from "./routes/banco/ofertas";
 import { BancoCarteira } from "./routes/banco/carteira/index";
 import { BancoBateCarteira } from "./routes/banco/bate-carteira";
-import { BancoAdf } from "./routes/banco/adf";
 import { BancoConvenios } from "./routes/banco/convenios";
 import { BancoMargemContratacaoBusca } from "./routes/banco/margem-contratacao/index";
 import { BancoMargemContratacaoFicha } from "./routes/banco/margem-contratacao/ficha";
@@ -135,7 +135,6 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
 
           { path: "carteira", element: <BancoCarteira /> },
           { path: "bate-carteira", element: <BancoBateCarteira /> },
-          { path: "adf", element: <BancoAdf /> },
           { path: "convenios", element: <BancoConvenios /> },
 
           { path: "cadastros/tabela-emprestimos", element: <BancoTabelaEmprestimosLista /> },
@@ -177,6 +176,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "tombamento", element: <AdminTombamento /> },
           { path: "id-unico", element: <AdminIdUnico /> },
           { path: "bate-carteira", element: <AdminBateCarteira /> },
+          { path: "adf", element: <AdminAdf /> },
           { path: "auditoria", element: <AdminAuditoria /> },
           { path: "perfis", element: <AdminPerfis /> },
           { path: "comunicados", element: <Navigate to="/averbadora/comunicados/banco" replace /> },

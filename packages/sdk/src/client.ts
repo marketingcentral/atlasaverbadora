@@ -1035,6 +1035,20 @@ export class AtlasClient {
       this.request<{ servidor: AdminServidor }>(`/v1/admin/servidores/${matricula}`, { method: "PATCH", body }),
     listFolhas: () => this.request<{ folhas: AdminFolha[] }>("/v1/admin/folhas"),
     upsertFolha: (f: AdminFolhaInput) => this.request<{ folha: AdminFolha }>("/v1/admin/folhas", { method: "POST", body: f }),
+    // Visao global de contratos averbados (ADF averbadora — todos os bancos).
+    contratos: () =>
+      this.request<{
+        contratos: {
+          adf: string; situacao: string; lancamento: string; expiracao: string | null;
+          cpfMasked: string; matricula: string; nome: string; tipoContrato: string;
+          totalParcelas: number; valorParcela: number; convenio: string;
+          convenioId: string; valorFinanciado: number; taxaAm: number;
+          folhaStatus?: "recebida" | "aplicada" | "falha";
+          atualizadoEm?: string;
+          bancoId: number; bancoNome: string;
+        }[];
+        total: number;
+      }>("/v1/admin/contratos"),
     listComunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/admin/comunicados"),
     upsertComunicado: (body: ComunicadoInput) =>
       this.request<{ comunicado: Comunicado }>("/v1/admin/comunicados", { method: "POST", body }),

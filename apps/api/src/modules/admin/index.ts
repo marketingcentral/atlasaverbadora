@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContratoEventos } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -1173,6 +1173,41 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const novo: FolhaAdmin = { ...body, id: `F-${Date.now()}`, dataRepasse: body.dataRepasse ?? null };
     folhas.push(novo);
     return c.json({ folha: novo });
+  })
+
+  // === ADF (averbadora) — visao global de todos os contratos averbados de
+  // todos os bancos. Retorna a mesma forma que /v1/portal/banco/contratos, mas
+  // sem escopo de convenio e enriquecido com bancoId+bancoNome pra colunar.
+  .get("/v1/admin/contratos", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await refreshContratos(c.env);
+    const rows = listContratos({}); // todos os bancos
+    const contratos = rows.map((ct) => {
+      const eventos = getContratoEventos(ct.adf);
+      const ultimo = eventos.length > 0 ? eventos[eventos.length - 1]?.criadoEm : undefined;
+      const banco = bancos.find((b) => b.id === ct.bancoId);
+      return {
+        adf: ct.adf,
+        situacao: ct.situacao,
+        lancamento: ct.lancamento,
+        expiracao: ct.expiracao,
+        cpfMasked: ct.cpfMasked,
+        matricula: ct.matricula,
+        nome: ct.nome,
+        tipoContrato: ct.tipoContrato,
+        totalParcelas: ct.totalParcelas,
+        valorParcela: ct.valorParcela,
+        convenio: ct.convenio,
+        convenioId: ct.convenioId,
+        valorFinanciado: ct.valorFinanciado,
+        taxaAm: ct.taxaAm,
+        folhaStatus: ct.folhaStatus,
+        atualizadoEm: ultimo ?? new Date().toISOString(),
+        bancoId: ct.bancoId,
+        bancoNome: banco?.nome ?? `Banco ${ct.bancoId}`,
+      };
+    });
+    return c.json({ contratos, total: contratos.length });
   })
 
   .get("/v1/admin/comunicados", async (c) => {
