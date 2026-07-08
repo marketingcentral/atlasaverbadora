@@ -320,6 +320,10 @@ export async function seedCollectionIfEmpty(env: Env, table: string, rows: { id:
   for (const r of rows) await upsertCollectionRow(env, table, r.id, r.data);
   return true;
 }
+export async function deleteCollectionRow(env: Env, table: string, id: string): Promise<void> {
+  await ensureCollection(env, table);
+  await getDb(env).execute(sql`DELETE FROM ${sql.raw(table)} WHERE id = ${id}`);
+}
 
 // ============================================================
 // Contratos + reservas (portal do banco) — compartilhado entre isolates

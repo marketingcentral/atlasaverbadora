@@ -8,6 +8,7 @@ import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorB
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
+import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo } from "../admin/mailer.js";
@@ -459,6 +460,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/servidores/me/comunicados", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    await refreshComunicados(c.env);
     return c.json({ comunicados: COMUNICADOS_MOCK.filter((x) => x.publico === "servidor") });
   })
   .get("/v1/servidores/:id", async (c) => {

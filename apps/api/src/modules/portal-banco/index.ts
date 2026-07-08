@@ -6,6 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
 import { refreshConvenios } from "./convenios-store.js";
+import { refreshComunicados } from "./comunicados-store.js";
 import { prefeituras } from "../admin/index.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
@@ -149,6 +150,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   // --------- Comunicados ----------
   .get("/v1/portal/banco/comunicados", async (c) => {
     requireBancoRole(c.get("jwt"));
+    await refreshComunicados(c.env);
     return c.json({ comunicados: COMUNICADOS_MOCK.filter((x) => x.publico === "banco") });
   })
 

@@ -6,6 +6,7 @@ import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, aplicarAcao, persistContrato } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
+import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
@@ -1172,10 +1173,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/comunicados", async (c) => {
     requireAdmin(c.get("jwt"));
+    await refreshComunicados(c.env);
     return c.json({ comunicados: COMUNICADOS_MOCK });
   })
   .post("/v1/admin/comunicados", async (c) => {
     requireAdmin(c.get("jwt"));
+    await refreshComunicados(c.env);
     const body = z
       .object({
         id: z.string().optional(),
@@ -1190,14 +1193,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const idx = COMUNICADOS_MOCK.findIndex((x) => x.id === body.id);
       if (idx < 0) throw Errors.notFound("comunicado");
       COMUNICADOS_MOCK[idx] = { ...COMUNICADOS_MOCK[idx]!, ...body, id: body.id };
+      await persistComunicados(c.env);
       return c.json({ comunicado: COMUNICADOS_MOCK[idx] });
     }
     const novo = { ...body, id: `COM-${Date.now()}` };
     COMUNICADOS_MOCK.push(novo);
+    await persistComunicados(c.env);
     return c.json({ comunicado: novo });
   })
   .post("/v1/admin/comunicados/:id/mover", async (c) => {
     requireAdmin(c.get("jwt"));
+    await refreshComunicados(c.env);
     const id = c.req.param("id");
     const { direction } = z.object({ direction: z.enum(["up", "down"]) }).parse(await c.req.json());
     const idx = COMUNICADOS_MOCK.findIndex((x) => x.id === id);
@@ -1209,14 +1215,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const tmp = COMUNICADOS_MOCK[idx]!;
     COMUNICADOS_MOCK[idx] = COMUNICADOS_MOCK[alvo]!;
     COMUNICADOS_MOCK[alvo] = tmp;
+    await persistComunicados(c.env);
     return c.json({ comunicados: COMUNICADOS_MOCK });
   })
   .delete("/v1/admin/comunicados/:id", async (c) => {
     requireAdmin(c.get("jwt"));
+    await refreshComunicados(c.env);
     const id = c.req.param("id");
     const idx = COMUNICADOS_MOCK.findIndex((x) => x.id === id);
     if (idx < 0) throw Errors.notFound("comunicado");
     COMUNICADOS_MOCK.splice(idx, 1);
+    await removerComunicadoPersistido(c.env, id);
     return c.json({ ok: true });
   })
 

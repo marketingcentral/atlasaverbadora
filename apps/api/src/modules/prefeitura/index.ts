@@ -14,6 +14,7 @@ import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
+import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig } from "../admin/id-unico.js";
@@ -689,8 +690,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     return c.json({ ok: true });
   })
 
-  .get("/v1/prefeitura/comunicados", (c) => {
+  .get("/v1/prefeitura/comunicados", async (c) => {
     requirePrefeitura(c.get("jwt"));
+    await refreshComunicados(c.env);
     // Reaproveita a lista compartilhada (COMUNICADOS_MOCK) mas re-aponta os
     // links para rotas validas no portal da prefeitura. O mock original tinha
     // links tipo '/banco/cadastros' que sao invisiveis para o perfil prefeitura.
