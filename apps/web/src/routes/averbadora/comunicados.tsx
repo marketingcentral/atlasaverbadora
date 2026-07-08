@@ -84,7 +84,6 @@ export function AdminComunicados() {
         rows={data.data?.comunicados ?? []}
         rowKey={(c) => c.id}
         loading={data.isLoading}
-        onRowClick={(c) => setEditing(c)}
       />
 
       {editing ? (
