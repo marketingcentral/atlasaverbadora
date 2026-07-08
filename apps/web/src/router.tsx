@@ -28,6 +28,7 @@ import { AdminHealth } from "./routes/averbadora/health";
 import { AverbadoraConfiguracoes } from "./routes/averbadora/configuracoes";
 import { AdminLogs } from "./routes/averbadora/logs";
 import { AdminVitrine } from "./routes/averbadora/vitrine";
+import { AdminBeneficios } from "./routes/averbadora/beneficios";
 import { AverbadoraApiDocs } from "./routes/averbadora/api/docs";
 import { AverbadoraApiTokens } from "./routes/averbadora/api/tokens";
 import { AverbadoraApiWebhooks } from "./routes/averbadora/api/webhooks";
@@ -193,6 +194,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "ia", element: <AverbadoraConfiguracoes /> },
           { path: "logs", element: <AdminLogs /> },
           { path: "vitrine", element: <AdminVitrine /> },
+          { path: "beneficios", element: <AdminBeneficios /> },
           { path: "api/docs", element: <AverbadoraApiDocs /> },
           { path: "api/tokens", element: <AverbadoraApiTokens /> },
           { path: "api/webhooks", element: <AverbadoraApiWebhooks /> },

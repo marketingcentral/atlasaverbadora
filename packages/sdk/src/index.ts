@@ -5,6 +5,7 @@ export type {
   BancoTabela, BancoTabelaInput,
   BancoUsuario, BancoUsuarioInput,
   BancoOferta, BancoOfertaInput, BancoOfertaFiltro, ServidorOfertaBanco,
+  AdminBeneficio, AdminBeneficioInput, ServidorBeneficio, CategoriaBeneficio, OrigemBeneficio,
   AdminBanco, AdminBancoInput,
   AdminPrefeitura, AdminPrefeituraInput,
   AdminConvenio, AdminConvenioInput,

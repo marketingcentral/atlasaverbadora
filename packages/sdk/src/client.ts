@@ -51,6 +51,48 @@ export interface NovoContratoBody {
 
 export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios";
 
+export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer";
+export type OrigemBeneficio = "banco" | "averbadora";
+export interface AdminBeneficio {
+  id: string;
+  prefeituraId: number;
+  nome: string;
+  categorias: CategoriaBeneficio[];
+  local: string;
+  icone: string;
+  cor: string;
+  descontoLabel: string;
+  descontoComplemento: string;
+  origem: OrigemBeneficio;
+  ativo: boolean;
+  criadoEm: string;
+  criadoPor: string;
+}
+export interface AdminBeneficioInput {
+  id?: string;
+  prefeituraId: number;
+  nome: string;
+  categorias: CategoriaBeneficio[];
+  local: string;
+  icone: string;
+  cor: string;
+  descontoLabel: string;
+  descontoComplemento: string;
+  origem: OrigemBeneficio;
+  ativo?: boolean;
+}
+export interface ServidorBeneficio {
+  id: string;
+  nome: string;
+  categorias: CategoriaBeneficio[];
+  local: string;
+  icone: string;
+  cor: string;
+  descontoLabel: string;
+  descontoComplemento: string;
+  origem: OrigemBeneficio;
+}
+
 export interface BancoOfertaFiltro {
   convenioIds?: string[];
   vinculos?: string[];
@@ -784,6 +826,12 @@ export class AtlasClient {
     /** Ofertas ativas criadas pelos bancos que casam com o perfil do servidor. */
     getMyOfertasBanco: () =>
       this.request<{ ofertas: ServidorOfertaBanco[] }>("/v1/servidores/me/ofertas-banco"),
+    /** Beneficios/descontos da prefeitura do servidor. Filtrado por categoria opcional. */
+    getMyBeneficios: (categoria?: CategoriaBeneficio) =>
+      this.request<{ beneficios: ServidorBeneficio[] }>(
+        "/v1/servidores/me/beneficios",
+        { query: categoria ? { categoria } : {} },
+      ),
     /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
     criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string }) =>
       this.request<{ id: string; situacao: string; banco: string; valor: number; parcelas: number; parcela: number; expira_em: string | null }>(
@@ -1046,6 +1094,15 @@ export class AtlasClient {
       this.request<void>(`/v1/admin/perfis/${id}`, { method: "DELETE" }),
     reativarPerfilAdmin: (id: number) =>
       this.request<{ ok: boolean }>(`/v1/admin/perfis/${id}/reativar`, { method: "POST" }),
+
+    // ===== Beneficios / descontos por prefeitura =====
+    beneficios: {
+      list: () => this.request<{ beneficios: AdminBeneficio[] }>("/v1/admin/beneficios"),
+      upsert: (body: AdminBeneficioInput) => this.request<{ beneficio: AdminBeneficio }>("/v1/admin/beneficios", { method: "POST", body }),
+      pausar: (id: string) => this.request<{ beneficio: AdminBeneficio }>(`/v1/admin/beneficios/${id}/pausar`, { method: "PATCH" }),
+      reativar: (id: string) => this.request<{ beneficio: AdminBeneficio }>(`/v1/admin/beneficios/${id}/reativar`, { method: "PATCH" }),
+    },
+
     listServidores: (q?: { prefeitura_id?: number; status?: string }) =>
       this.request<{ servidores: AdminServidor[]; total: number }>("/v1/admin/servidores", { query: q ?? {} }),
     updateServidor: (matricula: string, body: AdminServidorUpdate) =>

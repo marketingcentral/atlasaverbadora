@@ -21,6 +21,7 @@ import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
+import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail } from "./mailer.js";
@@ -1898,6 +1899,72 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await persistPerfis(c.env);
     appendAudit({ categoria: "acesso", acao: "usuario_reativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} reativado.` });
     return c.json({ ok: true });
+  })
+  // ============================================================
+  // Beneficios / descontos comerciais e de saude — averbadora cadastra por prefeitura.
+  // Servidor consulta em /v1/servidores/me/beneficios (filtrado pela pref dele).
+  // ============================================================
+  .get("/v1/admin/beneficios", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await refreshBeneficios(c.env);
+    const list = await loadBeneficios(c.env);
+    return c.json({ beneficios: list });
+  })
+  .post("/v1/admin/beneficios", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await refreshBeneficios(c.env);
+    const body = z.object({
+      id: z.string().optional(),
+      prefeituraId: z.number().int(),
+      nome: z.string().min(2).max(100),
+      categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer"])).min(1),
+      local: z.string().min(1).max(80),
+      icone: z.string().min(1).max(4), // emoji
+      cor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
+      descontoLabel: z.string().min(1).max(50),
+      descontoComplemento: z.string().min(1).max(80),
+      origem: z.enum(["banco", "averbadora"]),
+      ativo: z.boolean().default(true),
+    }).parse(await c.req.json());
+    if (body.id) {
+      const existing = (await loadBeneficios(c.env)).find((b) => b.id === body.id);
+      if (!existing) throw Errors.notFound("beneficio");
+    }
+    const b: Beneficio = {
+      id: body.id ?? nextBeneficioId(),
+      prefeituraId: body.prefeituraId,
+      nome: body.nome,
+      categorias: body.categorias,
+      local: body.local,
+      icone: body.icone,
+      cor: body.cor,
+      descontoLabel: body.descontoLabel,
+      descontoComplemento: body.descontoComplemento,
+      origem: body.origem,
+      ativo: body.ativo,
+      criadoEm: body.id ? (await loadBeneficios(c.env)).find((x) => x.id === body.id)!.criadoEm : new Date().toISOString(),
+      criadoPor: String(c.get("jwt").sub),
+    };
+    await persistBeneficio(c.env, b);
+    return c.json({ beneficio: b });
+  })
+  .patch("/v1/admin/beneficios/:id/pausar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await refreshBeneficios(c.env);
+    const b = (await loadBeneficios(c.env)).find((x) => x.id === c.req.param("id"));
+    if (!b) throw Errors.notFound("beneficio");
+    b.ativo = false;
+    await persistBeneficio(c.env, b);
+    return c.json({ beneficio: b });
+  })
+  .patch("/v1/admin/beneficios/:id/reativar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await refreshBeneficios(c.env);
+    const b = (await loadBeneficios(c.env)).find((x) => x.id === c.req.param("id"));
+    if (!b) throw Errors.notFound("beneficio");
+    b.ativo = true;
+    await persistBeneficio(c.env, b);
+    return c.json({ beneficio: b });
   })
 
   .post("/v1/admin/servidores/importar", authRequired, async (c) => {

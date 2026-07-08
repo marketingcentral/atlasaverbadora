@@ -29,6 +29,7 @@ const NAV = [
   { key: "health", label: "Health", href: "/averbadora/health", icon: "♥" },
   { key: "logs", label: "Logs", href: "/averbadora/logs", icon: "≡" },
   { key: "vitrine", label: "Vitrine", href: "/averbadora/vitrine", icon: "▢" },
+  { key: "beneficios", label: "Benefícios", href: "/averbadora/beneficios", icon: "◇" },
   {
     key: "api",
     label: "API",

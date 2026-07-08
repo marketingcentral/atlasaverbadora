@@ -8,6 +8,7 @@ import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorB
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
+import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
@@ -253,6 +254,38 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         valorMax: o.valorMax,
         criadoEm: o.criadoEm,
         expiraEm: o.expiraEm ?? null,
+      })),
+    });
+  })
+  // Beneficios/descontos da prefeitura do servidor. Filtra pela prefeituraId do
+  // convenio ativo e pela categoria (?categoria=saude|alimentacao|educacao|lazer).
+  // So retorna beneficios ativos. Averbadora cadastra via /v1/admin/beneficios.
+  .get("/v1/servidores/me/beneficios", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    await refreshBeneficios(c.env);
+    const url = new URL(c.req.url);
+    const categoria = url.searchParams.get("categoria");
+    const list = (await loadBeneficios(c.env)).filter((b) => {
+      if (!b.ativo) return false;
+      if (b.prefeituraId !== s.prefeitura_id) return false;
+      if (categoria && !b.categorias.includes(categoria as "saude" | "alimentacao" | "educacao" | "lazer")) return false;
+      return true;
+    });
+    return c.json({
+      beneficios: list.map((b) => ({
+        id: b.id,
+        nome: b.nome,
+        categorias: b.categorias,
+        local: b.local,
+        icone: b.icone,
+        cor: b.cor,
+        descontoLabel: b.descontoLabel,
+        descontoComplemento: b.descontoComplemento,
+        origem: b.origem,
       })),
     });
   })

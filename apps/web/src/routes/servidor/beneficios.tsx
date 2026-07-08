@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card } from "@atlas/ui/web";
+import { useQuery } from "@tanstack/react-query";
+import { atlas } from "../../lib/sdk";
+import type { ServidorBeneficio } from "@atlas/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
@@ -15,26 +18,6 @@ const CATEGORIAS: { id: Categoria; label: string }[] = [
   { id: "lazer", label: "Lazer" },
 ];
 
-interface Parceiro {
-  id: string;
-  nome: string;
-  categorias: Exclude<Categoria, "todos">[];
-  local: string;
-  icone: string;
-  cor: string;
-  descontoLabel: string;
-  descontoComplemento: string;
-}
-
-/** Parceiros comerciais (não-saúde) da prefeitura. Averbadora cadastra. */
-function parceirosDaPrefeitura(cidade: string): Parceiro[] {
-  return [
-    { id: "super-central", nome: "Supermercado Central", categorias: ["alimentacao"], local: cidade, icone: "🛒", cor: "#0891b2", descontoLabel: "5% desconto", descontoComplemento: "em compras" },
-    { id: "sabor", nome: "Restaurante Sabor", categorias: ["alimentacao"], local: cidade, icone: "🍽", cor: "#c2410c", descontoLabel: "15% desconto", descontoComplemento: "no almoço" },
-    { id: "plus-idiomas", nome: "Escola Plus Idiomas", categorias: ["educacao"], local: cidade, icone: "🎓", cor: "#7c3aed", descontoLabel: "30% desconto", descontoComplemento: "na matrícula" },
-  ];
-}
-
 export function ServidorBeneficios() {
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
   const [tab, setTab] = useState<Categoria>("todos");
@@ -49,12 +32,18 @@ export function ServidorBeneficios() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const cidade = useMemo(() => {
-    if (!info) return "";
-    return info.prefeitura.replace(/^Prefeitura de\s+/i, "");
-  }, [info]);
-
-  const parceiros = useMemo(() => parceirosDaPrefeitura(cidade), [cidade]);
+  // Descontos comerciais (nao-saude) cadastrados pela averbadora para a prefeitura.
+  const beneficiosQ = useQuery({
+    queryKey: ["servidor", "beneficios", "todos"],
+    queryFn: () => atlas.servidor.getMyBeneficios(),
+    refetchOnWindowFocus: true,
+  });
+  const parceiros = useMemo(
+    () => (beneficiosQ.data?.beneficios ?? []).filter((p) =>
+      p.categorias.some((c) => c === "alimentacao" || c === "educacao" || c === "lazer"),
+    ),
+    [beneficiosQ.data],
+  );
   const filtrados = useMemo(() => {
     if (tab === "todos") return parceiros;
     return parceiros.filter((p) => p.categorias.includes(tab));
@@ -148,9 +137,9 @@ function CategoriaTab({ active, onClick, label }: { active: boolean; onClick: ()
   );
 }
 
-function ParceiroCard({ parceiro }: { parceiro: Parceiro }) {
+function ParceiroCard({ parceiro }: { parceiro: ServidorBeneficio }) {
   const catLabel = parceiro.categorias
-    .map((c) => CATEGORIAS.find((x) => x.id === c)?.label)
+    .map((c) => CATEGORIAS.find((x) => x.id === (c as Categoria))?.label)
     .filter(Boolean)
     .join(" · ");
   return (

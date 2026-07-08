@@ -1,29 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@atlas/ui/web";
+import { useQuery } from "@tanstack/react-query";
+import { atlas } from "../../lib/sdk";
+import type { ServidorBeneficio } from "@atlas/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
-
-interface Parceiro {
-  id: string;
-  nome: string;
-  local: string;
-  icone: string;
-  cor: string;
-  descontoLabel: string;
-  descontoComplemento: string;
-}
-
-/** Parceiros de saúde da prefeitura (banco disponibiliza via cartão consignado). */
-function parceirosSaudeDaPrefeitura(cidade: string): Parceiro[] {
-  return [
-    { id: "farmacia-sj", nome: "Farmácia São João", local: `${cidade} Centro`, icone: "💊", cor: "#dc2626", descontoLabel: "10% desconto", descontoComplemento: "em medicamentos" },
-    { id: "bodyfit", nome: "Academia BodyFit", local: cidade, icone: "💪", cor: "#f59e0b", descontoLabel: "20% desconto", descontoComplemento: "na mensalidade" },
-    { id: "otica-vp", nome: "Ótica Visão Plus", local: `${cidade} Centro`, icone: "👓", cor: "#2563eb", descontoLabel: "25% desconto", descontoComplemento: "em armações" },
-  ];
-}
 
 export function ServidorSaude() {
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
@@ -38,12 +22,13 @@ export function ServidorSaude() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const cidade = useMemo(() => {
-    if (!info) return "";
-    return info.prefeitura.replace(/^Prefeitura de\s+/i, "");
-  }, [info]);
-
-  const parceiros = useMemo(() => parceirosSaudeDaPrefeitura(cidade), [cidade]);
+  // Beneficios de saude cadastrados pela averbadora para a prefeitura do servidor.
+  const beneficiosQ = useQuery({
+    queryKey: ["servidor", "beneficios", "saude"],
+    queryFn: () => atlas.servidor.getMyBeneficios("saude"),
+    refetchOnWindowFocus: true,
+  });
+  const parceiros = beneficiosQ.data?.beneficios ?? [];
 
   if (!info) return null;
 
@@ -158,7 +143,7 @@ export function ServidorSaude() {
   );
 }
 
-function ParceiroCard({ parceiro }: { parceiro: Parceiro }) {
+function ParceiroCard({ parceiro }: { parceiro: ServidorBeneficio }) {
   return (
     <article style={{
       background: "var(--surface)",
