@@ -244,25 +244,45 @@ function ComunicadoModal({
   return (
     <div onClick={onClose} style={modalBackdrop}>
       <div onClick={(e) => e.stopPropagation()} style={modalCard}>
-        <h3 style={{ margin: 0 }}>{initial ? "Editar comunicado" : "Novo comunicado"}</h3>
-        <FormGrid cols={2}>
-          <SelectField
-            label="Público-alvo"
-            value={form.publico}
-            onChange={(e) => setForm({ ...form, publico: e.target.value as ComunicadoPublico })}
-            options={[
-              { value: "banco", label: "Banco (aparece no portal dos bancos)" },
-              { value: "servidor", label: "Servidor (aparece no app do servidor)" },
-            ]}
-            required
-          />
+        <h3 style={{ margin: 0 }}>
+          {initial ? "Editar comunicado" : "Novo comunicado"}
+          {defaultPublico ? (
+            <span style={{ fontWeight: 500, fontSize: 14, color: "var(--text-muted)", marginLeft: 8 }}>
+              · {PUBLICO_LABEL[defaultPublico]}
+            </span>
+          ) : null}
+        </h3>
+        {/* Se o modal foi aberto de dentro de um submenu (Banco/Servidor), o
+            publico ja esta fixado — nao mostramos o seletor, sao criados apenas
+            para aquele publico. Fora do submenu (rota /comunicados sem filho),
+            mantemos a escolha manual. */}
+        {defaultPublico ? (
           <TextField
             label="Título"
             value={form.titulo}
             onChange={(e) => setForm({ ...form, titulo: e.target.value })}
             required
           />
-        </FormGrid>
+        ) : (
+          <FormGrid cols={2}>
+            <SelectField
+              label="Público-alvo"
+              value={form.publico}
+              onChange={(e) => setForm({ ...form, publico: e.target.value as ComunicadoPublico })}
+              options={[
+                { value: "banco", label: "Banco (aparece no portal dos bancos)" },
+                { value: "servidor", label: "Servidor (aparece no app do servidor)" },
+              ]}
+              required
+            />
+            <TextField
+              label="Título"
+              value={form.titulo}
+              onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+              required
+            />
+          </FormGrid>
+        )}
         <TextareaField
           label="Conteúdo"
           value={form.corpo}
