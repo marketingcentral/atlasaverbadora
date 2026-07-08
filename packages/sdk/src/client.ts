@@ -116,6 +116,8 @@ export interface BancoOferta {
   criadoEm: string;
   expiraEm?: string;
   criadoPor: string;
+  /** Emoji tematico opcional (ex.: "🔥", "🏠", "🎓"). */
+  icone?: string;
 }
 export interface BancoOfertaInput {
   id?: string;
@@ -127,6 +129,7 @@ export interface BancoOfertaInput {
   filtro?: BancoOfertaFiltro;
   ativo?: boolean;
   expiraEm?: string;
+  icone?: string;
 }
 export interface ServidorOfertaBanco {
   id: string;
@@ -139,6 +142,7 @@ export interface ServidorOfertaBanco {
   valorMax: number;
   criadoEm: string;
   expiraEm: string | null;
+  icone: string | null;
 }
 
 export interface BancoTabela {

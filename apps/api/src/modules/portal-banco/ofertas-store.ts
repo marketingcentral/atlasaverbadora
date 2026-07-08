@@ -38,6 +38,11 @@ export interface Oferta {
   expiraEm?: string;
   /** Usuario averbadora/banco que criou (JWT sub). */
   criadoPor: string;
+  /** Emoji tematico (ex.: "🔥" pra promocao, "🏠" pra habitacional, "🎓" pra
+   *  educacional). Opcional — o card no app do servidor mostra o icone antes
+   *  do titulo. Frontend limita o picker a um catalogo curado; backend aceita
+   *  qualquer string curta pra nao brigar com escolhas futuras. */
+  icone?: string;
 }
 
 const TABLE = "admin_ofertas";

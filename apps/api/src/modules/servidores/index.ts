@@ -270,6 +270,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         valorMax: o.valorMax,
         criadoEm: o.criadoEm,
         expiraEm: o.expiraEm ?? null,
+        icone: o.icone ?? null,
       })),
     });
   })

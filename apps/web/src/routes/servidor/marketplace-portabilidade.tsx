@@ -165,7 +165,10 @@ export function ServidorMarketplacePortabilidade() {
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
                     {o.bancoNome}
                   </div>
-                  <h3 style={{ margin: "6px 0", fontSize: "1.1rem" }}>{o.titulo}</h3>
+                  <h3 style={{ margin: "6px 0", fontSize: "1.1rem", display: "flex", alignItems: "center", gap: 8 }}>
+                    {o.icone ? <span style={{ fontSize: "1.3rem" }}>{o.icone}</span> : null}
+                    <span>{o.titulo}</span>
+                  </h3>
                   <p style={{ color: "var(--text-muted)", margin: "4px 0", fontSize: 14 }}>
                     {o.mensagem}
                   </p>

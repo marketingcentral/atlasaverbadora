@@ -527,6 +527,8 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       valorMax: z.number().positive(),
       expiraEm: z.string().optional().or(z.literal("")),
       ativo: z.boolean().default(true),
+      // Emoji tematico opcional. Limite generoso pra caber emojis compostos (ZWJ).
+      icone: z.string().max(8).optional().or(z.literal("")),
       filtro: z.object({
         convenioIds: z.array(z.string()).optional(),
         vinculos: z.array(z.string()).optional(),
@@ -557,6 +559,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       criadoEm: body.id ? (await loadOfertas(c.env)).find((o) => o.id === body.id)!.criadoEm : new Date().toISOString(),
       expiraEm: body.expiraEm || undefined,
       criadoPor: String(j.sub),
+      icone: body.icone || undefined,
     };
     await persistOferta(c.env, oferta);
     return c.json({ oferta });

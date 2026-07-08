@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, DataTable, IconButton, Input, Pill, TextField, type Column } from "@atlas/ui/web";
+import { Button, DataTable, IconButton, Pill, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { BancoOferta, BancoOfertaInput, BancoOfertaFiltro } from "@atlas/sdk";
 import { fmtBRL } from "../../lib/banco-propostas";
@@ -8,9 +8,42 @@ import { fmtBRL } from "../../lib/banco-propostas";
 const VINCULOS = ["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONISTA"];
 const SITUACOES = ["ATIVO", "TRABALHANDO", "FERIAS", "AFASTADO", "LICENCA", "APOSENTADO"];
 
+/** Catalogo curado de emojis pra o banco escolher. Cada um combina com um tipo
+ *  de campanha comum de credito consignado. Ordem = ordem no grid. */
+const ICONES = [
+  { emoji: "💰", nome: "Dinheiro" },
+  { emoji: "💸", nome: "Liberacao rapida" },
+  { emoji: "🏦", nome: "Banco" },
+  { emoji: "💳", nome: "Cartao" },
+  { emoji: "⚡", nome: "Relampago" },
+  { emoji: "🔥", nome: "Quente" },
+  { emoji: "🎯", nome: "Direcionada" },
+  { emoji: "🚀", nome: "Aprovacao rapida" },
+  { emoji: "🎁", nome: "Premio" },
+  { emoji: "⭐", nome: "Destaque" },
+  { emoji: "✨", nome: "Especial" },
+  { emoji: "💎", nome: "Premium" },
+  { emoji: "📈", nome: "Alto valor" },
+  { emoji: "🏠", nome: "Habitacional" },
+  { emoji: "🚗", nome: "Veiculo" },
+  { emoji: "🎓", nome: "Educacional" },
+  { emoji: "⛱️", nome: "Ferias" },
+  { emoji: "🎉", nome: "Campanha" },
+];
+
+type TabKey = "ativas" | "encerradas";
+
+/** True se a oferta ainda esta valendo (ativa + dentro da vigencia). */
+function estaAtiva(o: BancoOferta, now: Date = new Date()): boolean {
+  if (!o.ativo) return false;
+  if (o.expiraEm && new Date(o.expiraEm).getTime() <= now.getTime()) return false;
+  return true;
+}
+
 export function BancoOfertas() {
   const qc = useQueryClient();
   const [editing, setEditing] = useState<BancoOferta | "new" | null>(null);
+  const [tab, setTab] = useState<TabKey>("ativas");
   const ofertasQ = useQuery({ queryKey: ["banco", "ofertas"], queryFn: () => atlas.banco.ofertas.list() });
   const conveniosQ = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
 
@@ -23,9 +56,39 @@ export function BancoOfertas() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["banco", "ofertas"] }),
   });
 
+  const todas = ofertasQ.data?.ofertas ?? [];
+  const { ativas, encerradas } = useMemo(() => {
+    const now = new Date();
+    const a: BancoOferta[] = [];
+    const e: BancoOferta[] = [];
+    for (const o of todas) (estaAtiva(o, now) ? a : e).push(o);
+    return { ativas: a, encerradas: e };
+  }, [todas]);
+
+  const rows = tab === "ativas" ? ativas : encerradas;
+
   const columns: Column<BancoOferta>[] = [
-    { key: "ativo", header: "Situação", render: (o) => <Pill variant={o.ativo ? "averbado" : "expirado"}>{o.ativo ? "Ativa" : "Pausada"}</Pill> },
-    { key: "titulo", header: "Título" },
+    {
+      key: "situacao",
+      header: "Situação",
+      render: (o) => {
+        if (o.ativo && (!o.expiraEm || new Date(o.expiraEm) > new Date())) {
+          return <Pill variant="averbado">Ativa</Pill>;
+        }
+        if (!o.ativo) return <Pill variant="expirado">Encerrada</Pill>;
+        return <Pill variant="expirado">Expirada</Pill>;
+      },
+    },
+    {
+      key: "titulo",
+      header: "Título",
+      render: (o) => (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+          {o.icone ? <span style={{ fontSize: 16 }}>{o.icone}</span> : null}
+          <span>{o.titulo}</span>
+        </span>
+      ),
+    },
     { key: "taxa", header: "Taxa a.m.", align: "right", render: (o) => `${o.taxaAm.toFixed(2)}%` },
     { key: "prazo", header: "Prazo máx.", align: "right", render: (o) => `${o.parcelasMax}x` },
     { key: "valor", header: "Valor máx.", align: "right", render: (o) => fmtBRL(o.valorMax) },
@@ -61,19 +124,35 @@ export function BancoOfertas() {
         <Button onClick={() => setEditing("new")}>+ Nova oferta</Button>
       </header>
 
+      {/* Tabs Ativas / Encerradas — nunca ha hard-delete, so muda de aba. */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <TabBtn active={tab === "ativas"} onClick={() => setTab("ativas")} label={`Ativas (${ativas.length})`} />
+        <TabBtn active={tab === "encerradas"} onClick={() => setTab("encerradas")} label={`Encerradas (${encerradas.length})`} />
+      </div>
+
       <DataTable
         columns={columns}
-        rows={ofertasQ.data?.ofertas ?? []}
+        rows={rows}
         rowKey={(o) => o.id}
         loading={ofertasQ.isLoading}
-        emptyState="Nenhuma oferta criada ainda."
+        emptyState={tab === "ativas" ? "Nenhuma oferta ativa. Crie uma no botão acima." : "Nenhuma oferta encerrada."}
         actions={(o) => (
           <>
             <IconButton title="Editar" onClick={() => setEditing(o)}>✎</IconButton>
-            {o.ativo ? (
-              <IconButton title="Pausar" danger onClick={() => { if (confirm(`Pausar "${o.titulo}"?\n\nEla para de aparecer no sino dos servidores até você reativar.`)) pausar.mutate(o.id); }}>⏸</IconButton>
+            {tab === "ativas" ? (
+              <IconButton
+                title="Excluir (move pra aba Encerradas — sem apagar)"
+                danger
+                onClick={() => {
+                  if (confirm(`Encerrar "${o.titulo}"?\n\nEla para de aparecer no sino dos servidores e vai pra aba "Encerradas". Você ainda pode reativar depois.`)) {
+                    pausar.mutate(o.id);
+                  }
+                }}
+              >
+                🗑
+              </IconButton>
             ) : (
-              <IconButton title="Reativar" onClick={() => reativar.mutate(o.id)}>▶</IconButton>
+              <IconButton title="Reativar (volta pra Ativas)" onClick={() => reativar.mutate(o.id)}>▶</IconButton>
             )}
           </>
         )}
@@ -108,10 +187,9 @@ function OfertaModal({
     ativo: initial?.ativo ?? true,
     expiraEm: initial?.expiraEm ?? "",
     filtro: initial?.filtro ?? {},
+    icone: initial?.icone ?? "",
   });
   const [error, setError] = useState<string | null>(null);
-  // Promocao relampago: duracao em horas a partir de agora. Se preenchido,
-  // sobrescreve a data absoluta acima (calcula expiraEm = now + horas).
   const [duracaoHoras, setDuracaoHoras] = useState<string>("");
   const save = useMutation({
     mutationFn: () => {
@@ -150,6 +228,33 @@ function OfertaModal({
 
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <SectionHead>Conteúdo da oferta</SectionHead>
+
+          {/* Seletor de icone (emoji) — opcional. Aparece antes do titulo no card do servidor. */}
+          <div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+              Ícone <span style={{ color: "var(--text-dim)" }}>(opcional — aparece no card do servidor)</span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <IconeChip
+                on={!form.icone}
+                onClick={() => setForm({ ...form, icone: "" })}
+                title="Sem ícone"
+              >
+                <span style={{ fontSize: 13, color: "var(--text-dim)" }}>—</span>
+              </IconeChip>
+              {ICONES.map((i) => (
+                <IconeChip
+                  key={i.emoji}
+                  on={form.icone === i.emoji}
+                  onClick={() => setForm({ ...form, icone: i.emoji })}
+                  title={i.nome}
+                >
+                  <span style={{ fontSize: 20 }}>{i.emoji}</span>
+                </IconeChip>
+              ))}
+            </div>
+          </div>
+
           <TextField label="Título" value={form.titulo} onChange={(e) => setForm({ ...form, titulo: e.target.value })} placeholder="Ex.: Crédito consignado com taxa promocional" required />
           <TextField label="Mensagem (aparece no sino)" value={form.mensagem} onChange={(e) => setForm({ ...form, mensagem: e.target.value })} placeholder="Ex.: Aproveite: 1,79% a.m. em até 84x." required />
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
@@ -280,6 +385,48 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
       }}
     >
       {children}
+    </button>
+  );
+}
+
+function IconeChip({ on, onClick, title, children }: { on: boolean; onClick: () => void; title: string; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      style={{
+        width: 40, height: 40,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        borderRadius: 8,
+        border: "1px solid",
+        borderColor: on ? "var(--emerald-500)" : "var(--border-strong)",
+        background: on ? "color-mix(in srgb, var(--emerald-500) 15%, transparent)" : "transparent",
+        cursor: "pointer",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: "8px 16px",
+        borderRadius: 10,
+        border: `1px solid ${active ? "var(--emerald-500)" : "var(--border)"}`,
+        background: active ? "color-mix(in srgb, var(--emerald-500) 10%, transparent)" : "transparent",
+        color: active ? "var(--emerald-500)" : "var(--text-muted)",
+        fontSize: 13,
+        fontWeight: 700,
+        cursor: "pointer",
+      }}
+    >
+      {label}
     </button>
   );
 }
