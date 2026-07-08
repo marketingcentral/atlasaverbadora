@@ -114,14 +114,19 @@ export function BancoPropostas() {
   });
 
   const [decidedAt, setDecidedAt] = useState<Record<string, number>>({});
+  // decidir suporta motivo opcional na recusa (banco pode preferir nao expor
+  // motivos internos — padrao do mercado).
   const decidir = useMutation({
-    mutationFn: ({ adf, acao }: { adf: string; acao: "confirmar" | "cancelar" }) => atlas.banco.acao(adf, acao),
+    mutationFn: ({ adf, acao, motivo }: { adf: string; acao: "confirmar" | "cancelar"; motivo?: string }) =>
+      atlas.banco.acao(adf, acao, motivo ? { motivo } : undefined),
     onSuccess: (_data, vars) => {
       setDecidedAt((prev) => ({ ...prev, [vars.adf]: Date.now() }));
       qc.invalidateQueries({ queryKey: ["banco", "propostas-api"] });
       qc.invalidateQueries({ queryKey: ["servidor", "propostas"] });
     },
   });
+  // Estado do modal de recusa (motivo opcional). Guarda o adf; quando null, modal fechado.
+  const [recusandoAdf, setRecusandoAdf] = useState<string | null>(null);
 
   const todas: PropostaRow[] = useMemo(
     () => (apiQ.data?.contratos ?? []).map(contratoToProposta),
@@ -238,12 +243,68 @@ export function BancoPropostas() {
               key={p.idUnico}
               proposta={p}
               onAprovar={() => decidir.mutate({ adf: p.idUnico, acao: "confirmar" })}
-              onRecusar={() => decidir.mutate({ adf: p.idUnico, acao: "cancelar" })}
+              onRecusar={() => setRecusandoAdf(p.idUnico)}
               onAbrir={() => nav(`/banco/propostas/${p.idUnico}`)}
               decidindo={decidir.isPending}
             />
           ))
         )}
+      </div>
+
+      {recusandoAdf ? (
+        <RecusaModal
+          onCancel={() => setRecusandoAdf(null)}
+          onConfirm={(motivo) => {
+            decidir.mutate({ adf: recusandoAdf, acao: "cancelar", motivo });
+            setRecusandoAdf(null);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/** Modal simples pra recusar com motivo OPCIONAL (banco pode preferir nao expor motivos internos). */
+function RecusaModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (motivo?: string) => void }) {
+  const [texto, setTexto] = useState("");
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,.5)",
+        display: "grid", placeItems: "center", zIndex: 100, padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--surface-solid)", border: "1px solid var(--border)",
+          borderRadius: 12, padding: 24, maxWidth: 460, width: "100%",
+          display: "flex", flexDirection: "column", gap: 14,
+        }}
+      >
+        <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Recusar proposta</h3>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
+          Se preenchido, o motivo aparece pro servidor. Deixe em branco para recusar sem justificativa — é comum o banco não expor motivos internos.
+        </div>
+        <textarea
+          value={texto}
+          onChange={(e) => setTexto(e.target.value)}
+          rows={4}
+          maxLength={300}
+          placeholder="Motivo (opcional)"
+          style={{
+            width: "100%", padding: 10, borderRadius: 8,
+            border: "1px solid var(--border-strong)",
+            background: "var(--bg-elev)", color: "var(--text)",
+            fontSize: 13, resize: "vertical", fontFamily: "inherit",
+            boxSizing: "border-box",
+          }}
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Button variant="ghost" size="sm" onClick={onCancel}>Voltar</Button>
+          <Button size="sm" onClick={() => onConfirm(texto.trim() || undefined)}>Confirmar recusa</Button>
+        </div>
       </div>
     </div>
   );

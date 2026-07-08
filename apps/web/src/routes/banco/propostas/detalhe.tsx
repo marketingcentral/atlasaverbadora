@@ -23,7 +23,9 @@ export function BancoPropostaDetalhe() {
   const [version, setVersion] = useState(0);
   const proposta = getProposta(id);
   const perfil = getBancoPerfil();
-  const [modal, setModal] = useState<null | "recusar" | "mais_info" | "envio">(null);
+  // "mais_info" foi removido — banco entra em contato direto pra pedir informacoes,
+  // fora do sistema. Restam: recusar e upload de contrato (envio).
+  const [modal, setModal] = useState<null | "recusar" | "envio">(null);
   const [pendingAverbacao, setPendingAverbacao] = useState(false);
   // Exigências definidas pela prefeitura do convênio ativo (algumas exigem CCB/2FA, outras não).
   const convQ = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
@@ -207,7 +209,6 @@ export function BancoPropostaDetalhe() {
           onEnviarLink={() => setModal("envio")}
           onRegistrarFormalizacao={registrarFormalizacao}
           onConfirmarAverbacao={confirmarAverbacao}
-          onMaisInfo={() => setModal("mais_info")}
           onRecusar={() => setModal("recusar")}
         />
       </div>
@@ -228,10 +229,9 @@ export function BancoPropostaDetalhe() {
             refresh();
           }}
         />
-      ) : modal ? (
+      ) : modal === "recusar" ? (
         <DecisaoModal
           proposta={proposta}
-          tipo={modal}
           onClose={() => setModal(null)}
           onDone={() => {
             setModal(null);
@@ -261,7 +261,6 @@ function NextStep({
   onEnviarLink,
   onRegistrarFormalizacao,
   onConfirmarAverbacao,
-  onMaisInfo,
   onRecusar,
 }: {
   proposta: BancoProposta;
@@ -272,7 +271,6 @@ function NextStep({
   onEnviarLink: () => void;
   onRegistrarFormalizacao: () => void;
   onConfirmarAverbacao: () => void;
-  onMaisInfo: () => void;
   onRecusar: () => void;
 }) {
   const s = proposta.status;
@@ -538,45 +536,42 @@ function EnvioModal({ proposta, onClose, onDone }: { proposta: BancoProposta; on
 
 function DecisaoModal({
   proposta,
-  tipo,
   onClose,
   onDone,
 }: {
   proposta: BancoProposta;
-  tipo: "recusar" | "mais_info";
   onClose: () => void;
   onDone: () => void;
 }) {
   const [texto, setTexto] = useState("");
-  const recusar = tipo === "recusar";
   const confirmar = () => {
-    if (recusar) {
-      patchProposta(proposta.idUnico, { status: "recusada", motivoRecusa: texto.trim() });
-    } else {
-      patchProposta(proposta.idUnico, { status: "mais_info", observacao: texto.trim() });
-    }
+    // Motivo opcional: se em branco, recusa sem justificativa (o banco pode
+    // preferir nao expor motivos internos — eh o padrao do mercado).
+    patchProposta(proposta.idUnico, {
+      status: "recusada",
+      motivoRecusa: texto.trim() || undefined,
+    });
     onDone();
   };
   return (
     <div onClick={onClose} style={modalBackdrop}>
       <div onClick={(e) => e.stopPropagation()} style={modalCard}>
-        <h3 style={{ margin: 0 }}>{recusar ? "Recusar proposta" : "Solicitar mais informações"}</h3>
+        <h3 style={{ margin: 0 }}>Recusar proposta</h3>
         <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
           {proposta.nome} · <code>{proposta.idUnico}</code>
         </div>
         <TextareaField
-          label={recusar ? "Motivo da recusa (obrigatório)" : "O que precisa ser esclarecido (obrigatório)"}
+          label="Motivo da recusa (opcional)"
+          hint="Se preenchido, o servidor verá o motivo. Deixe em branco para recusar sem justificativa."
           value={texto}
           onChange={(e) => setTexto(e.target.value)}
           rows={4}
-          required
-          minLength={3}
           maxLength={300}
         />
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Voltar</Button>
-          <Button type="button" disabled={texto.trim().length < 3} onClick={confirmar}>
-            {recusar ? "Confirmar recusa" : "Enviar solicitação"}
+          <Button type="button" onClick={confirmar}>
+            Confirmar recusa
           </Button>
         </FormActions>
       </div>
