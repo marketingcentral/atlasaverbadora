@@ -38,34 +38,65 @@ export function AdminComunicados() {
 
   const comunicados = data.data?.comunicados ?? [];
 
+  const ellipsis: React.CSSProperties = {
+    display: "inline-block",
+    verticalAlign: "middle",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  };
+
   const columns: Column<Comunicado>[] = [
-    { key: "id", header: "ID", mono: true, width: 100 },
+    {
+      key: "id",
+      header: "ID",
+      mono: true,
+      width: 110,
+      render: (c) => (
+        <span style={{ ...ellipsis, maxWidth: 96, fontFamily: "var(--font-mono)" }} title={c.id}>
+          {c.id}
+        </span>
+      ),
+    },
     {
       key: "publico",
       header: "Público",
-      width: 120,
+      width: 90,
       render: (c) => {
         // Fallback caso a API ainda esteja num deploy antigo sem o campo publico.
         const p: ComunicadoPublico = c.publico ?? "banco";
         return <Pill variant={p === "servidor" ? "averbado" : "emdia"}>{PUBLICO_LABEL[p]}</Pill>;
       },
     },
-    { key: "titulo", header: "Título" },
+    {
+      key: "titulo",
+      header: "Título",
+      render: (c) => (
+        <span style={{ ...ellipsis, maxWidth: 200 }} title={c.titulo}>
+          {c.titulo}
+        </span>
+      ),
+    },
     {
       key: "corpo",
       header: "Conteúdo",
       render: (c) => (
-        <span style={{ color: "var(--text-muted)" }}>
-          {c.corpo.slice(0, 120)}
-          {c.corpo.length > 120 ? "..." : ""}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 260 }}>
+          <span style={{ ...ellipsis, maxWidth: 240, color: "var(--text-muted)" }} title={c.corpo}>
+            {c.corpo}
+          </span>
+          {c.linkHref ? (
+            <span title={c.linkLabel ?? c.linkHref} style={{ color: "var(--accent)", fontSize: 12 }}>
+              🔗
+            </span>
+          ) : null}
         </span>
       ),
     },
-    { key: "link", header: "Link", render: (c) => (c.linkHref ? c.linkLabel ?? c.linkHref : "—") },
     {
-      key: "ordem",
-      header: "",
-      width: 90,
+      key: "acoes",
+      header: "Ações",
+      width: 200,
       align: "right",
       render: (c) => {
         const idx = comunicados.findIndex((x) => x.id === c.id);
@@ -73,7 +104,7 @@ export function AdminComunicados() {
         const last = idx < 0 || idx >= comunicados.length - 1;
         const busy = mover.isPending;
         return (
-          <div style={{ display: "inline-flex", gap: 4 }}>
+          <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
             <button
               type="button"
               disabled={first || busy}
@@ -94,35 +125,26 @@ export function AdminComunicados() {
             >
               ↓
             </button>
+            <Button variant="ghost" size="sm" type="button" onClick={() => setEditing(c)}>
+              Editar
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              disabled={remover.isPending}
+              onClick={() => {
+                if (window.confirm(`Remover o comunicado "${c.titulo}"? Essa acao nao pode ser desfeita.`)) {
+                  remover.mutate(c.id);
+                }
+              }}
+              style={{ color: "#F87171" }}
+            >
+              Remover
+            </Button>
           </div>
         );
       },
-    },
-    {
-      key: "acoes",
-      header: "",
-      width: 190,
-      align: "right",
-      render: (c) => (
-        <div style={{ display: "inline-flex", gap: 8 }}>
-          <Button variant="ghost" type="button" onClick={() => setEditing(c)}>
-            Editar
-          </Button>
-          <Button
-            variant="ghost"
-            type="button"
-            disabled={remover.isPending}
-            onClick={() => {
-              if (window.confirm(`Remover o comunicado "${c.titulo}"? Essa acao nao pode ser desfeita.`)) {
-                remover.mutate(c.id);
-              }
-            }}
-            style={{ color: "#F87171" }}
-          >
-            Remover
-          </Button>
-        </div>
-      ),
     },
   ];
 
