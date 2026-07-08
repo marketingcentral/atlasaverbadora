@@ -45,6 +45,8 @@ export interface MatriculaInfo {
   ativa: boolean;
   /** Flag da prefeitura — se true, servidor pode editar email/telefone em /conta. */
   permiteServidorEditarContato?: boolean;
+  /** Texto livre com exclusividades do cartão consignado dessa prefeitura. */
+  exclusividadesCartaoConsig?: string;
   margem: MargemResponse;
   contratos: ContratoMock[];
   elegiveisPortabilidade: ContratoElegivelMock[];

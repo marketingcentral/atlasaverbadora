@@ -195,6 +195,8 @@ export interface AdminPrefeitura {
   ultimaSincResultado?: { novos: number; atualizados: number; erro?: string; ts: string };
   /** Se true, servidor pode editar contato (email/telefone) pelo app. Default false. */
   permiteServidorEditarContato?: boolean;
+  /** Texto livre com exclusividades do cartão consignado desta prefeitura. */
+  exclusividadesCartaoConsig?: string;
 }
 
 export interface AdminPrefeituraInput {
@@ -210,6 +212,7 @@ export interface AdminPrefeituraInput {
   servidoresCount?: number;
   folhaSincUrl?: string;
   permiteServidorEditarContato?: boolean;
+  exclusividadesCartaoConsig?: string;
 }
 
 export interface AdminConvenio {

@@ -114,6 +114,11 @@ export interface PrefeituraAdmin {
    *  Se false, a tela /servidor/conta mostra os dados como somente-leitura e
    *  instrui procurar o RH. Cada prefeitura decide. Default: false (mais restritivo). */
   permiteServidorEditarContato?: boolean;
+  /** Texto livre com condicoes exclusivas do cartao consignado para esta prefeitura
+   *  ("municipios e orgaos publicos terao exclusividades"). Ex.: "Cartão Elo Consignado com
+   *  1,5% a.m. exclusivo para servidores da Câmara Municipal." Aparece destacado na
+   *  aba Cartão Consignado do servidor. Vazio = sem exclusividades. */
+  exclusividadesCartaoConsig?: string;
 }
 
 export function sanitizePrefeitura(p: PrefeituraAdmin) {
@@ -886,6 +891,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
           { message: "URL da folha deve começar com http:// ou https://" },
         ),
         permiteServidorEditarContato: z.boolean().optional(),
+        exclusividadesCartaoConsig: z.string().max(500).optional().or(z.literal("")),
       })
       .parse(await c.req.json());
     const { password, loginEmail, ...rest } = body;

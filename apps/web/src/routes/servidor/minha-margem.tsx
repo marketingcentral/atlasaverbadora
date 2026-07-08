@@ -159,6 +159,36 @@ export function ServidorMinhaMargem() {
         </div>
       </article>
 
+      {/* Exclusividades do cartão consignado — só na aba CARTAO_CONSIGNADO e quando
+          a prefeitura definiu algo. Aparece antes dos contratos pra dar destaque. */}
+      {tab === "CARTAO_CONSIGNADO" && info.exclusividadesCartaoConsig?.trim() ? (
+        <article style={{
+          background: "color-mix(in srgb, var(--gold-500) 8%, var(--surface))",
+          border: "1px solid var(--gold-500)",
+          borderRadius: 12,
+          padding: 16,
+          display: "flex",
+          gap: 14,
+          alignItems: "flex-start",
+        }}>
+          <div style={{
+            width: 40, height: 40, borderRadius: 10,
+            background: "color-mix(in srgb, var(--gold-500) 20%, transparent)",
+            color: "var(--gold-500)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 20, flexShrink: 0,
+          }}>⭐</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, letterSpacing: ".08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase", marginBottom: 3 }}>
+              Exclusividade da sua prefeitura
+            </div>
+            <div style={{ fontSize: 14, color: "var(--text)", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+              {info.exclusividadesCartaoConsig}
+            </div>
+          </div>
+        </article>
+      ) : null}
+
       {/* Contratos ativos dessa modalidade */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>

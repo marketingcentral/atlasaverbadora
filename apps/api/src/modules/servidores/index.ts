@@ -83,6 +83,8 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     // Flag da prefeitura: se true, servidor pode editar email/telefone; se false,
     // esconde botao Editar em /servidor/conta. Default false = mais restritivo.
     permiteServidorEditarContato: pref?.permiteServidorEditarContato ?? false,
+    /** Condicoes exclusivas do cartao consignado dessa prefeitura, se houver. */
+    exclusividadesCartaoConsig: pref?.exclusividadesCartaoConsig ?? "",
     margem: {
       servidor_id: servidorId, matricula: e.matricula, prefeitura_id: prefId,
       margem: { salario_base: e.salarioLiquido, comprometido: round2(comprometido), disponivel: emp.disponivel, percentual_uso: percentualUso(e.salarioLiquido, comprometido, "EMPRESTIMO") },

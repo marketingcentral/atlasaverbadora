@@ -121,6 +121,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
     servidoresCount: initial?.servidoresCount ?? 0,
     folhaSincUrl: initial?.folhaSincUrl ?? "",
     permiteServidorEditarContato: initial?.permiteServidorEditarContato ?? false,
+    exclusividadesCartaoConsig: initial?.exclusividadesCartaoConsig ?? "",
   });
   const [error, setError] = useState<string | null>(null);
   const save = useMutation({
@@ -215,6 +216,28 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
             Se ligado, o servidor pode alterar e-mail e telefone em Meus dados (com selfie de confirmação). Se desligado, a tela mostra os dados como somente-leitura e orienta procurar o RH.
           </span>
         </label>
+        <div style={{ marginTop: 4 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+            Exclusividades do Cartão Consignado (opcional)
+          </label>
+          <textarea
+            value={form.exclusividadesCartaoConsig ?? ""}
+            onChange={(e) => setForm({ ...form, exclusividadesCartaoConsig: e.target.value })}
+            placeholder="Ex.: Cartão Elo Consignado com 1,5% a.m. exclusivo para servidores da Câmara Municipal de Castro."
+            maxLength={500}
+            rows={3}
+            style={{
+              width: "100%", padding: 10, borderRadius: 8,
+              border: "1px solid var(--border-strong)",
+              background: "var(--bg-elev)", color: "var(--text)",
+              fontSize: 13, resize: "vertical", fontFamily: "inherit",
+              boxSizing: "border-box",
+            }}
+          />
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
+            Aparece destacado na aba <b>Cartão de Crédito Consignado</b> do servidor. Vazio = sem exclusividades específicas.
+          </div>
+        </div>
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
