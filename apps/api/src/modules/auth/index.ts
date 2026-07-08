@@ -11,7 +11,7 @@ import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded } from "../admin/index.js";
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
-import { setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
 function maskEmail(email?: string): string {
@@ -319,9 +319,14 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     // ativada ou nao (basta o e-mail estar gravado noutro servidor). Assim o mesmo
     // e-mail nao serve para varios CPFs.
     const emailAlvo = email.trim().toLowerCase();
-    const emUsoDb = SERVIDORES_BUSCA_MOCK.some(
-      (x) => x.cpf !== digits && (x.email ?? "").trim().toLowerCase() === emailAlvo,
-    );
+    // Autoritativo: consulta o Postgres (fonte da verdade). Fallback pra memória
+    // se o DB estiver indisponível — nunca deixa passar por falha de conexão.
+    let emUsoDb = false;
+    try {
+      emUsoDb = await emailEmUsoPorOutroCpf(c.env, emailAlvo, digits);
+    } catch {
+      emUsoDb = SERVIDORES_BUSCA_MOCK.some((x) => x.cpf !== digits && (x.email ?? "").trim().toLowerCase() === emailAlvo);
+    }
     // ...e nao pode estar reservado por um primeiro-acesso pendente de outro CPF
     // (evita dois cadastros simultaneos pegarem o mesmo e-mail antes de confirmar).
     let emUsoPendente = false;
@@ -329,7 +334,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       const dono = await c.env.KV_SESSIONS.get(`pa:email:${emailAlvo}`);
       emUsoPendente = Boolean(dono && dono !== digits);
     }
-    if (emUsoDb || emUsoPendente) throw Errors.validation({ email: "E-mail em uso por outra conta. Use outro e-mail." });
+    if (emUsoDb || emUsoPendente) throw Errors.validation({ email: "E-mail já cadastrado para outro CPF. Use outro e-mail." });
     const codigo = await gerarCodigoUnico(c.env);
     const senhaHash = await sha256Hex(senha);
     // Guarda o pacote pendente ate a confirmacao (10 min). Telefone normalizado (so digitos).

@@ -233,6 +233,18 @@ export async function setServidorContato(
   return rows.length;
 }
 
+/** Autoritativo (consulta o Postgres): o e-mail já está vinculado a OUTRO CPF?
+ *  Independe do estado em memória do isolate — é a fonte da verdade da unicidade. */
+export async function emailEmUsoPorOutroCpf(env: Env, email: string, cpf: string): Promise<boolean> {
+  const emailLower = email.trim().toLowerCase();
+  if (!emailLower) return false;
+  const rows = (await getDb(env).execute(sql`
+    SELECT 1 FROM servidores
+    WHERE lower(data->>'email') = ${emailLower} AND cpf <> ${cpf}
+    LIMIT 1`)) as unknown as unknown[];
+  return rows.length > 0;
+}
+
 /** Zera a conta de um CPF: remove passwordHash, email e telefone do jsonb `data`
  *  de TODAS as matrículas — deixa o servidor pronto para um novo primeiro-acesso.
  *  Retorna o número de linhas afetadas. */
