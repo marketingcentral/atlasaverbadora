@@ -193,6 +193,8 @@ export interface AdminPrefeitura {
   ultimaSincronizacao?: string;
   folhaSincUrl?: string;
   ultimaSincResultado?: { novos: number; atualizados: number; erro?: string; ts: string };
+  /** Se true, servidor pode editar contato (email/telefone) pelo app. Default false. */
+  permiteServidorEditarContato?: boolean;
 }
 
 export interface AdminPrefeituraInput {
@@ -207,6 +209,7 @@ export interface AdminPrefeituraInput {
   password?: string;
   servidoresCount?: number;
   folhaSincUrl?: string;
+  permiteServidorEditarContato?: boolean;
 }
 
 export interface AdminConvenio {

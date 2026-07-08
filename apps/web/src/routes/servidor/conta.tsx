@@ -74,6 +74,8 @@ export function ServidorConta() {
     setSavedAt(new Date());
   }
 
+  // Prefeitura decide se o servidor pode editar contato pelo app.
+  const podeEditarContato = info?.permiteServidorEditarContato ?? false;
   const nome = info?.nome ?? "Servidor";
   const cpfMasked = "***.***.222-33";
   const endereco = info?.endereco ?? "—";
@@ -110,7 +112,8 @@ export function ServidorConta() {
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <h3 style={{ margin: 0 }}>Contato</h3>
-          {!editing ? (
+          {/* Botao Editar so aparece se a prefeitura permite (flag do backend). */}
+          {podeEditarContato && !editing ? (
             <Button size="sm" variant="ghost" onClick={comecarEdicao}>
               Editar
             </Button>
@@ -135,10 +138,17 @@ export function ServidorConta() {
             </p>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
-            <ReadField label="E-mail" value={savedEmail} />
-            <ReadField label="Telefone" value={savedTel} />
-          </div>
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
+              <ReadField label="E-mail" value={savedEmail} />
+              <ReadField label="Telefone" value={savedTel} />
+            </div>
+            {!podeEditarContato ? (
+              <p style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 12, marginBottom: 0 }}>
+                A sua prefeitura não permite alterar o contato pelo app. Para corrigir e-mail ou telefone, procure o setor de RH.
+              </p>
+            ) : null}
+          </>
         )}
 
         {savedAt ? (

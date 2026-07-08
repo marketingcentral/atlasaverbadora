@@ -43,6 +43,8 @@ export interface MatriculaInfo {
   telefone: string;
   endereco: string;
   ativa: boolean;
+  /** Flag da prefeitura — se true, servidor pode editar email/telefone em /conta. */
+  permiteServidorEditarContato?: boolean;
   margem: MargemResponse;
   contratos: ContratoMock[];
   elegiveisPortabilidade: ContratoElegivelMock[];

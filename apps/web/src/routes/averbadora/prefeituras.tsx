@@ -120,6 +120,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
     password: "",
     servidoresCount: initial?.servidoresCount ?? 0,
     folhaSincUrl: initial?.folhaSincUrl ?? "",
+    permiteServidorEditarContato: initial?.permiteServidorEditarContato ?? false,
   });
   const [error, setError] = useState<string | null>(null);
   const save = useMutation({
@@ -201,6 +202,19 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
             hint="Deixe em branco se nao houver origem automatica. Colunas: cpf, matricula, nome, cargo, vinculo, salarioLiquido, idConvenio, email, telefone"
           />
         </FormGrid>
+        <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, color: "var(--text-muted)", cursor: "pointer", marginTop: 4 }}>
+          <input
+            type="checkbox"
+            checked={form.permiteServidorEditarContato ?? false}
+            onChange={(e) => setForm({ ...form, permiteServidorEditarContato: e.target.checked })}
+            style={{ marginTop: 3 }}
+          />
+          <span>
+            <b style={{ color: "var(--text)" }}>Permitir que servidores editem contato pelo app</b>
+            <br />
+            Se ligado, o servidor pode alterar e-mail e telefone em Meus dados (com selfie de confirmação). Se desligado, a tela mostra os dados como somente-leitura e orienta procurar o RH.
+          </span>
+        </label>
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>

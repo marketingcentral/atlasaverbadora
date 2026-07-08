@@ -80,6 +80,9 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     prefeitura: pref ? `Prefeitura de ${pref.nome}` : e.origem, prefeitura_id: prefId, servidor_id: servidorId,
     uf: pref?.uf ?? "SC", cargo: e.cargo ?? "—", vinculo: (["ESTATUTARIO", "CLT", "COMISSIONADO"].includes(e.vinculo) ? e.vinculo : "ESTATUTARIO") as "ESTATUTARIO" | "CLT" | "COMISSIONADO",
     nome: e.nome, email: e.email ?? "", telefone: e.telefone ?? "", endereco: e.endereco ?? "", ativa: true,
+    // Flag da prefeitura: se true, servidor pode editar email/telefone; se false,
+    // esconde botao Editar em /servidor/conta. Default false = mais restritivo.
+    permiteServidorEditarContato: pref?.permiteServidorEditarContato ?? false,
     margem: {
       servidor_id: servidorId, matricula: e.matricula, prefeitura_id: prefId,
       margem: { salario_base: e.salarioLiquido, comprometido: round2(comprometido), disponivel: emp.disponivel, percentual_uso: percentualUso(e.salarioLiquido, comprometido, "EMPRESTIMO") },

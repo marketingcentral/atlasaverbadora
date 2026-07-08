@@ -110,6 +110,10 @@ export interface PrefeituraAdmin {
   /** Exigências que a prefeitura impõe ao banco na averbação (algumas exigem, outras não). */
   exigeCcb?: boolean;
   exigeBanco2FA?: boolean;
+  /** Se true, o servidor pode editar email/telefone na propria conta pelo app.
+   *  Se false, a tela /servidor/conta mostra os dados como somente-leitura e
+   *  instrui procurar o RH. Cada prefeitura decide. Default: false (mais restritivo). */
+  permiteServidorEditarContato?: boolean;
 }
 
 export function sanitizePrefeitura(p: PrefeituraAdmin) {
@@ -881,6 +885,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
           (v) => !v || /^https?:\/\//i.test(v),
           { message: "URL da folha deve começar com http:// ou https://" },
         ),
+        permiteServidorEditarContato: z.boolean().optional(),
       })
       .parse(await c.req.json());
     const { password, loginEmail, ...rest } = body;
