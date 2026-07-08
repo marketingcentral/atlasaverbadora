@@ -8,7 +8,8 @@ import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtu
 import { refreshConvenios } from "./convenios-store.js";
 import { prefeituras } from "../admin/index.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
-import { listTabelas, getTabela, upsertTabela, removerTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario } from "./cadastros.js";
+import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
+import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
 
 function requireBancoRole(j: JwtClaims): void {
   if (j.role !== "banco") throw Errors.forbidden("Requer perfil banco");
@@ -259,18 +260,19 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       matricula: colaborador ?? undefined,
       situacao: filtroSituacao.length ? filtroSituacao : undefined,
     });
-    // Todos os contratos do banco que estejam em situacao "viva" (aguardando
-    // decisao, ativo, liberado) aparecem independente do convenio ativo do
-    // switcher. Sem isso, quando o operador troca de convenio depois de
-    // aprovar uma proposta, ela some do /banco/propostas, /banco/carteira e
-    // /banco/adf — servidor ve a operacao mas banco nao consegue mais achar.
+    // Default = SO contratos do convenio ATIVO. Isolamento por convenio: banco
+    // logado em Palhoca nao deve ver proposta de servidor de Joinville.
+    // Casos edge (visao geral de convenios, busca de matricula especifica) podem
+    // opt-in com ?incluir_todos_convenios=true.
+    const incluirTodos = url.searchParams.get("incluir_todos_convenios") === "true";
     const bancoId = j.banco_id ?? 1;
-    const outrosConvenios = listContratos({}).filter((ct) => {
-      if (ct.bancoId !== bancoId) return false;
-      if (rows.some((r) => r.adf === ct.adf)) return false; // ja incluida via filtro principal
-      const s = ct.situacao.toLowerCase();
-      return s.includes("aguard") || s.includes("ativo") || s.includes("libera") || s.includes("averb");
-    });
+    const outrosConvenios = incluirTodos
+      ? listContratos({}).filter((ct) => {
+          if (ct.bancoId !== bancoId) return false;
+          if (rows.some((r) => r.adf === ct.adf)) return false;
+          return true;
+        })
+      : [];
     // Enriquecemos cada contrato com `atualizadoEm` = criadoEm do evento mais
     // recente (aprovacao, averbacao, folha aplicada). Frontend usa isso pra
     // ordenar carteira/ADF com "acabou de acontecer" no topo — sem esse campo
@@ -417,6 +419,144 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!(await removerTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
     return c.body(null, 204);
   })
+  .post("/v1/portal/banco/cadastros/tabela-emprestimos/:id/reativar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const t = await getTabela(c.env, c.req.param("id"));
+    const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
+    if (!t || !meusConvenios.has(t.convenioId)) throw Errors.notFound("tabela");
+    if (!(await reativarTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
+    return c.json({ ok: true });
+  })
+
+  // --------- Upload de CCB (Cedula de Credito Bancario) pro R2 ---------
+  // Fluxo: banco anexa a CCB assinada, arquivo persiste em R2 sob a chave
+  // ccb/${banco_id}/${adf}/${timestamp}-${nome}.pdf. GET valida isolamento —
+  // banco so consegue baixar CCBs do proprio banco_id.
+  .post("/v1/portal/banco/ccb/upload", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (!c.env.R2_FILES) throw Errors.validation({ r2: "R2 binding indisponivel — configuracao Cloudflare pendente." });
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const form = await c.req.formData().catch(() => null);
+    if (!form) throw Errors.validation({ body: "Envie multipart/form-data com campos adf e file." });
+    const adfRaw = form.get("adf");
+    const file = form.get("file");
+    if (typeof adfRaw !== "string" || !adfRaw.trim()) throw Errors.validation({ adf: "campo 'adf' obrigatorio" });
+    // Duck-type: FormDataEntryValue e string|File; File tem name/size/type/stream/arrayBuffer.
+    const isFile = (v: unknown): v is { name: string; size: number; type: string; arrayBuffer: () => Promise<ArrayBuffer> } =>
+      typeof v === "object" && v !== null && typeof (v as { size?: unknown }).size === "number" && typeof (v as { arrayBuffer?: unknown }).arrayBuffer === "function";
+    if (!isFile(file)) throw Errors.validation({ file: "campo 'file' obrigatorio" });
+    if (file.type && file.type !== "application/pdf") throw Errors.validation({ file: "apenas PDF" });
+    const MAX = 15 * 1024 * 1024; // 15 MB
+    if (file.size > MAX) throw Errors.validation({ file: "arquivo maior que 15 MB" });
+    const adf = adfRaw.replace(/[^\w.-]/g, "").slice(0, 40);
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const safeName = (file.name || "ccb.pdf").replace(/[^\w.-]/g, "_").slice(0, 60);
+    const key = `ccb/${j.banco_id}/${adf}/${ts}-${safeName}`;
+    const buf = await file.arrayBuffer();
+    await c.env.R2_FILES.put(key, buf, { httpMetadata: { contentType: "application/pdf" } });
+    return c.json({ key, size: file.size, contentType: "application/pdf" });
+  })
+  .get("/v1/portal/banco/ccb/*", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (!c.env.R2_FILES) throw Errors.notFound("r2");
+    const url = new URL(c.req.url);
+    const prefix = "/v1/portal/banco/ccb/";
+    const key = decodeURIComponent(url.pathname.slice(prefix.length));
+    // Isolamento: banco so pode baixar arquivos sob ccb/${banco_id}/
+    if (!key.startsWith(`ccb/${j.banco_id}/`)) throw Errors.notFound("ccb");
+    const obj = await c.env.R2_FILES.get(key);
+    if (!obj) throw Errors.notFound("ccb");
+    return new Response(obj.body, {
+      headers: {
+        "Content-Type": obj.httpMetadata?.contentType ?? "application/pdf",
+        "Content-Disposition": `inline; filename="${key.split("/").pop()}"`,
+        "Cache-Control": "private, max-age=60",
+      },
+    });
+  })
+
+  // --------- Ofertas de credito (banco → servidores) ----------
+  // Banco cria uma oferta filtrada (por convenio/vinculo/situacao/prefeitura/salario/idade);
+  // servidores cujo perfil casa recebem no sino. Nao existe hard-delete — pausar/reativar.
+  .get("/v1/portal/banco/ofertas", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    await refreshOfertas(c.env);
+    const bancoId = j.banco_id ?? -1;
+    const list = (await loadOfertas(c.env)).filter((o) => o.bancoId === bancoId);
+    return c.json({ ofertas: list });
+  })
+  .post("/v1/portal/banco/ofertas", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    await refreshOfertas(c.env);
+    const body = z.object({
+      id: z.string().optional(),
+      titulo: z.string().min(3).max(120),
+      mensagem: z.string().min(3).max(500),
+      taxaAm: z.number().positive().max(20),
+      parcelasMax: z.number().int().positive().max(120),
+      valorMax: z.number().positive(),
+      expiraEm: z.string().optional().or(z.literal("")),
+      ativo: z.boolean().default(true),
+      filtro: z.object({
+        convenioIds: z.array(z.string()).optional(),
+        vinculos: z.array(z.string()).optional(),
+        situacaoFuncional: z.array(z.string()).optional(),
+        prefeituraIds: z.array(z.number().int()).optional(),
+        salarioMin: z.number().optional(),
+        salarioMax: z.number().optional(),
+        idadeMin: z.number().int().optional(),
+        idadeMax: z.number().int().optional(),
+      }).default({}),
+    }).parse(await c.req.json());
+    // Isolamento por bancoId: se editando, precisa ser oferta do proprio banco.
+    if (body.id) {
+      const existing = (await loadOfertas(c.env)).find((o) => o.id === body.id);
+      if (!existing) throw Errors.notFound("oferta");
+      if (existing.bancoId !== j.banco_id) throw Errors.forbidden("oferta de outro banco");
+    }
+    const oferta: Oferta = {
+      id: body.id ?? nextOfertaId(j.banco_id),
+      bancoId: j.banco_id,
+      titulo: body.titulo,
+      mensagem: body.mensagem,
+      taxaAm: body.taxaAm,
+      parcelasMax: body.parcelasMax,
+      valorMax: body.valorMax,
+      filtro: body.filtro as OfertaFiltro,
+      ativo: body.ativo,
+      criadoEm: body.id ? (await loadOfertas(c.env)).find((o) => o.id === body.id)!.criadoEm : new Date().toISOString(),
+      expiraEm: body.expiraEm || undefined,
+      criadoPor: String(j.sub),
+    };
+    await persistOferta(c.env, oferta);
+    return c.json({ oferta });
+  })
+  .patch("/v1/portal/banco/ofertas/:id/pausar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    await refreshOfertas(c.env);
+    const o = (await loadOfertas(c.env)).find((x) => x.id === c.req.param("id"));
+    if (!o || o.bancoId !== j.banco_id) throw Errors.notFound("oferta");
+    o.ativo = false;
+    await persistOferta(c.env, o);
+    return c.json({ oferta: o });
+  })
+  .patch("/v1/portal/banco/ofertas/:id/reativar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    await refreshOfertas(c.env);
+    const o = (await loadOfertas(c.env)).find((x) => x.id === c.req.param("id"));
+    if (!o || o.bancoId !== j.banco_id) throw Errors.notFound("oferta");
+    o.ativo = true;
+    await persistOferta(c.env, o);
+    return c.json({ oferta: o });
+  })
 
   // --------- Cadastros: Usuarios do banco ----------
   // Isolamento: BancoUsuario tem bancoId — banco novo (bancoId proprio) so
@@ -497,6 +637,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     if (!removerUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
     return c.body(null, 204);
+  })
+  .post("/v1/portal/banco/cadastros/usuarios/:id/reativar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const u = getUsuario(c.req.param("id"));
+    if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
+    if (!reativarUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
+    return c.json({ ok: true });
   })
 
   // --------- Relatorios ----------

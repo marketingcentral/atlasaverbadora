@@ -111,15 +111,33 @@ async function resolvePrefeituraByCredentials(
  * Lightweight dev-only login: accepts any user from the seeded sandbox.
  * Replace with real DB-backed lookup + Argon2 comparison once `users` is populated.
  */
-const DEV_USERS = [
-  { id: 1, identifier: "00011122233", password: "teste123", role: "servidor", nome: "ADRIANA MARQUES DA SILVA", servidor_id: 1 },
-  { id: 2, identifier: "00011122234", password: "teste123", role: "servidor", nome: "FERNANDA KELLI TOMAZONI", servidor_id: 2 },
+const DEV_USERS: DevUser[] = [
+  { id: 1, identifier: "00011122233", password: "teste123", role: "servidor", nome: "ADRIANA MARQUES DA SILVA", servidor_id: 1, cpf: "00011122233", email: "adriana.silva@palhoca.sc.gov.br" },
+  { id: 2, identifier: "00011122234", password: "teste123", role: "servidor", nome: "FERNANDA KELLI TOMAZONI", servidor_id: 2, cpf: "00011122234", email: "fernanda.tomazoni@floripa.sc.gov.br" },
   { id: 100, identifier: "banco@atlas.test", password: "teste123", role: "banco", nome: "Operador Banco SCred", banco_id: 1 },
   { id: 200, identifier: "admin@atlas.test", password: "teste123", role: "averbadora", nome: "Admin Atlas" },
   { id: 300, identifier: "prefeitura@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Palhoca", prefeitura_id: 1 },
   { id: 301, identifier: "florianopolis@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Florianopolis", prefeitura_id: 2 },
   { id: 302, identifier: "joinville@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Joinville", prefeitura_id: 3 },
-] as const;
+];
+
+interface DevUser {
+  id: number;
+  identifier: string;
+  password: string;
+  role: "servidor" | "banco" | "averbadora" | "prefeitura";
+  nome: string;
+  servidor_id?: number;
+  banco_id?: number;
+  prefeitura_id?: number;
+  cpf?: string;
+  email?: string;
+}
+
+/** Info de um DEV_USER pelo id — pra resolver e-mail cadastrado do servidor DEV logado. */
+export function devUserById(id: number): DevUser | undefined {
+  return DEV_USERS.find((x) => x.id === id);
+}
 
 export const authRoutes = new Hono<{ Bindings: Env }>()
   .post("/v1/auth/login", async (c) => {
@@ -253,6 +271,44 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     // Atualiza o cache em memória do isolate para o login funcionar imediatamente.
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => { x.passwordHash = hash; });
     await c.env.KV_SESSIONS.delete(`pa:${digits}`);
+    return c.json({ ok: true });
+  })
+  // ===== Recuperar senha do servidor (esqueci minha senha) =====
+  // Diferente do primeiro-acesso: aqui o servidor JA tem senha; queremos redefini-la.
+  // 1) Manda codigo pro e-mail cadastrado do servidor.
+  .post("/v1/auth/esqueci-senha/solicitar", async (c) => {
+    const { cpf } = z.object({ cpf: z.string() }).parse(await c.req.json());
+    const digits = cpf.replace(/\D/g, "");
+    if (digits.length !== 11) throw Errors.validation({ cpf: "CPF deve ter 11 dígitos" });
+    await ensureServidoresLoaded(c.env);
+    const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
+    // Nunca revelar se o CPF existe ou nao (evita enumeracao). Se nao acha, finge
+    // sucesso mas nao envia nada — a mensagem no front e igual em ambos os casos.
+    if (!s) return c.json({ enviado: false, destino: "", aviso: "Se este CPF existir, o codigo foi enviado." });
+    const codigo = await gerarCodigoUnico(c.env);
+    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`rs:${digits}`, codigo, { expirationTtl: 600 });
+    const r = await enviarCodigo(c.env, { destinoPadrao: s.email, contexto: "redefinir sua senha Atlas", codigo });
+    return c.json({
+      enviado: r.sent,
+      destino: maskEmail(r.destino || s.email),
+      ...(r.sent ? {} : { codigo_teste: codigo, aviso: `E-mail não enviado (${r.reason}) — modo teste.` }),
+    });
+  })
+  // 2) Valida o codigo e define a nova senha.
+  .post("/v1/auth/esqueci-senha/redefinir", async (c) => {
+    const { cpf, codigo, senha } = z
+      .object({ cpf: z.string(), codigo: z.string(), senha: z.string().min(8) })
+      .parse(await c.req.json());
+    const digits = cpf.replace(/\D/g, "");
+    if (!c.env.KV_SESSIONS) throw Errors.validation({ kv: "sessões indisponíveis" });
+    const stored = await c.env.KV_SESSIONS.get(`rs:${digits}`);
+    if (!stored || stored !== codigo) throw Errors.unauthorized("Código inválido ou expirado");
+    const hash = await sha256Hex(senha);
+    const n = await setServidorPassword(c.env, digits, hash);
+    if (n === 0) throw Errors.notFound("servidor");
+    // Atualiza cache em memoria do isolate — login funciona imediatamente.
+    SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => { x.passwordHash = hash; });
+    await c.env.KV_SESSIONS.delete(`rs:${digits}`);
     return c.json({ ok: true });
   })
   .post("/v1/auth/refresh", async (c) => {

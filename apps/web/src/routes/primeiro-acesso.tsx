@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, Card, Input } from "@atlas/ui/web";
+import { atlas } from "../lib/sdk";
 import { AtlasLogo } from "../components/AtlasBrand";
 
 type Step = "cpf" | "codigo" | "senha" | "termos" | "ok";
@@ -13,15 +14,14 @@ interface PrefeituraInfo {
   telefoneMasked: string;
 }
 
-// Mock: prefeitura tem este CPF cadastrado.
-const KNOWN_CPF = "00011122233";
-const MOCK_PROFILE: PrefeituraInfo = {
-  nome: "ADRIANA MARQUES DA SILVA",
-  cargo: "ANALISTA ADMINISTRATIVO",
-  matricula: "852029100",
-  emailMasked: "a***na@palhoca.sc.gov.br",
-  telefoneMasked: "(48) 9****-3210",
-};
+// Formata dígitos como 000.111.222-33 (max 11 dígitos).
+function formatCpf(v: string): string {
+  const d = v.replace(/\D/g, "").slice(0, 11);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
+  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
+  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
+}
 
 export function PrimeiroAcessoPage() {
   const nav = useNavigate();
@@ -35,36 +35,72 @@ export function PrimeiroAcessoPage() {
   const [profile, setProfile] = useState<PrefeituraInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [avisoCodigo, setAvisoCodigo] = useState<string | null>(null);
 
   async function validarCpf(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 700));
-    const digits = cpf.replace(/\D/g, "");
-    if (digits === KNOWN_CPF) {
-      setProfile(MOCK_PROFILE);
+    try {
+      const digits = cpf.replace(/\D/g, "");
+      if (digits.length !== 11) {
+        setError("CPF deve ter 11 dígitos.");
+        return;
+      }
+      const r = await atlas.primeiroAcesso.buscar(digits);
+      if (!r.encontrado) {
+        setError("CPF nao encontrado na base da sua prefeitura. Entre em contato com o RH da prefeitura para regularizar o cadastro.");
+        return;
+      }
+      if (r.ja_tem_senha) {
+        setError("Esta conta ja foi ativada. Use 'Ja tenho conta — entrar' abaixo. Se esqueceu a senha, va em 'Esqueci minha senha'.");
+        return;
+      }
+      setProfile({
+        nome: r.nome ?? "",
+        cargo: r.cargo ?? "",
+        matricula: r.matricula ?? "",
+        emailMasked: r.email_masked ?? "",
+        telefoneMasked: r.telefone_masked ?? "",
+      });
+      // Ja dispara o envio do codigo pro e-mail do servidor.
+      const env = await atlas.primeiroAcesso.codigo(digits);
+      if (!env.enviado) {
+        setAvisoCodigo(env.aviso || `E-mail nao pode ser enviado agora. Codigo de teste: ${env.codigo_teste ?? "—"}`);
+      } else {
+        setAvisoCodigo(null);
+      }
       setStep("codigo");
-    } else {
-      setError(
-        "CPF nao encontrado na base da sua prefeitura. Entre em contato com o RH da prefeitura para regularizar o cadastro.",
-      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao verificar CPF.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
-  async function validarCodigo(e: FormEvent) {
-    e.preventDefault();
+  async function reenviarCodigo() {
+    if (!profile) return;
     setError(null);
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 600));
-    // Mock: qualquer codigo de 6 digitos vale.
-    if (codigo.replace(/\D/g, "").length === 6) {
-      setStep("senha");
-    } else {
-      setError("Codigo invalido. Verifique seu e-mail.");
+    try {
+      const digits = cpf.replace(/\D/g, "");
+      const env = await atlas.primeiroAcesso.codigo(digits);
+      setAvisoCodigo(env.enviado ? "Codigo reenviado." : (env.aviso || `Codigo de teste: ${env.codigo_teste ?? "—"}`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao reenviar codigo.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
+  }
+
+  function irParaSenha(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (codigo.replace(/\D/g, "").length !== 6) {
+      setError("Codigo invalido. Verifique seu e-mail.");
+      return;
+    }
+    setStep("senha");
   }
 
   async function criarSenha(e: FormEvent) {
@@ -86,13 +122,20 @@ export function PrimeiroAcessoPage() {
   }
 
   async function finalizar() {
+    setError(null);
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 800));
-    setStep("ok");
-    setLoading(false);
+    try {
+      const digits = cpf.replace(/\D/g, "");
+      await atlas.primeiroAcesso.senha(digits, codigo.replace(/\D/g, ""), senha);
+      setStep("ok");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Codigo invalido ou expirado.");
+      setStep("codigo");
+    } finally {
+      setLoading(false);
+    }
   }
 
-  // Auto-redirect ao login 4s depois do "ok".
   useEffect(() => {
     if (step !== "ok") return;
     const t = setTimeout(() => nav("/login"), 4000);
@@ -122,12 +165,13 @@ export function PrimeiroAcessoPage() {
               </p>
               <Input
                 label="CPF"
-                type="password"
+                type="text"
                 value={cpf}
-                onChange={(e) => setCpf(e.target.value)}
+                onChange={(e) => setCpf(formatCpf(e.target.value))}
                 placeholder="000.111.222-33"
                 inputMode="numeric"
                 autoComplete="off"
+                maxLength={14}
                 required
               />
               {error ? <ErrorBox>{error}</ErrorBox> : null}
@@ -138,17 +182,18 @@ export function PrimeiroAcessoPage() {
           ) : null}
 
           {step === "codigo" && profile ? (
-            <form onSubmit={validarCodigo} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <form onSubmit={irParaSenha} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <InfoCard>
                 <div style={{ fontWeight: 600 }}>{profile.nome}</div>
                 <div style={{ fontSize: ".85rem", color: "var(--text-muted)" }}>
-                  {profile.cargo} · Matricula {profile.matricula}
+                  {profile.cargo}{profile.matricula ? ` · Matricula ${profile.matricula}` : ""}
                 </div>
               </InfoCard>
               <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
-                Enviamos um codigo de 6 digitos para:<br />
-                <b>{profile.emailMasked}</b> e <b>{profile.telefoneMasked}</b>
+                Enviamos um codigo de 6 digitos por e-mail para:<br />
+                <b>{profile.emailMasked}</b>
               </p>
+              {avisoCodigo ? <InfoBox>{avisoCodigo}</InfoBox> : null}
               <Input
                 label="Codigo de verificacao"
                 value={codigo}
@@ -161,15 +206,25 @@ export function PrimeiroAcessoPage() {
               />
               {error ? <ErrorBox>{error}</ErrorBox> : null}
               <Button type="submit" disabled={loading || codigo.length < 6}>
-                {loading ? "Validando..." : "Continuar →"}
+                Continuar →
               </Button>
-              <button
-                type="button"
-                onClick={() => setStep("cpf")}
-                style={{ background: "transparent", border: 0, color: "var(--text-muted)", fontSize: ".88rem", cursor: "pointer" }}
-              >
-                ← Voltar
-              </button>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => setStep("cpf")}
+                  style={{ background: "transparent", border: 0, color: "var(--text-muted)", fontSize: ".88rem", cursor: "pointer" }}
+                >
+                  ← Voltar
+                </button>
+                <button
+                  type="button"
+                  onClick={reenviarCodigo}
+                  disabled={loading}
+                  style={{ background: "transparent", border: 0, color: "var(--accent)", fontSize: ".88rem", cursor: loading ? "not-allowed" : "pointer" }}
+                >
+                  Reenviar codigo
+                </button>
+              </div>
             </form>
           ) : null}
 
@@ -241,6 +296,7 @@ export function PrimeiroAcessoPage() {
                 <input type="checkbox" checked={aceitouLgpd} onChange={(e) => setAceitouLgpd(e.target.checked)} />
                 Concordo com a Politica de Privacidade (LGPD)
               </label>
+              {error ? <ErrorBox>{error}</ErrorBox> : null}
               <Button onClick={finalizar} disabled={!aceitouTermos || !aceitouLgpd || loading}>
                 {loading ? "Concluindo..." : "Ativar minha conta"}
               </Button>
@@ -337,6 +393,23 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
         background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
         color: "var(--text)",
         fontSize: ".88rem",
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function InfoBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        padding: "10px 14px",
+        borderRadius: 10,
+        border: "1px dashed var(--gold-500)",
+        background: "color-mix(in srgb, var(--gold-500) 10%, transparent)",
+        color: "var(--text)",
+        fontSize: ".85rem",
       }}
     >
       {children}

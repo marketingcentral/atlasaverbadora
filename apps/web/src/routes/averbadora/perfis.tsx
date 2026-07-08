@@ -16,6 +16,10 @@ export function AdminPerfis() {
     mutationFn: (id: number) => atlas.admin.deletePerfilAdmin(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "perfis"] }),
   });
+  const reactivate = useMutation({
+    mutationFn: (id: number) => atlas.admin.reativarPerfilAdmin(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "perfis"] }),
+  });
   const rotate = useMutation({
     mutationFn: (u: AdminAverbadoraUser) =>
       atlas.admin.rotate2FA(u.id).then((r) => ({ user: u, ...r })),
@@ -72,7 +76,17 @@ export function AdminPerfis() {
             ) : (
               <IconButton title="Ativar/rotacionar 2FA" onClick={() => rotate.mutate(u)}>🔐</IconButton>
             )}
-            <IconButton title="Remover" onClick={() => { if (confirm(`Remover ${u.email}?`)) remove.mutate(u.id); }}>✕</IconButton>
+            {u.ativo ? (
+              <IconButton
+                title="Desativar usuário"
+                danger
+                onClick={() => { if (confirm(`Desativar ${u.email}?\n\nO usuário para de acessar, mas nada é apagado — você pode reativar depois.`)) remove.mutate(u.id); }}
+              >
+                ⏸
+              </IconButton>
+            ) : (
+              <IconButton title="Reativar usuário" onClick={() => reactivate.mutate(u.id)}>▶</IconButton>
+            )}
           </>
         )}
       />

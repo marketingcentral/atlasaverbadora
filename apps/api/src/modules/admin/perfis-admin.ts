@@ -116,6 +116,13 @@ export function deleteAverbadoraUser(id: number): boolean {
   u.ativo = false;
   return true;
 }
+/** Reativa (ativo=true). Reversivel do soft-delete. */
+export function reactivateAverbadoraUser(id: number): boolean {
+  const u = _users.find((x) => x.id === id);
+  if (!u) return false;
+  u.ativo = true;
+  return true;
+}
 
 export function perfilOptions(): { value: AverbadoraPerfil; label: string; descricao: string }[] {
   return [

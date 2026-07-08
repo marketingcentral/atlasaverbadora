@@ -7,6 +7,7 @@ import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
+import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo } from "../admin/mailer.js";
@@ -213,6 +214,41 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
     const matriculas = entries.map((e) => buildMatriculaInfo(e));
     return c.json({ matriculas });
+  })
+  // Ofertas ATIVAS criadas pelos bancos que casam com o perfil do servidor
+  // (convenio, vinculo, situacao funcional, prefeitura, salario, idade). Vira
+  // notificacao no sino do servidor. Fonte de verdade: admin_ofertas.
+  .get("/v1/servidores/me/ofertas-banco", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    await refreshOfertas(c.env);
+    const perfil = {
+      idConvenio: SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula)?.idConvenio,
+      vinculo: s.vinculo,
+      situacaoFuncional: s.situacao_funcional,
+      prefeituraId: s.prefeitura_id,
+      salarioLiquido: s.salarioLiquido,
+    };
+    const list = (await loadOfertas(c.env)).filter((o) => ofertaCasaComServidor(o, perfil));
+    // enriquece com nome do banco pra UI
+    const nomeBanco = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
+    return c.json({
+      ofertas: list.map((o) => ({
+        id: o.id,
+        bancoId: o.bancoId,
+        bancoNome: nomeBanco(o.bancoId),
+        titulo: o.titulo,
+        mensagem: o.mensagem,
+        taxaAm: o.taxaAm,
+        parcelasMax: o.parcelasMax,
+        valorMax: o.valorMax,
+        criadoEm: o.criadoEm,
+        expiraEm: o.expiraEm ?? null,
+      })),
+    });
   })
   // Marketplace de ofertas do servidor — deriva das tabelas de emprestimo
   // publicadas pelos bancos parceiros. So retorna tabelas ativas e dentro

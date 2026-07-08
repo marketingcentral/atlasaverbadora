@@ -69,10 +69,8 @@ class SmtpSession {
 }
 
 interface SmtpConfigFull {
-  provider: "smtp" | "resend";
   host: string; port: number; user: string; password: string;
   fromEmail: string; fromName: string; secure: boolean;
-  resendApiKey: string;
 }
 
 function buildMessage(cfg: SmtpConfigFull, to: string, subject: string, text: string, dateStr: string): string {
@@ -140,16 +138,6 @@ export async function sendMail(
     const cfg = await getSmtpConfigForSend(env);
     if (!cfg) return { sent: false, reason: "not_configured" };
     if (!mail.to) return { sent: false, reason: "no_recipient" };
-
-    if (cfg.provider === "resend") {
-      if (!cfg.resendApiKey) return { sent: false, reason: "not_configured" };
-      await Promise.race([
-        deliverResend(cfg, mail.to, mail.subject, mail.text),
-        new Promise((_r, rej) => setTimeout(() => rej(new Error("Resend timeout (12s)")), 12_000)),
-      ]);
-      return { sent: true };
-    }
-
     if (!cfg.host || !cfg.fromEmail) return { sent: false, reason: "not_configured" };
     const dateStr = new Date().toUTCString().replace("GMT", "+0000");
     // Timeout de guarda: envio de e-mail não pode segurar a request.
@@ -164,29 +152,6 @@ export async function sendMail(
 }
 
 /**
- * Envia via API HTTP do Resend. Sem domínio verificado, o Resend só aceita
- * remetente onboarding@resend.dev e destinatário = e-mail da conta Resend. Por
- * isso o `from` cai em onboarding@resend.dev a menos que a config tenha um
- * fromEmail de domínio próprio verificado.
- */
-async function deliverResend(cfg: SmtpConfigFull, to: string, subject: string, text: string): Promise<void> {
-  const nome = cfg.fromName || "Atlas Averbadora";
-  // fromEmail de domínio próprio (não Gmail/Hotmail/etc.) só funciona no Resend se
-  // o domínio estiver verificado. Por segurança, usa onboarding@resend.dev por padrão.
-  const dominioGenerico = /@(gmail|hotmail|outlook|yahoo|icloud|live|bol|uol)\./i.test(cfg.fromEmail);
-  const fromAddr = cfg.fromEmail && !dominioGenerico ? cfg.fromEmail : "onboarding@resend.dev";
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${cfg.resendApiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: `${nome} <${fromAddr}>`, to: [to], subject, text }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Resend ${res.status}: ${body.slice(0, 220)}`);
-  }
-}
-
-/**
  * Envia um código de confirmação. O destino é o `notifyEmail` do SMTP (se
  * configurado — útil quando os e-mails dos servidores são fictícios); senão, o
  * `destinoPadrao` (e-mail do próprio usuário). Retorna também o destino real.
@@ -196,7 +161,9 @@ export async function enviarCodigo(
   opts: { destinoPadrao?: string; contexto: string; codigo: string },
 ): Promise<SendResult & { destino: string }> {
   const cfg = await getSmtpConfigForSend(env);
-  const destino = (cfg?.notifyEmail && cfg.notifyEmail.trim()) || opts.destinoPadrao || "";
+  // notifyEmail global (Configuracoes → SMTP → "Destino dos codigos") funciona como
+  // override de teste: quando preenchido, TUDO vai pra la. Vazio = destinoPadrao real.
+  const destino = (cfg?.notifyEmail ?? "").trim() || (opts.destinoPadrao ?? "").trim();
   if (!destino) return { sent: false, reason: "sem destino", destino: "" };
   const { subject, text } = codigoEmail(opts.codigo, opts.contexto);
   const r = await sendMail(env, { to: destino, subject, text });

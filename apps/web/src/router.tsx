@@ -51,6 +51,7 @@ import { BancoLayout } from "./routes/banco/layout";
 import { BancoVisaoGeral } from "./routes/banco/visao-geral";
 import { BancoPropostas } from "./routes/banco/propostas/index";
 import { BancoPropostaDetalhe } from "./routes/banco/propostas/detalhe";
+import { BancoOfertas } from "./routes/banco/ofertas";
 import { BancoCarteira } from "./routes/banco/carteira/index";
 import { BancoBateCarteira } from "./routes/banco/bate-carteira";
 import { BancoAdf } from "./routes/banco/adf";
@@ -130,6 +131,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
 
           { path: "propostas", element: <BancoPropostas /> },
           { path: "propostas/:id", element: <BancoPropostaDetalhe /> },
+          { path: "ofertas", element: <BancoOfertas /> },
 
           { path: "carteira", element: <BancoCarteira /> },
           { path: "bate-carteira", element: <BancoBateCarteira /> },

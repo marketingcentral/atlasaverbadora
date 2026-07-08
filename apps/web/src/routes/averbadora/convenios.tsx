@@ -31,6 +31,13 @@ export function AdminConvenios() {
       qc.invalidateQueries({ queryKey: ["admin", "convenios", "configs"] });
     },
   });
+  const reactivate = useMutation({
+    mutationFn: (id: string) => atlas.admin.reativarConvenio(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "convenios"] });
+      qc.invalidateQueries({ queryKey: ["admin", "convenios", "configs"] });
+    },
+  });
   const [editing, setEditing] = useState<AdminConvenio | "new" | null>(null);
   const [configuring, setConfiguring] = useState<AdminConvenio | null>(null);
 
@@ -73,11 +80,12 @@ export function AdminConvenios() {
     { key: "diaRepasse", header: "Repasse", render: (c) => `dia ${c.diaRepasse}` },
     {
       key: "status",
-      header: "Vigência",
+      header: "Situação",
       render: (c) => {
+        if (!c.ativo) return <Pill variant="expirado">Inativo</Pill>;
         const cfg = configMap.get(c.id);
         if (!cfg) return <Pill variant="pendente">sem config</Pill>;
-        return <Pill variant={cfg.ativo ? "averbado" : "pendente"}>{cfg.ativo ? "Ativo" : "Inativo"}</Pill>;
+        return <Pill variant={cfg.ativo ? "averbado" : "pendente"}>{cfg.ativo ? "Ativo" : "Config off"}</Pill>;
       },
     },
   ];
@@ -114,14 +122,19 @@ export function AdminConvenios() {
           <>
             <IconButton title="Editar convênio" onClick={() => setEditing(c)}>✎</IconButton>
             <IconButton title="Configurações (prazos, regras)" onClick={() => setConfiguring(c)}>⚙</IconButton>
-            <IconButton
-              title="Remover convênio"
-              onClick={() => {
-                if (confirm(`Remover ${c.nome}?`)) remove.mutate(c.id);
-              }}
-            >
-              ✕
-            </IconButton>
+            {c.ativo ? (
+              <IconButton
+                title="Desativar convênio"
+                danger
+                onClick={() => {
+                  if (confirm(`Desativar ${c.nome}?\n\nO convênio para de operar, mas nada é apagado — você pode reativar depois.`)) remove.mutate(c.id);
+                }}
+              >
+                ⏸
+              </IconButton>
+            ) : (
+              <IconButton title="Reativar convênio" onClick={() => reactivate.mutate(c.id)}>▶</IconButton>
+            )}
           </>
         )}
       />

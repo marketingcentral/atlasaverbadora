@@ -4,6 +4,7 @@ export type {
   BancoContratoFull, NovoContratoBody, BancoPerfil,
   BancoTabela, BancoTabelaInput,
   BancoUsuario, BancoUsuarioInput,
+  BancoOferta, BancoOfertaInput, BancoOfertaFiltro, ServidorOfertaBanco,
   AdminBanco, AdminBancoInput,
   AdminPrefeitura, AdminPrefeituraInput,
   AdminConvenio, AdminConvenioInput,

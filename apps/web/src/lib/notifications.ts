@@ -12,7 +12,8 @@ export type NotifType =
   | "proposta_recusada"
   | "proposta_cancelada"
   | "proposta_expirando"
-  | "folha_processada";
+  | "folha_processada"
+  | "oferta_banco";
 
 export interface Notification {
   id: string;
@@ -166,12 +167,38 @@ export function buildNotifications(): Notification[] {
  * Versao que aceita propostas ja carregadas (idealmente do backend via
  * useQuery). Isso mantem sino e /servidor/propostas na MESMA fonte de
  * verdade, evitando notificar sobre proposta que ja nao existe no DB.
+ * Opcionalmente inclui ofertas de credito criadas pelos bancos.
  */
-export function buildNotificationsFromPropostas(propostas: Proposta[]): Notification[] {
+export interface OfertaBancoParaNotif {
+  id: string;
+  bancoNome: string;
+  titulo: string;
+  mensagem: string;
+  taxaAm: number;
+  parcelasMax: number;
+  valorMax: number;
+  criadoEm: string;
+}
+function notifDeOferta(o: OfertaBancoParaNotif): Notification {
+  return {
+    id: `oferta:${o.id}`,
+    type: "oferta_banco",
+    titulo: `${o.bancoNome}: ${o.titulo}`,
+    mensagem: `${o.mensagem} — ${o.taxaAm.toFixed(2)}% a.m. em até ${o.parcelasMax}x.`,
+    quando: tempoRelativo(o.criadoEm),
+    href: "/servidor/ofertas",
+    lida: false,
+  };
+}
+export function buildNotificationsFromPropostas(
+  propostas: Proposta[],
+  ofertasBanco: OfertaBancoParaNotif[] = [],
+): Notification[] {
   const readIds = readReadIds();
   const derivadas = propostas
     .map(notifFromProposta)
     .filter((n): n is Notification => n != null);
-  const lista = [...derivadas, folhaProcessada()];
+  const ofertas = ofertasBanco.map(notifDeOferta);
+  const lista = [...derivadas, ...ofertas, folhaProcessada()];
   return lista.map((n) => ({ ...n, lida: readIds.has(n.id) }));
 }

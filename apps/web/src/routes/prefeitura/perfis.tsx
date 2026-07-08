@@ -14,6 +14,7 @@ export function PrefeituraPerfis() {
   const q = useQuery({ queryKey: ["prefeitura", "perfis"], queryFn: () => atlas.prefeitura.perfis() });
 
   const del = useMutation({ mutationFn: (id: number) => atlas.prefeitura.excluirPerfil(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["prefeitura", "perfis"] }) });
+  const reactivate = useMutation({ mutationFn: (id: number) => atlas.prefeitura.reativarPerfil(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["prefeitura", "perfis"] }) });
   const rotate = useMutation({ mutationFn: (id: number) => atlas.prefeitura.rotate2fa(id), onSuccess: (d) => { setSecret(d); qc.invalidateQueries({ queryKey: ["prefeitura", "perfis"] }); } });
   const disable = useMutation({ mutationFn: (id: number) => atlas.prefeitura.disable2fa(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["prefeitura", "perfis"] }) });
 
@@ -35,14 +36,18 @@ export function PrefeituraPerfis() {
           {p.twofaEnabled ? (
             <Button size="sm" variant="ghost" onClick={() => disable.mutate(p.id)}>Desativar 2FA</Button>
           ) : null}
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => { if (confirm(`Excluir ${p.nome}?`)) del.mutate(p.id); }}
-            style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
-          >
-            ✕ Excluir
-          </Button>
+          {p.ativo ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => { if (confirm(`Desativar ${p.nome}?\n\nO usuário para de acessar, mas nada é apagado — você pode reativar depois.`)) del.mutate(p.id); }}
+              style={{ color: "var(--danger-500)", borderColor: "var(--danger-500)" }}
+            >
+              ⏸ Desativar
+            </Button>
+          ) : (
+            <Button size="sm" variant="ghost" onClick={() => reactivate.mutate(p.id)}>▶ Reativar</Button>
+          )}
         </div>
       ),
     },

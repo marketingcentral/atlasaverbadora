@@ -20,7 +20,13 @@ export function AdminPrefeituras() {
   const data = useQuery({ queryKey: ["admin", "prefeituras"], queryFn: () => atlas.admin.listPrefeituras() });
   const sync = useMutation({
     mutationFn: (id: number) => atlas.admin.sincronizarPrefeitura(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] }),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] });
+      const res = r.resultado;
+      if (res.erro) alert(`Sincronizacao com aviso:\n${res.erro}`);
+      else alert(`Sincronizado: ${res.novos} novos, ${res.atualizados} atualizados.`);
+    },
+    onError: (err) => alert(err instanceof Error ? err.message : "Falha ao sincronizar"),
   });
   // Nunca exclui — desativa/reativa (status). Reversível, sem perda de dados.
   const toggleAtivo = useMutation({
@@ -113,6 +119,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
     contatoEmail: initial?.contatoEmail ?? "",
     password: "",
     servidoresCount: initial?.servidoresCount ?? 0,
+    folhaSincUrl: initial?.folhaSincUrl ?? "",
   });
   const [error, setError] = useState<string | null>(null);
   const save = useMutation({
@@ -121,6 +128,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
       if (!payload.loginEmail) delete payload.loginEmail;
       if (!payload.contatoEmail) delete payload.contatoEmail;
       if (!payload.password) delete payload.password;
+      if (!payload.folhaSincUrl) delete payload.folhaSincUrl;
       return atlas.admin.upsertPrefeitura(payload);
     },
     onSuccess: () => {
@@ -185,6 +193,13 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
             ]}
           />
           <NumberField label="Servidores cadastrados" value={form.servidoresCount} onChange={(e) => setForm({ ...form, servidoresCount: Number(e.target.value) })} />
+          <TextField
+            label="URL do CSV da folha (modo CSV)"
+            value={form.folhaSincUrl ?? ""}
+            onChange={(e) => setForm({ ...form, folhaSincUrl: e.target.value })}
+            placeholder="https://prefeitura.gov.br/folha.csv"
+            hint="Deixe em branco se nao houver origem automatica. Colunas: cpf, matricula, nome, cargo, vinculo, salarioLiquido, idConvenio, email, telefone"
+          />
         </FormGrid>
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         <FormActions>

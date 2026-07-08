@@ -51,6 +51,54 @@ export interface NovoContratoBody {
 
 export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios";
 
+export interface BancoOfertaFiltro {
+  convenioIds?: string[];
+  vinculos?: string[];
+  situacaoFuncional?: string[];
+  prefeituraIds?: number[];
+  salarioMin?: number;
+  salarioMax?: number;
+  idadeMin?: number;
+  idadeMax?: number;
+}
+export interface BancoOferta {
+  id: string;
+  bancoId: number;
+  titulo: string;
+  mensagem: string;
+  taxaAm: number;
+  parcelasMax: number;
+  valorMax: number;
+  filtro: BancoOfertaFiltro;
+  ativo: boolean;
+  criadoEm: string;
+  expiraEm?: string;
+  criadoPor: string;
+}
+export interface BancoOfertaInput {
+  id?: string;
+  titulo: string;
+  mensagem: string;
+  taxaAm: number;
+  parcelasMax: number;
+  valorMax: number;
+  filtro?: BancoOfertaFiltro;
+  ativo?: boolean;
+  expiraEm?: string;
+}
+export interface ServidorOfertaBanco {
+  id: string;
+  bancoId: number;
+  bancoNome: string;
+  titulo: string;
+  mensagem: string;
+  taxaAm: number;
+  parcelasMax: number;
+  valorMax: number;
+  criadoEm: string;
+  expiraEm: string | null;
+}
+
 export interface BancoTabela {
   id: string;
   convenioId: string;
@@ -143,6 +191,8 @@ export interface AdminPrefeitura {
   hasPassword: boolean;
   servidoresCount: number;
   ultimaSincronizacao?: string;
+  folhaSincUrl?: string;
+  ultimaSincResultado?: { novos: number; atualizados: number; erro?: string; ts: string };
 }
 
 export interface AdminPrefeituraInput {
@@ -156,6 +206,7 @@ export interface AdminPrefeituraInput {
   contatoEmail?: string;
   password?: string;
   servidoresCount?: number;
+  folhaSincUrl?: string;
 }
 
 export interface AdminConvenio {
@@ -170,6 +221,7 @@ export interface AdminConvenio {
   diaRepasse: number;
   bancoNome: string;
   prefeituraNome: string;
+  ativo: boolean;
 }
 
 export interface AdminConvenioInput {
@@ -584,6 +636,8 @@ export interface RequestOptions {
   body?: unknown;
   signal?: AbortSignal;
   skipAuth?: boolean;
+  /** Quando true, `body` e enviado como esta (ex.: FormData). Sem JSON.stringify + sem Content-Type manual (o fetch seta multipart/form-data com boundary). */
+  isFormData?: boolean;
 }
 
 /** Minimal in-memory storage used as default. Replace in app code with SecureStore / localStorage. */
@@ -613,6 +667,29 @@ export class AtlasClient {
     return res;
   }
 
+  // ===== Recuperar senha do servidor =====
+  readonly esqueciSenha = {
+    solicitar: (cpf: string) =>
+      this.request<{ enviado: boolean; destino: string; codigo_teste?: string; aviso?: string }>(
+        "/v1/auth/esqueci-senha/solicitar", { method: "POST", body: { cpf }, skipAuth: true }),
+    redefinir: (cpf: string, codigo: string, senha: string) =>
+      this.request<{ ok: boolean }>(
+        "/v1/auth/esqueci-senha/redefinir", { method: "POST", body: { cpf, codigo, senha }, skipAuth: true }),
+  };
+
+  // ===== Primeiro acesso do servidor (ativa a conta a partir do cadastro da prefeitura) =====
+  readonly primeiroAcesso = {
+    buscar: (cpf: string) =>
+      this.request<{ encontrado: boolean; nome?: string; matricula?: string; cargo?: string | null; origem?: string | null; email_masked?: string; telefone_masked?: string; ja_tem_senha?: boolean }>(
+        "/v1/auth/primeiro-acesso/buscar", { method: "POST", body: { cpf }, skipAuth: true }),
+    codigo: (cpf: string) =>
+      this.request<{ enviado: boolean; destino: string; codigo_teste?: string; aviso?: string }>(
+        "/v1/auth/primeiro-acesso/codigo", { method: "POST", body: { cpf }, skipAuth: true }),
+    senha: (cpf: string, codigo: string, senha: string) =>
+      this.request<{ ok: boolean }>(
+        "/v1/auth/primeiro-acesso/senha", { method: "POST", body: { cpf, codigo, senha }, skipAuth: true }),
+  };
+
   async logout(): Promise<void> {
     try {
       await this.request("/v1/auth/logout", { method: "POST" });
@@ -640,6 +717,24 @@ export class AtlasClient {
     return this.request<{ matriculas: T[] }>("/v1/servidores/me/matriculas");
   }
 
+  // ============ Confirmação por código (step-up, qualquer persona) ============
+  // Envia um código de 6 dígitos para o e-mail cadastrado de quem está operando
+  // e devolve o destino para o front avisar "código enviado para <e-mail>".
+  readonly confirmacao = {
+    solicitar: (acao: string, recurso?: string) =>
+      this.request<{
+        challengeId: string;
+        destino: string;
+        emailMascarado: string;
+        enviado: boolean;
+        motivo?: string;
+        codigoDemo: string;
+        expiraEmSegundos: number;
+      }>("/v1/confirmacao/solicitar", { method: "POST", body: { acao, recurso } }),
+    verificar: (challengeId: string, codigo: string) =>
+      this.request<{ ok: boolean }>("/v1/confirmacao/verificar", { method: "POST", body: { challengeId, codigo } }),
+  };
+
   // ============ Servidor (marketplace + demais consultas do proprio servidor) ============
   readonly servidor = {
     /** Marketplace de ofertas — derivado das tabelas de emprestimo publicadas pelos bancos. */
@@ -658,6 +753,9 @@ export class AtlasClient {
           vigenciaFim: string | null;
         }[];
       }>("/v1/servidores/me/ofertas"),
+    /** Ofertas ativas criadas pelos bancos que casam com o perfil do servidor. */
+    getMyOfertasBanco: () =>
+      this.request<{ ofertas: ServidorOfertaBanco[] }>("/v1/servidores/me/ofertas-banco"),
     /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
     criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string }) =>
       this.request<{ id: string; situacao: string; banco: string; valor: number; parcelas: number; parcela: number; expira_em: string | null }>(
@@ -710,7 +808,7 @@ export class AtlasClient {
         disponivel: number;
         projecao: { competencia: string; rotulo: string; valor: number }[];
       }>(`/v1/portal/banco/margem/${idMatricula}/calcular`, { method: "POST", body: input }),
-    contratos: (filtros: { colaborador?: string; situacao?: string[] } = {}) =>
+    contratos: (filtros: { colaborador?: string; situacao?: string[]; incluirTodosConvenios?: boolean } = {}) =>
       this.request<{
         contratos: {
           adf: string; situacao: string; lancamento: string; expiracao: string | null;
@@ -727,6 +825,7 @@ export class AtlasClient {
       }>("/v1/portal/banco/contratos", {
         query: {
           colaborador: filtros.colaborador,
+          ...(filtros.incluirTodosConvenios ? { incluir_todos_convenios: "true" } : {}),
           ...(filtros.situacao ? Object.fromEntries(filtros.situacao.map((s, i) => [`situacao_${i}`, s])) : {}),
         },
       }),
@@ -753,12 +852,23 @@ export class AtlasClient {
     getTabela: (id: string) => this.request<{ tabela: BancoTabela }>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}`),
     upsertTabela: (body: BancoTabelaInput) => this.request<{ tabela: BancoTabela }>("/v1/portal/banco/cadastros/tabela-emprestimos", { method: "POST", body }),
     removerTabela: (id: string) => this.request<void>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}`, { method: "DELETE" }),
+    /** Faz upload da CCB assinada (PDF) pro R2. Retorna a chave persistida. */
+    uploadCcb: async (adf: string, file: File): Promise<{ key: string; size: number; contentType: string }> => {
+      const fd = new FormData();
+      fd.append("adf", adf);
+      fd.append("file", file);
+      return this.request<{ key: string; size: number; contentType: string }>("/v1/portal/banco/ccb/upload", { method: "POST", body: fd, isFormData: true });
+    },
+    /** URL absoluta para visualizar a CCB (requer sessao do proprio banco). */
+    ccbUrl: (key: string): string => new URL(`/v1/portal/banco/ccb/${key}`, this.opts.baseUrl).toString(),
+    reativarTabela: (id: string) => this.request<{ ok: boolean }>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}/reativar`, { method: "POST" }),
 
     listUsuarios: (q?: { perfil?: BancoPerfil; somenteAdmin?: boolean }) =>
       this.request<{ usuarios: BancoUsuario[] }>("/v1/portal/banco/cadastros/usuarios", { query: q ?? {} }),
     getUsuario: (id: string) => this.request<{ usuario: BancoUsuario }>(`/v1/portal/banco/cadastros/usuarios/${id}`),
     upsertUsuario: (body: BancoUsuarioInput) => this.request<{ usuario: BancoUsuario }>("/v1/portal/banco/cadastros/usuarios", { method: "POST", body }),
     removerUsuario: (id: string) => this.request<void>(`/v1/portal/banco/cadastros/usuarios/${id}`, { method: "DELETE" }),
+    reativarUsuario: (id: string) => this.request<{ ok: boolean }>(`/v1/portal/banco/cadastros/usuarios/${id}/reativar`, { method: "POST" }),
     /** Devolve o CPF completo do usuario (acesso registrado em audit log no servidor). */
     revealUsuarioCpf: (id: string) =>
       this.request<{ id: string; cpf: string; cpfMasked: string }>(`/v1/portal/banco/cadastros/usuarios/${id}/cpf`),
@@ -776,6 +886,14 @@ export class AtlasClient {
         convenioId: string;
         meses: { competencia: string; contratos: number; valorFinanciado: number; comissaoEstimada: number }[];
       }>("/v1/portal/banco/relatorios/faturamento"),
+
+    // ===== Ofertas de credito (banco -> servidores) =====
+    ofertas: {
+      list: () => this.request<{ ofertas: BancoOferta[] }>("/v1/portal/banco/ofertas"),
+      upsert: (body: BancoOfertaInput) => this.request<{ oferta: BancoOferta }>("/v1/portal/banco/ofertas", { method: "POST", body }),
+      pausar: (id: string) => this.request<{ oferta: BancoOferta }>(`/v1/portal/banco/ofertas/${id}/pausar`, { method: "PATCH" }),
+      reativar: (id: string) => this.request<{ oferta: BancoOferta }>(`/v1/portal/banco/ofertas/${id}/reativar`, { method: "PATCH" }),
+    },
   };
 
   // ============ Admin (Averbadora) ============
@@ -789,9 +907,9 @@ export class AtlasClient {
     aiTest: () => this.request<{ ok: boolean; message: string; latencyMs?: number }>("/v1/admin/ai/test", { method: "POST" }),
     // ===== SMTP (e-mails de confirmação) =====
     smtpConfig: () =>
-      this.request<{ provider: "smtp" | "resend"; host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; hasResendKey: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config"),
-    smtpSave: (input: { provider?: "smtp" | "resend"; host?: string; port?: number; user?: string; password?: string; secure?: boolean; resendApiKey?: string; fromEmail?: string; fromName?: string; notifyEmail?: string }) =>
-      this.request<{ provider: "smtp" | "resend"; host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; hasResendKey: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
+      this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config"),
+    smtpSave: (input: { host?: string; port?: number; user?: string; password?: string; secure?: boolean; fromEmail?: string; fromName?: string; notifyEmail?: string }) =>
+      this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
     smtpClear: () => this.request<void>("/v1/admin/smtp/config", { method: "DELETE" }),
     smtpTest: (to: string) => this.request<{ sent: boolean; reason?: string }>("/v1/admin/smtp/test", { method: "POST", body: { to } }),
     aiNormalizeCsv: (body: { csv: string; expectedHeaders: string[]; contextHint?: string; model?: string }) =>
@@ -816,7 +934,7 @@ export class AtlasClient {
       this.request<void>(`/v1/admin/bancos/${id}`, { method: "DELETE", body: confirm }),
     listPrefeituras: () => this.request<{ prefeituras: AdminPrefeitura[] }>("/v1/admin/prefeituras"),
     upsertPrefeitura: (p: AdminPrefeituraInput) => this.request<{ prefeitura: AdminPrefeitura }>("/v1/admin/prefeituras", { method: "POST", body: p }),
-    sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
+    sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura; resultado: { novos: number; atualizados: number; erro?: string; ts: string } }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
     resetPrefeituraPassword: (id: number, password: string) =>
       this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/reset-password`, { method: "POST", body: { password } }),
     deletePrefeitura: (id: number, confirm: { challengeId: string; codigo: string }) =>
@@ -830,6 +948,8 @@ export class AtlasClient {
       this.request<{ convenio: AdminConvenio }>("/v1/admin/convenios", { method: "POST", body }),
     deleteConvenio: (id: string) =>
       this.request<void>(`/v1/admin/convenios/${id}`, { method: "DELETE" }),
+    reativarConvenio: (id: string) =>
+      this.request<{ ok: boolean }>(`/v1/admin/convenios/${id}/reativar`, { method: "POST" }),
     getConvenioConfig: (id: string) =>
       this.request<{ config: AdminConvenioConfig | null }>(`/v1/admin/convenios/${id}/config`),
     listConveniosConfigs: () =>
@@ -885,6 +1005,8 @@ export class AtlasClient {
       this.request<{ ok: boolean }>(`/v1/admin/perfis/${id}/2fa/disable`, { method: "POST" }),
     deletePerfilAdmin: (id: number) =>
       this.request<void>(`/v1/admin/perfis/${id}`, { method: "DELETE" }),
+    reativarPerfilAdmin: (id: number) =>
+      this.request<{ ok: boolean }>(`/v1/admin/perfis/${id}/reativar`, { method: "POST" }),
     listServidores: (q?: { prefeitura_id?: number; status?: string }) =>
       this.request<{ servidores: AdminServidor[]; total: number }>("/v1/admin/servidores", { query: q ?? {} }),
     updateServidor: (matricula: string, body: AdminServidorUpdate) =>
@@ -1007,6 +1129,7 @@ export class AtlasClient {
     salvarPerfil: (body: { id?: number; nome: string; email: string; area: string; ativo?: boolean }) =>
       this.request<{ perfil: PrefeituraPerfil }>("/v1/prefeitura/perfis", { method: "POST", body }),
     excluirPerfil: (id: number) => this.request<void>(`/v1/prefeitura/perfis/${id}`, { method: "DELETE" }),
+    reativarPerfil: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/reativar`, { method: "POST" }),
     rotate2fa: (id: number) => this.request<{ secret: string; otpauthUrl: string }>(`/v1/prefeitura/perfis/${id}/2fa/rotate`, { method: "POST" }),
     disable2fa: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/2fa/disable`, { method: "POST" }),
 
@@ -1016,19 +1139,22 @@ export class AtlasClient {
   // ============ Internal ============
   async request<T>(path: string, options: RequestOptions = {}): Promise<T> {
     const url = this.buildUrl(path, options.query);
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    };
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (!options.isFormData) headers["Content-Type"] = "application/json";
     if (!options.skipAuth) {
       const token = await this.storage.getAccess();
       if (token) headers.Authorization = `Bearer ${token}`;
     }
+    const buildBody = (): string | FormData | undefined => {
+      if (options.body === undefined) return undefined;
+      if (options.isFormData) return options.body as FormData;
+      return JSON.stringify(options.body);
+    };
 
     let res = await this.fetchImpl(url, {
       method: options.method ?? "GET",
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: buildBody(),
       signal: options.signal,
     });
 
@@ -1040,7 +1166,7 @@ export class AtlasClient {
         res = await this.fetchImpl(url, {
           method: options.method ?? "GET",
           headers,
-          body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+          body: buildBody(),
           signal: options.signal,
         });
       } else {
