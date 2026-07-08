@@ -8,6 +8,7 @@ import { ServidorSelecionarMatricula } from "./routes/servidor/selecionar-matric
 import { ServidorPortabilidade } from "./routes/servidor/portabilidade";
 import { ServidorTermo } from "./routes/servidor/termo";
 import { ServidorMarketplace } from "./routes/servidor/marketplace";
+import { ServidorMarketplacePortabilidade } from "./routes/servidor/marketplace-portabilidade";
 import { ServidorSimular } from "./routes/servidor/simular";
 import { ServidorPropostas } from "./routes/servidor/propostas";
 import { ServidorContratos } from "./routes/servidor/contratos";
@@ -105,6 +106,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { index: true, element: <Navigate to="dashboard" replace /> },
           { path: "dashboard", element: <ServidorDashboard /> },
           { path: "marketplace", element: <ServidorMarketplace /> },
+          { path: "marketplace/portabilidade", element: <ServidorMarketplacePortabilidade /> },
           { path: "simular", element: <ServidorSimular /> },
           { path: "portabilidade", element: <ServidorPortabilidade /> },
           { path: "termo", element: <ServidorTermo /> },

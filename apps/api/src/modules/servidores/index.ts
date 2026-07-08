@@ -384,6 +384,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         parcela: round2(ct.valorParcela),
         taxaAm: round2(ct.taxaAm * 100),
         situacao: ct.situacao,
+        tipoContrato: ct.tipoContrato,
+        // Dados de portabilidade (quando a proposta e' um REFIN vindo de outro banco)
+        bancoOrigem: ct.bancoOrigem,
+        contratoOrigem: ct.contratoOrigem,
+        saldoDevedorOrigem: ct.saldoDevedorOrigem,
         folhaStatus: ct.folhaStatus, // "recebida" | "aplicada" | "falha" — estágio da ADF na prefeitura
         folhaMotivo: ct.folhaMotivo, // motivo quando a prefeitura nega a ADF
         data: ct.lancamento,

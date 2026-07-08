@@ -11,6 +11,7 @@ import { MatriculaSwitcher } from "../../components/MatriculaSwitcher";
 const NAV = [
   { key: "dashboard", label: "Início", href: "/servidor/dashboard" },
   { key: "marketplace", label: "Ofertas", href: "/servidor/marketplace" },
+  { key: "marketplace-port", label: "MarketPlace · Portabilidade", href: "/servidor/marketplace/portabilidade", badge: "NOVO" },
   { key: "simular", label: "Simular", href: "/servidor/simular" },
   { key: "portabilidade", label: "Portabilidade", href: "/servidor/portabilidade" },
   { key: "propostas", label: "Propostas", href: "/servidor/propostas" },

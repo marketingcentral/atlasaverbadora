@@ -24,6 +24,10 @@ export interface ContratoFull extends ContratoMock {
   dataContrato: string;
   observacoes?: string;
   adfVinculada?: string;
+  /** Dados de portabilidade — presentes quando o contrato substitui outro banco. */
+  bancoOrigem?: string;
+  contratoOrigem?: string;
+  saldoDevedorOrigem?: number;
   /** Status do ADF na folha da prefeitura (cadeia banco→prefeitura). Só relevante
    *  em contratos averbados. "recebida" = prefeitura ainda não confirmou; "aplicada"
    *  = desconto entrou em folha; "falha" = prefeitura reprovou. Persistido no contrato
@@ -318,6 +322,9 @@ export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
     dataContrato: new Date().toLocaleDateString("pt-BR"),
     observacoes: input.observacoes,
     adfVinculada: input.contratoOrigem,
+    bancoOrigem: input.bancoOrigem,
+    contratoOrigem: input.contratoOrigem,
+    saldoDevedorOrigem: input.saldoDevedorOrigem,
   };
   _contratos.set(adf, c);
   _eventos.push({

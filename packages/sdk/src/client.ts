@@ -788,7 +788,14 @@ export class AtlasClient {
      *  Filtra pela matrícula ativa quando informada — evita misturar histórico
      *  entre matrículas de servidor com acumulação de cargos. */
     propostas: (matricula?: string) =>
-      this.request<{ propostas: { id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number; situacao: string; folhaStatus?: "recebida" | "aplicada" | "falha"; folhaMotivo?: string; data: string; expira_em: string | null }[] }>(
+      this.request<{ propostas: {
+        id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number;
+        situacao: string; tipoContrato?: string;
+        /** Dados da portabilidade (quando REFIN — o banco intenciona substituir o contrato). */
+        bancoOrigem?: string; contratoOrigem?: string; saldoDevedorOrigem?: number;
+        folhaStatus?: "recebida" | "aplicada" | "falha"; folhaMotivo?: string;
+        data: string; expira_em: string | null;
+      }[] }>(
         "/v1/servidores/me/propostas",
         { query: matricula ? { matricula } : undefined },
       ),
