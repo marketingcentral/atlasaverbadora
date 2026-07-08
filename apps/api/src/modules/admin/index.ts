@@ -1174,6 +1174,28 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(c.get("jwt"));
     return c.json({ comunicados: COMUNICADOS_MOCK });
   })
+  .post("/v1/admin/comunicados", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z
+      .object({
+        id: z.string().optional(),
+        titulo: z.string().min(1),
+        corpo: z.string().min(1),
+        linkLabel: z.string().optional(),
+        linkHref: z.string().optional(),
+        publico: z.enum(["banco", "servidor"]),
+      })
+      .parse(await c.req.json());
+    if (body.id) {
+      const idx = COMUNICADOS_MOCK.findIndex((x) => x.id === body.id);
+      if (idx < 0) throw Errors.notFound("comunicado");
+      COMUNICADOS_MOCK[idx] = { ...COMUNICADOS_MOCK[idx]!, ...body, id: body.id };
+      return c.json({ comunicado: COMUNICADOS_MOCK[idx] });
+    }
+    const novo = { ...body, id: `COM-${Date.now()}` };
+    COMUNICADOS_MOCK.push(novo);
+    return c.json({ comunicado: novo });
+  })
 
   .get("/v1/admin/health", async (c) => {
     requireAdmin(c.get("jwt"));

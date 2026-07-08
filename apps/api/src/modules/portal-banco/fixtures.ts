@@ -16,6 +16,8 @@ export interface ConvenioMock {
   ativo?: boolean;
 }
 
+export type ComunicadoPublico = "banco" | "servidor";
+
 export interface ComunicadoMock {
   id: string;
   titulo: string;
@@ -23,6 +25,8 @@ export interface ComunicadoMock {
   linkLabel?: string;
   linkHref?: string;
   ativoAte?: string;
+  /** Público-alvo do comunicado — define em qual portal (banco ou app do servidor) aparece. */
+  publico: ComunicadoPublico;
 }
 
 export const CONVENIOS_MOCK: ConvenioMock[] = [
@@ -38,6 +42,7 @@ export const COMUNICADOS_MOCK: ComunicadoMock[] = [
     corpo: "A partir de 01/07 entra em vigor a nova tabela de taxas. Verifique em Cadastros > Tabela de Empréstimos.",
     linkLabel: "Acessar Cadastros",
     linkHref: "/banco/cadastros/tabela-emprestimos",
+    publico: "banco",
   },
   {
     id: "COM-2",
@@ -45,11 +50,13 @@ export const COMUNICADOS_MOCK: ComunicadoMock[] = [
     corpo: "Divulgue o app para os servidores e aumente as conversoes em ofertas pre-aprovadas. Material de divulgacao no portal.",
     linkLabel: "Materiais",
     linkHref: "#",
+    publico: "banco",
   },
   {
     id: "COM-3",
     titulo: "Treinamento UX Atlas vs Consignet",
     corpo: "Sessao gratuita 15/07 19h. Apresentamos o mapa de equivalencia entre os menus.",
+    publico: "banco",
   },
 ];
 

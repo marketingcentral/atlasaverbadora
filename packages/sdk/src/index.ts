@@ -12,6 +12,7 @@ export type {
   AdminServidor, AdminServidorUpdate,
   AdminFolha, AdminFolhaInput,
   AdminBanner,
+  Comunicado, ComunicadoInput, ComunicadoPublico,
   AdminIdUnicoConfig, IdUnicoFormato,
   AdminPreReserva, AdminPreReservaResumo, PreReservaStatus, OperacaoTipo,
   AdminTombamentoLote, AdminTombamentoLinha, TombamentoStatus,

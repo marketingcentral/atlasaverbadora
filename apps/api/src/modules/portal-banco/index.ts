@@ -149,7 +149,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   // --------- Comunicados ----------
   .get("/v1/portal/banco/comunicados", async (c) => {
     requireBancoRole(c.get("jwt"));
-    return c.json({ comunicados: COMUNICADOS_MOCK });
+    return c.json({ comunicados: COMUNICADOS_MOCK.filter((x) => x.publico === "banco") });
   })
 
   // --------- Busca por CPF ou Matricula ----------

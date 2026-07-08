@@ -460,6 +460,26 @@ export interface AdminFolhaInput {
   status: "aberta" | "fechada" | "consolidada";
 }
 
+export type ComunicadoPublico = "banco" | "servidor";
+
+export interface Comunicado {
+  id: string;
+  titulo: string;
+  corpo: string;
+  linkLabel?: string;
+  linkHref?: string;
+  publico: ComunicadoPublico;
+}
+
+export interface ComunicadoInput {
+  id?: string;
+  titulo: string;
+  corpo: string;
+  linkLabel?: string;
+  linkHref?: string;
+  publico: ComunicadoPublico;
+}
+
 export interface AdminBanner {
   id: string;
   bancoId: number;
@@ -783,7 +803,7 @@ export class AtlasClient {
         kpis: { carteira: { count: number; percentual: number }; novosNoMes: { count: number }; pendencias: { count: number } };
         dataCorte: { dia: number; mes: string; origem: string; operacoes: string };
       }>("/v1/portal/banco/visao-geral"),
-    comunicados: () => this.request<{ comunicados: { id: string; titulo: string; corpo: string; linkLabel?: string; linkHref?: string }[] }>("/v1/portal/banco/comunicados"),
+    comunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/portal/banco/comunicados"),
     margemBuscar: (input: { cpf?: string; matricula?: string }) =>
       this.request<{
         ficha: {
@@ -1013,7 +1033,9 @@ export class AtlasClient {
       this.request<{ servidor: AdminServidor }>(`/v1/admin/servidores/${matricula}`, { method: "PATCH", body }),
     listFolhas: () => this.request<{ folhas: AdminFolha[] }>("/v1/admin/folhas"),
     upsertFolha: (f: AdminFolhaInput) => this.request<{ folha: AdminFolha }>("/v1/admin/folhas", { method: "POST", body: f }),
-    listComunicados: () => this.request<{ comunicados: { id: string; titulo: string; corpo: string; linkLabel?: string; linkHref?: string }[] }>("/v1/admin/comunicados"),
+    listComunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/admin/comunicados"),
+    upsertComunicado: (body: ComunicadoInput) =>
+      this.request<{ comunicado: Comunicado }>("/v1/admin/comunicados", { method: "POST", body }),
     health: () =>
       this.request<{ checks: { servico: string; uptime: number; p95: number; ok: boolean }[] }>("/v1/admin/health"),
     logs: (q?: { level?: "info" | "warn" | "error"; source?: string; perfil?: "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema" }) =>
@@ -1133,7 +1155,7 @@ export class AtlasClient {
     rotate2fa: (id: number) => this.request<{ secret: string; otpauthUrl: string }>(`/v1/prefeitura/perfis/${id}/2fa/rotate`, { method: "POST" }),
     disable2fa: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/2fa/disable`, { method: "POST" }),
 
-    comunicados: () => this.request<{ comunicados: { id: string; titulo: string; corpo: string; linkLabel?: string; linkHref?: string }[] }>("/v1/prefeitura/comunicados"),
+    comunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/prefeitura/comunicados"),
   };
 
   // ============ Internal ============

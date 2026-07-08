@@ -4,7 +4,7 @@ import { maskCPF, margemDisponivel, margemTotal, percentualUso, calcCET } from "
 import { authRequired, requireRole, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
-import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
+import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
@@ -453,6 +453,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = novoHash; });
     await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
     return c.json({ ok: true });
+  })
+  .get("/v1/servidores/me/comunicados", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    return c.json({ comunicados: COMUNICADOS_MOCK.filter((x) => x.publico === "servidor") });
   })
   .get("/v1/servidores/:id", async (c) => {
     const j = c.get("jwt");
