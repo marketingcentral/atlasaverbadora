@@ -235,6 +235,17 @@ export function getContrato(adf: string): ContratoFull | undefined {
   return c ? normalizeContrato(c) : undefined;
 }
 
+/** Remove do Map em memória todos os contratos/reservas de dadas matrículas
+ *  (a remoção no Postgres é feita pelo chamador). Retorna quantos saíram. */
+export function removeContratosByMatricula(matriculas: string[]): number {
+  const set = new Set(matriculas);
+  let n = 0;
+  for (const [adf, c] of _contratos) {
+    if (set.has(c.matricula)) { _contratos.delete(adf); n++; }
+  }
+  return n;
+}
+
 /** Marca o status do ADF na folha (chamado pela prefeitura). Fonte única = contrato.
  *  Retorna o contrato atualizado (o chamador persiste via persistContrato). */
 export function setContratoFolhaStatus(adf: string, status: "recebida" | "aplicada" | "falha", motivo?: string): ContratoFull | undefined {

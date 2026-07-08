@@ -4,13 +4,13 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
@@ -606,6 +606,68 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       topPrefeituras: prefeituras.slice(0, 3).map((p) => ({ nome: `${p.nome}/${p.uf}`, servidores: p.servidoresCount })),
       volumePorConvenio: Object.entries(volumePorConvenio).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
       volumePorBanco: Object.entries(volumePorBanco).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
+    });
+  })
+
+  // ===== Manutenção de contas de TESTE =====
+  // Zera os CPFs de teste (remove senha/e-mail/telefone + empréstimos) e mantém
+  // APENAS 01844730808 cadastrado com smlgordo@gmail.com (senha "teste123"). O roster
+  // é FIXO — o endpoint nunca toca um servidor real.
+  .post("/v1/admin/manutencao/reset-servidores-teste", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await ensureServidoresLoaded(c.env);
+    const TESTE: { cpf: string; matricula: string }[] = [
+      { cpf: "01844730808", matricula: "700100001" },
+      { cpf: "93025100850", matricula: "700100002" },
+      { cpf: "40800297806", matricula: "700100003" },
+      { cpf: "22421560802", matricula: "700100004" },
+      { cpf: "88549417866", matricula: "700100005" },
+      { cpf: "72430314800", matricula: "700100006" },
+      { cpf: "43012777814", matricula: "700100007" },
+      { cpf: "76568969885", matricula: "700100008" },
+      { cpf: "45668163890", matricula: "700100009" },
+      { cpf: "44334721826", matricula: "700100010" },
+    ];
+    // sha256("teste123")
+    const KEEPER = { cpf: "01844730808", email: "smlgordo@gmail.com", passwordHash: "289160db0d9f39f9ae1754c4ec9c16f90b50e32e09c5fb5481ae642b3d3d1a36" };
+    const limpar = TESTE.filter((t) => t.cpf !== KEEPER.cpf);
+    const passos: Record<string, string> = {};
+
+    // 1) Zera os demais CPFs no Postgres.
+    let contasZeradas = 0;
+    try {
+      for (const t of limpar) if ((await clearServidorConta(c.env, t.cpf)) > 0) contasZeradas++;
+    } catch (e) { passos.clearServidorConta = (e as Error).message; }
+
+    // 2) Apaga os empréstimos de TODAS as matrículas de teste (Postgres + memória).
+    const matriculas = TESTE.map((t) => t.matricula);
+    let contratosPg = 0;
+    try { contratosPg = await deleteContratosByMatriculas(c.env, matriculas); } catch (e) { passos.deleteContratos = (e as Error).message; }
+    const contratosMem = removeContratosByMatricula(matriculas);
+
+    // 3) Mantém o KEEPER cadastrado com o e-mail fixo + senha "teste123".
+    try {
+      await setServidorContato(c.env, KEEPER.cpf, { email: KEEPER.email });
+      await setServidorPassword(c.env, KEEPER.cpf, KEEPER.passwordHash);
+    } catch (e) { passos.keeper = (e as Error).message; }
+
+    // 4) Reflete na cópia em memória deste isolate.
+    const limparSet = new Set(limpar.map((t) => t.cpf));
+    for (const x of SERVIDORES_BUSCA_MOCK) {
+      if (limparSet.has(x.cpf)) { x.passwordHash = undefined; x.email = undefined; x.telefone = undefined; }
+      if (x.cpf === KEEPER.cpf) { x.email = KEEPER.email; x.passwordHash = KEEPER.passwordHash; }
+    }
+
+    // 5) Libera pendências de primeiro-acesso desses CPFs (KV).
+    if (c.env.KV_SESSIONS) for (const t of limpar) await c.env.KV_SESSIONS.delete(`pa:${t.cpf}`);
+
+    pushEvent("info", "admin.reset_servidores_teste", `Reset de teste: ${contasZeradas} zeradas, ${contratosPg} empréstimos apagados. Mantido ${KEEPER.cpf}/${KEEPER.email}.`);
+    return c.json({
+      zeradas: limpar.map((t) => t.cpf),
+      mantido: { cpf: KEEPER.cpf, email: KEEPER.email, senha: "teste123" },
+      contasZeradas,
+      contratosApagados: { postgres: contratosPg, memoria: contratosMem },
+      ...(Object.keys(passos).length ? { erros: passos } : {}),
     });
   })
 

@@ -233,6 +233,18 @@ export async function setServidorContato(
   return rows.length;
 }
 
+/** Zera a conta de um CPF: remove passwordHash, email e telefone do jsonb `data`
+ *  de TODAS as matrículas — deixa o servidor pronto para um novo primeiro-acesso.
+ *  Retorna o número de linhas afetadas. */
+export async function clearServidorConta(env: Env, cpf: string): Promise<number> {
+  const rows = (await getDb(env).execute(sql`
+    UPDATE servidores
+    SET data = (COALESCE(data, '{}'::jsonb) - 'passwordHash' - 'email' - 'telefone')
+    WHERE cpf = ${cpf}
+    RETURNING id`)) as unknown as { id: number }[];
+  return rows.length;
+}
+
 export async function seedServidoresIfEmpty(env: Env, seed: ServidorBuscaMock[]): Promise<boolean> {
   const db = getDb(env);
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM servidores`)) as unknown as { n: number }[];
@@ -355,6 +367,20 @@ export async function upsertContrato(env: Env, c: ContratoLike): Promise<void> {
     INSERT INTO portal_banco_contratos (adf, data, updated_at)
     VALUES (${c.adf}, ${c as unknown as Record<string, unknown>}::jsonb, now())
     ON CONFLICT (adf) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
+}
+
+/** Apaga contratos/reservas cujas matrículas estão na lista dada. Usado para
+ *  zerar os empréstimos de contas de teste. Retorna quantas linhas foram removidas. */
+export async function deleteContratosByMatriculas(env: Env, matriculas: string[]): Promise<number> {
+  if (matriculas.length === 0) return 0;
+  // Placeholders individuais ($1,$2,...) — postgres-js expande um array JS como
+  // record, o que quebra `= ANY($1)`. `sql.join` gera uma lista IN segura.
+  const lista = sql.join(matriculas.map((m) => sql`${m}`), sql`, `);
+  const rows = (await getDb(env).execute(sql`
+    DELETE FROM portal_banco_contratos
+    WHERE data->>'matricula' IN (${lista})
+    RETURNING adf`)) as unknown as { adf: string }[];
+  return rows.length;
 }
 
 export async function seedContratosIfEmpty(env: Env, seed: ContratoLike[]): Promise<boolean> {

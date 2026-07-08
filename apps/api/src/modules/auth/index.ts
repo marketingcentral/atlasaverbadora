@@ -315,17 +315,30 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     if (!s) throw Errors.notFound("servidor");
     // Bloqueia hijack: se ja tem senha (real ou de seed DEV), so aceita "Esqueci senha".
     if (s.passwordHash || devUserTemSenhaPorCpf(digits)) throw Errors.validation({ cpf: "Este CPF ja fez o primeiro acesso. Use 'Esqueci minha senha'." });
-    // E-mail unico: nao pode pertencer a OUTRA conta ja ativada (outro CPF).
+    // E-mail unico por servidor: nao pode pertencer a OUTRO CPF — esteja a conta
+    // ativada ou nao (basta o e-mail estar gravado noutro servidor). Assim o mesmo
+    // e-mail nao serve para varios CPFs.
     const emailAlvo = email.trim().toLowerCase();
-    const emUso = SERVIDORES_BUSCA_MOCK.some(
-      (x) => x.cpf !== digits && (x.email ?? "").trim().toLowerCase() === emailAlvo && (Boolean(x.passwordHash) || devUserTemSenhaPorCpf(x.cpf)),
+    const emUsoDb = SERVIDORES_BUSCA_MOCK.some(
+      (x) => x.cpf !== digits && (x.email ?? "").trim().toLowerCase() === emailAlvo,
     );
-    if (emUso) throw Errors.validation({ email: "E-mail em uso por outra conta. Use outro e-mail." });
+    // ...e nao pode estar reservado por um primeiro-acesso pendente de outro CPF
+    // (evita dois cadastros simultaneos pegarem o mesmo e-mail antes de confirmar).
+    let emUsoPendente = false;
+    if (c.env.KV_SESSIONS) {
+      const dono = await c.env.KV_SESSIONS.get(`pa:email:${emailAlvo}`);
+      emUsoPendente = Boolean(dono && dono !== digits);
+    }
+    if (emUsoDb || emUsoPendente) throw Errors.validation({ email: "E-mail em uso por outra conta. Use outro e-mail." });
     const codigo = await gerarCodigoUnico(c.env);
     const senhaHash = await sha256Hex(senha);
     // Guarda o pacote pendente ate a confirmacao (10 min). Telefone normalizado (so digitos).
-    const pending = { codigo, email: email.trim().toLowerCase(), senhaHash, telefone: telefone.replace(/\D/g, "") };
-    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`pa:${digits}`, JSON.stringify(pending), { expirationTtl: 600 });
+    const pending = { codigo, email: emailAlvo, senhaHash, telefone: telefone.replace(/\D/g, "") };
+    if (c.env.KV_SESSIONS) {
+      await c.env.KV_SESSIONS.put(`pa:${digits}`, JSON.stringify(pending), { expirationTtl: 600 });
+      // Reserva o e-mail para este CPF enquanto o primeiro-acesso estiver pendente.
+      await c.env.KV_SESSIONS.put(`pa:email:${emailAlvo}`, digits, { expirationTtl: 600 });
+    }
     // Envia pro email QUE O SERVIDOR ESCOLHEU (nao pro cadastrado).
     // Primeiro-acesso: e o proprio servidor provando que aquele email e dele.
     // Nao respeitar o notifyEmail (override de teste dos perfis admin) — o codigo
