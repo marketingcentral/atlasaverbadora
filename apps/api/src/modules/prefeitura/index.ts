@@ -277,15 +277,19 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       // Identidade é (prefeituraId, matricula) — nunca só CPF. Assim o mesmo CPF
       // pode ser cadastrado em outra prefeitura (acumulação de cargos) sem colisão.
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === id);
+      // Contato/endereço vazios no CSV NÃO devem sobrescrever o que o servidor
+      // escolheu no primeiro acesso — só entram em `rec` se vierem preenchidos.
       const rec: ServidorBuscaMock = {
         cpf, cpfMasked: `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}`,
         matricula: r.matricula!, idMatricula: `MAT-${r.matricula!}`, prefeituraId: id, nome: r.nome!,
         dataAdmissao: r.dataAdmissao ?? "", dataNascimento: r.dataNascimento ?? "",
         vinculo, origem: p.nome, situacaoFuncional: r.situacaoFuncional ?? "TRABALHANDO",
         salarioLiquido: Number.isFinite(salario) ? salario : 0, idConvenio,
-        email: r.email || undefined, telefone: r.telefone || undefined, cargo: r.cargo,
-        endereco: r.endereco || undefined, codigoIbge: Number.isFinite(ibge) ? ibge : p.municipioIbge,
+        cargo: r.cargo, codigoIbge: Number.isFinite(ibge) ? ibge : p.municipioIbge,
       };
+      if (r.email) rec.email = r.email;
+      if (r.telefone) rec.telefone = r.telefone;
+      if (r.endereco) rec.endereco = r.endereco;
       if (existing) { Object.assign(existing, rec); out.updated++; toPersist.push(existing); } else { SERVIDORES_BUSCA_MOCK.push(rec); out.inserted++; toPersist.push(rec); }
       out.rows.push({ matricula: rec.matricula, nome: rec.nome, cpfMasked: rec.cpfMasked });
     });

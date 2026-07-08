@@ -185,10 +185,14 @@ export async function loadServidores(env: Env): Promise<ServidorBuscaMock[]> {
 }
 
 export async function upsertServidor(env: Env, s: ServidorBuscaMock): Promise<void> {
+  // MERGE shallow no jsonb (servidores.data || EXCLUDED.data): chaves antigas
+  // que NÃO estão no novo objeto sobrevivem — passwordHash, email/telefone
+  // definidos no primeiro-acesso não são apagados por re-import de CSV
+  // que venha sem essas colunas.
   await getDb(env).execute(sql`
     INSERT INTO servidores (prefeitura_id, nome, cpf, matricula, vinculo, situacao_funcional, status, data_nascimento, salario_base, data)
     VALUES (${prefeituraIdOf(s)}, ${s.nome}, ${s.cpf}, ${s.matricula}, ${mapVinculo(s.vinculo)}::vinculo, ${mapSituacao(s.situacaoFuncional)}::situacao_funcional, 'ativo'::servidor_status, ${s.dataNascimento || null}, ${String(s.salarioLiquido)}, ${s as unknown as Record<string, unknown>}::jsonb)
-    ON CONFLICT (cpf, matricula) DO UPDATE SET prefeitura_id = EXCLUDED.prefeitura_id, nome = EXCLUDED.nome, vinculo = EXCLUDED.vinculo, situacao_funcional = EXCLUDED.situacao_funcional, status = EXCLUDED.status, data_nascimento = EXCLUDED.data_nascimento, salario_base = EXCLUDED.salario_base, data = EXCLUDED.data`);
+    ON CONFLICT (cpf, matricula) DO UPDATE SET prefeitura_id = EXCLUDED.prefeitura_id, nome = EXCLUDED.nome, vinculo = EXCLUDED.vinculo, situacao_funcional = EXCLUDED.situacao_funcional, status = EXCLUDED.status, data_nascimento = EXCLUDED.data_nascimento, salario_base = EXCLUDED.salario_base, data = COALESCE(servidores.data, '{}'::jsonb) || EXCLUDED.data`);
 }
 
 /** Define/atualiza o passwordHash (SHA-256) no jsonb `data` de todas as matrículas do CPF.

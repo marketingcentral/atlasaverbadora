@@ -972,6 +972,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (!conveniosPref.some((cv) => cv.id === idConvenio)) idConvenio = defaultConvenioId;
       if (!idConvenio) continue;
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && (s.prefeituraId === p.id || (!s.prefeituraId && (s.origem ?? "").toLowerCase().includes(p.nome.toLowerCase()))));
+      // Contato/endereço vazios no CSV NÃO devem sobrescrever o que o servidor
+      // escolheu no primeiro acesso — só entram em `rec` se vierem preenchidos.
       const rec: ServidorBuscaMock = {
         cpf, cpfMasked: `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}`,
         matricula: r.matricula, idMatricula: `MAT-${r.matricula}`, prefeituraId: p.id, nome: r.nome,
@@ -979,9 +981,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         vinculo: vinculo as ServidorBuscaMock["vinculo"], origem: p.nome,
         situacaoFuncional: (r.situacaoFuncional ?? "TRABALHANDO") as ServidorBuscaMock["situacaoFuncional"],
         salarioLiquido: Number.isFinite(salario) ? salario : 0, idConvenio,
-        email: r.email || undefined, telefone: r.telefone || undefined, cargo: r.cargo,
-        endereco: r.endereco || undefined, codigoIbge: Number.isFinite(ibge) ? ibge : p.municipioIbge,
+        cargo: r.cargo, codigoIbge: Number.isFinite(ibge) ? ibge : p.municipioIbge,
       };
+      if (r.email) rec.email = r.email;
+      if (r.telefone) rec.telefone = r.telefone;
+      if (r.endereco) rec.endereco = r.endereco;
       if (existing) { Object.assign(existing, rec); atualizados++; upserts.push(existing); }
       else { SERVIDORES_BUSCA_MOCK.push(rec); novos++; upserts.push(rec); }
     }
@@ -1893,12 +1897,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         situacaoFuncional: r.situacaoFuncional ?? "TRABALHANDO",
         salarioLiquido: Number.isFinite(salario) ? salario : 0,
         idConvenio,
-        cargo: r.cargo || undefined,
-        endereco: r.endereco || undefined,
-        email: r.email || undefined,
-        telefone: r.telefone || undefined,
         codigoIbge: Number.isFinite(ibge) ? ibge : undefined,
       };
+      // Só entra em `s` se o CSV trouxe valor — evita zerar contato/endereço
+      // que o servidor definiu no primeiro acesso.
+      if (r.cargo) s.cargo = r.cargo;
+      if (r.endereco) s.endereco = r.endereco;
+      if (r.email) s.email = r.email;
+      if (r.telefone) s.telefone = r.telefone;
       if (existing) { Object.assign(existing, s); out.updated++; }
       else { SERVIDORES_BUSCA_MOCK.push(s); out.inserted++; }
       out.rows.push(s);
