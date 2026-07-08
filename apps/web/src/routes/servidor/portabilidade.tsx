@@ -79,6 +79,29 @@ export function ServidorPortabilidade() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <button
+        type="button"
+        onClick={() => nav("/servidor/marketplace/portabilidade")}
+        style={{
+          alignSelf: "flex-start",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 12px",
+          borderRadius: 999,
+          border: "1px solid var(--border)",
+          background: "transparent",
+          color: "var(--text-muted)",
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+      >
+        ← Voltar ao MarketPlace
+      </button>
+
       <header>
         <span className="eyebrow">Portabilidade / Compra de divida</span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Consolidar seus contratos</h1>
