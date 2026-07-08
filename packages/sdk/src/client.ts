@@ -837,6 +837,10 @@ export class AtlasClient {
           cpfMasked: string; matricula: string; nome: string; tipoContrato: string;
           totalParcelas: number; valorParcela: number; convenio: string;
           convenioId: string; valorFinanciado: number; taxaAm: number;
+          /** Dados da portabilidade — presentes quando o contrato vem substituir outro. */
+          bancoOrigem?: string;
+          contratoOrigem?: string;
+          saldoDevedorOrigem?: number;
           folhaStatus?: "recebida" | "aplicada" | "falha";
           /** ISO 8601 — data do evento mais recente do contrato (criar,
            *  aprovar, averbar, folha aplicada). Usado pra ordenar

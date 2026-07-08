@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, DataTable, IconButton, Pill, SelectField, type Column } from "@atlas/ui/web";
+import { Button, SelectField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import {
   getBancoConvenios,
@@ -11,16 +11,20 @@ import {
   getBancoPerfil,
   setBancoPerfil,
   BANCO_PERFIS,
-  statusPill,
   travaInfo,
   type BancoProduto,
   type BancoProposta,
   type BancoPropostaStatus,
 } from "../../../lib/banco-propostas";
 
-// Proposta vinda do backend (real, criada pelo servidor). `_api` marca a origem
-// para o front decidir via API (não localStorage).
-type PropostaRow = BancoProposta & { _api?: boolean };
+// Proposta vinda do backend + campos de portabilidade (opcionais).
+type PropostaRow = BancoProposta & {
+  _api?: boolean;
+  bancoOrigem?: string;
+  contratoOrigem?: string;
+  saldoDevedorOrigem?: number;
+  tipoContrato?: string;
+};
 
 /** Converte "DD/MM/YYYY" (lancamento do backend) em ISO para o countdown da trava. */
 function parseBrDate(s: string): string {
@@ -29,11 +33,11 @@ function parseBrDate(s: string): string {
   return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).toISOString();
 }
 
-/** Mapeia um contrato/reserva do backend para o modelo de proposta do banco. */
 function contratoToProposta(ct: {
   adf: string; situacao: string; lancamento: string; cpfMasked: string; matricula: string;
   nome: string; tipoContrato: string; totalParcelas: number; valorParcela: number;
   convenio: string; valorFinanciado: number; taxaAm: number;
+  bancoOrigem?: string; contratoOrigem?: string; saldoDevedorOrigem?: number;
 }): PropostaRow {
   const t = ct.situacao.toLowerCase();
   const status: BancoPropostaStatus = t.includes("aguard")
@@ -64,31 +68,37 @@ function contratoToProposta(ct: {
     travaHoras: 48,
     contratosAtivos: [],
     _api: true,
+    bancoOrigem: ct.bancoOrigem,
+    contratoOrigem: ct.contratoOrigem,
+    saldoDevedorOrigem: ct.saldoDevedorOrigem,
+    tipoContrato: ct.tipoContrato,
   };
 }
 
 const STATUS_OPTS: BancoPropostaStatus[] = [
-  "recebida",
-  "em_analise",
-  "aprovada",
-  "aguardando_formalizacao",
-  "formalizada",
-  "averbada",
-  "recusada",
-  "mais_info",
-  "expirada",
+  "recebida", "em_analise", "aprovada", "aguardando_formalizacao",
+  "formalizada", "averbada", "recusada", "mais_info", "expirada",
 ];
+
+type TabKey = "todas" | "aguardando" | "aprovadas" | "recusadas";
+
+function statusPertenceTab(s: BancoPropostaStatus, tab: TabKey): boolean {
+  if (tab === "todas") return true;
+  if (tab === "aguardando") return s === "recebida" || s === "em_analise" || s === "mais_info";
+  if (tab === "aprovadas") return s === "aprovada" || s === "aguardando_formalizacao" || s === "formalizada" || s === "averbada";
+  return s === "recusada" || s === "expirada";
+}
 
 export function BancoPropostas() {
   const nav = useNavigate();
+  const [tab, setTab] = useState<TabKey>("todas");
   const [convenio, setConvenio] = useState("");
   const [produto, setProduto] = useState<"" | BancoProduto>("");
   const [status, setStatus] = useState<"" | BancoPropostaStatus>("");
   const [expirando, setExpirando] = useState(false);
   const [perfilId, setPerfilId] = useState(() => getBancoPerfil().id);
 
-  // Re-render a cada segundo para o countdown da trava mostrar HH:MM:SS
-  // em tempo real (era 60s antes, o valor congelava por um minuto).
+  // Re-render a cada segundo para os countdowns.
   const [, setTick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 1_000);
@@ -96,15 +106,13 @@ export function BancoPropostas() {
   }, []);
 
   const qc = useQueryClient();
-  // Propostas REAIS do backend (criadas pelo servidor). Poll pra ver novas caírem na fila.
   const apiQ = useQuery({
     queryKey: ["banco", "propostas-api"],
     queryFn: () => atlas.banco.contratos(),
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
   });
-  // Rastreio local de "acabei de decidir" — mantem a proposta no topo apos
-  // Aprovar/Recusar ate uma nova pendente chegar (via poll de 5s).
+
   const [decidedAt, setDecidedAt] = useState<Record<string, number>>({});
   const decidir = useMutation({
     mutationFn: ({ adf, acao }: { adf: string; acao: "confirmar" | "cancelar" }) => atlas.banco.acao(adf, acao),
@@ -115,27 +123,35 @@ export function BancoPropostas() {
     },
   });
 
-  // Fila = SO propostas reais do backend. Antes concatenavamos o seed
-  // (getAllPropostas) — hardcoded no frontend com Maria Aparecida, Roberto
-  // Silva, etc. — que aparecia identico pra QUALQUER banco logado, incluindo
-  // um recem criado pela averbadora que deveria estar zerado. Removido.
-  const todas: PropostaRow[] = useMemo(() => {
-    return (apiQ.data?.contratos ?? []).map(contratoToProposta);
-  }, [apiQ.data]);
+  const todas: PropostaRow[] = useMemo(
+    () => (apiQ.data?.contratos ?? []).map(contratoToProposta),
+    [apiQ.data],
+  );
+
+  // Contadores por status pra header e tabs.
+  const contadores = useMemo(() => {
+    let aguardando = 0, aprovadas = 0, recusadas = 0, aprovadasNoMes = 0;
+    const agora = new Date();
+    const mesAtual = agora.getMonth();
+    const anoAtual = agora.getFullYear();
+    for (const p of todas) {
+      if (statusPertenceTab(p.status, "aguardando")) aguardando++;
+      else if (statusPertenceTab(p.status, "aprovadas")) {
+        aprovadas++;
+        const d = new Date(p.criadaEm);
+        if (d.getMonth() === mesAtual && d.getFullYear() === anoAtual) aprovadasNoMes++;
+      } else if (statusPertenceTab(p.status, "recusadas")) recusadas++;
+    }
+    return { total: todas.length, aguardando, aprovadas, aprovadasNoMes, recusadas };
+  }, [todas]);
 
   const filtradas = useMemo(() => {
-    // Ordenacao em 2 chaves:
-    // 1. Grupo de acao pendente (recebida/em_analise/mais_info) vs demais.
-    //    Assim uma proposta nova pra aprovar sempre bate uma ja decidida.
-    // 2. Dentro do grupo, "atividade recente" = max(criadaEm, decidedAt).
-    //    Quando o banco clica Aprovar/Recusar, decidedAt=now e a proposta
-    //    fica ancorada no topo do seu novo grupo ate uma nova chegar.
-    const isPendente = (s: BancoPropostaStatus) =>
-      s === "recebida" || s === "em_analise" || s === "mais_info";
+    const isPendente = (s: BancoPropostaStatus) => statusPertenceTab(s, "aguardando");
     const atividade = (p: PropostaRow) =>
       Math.max(new Date(p.criadaEm).getTime() || 0, decidedAt[p.idUnico] ?? 0);
     return todas
       .filter((p) => {
+        if (!statusPertenceTab(p.status, tab)) return false;
         if (convenio && p.convenio !== convenio) return false;
         if (produto && p.produto !== produto) return false;
         if (status && p.status !== status) return false;
@@ -151,90 +167,36 @@ export function BancoPropostas() {
         if (pa !== pb) return pa - pb;
         return atividade(b) - atividade(a);
       });
-  }, [todas, convenio, produto, status, expirando, decidedAt]);
-
-  const columns: Column<PropostaRow>[] = [
-    { key: "status", header: "Status", render: (r) => <Pill variant={statusPill(r.status)}>{STATUS_LABEL[r.status]}</Pill> },
-    { key: "idUnico", header: "ID único", mono: true },
-    {
-      key: "nome",
-      header: "Servidor",
-      render: (r) => (
-        <>
-          <div>{r.nome}</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
-            {r.cpfMasked} / {r.matricula}
-          </div>
-        </>
-      ),
-    },
-    { key: "convenio", header: "Convênio" },
-    { key: "produto", header: "Produto", render: (r) => PRODUTO_LABEL[r.produto] },
-    { key: "valor", header: "Valor", align: "right", render: (r) => fmtBRL(r.valor) },
-    { key: "parcelas", header: "Parcelas", align: "right", render: (r) => `${r.parcelas}x` },
-    { key: "margemComprometida", header: "Margem compr.", align: "right", render: (r) => fmtBRL(r.margemComprometida) },
-    {
-      key: "trava",
-      header: "Trava restante",
-      render: (r) => {
-        const t = travaInfo(r);
-        if (!t) return <span style={{ color: "var(--text-dim)" }}>—</span>;
-        if (t.expirada) return <span style={{ color: "var(--danger-500)" }}>expirou</span>;
-        // Formata em tempo real: "Xd HH:MM:SS" se > 24h, "HH:MM:SS" caso contrario.
-        const total = Math.max(0, Math.floor(t.msRestantes / 1000));
-        const d = Math.floor(total / 86400);
-        const h = Math.floor((total % 86400) / 3600);
-        const m = Math.floor((total % 3600) / 60);
-        const s = total % 60;
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const label = d > 0 ? `${d}d ${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(h)}:${pad(m)}:${pad(s)}`;
-        return (
-          <span style={{ color: t.urgente ? "var(--gold-500)" : "var(--text)", fontWeight: t.urgente ? 600 : 500, fontFamily: "var(--font-mono)" }}>
-            {label}
-          </span>
-        );
-      },
-    },
-  ];
-
-  const resumo = useMemo(() => {
-    const emAnalise = todas.filter((p) => p.status === "recebida" || p.status === "em_analise").length;
-    const expirandoCount = todas.filter((p) => {
-      const t = travaInfo(p);
-      return t && !t.expirada && t.urgente;
-    }).length;
-    const aguardando = todas.filter((p) => p.status === "aguardando_formalizacao").length;
-    return { emAnalise, expirandoCount, aguardando };
-  }, [todas]);
+  }, [todas, tab, convenio, produto, status, expirando, decidedAt]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>
           <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-            Esteira
+            Marketplace
           </span>
-          <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Minhas Propostas</h1>
-          <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 640 }}>
-            Fila de pré-reservas recebidas do app do servidor. A margem está travada até a decisão do banco; ao expirar, retorna
-            para "disponível".
-          </p>
+          <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>Minhas Propostas</h1>
+          <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 6, display: "flex", flexWrap: "wrap", gap: 12 }}>
+            <span><b style={{ color: "var(--gold-500)" }}>{contadores.aguardando}</b> aguardando análise</span>
+            <span style={{ color: "var(--border-strong)" }}>·</span>
+            <span><b style={{ color: "var(--emerald-500)" }}>{contadores.aprovadasNoMes}</b> aprovadas este mês</span>
+            <span style={{ color: "var(--border-strong)" }}>·</span>
+            <span><b style={{ color: "var(--danger-500)" }}>{contadores.recusadas}</b> recusadas</span>
+          </div>
         </div>
-        <PerfilSwitcher
-          value={perfilId}
-          onChange={(id) => {
-            setBancoPerfil(id);
-            setPerfilId(id);
-          }}
-        />
+        <PerfilSwitcher value={perfilId} onChange={(id) => { setBancoPerfil(id); setPerfilId(id); }} />
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-        <MiniStat label="Em análise" value={resumo.emAnalise} />
-        <MiniStat label="Trava expirando (24h)" value={resumo.expirandoCount} warn={resumo.expirandoCount > 0} />
-        <MiniStat label="Aguardando formalização" value={resumo.aguardando} />
+      {/* Tabs de status */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <Tab active={tab === "todas"} onClick={() => setTab("todas")} label={`Todas (${contadores.total})`} tone="neutro" />
+        <Tab active={tab === "aguardando"} onClick={() => setTab("aguardando")} label={`Aguardando (${contadores.aguardando})`} tone="gold" />
+        <Tab active={tab === "aprovadas"} onClick={() => setTab("aprovadas")} label={`Aprovadas (${contadores.aprovadas})`} tone="emerald" />
+        <Tab active={tab === "recusadas"} onClick={() => setTab("recusadas")} label={`Recusadas (${contadores.recusadas})`} tone="danger" />
       </div>
 
+      {/* Filtros preservados (convenio/produto/status/expirando) */}
       <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
         <SelectField
           label="Convênio"
@@ -264,33 +226,328 @@ export function BancoPropostas() {
         </label>
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={filtradas}
-        rowKey={(r) => r.idUnico}
-        actions={(r) => {
-          // Trava expirada: banco perdeu a janela — nao pode mais decidir.
-          const travaExp = travaInfo(r)?.expirada;
-          if (r._api) {
-            // Trava expirada: nao mostra rotulo aqui — a coluna "Trava
-            // restante" ja indica "expirou" em vermelho. Actions vazio evita
-            // duplicar a mesma informacao.
-            if (travaExp) return null;
-            if (r.status === "recebida") {
-              return (
-                <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                  <Button size="sm" disabled={decidir.isPending} onClick={() => decidir.mutate({ adf: r.idUnico, acao: "confirmar" })}>Aprovar</Button>
-                  <Button size="sm" variant="ghost" disabled={decidir.isPending} onClick={() => decidir.mutate({ adf: r.idUnico, acao: "cancelar" })}>Recusar</Button>
-                </div>
-              );
-            }
-            return <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{STATUS_LABEL[r.status]}</span>;
-          }
-          return <IconButton title="Analisar proposta" onClick={() => nav(`/banco/propostas/${r.idUnico}`)}>›</IconButton>;
-        }}
-      />
+      {/* Cards de propostas */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {filtradas.length === 0 ? (
+          <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
+            Nenhuma proposta neste filtro.
+          </div>
+        ) : (
+          filtradas.map((p) => (
+            <PropostaCard
+              key={p.idUnico}
+              proposta={p}
+              onAprovar={() => decidir.mutate({ adf: p.idUnico, acao: "confirmar" })}
+              onRecusar={() => decidir.mutate({ adf: p.idUnico, acao: "cancelar" })}
+              onAbrir={() => nav(`/banco/propostas/${p.idUnico}`)}
+              decidindo={decidir.isPending}
+            />
+          ))
+        )}
+      </div>
     </div>
   );
+}
+
+function PropostaCard({
+  proposta: p,
+  onAprovar,
+  onRecusar,
+  onAbrir,
+  decidindo,
+}: {
+  proposta: PropostaRow;
+  onAprovar: () => void;
+  onRecusar: () => void;
+  onAbrir: () => void;
+  decidindo: boolean;
+}) {
+  const trava = travaInfo(p);
+  const isPortabilidade = p.produto === "portabilidade";
+  const temTroco = isPortabilidade && p.saldoDevedorOrigem != null && p.valor > p.saldoDevedorOrigem;
+  const trocoValor = temTroco ? p.valor - (p.saldoDevedorOrigem ?? 0) : 0;
+  const isPendente = p.status === "recebida" || p.status === "em_analise" || p.status === "mais_info";
+
+  // Card grande destacado: portabilidade com troco, em analise, com trava.
+  if (temTroco && isPendente) {
+    return <FeaturedPortabilidadeCard proposta={p} trocoValor={trocoValor} trava={trava} onAprovar={onAprovar} onRecusar={onRecusar} decidindo={decidindo} />;
+  }
+  // Card padrao: aguardando analise.
+  if (isPendente) {
+    return <PendenteCard proposta={p} isPortabilidade={isPortabilidade} onAprovar={onAprovar} onRecusar={onRecusar} onAbrir={onAbrir} decidindo={decidindo} />;
+  }
+  // Card compacto: aprovadas/recusadas/averbadas.
+  return <DecididaCard proposta={p} isPortabilidade={isPortabilidade} onAbrir={onAbrir} />;
+}
+
+/** Card destacado — portabilidade com troco, ainda em análise. */
+function FeaturedPortabilidadeCard({
+  proposta: p,
+  trocoValor,
+  trava,
+  onAprovar,
+  onRecusar,
+  decidindo,
+}: {
+  proposta: PropostaRow;
+  trocoValor: number;
+  trava: ReturnType<typeof travaInfo>;
+  onAprovar: () => void;
+  onRecusar: () => void;
+  decidindo: boolean;
+}) {
+  const diasRestantes = trava && !trava.expirada ? Math.max(0, Math.floor(trava.msRestantes / 86_400_000)) : 0;
+  return (
+    <article style={{
+      background: "color-mix(in srgb, var(--gold-500) 6%, var(--surface))",
+      border: "1px solid var(--gold-500)",
+      borderRadius: 14,
+      padding: 20,
+      position: "relative",
+    }}>
+      {/* faixa do topo */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gold-600, var(--gold-500))" }}>
+          <span>🔒 Margem pré-reservada</span>
+          <span style={{ color: "var(--border-strong)" }}>·</span>
+          <span>Portabilidade com troco</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={pillStyle("gold")}>INTENCIONADO</span>
+          {trava && !trava.expirada ? (
+            <span style={{ ...pillStyle("gold"), background: "transparent" }}>
+              ⏱ {diasRestantes > 0 ? `${diasRestantes} dia${diasRestantes > 1 ? "s" : ""} restantes` : "vence hoje"}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {/* servidor */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: "1.15rem", fontWeight: 700, color: "var(--text)" }}>{p.nome}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+            Mat: <span style={{ fontFamily: "var(--font-mono)" }}>{p.matricula}</span>
+            {" · "}CPF: <span style={{ fontFamily: "var(--font-mono)" }}>{p.cpfMasked}</span>
+            {" · "}{p.convenio}
+          </div>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onRecusar} disabled={decidindo}>Recusar</Button>
+      </div>
+
+      {/* 3 sub-cards: CONTRATO ATUAL / PROPOSTA / TROCO */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 12, marginBottom: 14 }}>
+        <SubCard
+          label="CONTRATO ATUAL"
+          banco={p.bancoOrigem ?? "Banco de origem"}
+          detalhe={`${p.saldoDevedorOrigem != null ? "Saldo: " + fmtBRL(p.saldoDevedorOrigem) : "—"}`}
+          tone="neutro"
+        />
+        <SubCard
+          label="PROPOSTA"
+          banco="Você"
+          detalhe={`${p.taxaAm.toFixed(2)}% a.m. · ${fmtBRL(p.parcela)}/mês`}
+          tone="info"
+        />
+        <SubCard
+          label="TROCO LIBERADO"
+          banco={fmtBRL(trocoValor)}
+          detalhe="crédito adicional"
+          tone="gold"
+        />
+      </div>
+
+      <div style={{ padding: "10px 14px", borderRadius: 8, background: "color-mix(in srgb, var(--gold-500) 10%, transparent)", border: "1px dashed var(--gold-500)", fontSize: 12.5, color: "var(--text-muted)", marginBottom: 14 }}>
+        Esta margem está <b style={{ color: "var(--text)" }}>bloqueada exclusivamente para você</b> pelos próximos {diasRestantes || 6} dias. Outras instituições não podem averbar durante este período.
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <Button onClick={onAprovar} disabled={decidindo}>
+          {decidindo ? "Enviando..." : "Aprovar e Averbar →"}
+        </Button>
+      </div>
+    </article>
+  );
+}
+
+/** Card padrão pra propostas aguardando análise. */
+function PendenteCard({
+  proposta: p,
+  isPortabilidade,
+  onAprovar,
+  onRecusar,
+  onAbrir,
+  decidindo,
+}: {
+  proposta: PropostaRow;
+  isPortabilidade: boolean;
+  onAprovar: () => void;
+  onRecusar: () => void;
+  onAbrir: () => void;
+  decidindo: boolean;
+}) {
+  const tipoLabel = isPortabilidade
+    ? p.saldoDevedorOrigem != null && p.valor > p.saldoDevedorOrigem
+      ? "Portabilidade com troco"
+      : "Portabilidade simples"
+    : "Novo empréstimo";
+
+  return (
+    <article style={{
+      background: "var(--surface)",
+      border: "1px solid var(--border)",
+      borderRadius: 14,
+      padding: 18,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <span style={pillStyle("gold")}>AGUARDANDO ANÁLISE</span>
+        <span style={{ fontSize: 13, color: "var(--text-muted)" }}>{tipoLabel}</span>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text)" }}>
+            {p.nome} <span style={{ fontWeight: 400, color: "var(--text-dim)" }}>· Mat: <span style={{ fontFamily: "var(--font-mono)" }}>{p.matricula}</span></span>
+          </div>
+          <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
+            {isPortabilidade && p.bancoOrigem ? (
+              <>
+                <b>{p.bancoOrigem}</b>
+                {p.saldoDevedorOrigem != null ? <span> ({fmtBRL(p.saldoDevedorOrigem)} de saldo)</span> : null}
+                {" → "}
+                <b>Você</b> ({p.taxaAm.toFixed(2)}% a.m. · {fmtBRL(p.parcela)}/mês)
+              </>
+            ) : (
+              <>
+                {p.taxaAm.toFixed(2)}% a.m. · {fmtBRL(p.parcela)}/mês · {p.parcelas}x · {fmtBRL(p.valor)} liberado
+              </>
+            )}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <Button variant="ghost" size="sm" onClick={onRecusar} disabled={decidindo}>Recusar</Button>
+          <Button size="sm" onClick={onAprovar} disabled={decidindo}>
+            {decidindo ? "..." : "Aprovar →"}
+          </Button>
+          <button onClick={onAbrir} style={{ background: "transparent", border: 0, color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }} aria-label="Abrir">›</button>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/** Card compacto pra propostas já decididas. */
+function DecididaCard({
+  proposta: p,
+  isPortabilidade,
+  onAbrir,
+}: {
+  proposta: PropostaRow;
+  isPortabilidade: boolean;
+  onAbrir: () => void;
+}) {
+  const isAprovada = p.status === "aprovada" || p.status === "aguardando_formalizacao" || p.status === "formalizada" || p.status === "averbada";
+  const tone = isAprovada ? "emerald" : "danger";
+  const rotulo = isAprovada
+    ? p.status === "averbada" ? "AVERBADA" : "APROVADA"
+    : p.status === "expirada" ? "EXPIRADA" : "RECUSADA";
+  const tipoLabel = isPortabilidade
+    ? p.saldoDevedorOrigem != null && p.valor > p.saldoDevedorOrigem
+      ? "Portabilidade com troco"
+      : "Portabilidade simples"
+    : "Novo empréstimo";
+
+  const diasDesde = Math.floor((Date.now() - new Date(p.criadaEm).getTime()) / 86_400_000);
+  const detalheStatus = isAprovada
+    ? `Aprovada há ${diasDesde} dia${diasDesde === 1 ? "" : "s"}${p.status === "averbada" ? " · Averbação confirmada" : ""}`
+    : p.status === "expirada" ? `Expirou há ${diasDesde} dia${diasDesde === 1 ? "" : "s"}` : `Recusada há ${diasDesde} dia${diasDesde === 1 ? "" : "s"}`;
+
+  return (
+    <article
+      onClick={onAbrir}
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 12,
+        padding: "14px 18px",
+        cursor: "pointer",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <span style={pillStyle(tone)}>{rotulo}</span>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text)" }}>
+            {p.nome} — {tipoLabel}
+            {isPortabilidade && p.bancoOrigem ? <span style={{ color: "var(--text-muted)", fontWeight: 400 }}> · {p.bancoOrigem}</span> : null}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>{detalheStatus}</div>
+        </div>
+        <span style={{ color: "var(--text-dim)", fontSize: 18 }}>›</span>
+      </div>
+    </article>
+  );
+}
+
+function SubCard({ label, banco, detalhe, tone }: { label: string; banco: string; detalhe: string; tone: "neutro" | "info" | "gold" }) {
+  const bgColor = tone === "gold" ? "color-mix(in srgb, var(--gold-500) 10%, transparent)"
+    : tone === "info" ? "color-mix(in srgb, var(--accent) 8%, transparent)"
+    : "var(--bg-elev)";
+  const borderColor = tone === "gold" ? "var(--gold-500)"
+    : tone === "info" ? "color-mix(in srgb, var(--accent) 40%, var(--border))"
+    : "var(--border)";
+  return (
+    <div style={{ background: bgColor, border: `1px solid ${borderColor}`, borderRadius: 10, padding: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginTop: 4 }}>{banco}</div>
+      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{detalhe}</div>
+    </div>
+  );
+}
+
+function Tab({ active, onClick, label, tone }: { active: boolean; onClick: () => void; label: string; tone: "neutro" | "gold" | "emerald" | "danger" }) {
+  const activeColor =
+    tone === "gold" ? "var(--gold-500)"
+    : tone === "emerald" ? "var(--emerald-500)"
+    : tone === "danger" ? "var(--danger-500)"
+    : "var(--accent)";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: "8px 14px",
+        borderRadius: 999,
+        border: `1px solid ${active ? activeColor : "var(--border)"}`,
+        background: active ? `color-mix(in srgb, ${activeColor} 12%, transparent)` : "transparent",
+        color: active ? activeColor : "var(--text-muted)",
+        fontSize: 13,
+        fontWeight: 700,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function pillStyle(tone: "gold" | "emerald" | "danger" | "neutro"): React.CSSProperties {
+  const c = tone === "gold" ? "var(--gold-500)"
+    : tone === "emerald" ? "var(--emerald-500)"
+    : tone === "danger" ? "var(--danger-500)"
+    : "var(--text-muted)";
+  return {
+    fontSize: 10.5,
+    fontWeight: 700,
+    letterSpacing: ".06em",
+    color: c,
+    border: `1px solid ${c}`,
+    background: `color-mix(in srgb, ${c} 8%, transparent)`,
+    borderRadius: 6,
+    padding: "3px 8px",
+    textTransform: "uppercase",
+  };
 }
 
 function PerfilSwitcher({ value, onChange }: { value: string; onChange: (id: string) => void }) {
@@ -302,17 +559,6 @@ function PerfilSwitcher({ value, onChange }: { value: string; onChange: (id: str
         onChange={(e) => onChange(e.target.value)}
         options={BANCO_PERFIS.map((p) => ({ value: p.id, label: `${p.nome} (${p.papel})` }))}
       />
-    </div>
-  );
-}
-
-function MiniStat({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
-  return (
-    <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: "14px 16px" }}>
-      <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 22, fontWeight: 700, marginTop: 6, color: warn ? "var(--gold-500)" : "var(--text)" }}>{value}</div>
     </div>
   );
 }
