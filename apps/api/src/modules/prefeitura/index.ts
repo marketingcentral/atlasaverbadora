@@ -26,6 +26,7 @@ import {
   listPerfis, upsertPerfil, deletePerfil, reactivatePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
 } from "./store.js";
 import { upsertPrefeitura, upsertServidor } from "../../db/repos.js";
+import { MATRICULA_REGEX, normalizeMatricula } from "../../_shared/matricula.js";
 
 /**
  * Write-through do servidor no Postgres. NÃO engole erro (antes fazia
@@ -266,6 +267,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (!r.nome) return void out.errors.push({ line, message: "nome obrigatorio" });
       if (cpf.length !== 11) return void out.errors.push({ line, message: "cpf deve ter 11 digitos" });
       if (!r.matricula) return void out.errors.push({ line, message: "matricula obrigatoria" });
+      const matricula = normalizeMatricula(r.matricula);
+      if (!MATRICULA_REGEX.test(matricula)) {
+        return void out.errors.push({ line, message: `matricula "${r.matricula}" invalida: use alfanumerico + hifen, 1..30 chars (ex: 852029100, M-009821)` });
+      }
+      r.matricula = matricula;
       if (!r.cargo) return void out.errors.push({ line, message: "cargo obrigatorio" });
       const vinculo = (r.vinculo || "ESTATUTARIO").toUpperCase();
       if (!VINCULOS.includes(vinculo as (typeof VINCULOS)[number])) return void out.errors.push({ line, message: `vinculo invalido (${VINCULOS.join("/")})` });
@@ -346,9 +352,13 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (body.telefone !== undefined) { s.telefone = body.telefone || undefined; changed.push("telefone"); }
     if (body.codigoIbge !== undefined) { s.codigoIbge = body.codigoIbge; changed.push("codigoIbge"); }
     if (body.matriculaNova !== undefined && body.matriculaNova !== s.matricula) {
-      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === body.matriculaNova);
-      if (dup) throw Errors.validation({ matriculaNova: `matricula ${body.matriculaNova} já em uso` });
-      s.matricula = body.matriculaNova; s.idMatricula = `MAT-${body.matriculaNova}`; changed.push("matricula");
+      const nova = normalizeMatricula(body.matriculaNova);
+      if (!MATRICULA_REGEX.test(nova)) {
+        throw Errors.validation({ matriculaNova: `matricula invalida: use alfanumerico + hifen, 1..30 chars (ex: 852029100, M-009821)` });
+      }
+      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === nova);
+      if (dup) throw Errors.validation({ matriculaNova: `matricula ${nova} ja em uso` });
+      s.matricula = nova; s.idMatricula = `MAT-${nova}`; changed.push("matricula");
     }
     try { await persistServidorPref(c.env, s); }
     catch (e) { throw new HttpError(500, "persist_failed", `Servidor editado em memória, mas falhou ao salvar no banco: ${(e as Error).message}`); }

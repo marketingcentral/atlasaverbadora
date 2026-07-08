@@ -807,8 +807,10 @@ export class AtlasClient {
 
   // ============ Servidor (marketplace + demais consultas do proprio servidor) ============
   readonly servidor = {
-    /** Marketplace de ofertas — derivado das tabelas de emprestimo publicadas pelos bancos. */
-    ofertas: () =>
+    /** Marketplace de ofertas — derivado das tabelas de emprestimo publicadas pelos bancos.
+     *  Passe `matricula` pra filtrar so ofertas dos convenios da prefeitura dessa matricula
+     *  (evita servidor de Palhoca ver oferta que so vale em Florianopolis). */
+    ofertas: (matricula?: string) =>
       this.request<{
         ofertas: {
           id: string;
@@ -822,7 +824,7 @@ export class AtlasClient {
           vigenciaInicio: string;
           vigenciaFim: string | null;
         }[];
-      }>("/v1/servidores/me/ofertas"),
+      }>(matricula ? `/v1/servidores/me/ofertas?matricula=${encodeURIComponent(matricula)}` : "/v1/servidores/me/ofertas"),
     /** Ofertas ativas criadas pelos bancos que casam com o perfil do servidor. */
     getMyOfertasBanco: () =>
       this.request<{ ofertas: ServidorOfertaBanco[] }>("/v1/servidores/me/ofertas-banco"),

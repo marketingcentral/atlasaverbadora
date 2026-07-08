@@ -306,11 +306,27 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
+    // Filtro por prefeituraId da matricula ATIVA: se o servidor tem matricula
+    // em Palhoca (CONV-001) e outra em Florianopolis (CONV-002), so mostra
+    // ofertas dos convenios da prefeitura da matricula ativa. Cliente antigo
+    // que nao mandava matricula continua vendo todas (backward compat).
+    const url = new URL(c.req.url);
+    const matAtiva = url.searchParams.get("matricula");
+    const entryAtivo = matAtiva
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
+      : undefined;
+    const convAtivo = entryAtivo
+      ? CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio)
+      : undefined;
+    const convenioIdsDaPrefeitura = convAtivo
+      ? new Set(CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === convAtivo.prefeituraId).map((cv) => cv.id))
+      : null;
     const hoje = new Date().toISOString().slice(0, 10);
     const tabelas = (await listTabelas(c.env)).filter((t) => {
       if (!t.ativo) return false;
       if (t.vigenciaInicio > hoje) return false;
       if (t.vigenciaFim && t.vigenciaFim < hoje) return false;
+      if (convenioIdsDaPrefeitura && !convenioIdsDaPrefeitura.has(t.convenioId)) return false;
       return true;
     });
     return c.json({

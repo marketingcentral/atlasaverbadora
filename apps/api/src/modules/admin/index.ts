@@ -13,6 +13,7 @@ import { getDb } from "../../db/client.js";
 import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
+import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
 import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
 import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
@@ -340,7 +341,7 @@ export function perfilDoSource(source: string): LogPerfil {
 }
 type LogEntry = { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string; perfil: LogPerfil };
 const _events: LogEntry[] = [];
-const pushEvent = (level: "info" | "warn" | "error", source: string, message: string, trace_id = randomTrace()): LogEntry => {
+export const pushEvent = (level: "info" | "warn" | "error", source: string, message: string, trace_id = randomTrace()): LogEntry => {
   const entry: LogEntry = { ts: new Date().toISOString(), level, trace_id, message, source, perfil: perfilDoSource(source) };
   _events.unshift(entry);
   if (_events.length > 400) _events.length = 400;
@@ -2049,6 +2050,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (cpf.length !== 11) { out.errors.push({ line, message: "cpf deve ter 11 digitos" }); return; }
       if (!r.nome) { out.errors.push({ line, message: "nome obrigatorio" }); return; }
       if (!r.matricula) { out.errors.push({ line, message: "matricula obrigatoria" }); return; }
+      const matricula = normalizeMatricula(r.matricula);
+      if (!MATRICULA_REGEX.test(matricula)) {
+        out.errors.push({ line, message: `matricula "${r.matricula}" invalida: use alfanumerico + hifen, 1..30 chars (ex: 852029100, M-009821)` });
+        return;
+      }
+      r.matricula = matricula;
       // idConvenio: usa o do CSV se pertencer a esta prefeitura; caso contrário (vazio ou de outra)
       // cai silenciosamente no convênio padrão da prefeitura selecionada.
       let idConvenio = (r.idConvenio ?? "").trim();

@@ -11,17 +11,6 @@ const fmtBRL = (n: number) =>
 
 const pct = (n: number) => `${(n * 100).toFixed(2)}% a.m.`;
 
-/** Normaliza nome de prefeitura/cidade pra matching case-insensitive
- *  sem acentos e sem prefixo "Prefeitura de". Usado no filtro de ofertas. */
-function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/\bprefeitura\s+de\s+/g, "")
-    .replace(/[^a-z0-9]+/g, "");
-}
-
 type Proposta = {
   id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number;
   situacao: string; tipoContrato?: string;
@@ -92,25 +81,18 @@ export function ServidorMarketplacePortabilidade() {
   const matAtiva = info?.matricula;
 
   // Ofertas dos bancos parceiros (tabelas de emprestimo publicadas pro convenio).
+  // O backend ja filtra por prefeituraId da matricula ativa — nao precisamos
+  // mais do filtro por slug de cidade (fragil). Refetch quando trocar matricula.
   const ofertasQ = useQuery({
-    queryKey: ["servidor", "ofertas"],
-    queryFn: () => atlas.servidor.ofertas(),
+    queryKey: ["servidor", "ofertas", matAtiva],
+    queryFn: () => atlas.servidor.ofertas(matAtiva),
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
+    enabled: !!matAtiva,
   });
 
-  const ofertas = useMemo(() => {
-    const todas = ofertasQ.data?.ofertas ?? [];
-    if (!info) return todas;
-    const alvo = slug(info.prefeitura);
-    if (!alvo) return todas;
-    return todas.filter((o) => {
-      const cidade = slug(o.cidade ?? "");
-      const conv = slug(o.convenio ?? "");
-      return cidade.includes(alvo) || conv.includes(alvo);
-    });
-  }, [ofertasQ.data, info]);
+  const ofertas = ofertasQ.data?.ofertas ?? [];
 
   // Propostas de portabilidade que os bancos criaram pro servidor.
   const propostasQ = useQuery({

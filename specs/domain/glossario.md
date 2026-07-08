@@ -78,6 +78,22 @@ Campos das APIs bancarias (iFractal-like):
 | **chaveAcesso** | Chave de sessao emitida pelo banco para operacoes ligadas a matricula |
 | **competencia** | Periodo `YYYYMM` (mes da folha) |
 
+## Formato canonico de matricula
+
+Prefeituras usam formatos diferentes na vida real: Palhoca usa digitos (`852029100`), o
+exemplo do OpenAPI e `M-009821`, uma prefeitura futura pode usar `PAL-2024-001`. Nao
+impomos UM formato porque quebrariamos integracoes reais. Mas normalizamos no boundary
+pra evitar `m-9001` vs `M-9001` vs `M 9001` virarem 3 registros diferentes.
+
+**Regra:** regex `^[A-Z0-9][A-Z0-9-]{0,29}$` — alfanumerico + hifen, 1..30 chars,
+comeca com alfanumerico. Sempre `trim() + toUpperCase() + remove espacos internos`
+no import (CSV) e no PATCH (edicao). Rejeita espaco, ponto, acento, caractere especial.
+
+Implementacao: `apps/api/src/_shared/matricula.ts` (`normalizeMatricula`, `MATRICULA_REGEX`,
+`MatriculaSchema` para Zod). Uso: import CSV admin (`/v1/admin/servidores/importar`),
+import CSV prefeitura (`/v1/prefeitura/servidores/importar`), PATCH da prefeitura
+(`/v1/prefeitura/servidores/:matricula`).
+
 ## Erros comuns a evitar
 
 - **Servidor ≠ matricula.** Um CPF pode ter N matriculas.

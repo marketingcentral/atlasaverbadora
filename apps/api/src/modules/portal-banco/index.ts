@@ -7,7 +7,7 @@ import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
 import { refreshConvenios } from "./convenios-store.js";
 import { refreshComunicados } from "./comunicados-store.js";
-import { prefeituras } from "../admin/index.js";
+import { prefeituras, bancos, pushEvent } from "../admin/index.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
@@ -314,6 +314,15 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const body = NovoContratoBody.parse(await c.req.json());
     const ct = await persistir(j, c.env, tipo, body, false);
     await persistContrato(c.env, ct.adf);
+    // Averbacao direta (sem passar por reserva) — notifica a averbadora tambem.
+    const bancoNome = bancos.find((b) => b.id === ct.bancoId)?.nome ?? `Banco ${ct.bancoId}`;
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+    const prefNome = conv?.prefeitura ?? "prefeitura";
+    pushEvent(
+      "info",
+      "averbadora.notif_averbacao",
+      `${bancoNome} averbou a proposta ${ct.adf} (matricula ${ct.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
+    );
     return c.json(ct);
   })
   .post("/v1/portal/banco/contratos/reservar/:tipo", async (c) => {
@@ -344,6 +353,19 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
     if (!r) throw Errors.notFound("contrato");
     await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
+    // Notifica a averbadora quando o banco averba a proposta ("confirmar" → Ativo).
+    // A averbadora recebe pra fazer a ADF; a prefeitura ve read-only o lote de ADFs
+    // depois que a averbadora processar (cliente: "so aplica, nao autoriza nada").
+    if (acao === "confirmar") {
+      const bancoNome = bancos.find((b) => b.id === r.bancoId)?.nome ?? `Banco ${r.bancoId}`;
+      const conv = CONVENIOS_MOCK.find((cv) => cv.id === r.convenioId);
+      const prefNome = conv?.prefeitura ?? "prefeitura";
+      pushEvent(
+        "info",
+        "averbadora.notif_averbacao",
+        `${bancoNome} averbou a proposta ${adf} (matricula ${r.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
+      );
+    }
     return c.json({ contrato: r });
   })
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, Card } from "@atlas/ui/web";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -6,17 +6,6 @@ import { atlas } from "../../lib/sdk";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID, type MatriculaInfo } from "../../lib/matricula-data";
 
 const pct = (n: number) => `${(n * 100).toFixed(2)}% a.m.`;
-
-/** Normaliza nome de prefeitura/cidade pra matching case-insensitive
- *  sem acentos e sem prefixo "Prefeitura de". */
-function slug(s: string): string {
-  return s
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/\bprefeitura\s+de\s+/g, "")
-    .replace(/[^a-z0-9]+/g, "");
-}
 
 export function ServidorMarketplace() {
   const nav = useNavigate();
@@ -31,33 +20,18 @@ export function ServidorMarketplace() {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
-  // staleTime 0 + refetchOnMount always garante que sempre puxa fresco quando
-  // o usuario cai na tela vindo de outro portal. O default do react-query
-  // exibe cache stale enquanto refetch acontece em background — para
-  // "acabou de mexer e nao mudou" isso confunde, entao forcamos refetch
-  // sincrono em cada mount e tambem quando a janela recupera o foco.
+  // Backend ja filtra por prefeituraId da matricula ativa — passamos a matricula
+  // ativa e o backend so devolve ofertas dos convenios daquela prefeitura.
   const q = useQuery({
-    queryKey: ["servidor", "ofertas"],
-    queryFn: () => atlas.servidor.ofertas(),
+    queryKey: ["servidor", "ofertas", info?.matricula],
+    queryFn: () => atlas.servidor.ofertas(info?.matricula),
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
+    enabled: !!info?.matricula,
   });
 
-  // Filtra por convenio da matricula ativa — casa cidade da oferta OU
-  // texto do convenio com o slug da prefeitura ativa. Se nao ha matricula
-  // ativa, mostra todas (nao deveria acontecer no fluxo normal).
-  const ofertasFiltradas = useMemo(() => {
-    const todas = q.data?.ofertas ?? [];
-    if (!info) return todas;
-    const alvo = slug(info.prefeitura);
-    if (!alvo) return todas;
-    return todas.filter((o) => {
-      const cidade = slug(o.cidade ?? "");
-      const conv = slug(o.convenio ?? "");
-      return cidade.includes(alvo) || conv.includes(alvo);
-    });
-  }, [q.data, info]);
+  const ofertasFiltradas = q.data?.ofertas ?? [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
