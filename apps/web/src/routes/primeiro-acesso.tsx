@@ -4,17 +4,14 @@ import { Button, Card, Input } from "@atlas/ui/web";
 import { atlas } from "../lib/sdk";
 import { AtlasLogo } from "../components/AtlasBrand";
 
-type Step = "cpf" | "codigo" | "senha" | "termos" | "ok";
+type Step = "cpf" | "email" | "codigo" | "ok";
 
 interface PrefeituraInfo {
   nome: string;
   cargo: string;
   matricula: string;
-  emailMasked: string;
-  telefoneMasked: string;
 }
 
-// Formata dígitos como 000.111.222-33 (max 11 dígitos).
 function formatCpf(v: string): string {
   const d = v.replace(/\D/g, "").slice(0, 11);
   if (d.length <= 3) return d;
@@ -27,15 +24,17 @@ export function PrimeiroAcessoPage() {
   const nav = useNavigate();
   const [step, setStep] = useState<Step>("cpf");
   const [cpf, setCpf] = useState("");
-  const [codigo, setCodigo] = useState("");
+  const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [senha2, setSenha2] = useState("");
+  const [codigo, setCodigo] = useState("");
   const [aceitouTermos, setAceitou] = useState(false);
   const [aceitouLgpd, setAceitouLgpd] = useState(false);
   const [profile, setProfile] = useState<PrefeituraInfo | null>(null);
+  const [destinoMasked, setDestinoMasked] = useState<string>("");
+  const [avisoCodigo, setAvisoCodigo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [avisoCodigo, setAvisoCodigo] = useState<string | null>(null);
 
   async function validarCpf(e: FormEvent) {
     e.preventDefault();
@@ -43,34 +42,18 @@ export function PrimeiroAcessoPage() {
     setLoading(true);
     try {
       const digits = cpf.replace(/\D/g, "");
-      if (digits.length !== 11) {
-        setError("CPF deve ter 11 dígitos.");
-        return;
-      }
+      if (digits.length !== 11) { setError("CPF deve ter 11 dígitos."); return; }
       const r = await atlas.primeiroAcesso.buscar(digits);
       if (!r.encontrado) {
-        setError("CPF nao encontrado na base da sua prefeitura. Entre em contato com o RH da prefeitura para regularizar o cadastro.");
+        setError("CPF não encontrado na base da sua prefeitura. Entre em contato com o RH para regularizar o cadastro.");
         return;
       }
       if (r.ja_tem_senha) {
-        setError("Esta conta ja foi ativada. Use 'Ja tenho conta — entrar' abaixo. Se esqueceu a senha, va em 'Esqueci minha senha'.");
+        setError("Esta conta já foi ativada. Use 'Já tenho conta — entrar' abaixo. Se esqueceu a senha, use 'Esqueci minha senha'.");
         return;
       }
-      setProfile({
-        nome: r.nome ?? "",
-        cargo: r.cargo ?? "",
-        matricula: r.matricula ?? "",
-        emailMasked: r.email_masked ?? "",
-        telefoneMasked: r.telefone_masked ?? "",
-      });
-      // Ja dispara o envio do codigo pro e-mail do servidor.
-      const env = await atlas.primeiroAcesso.codigo(digits);
-      if (!env.enviado) {
-        setAvisoCodigo(env.aviso || `E-mail nao pode ser enviado agora. Codigo de teste: ${env.codigo_teste ?? "—"}`);
-      } else {
-        setAvisoCodigo(null);
-      }
-      setStep("codigo");
+      setProfile({ nome: r.nome ?? "", cargo: r.cargo ?? "", matricula: r.matricula ?? "" });
+      setStep("email");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao verificar CPF.");
     } finally {
@@ -78,59 +61,53 @@ export function PrimeiroAcessoPage() {
     }
   }
 
-  async function reenviarCodigo() {
-    if (!profile) return;
+  async function enviarCodigo(e: FormEvent) {
+    e.preventDefault();
     setError(null);
+    if (!/^\S+@\S+\.\S+$/.test(email)) { setError("Informe um e-mail válido."); return; }
+    if (senha.length < 8) { setError("A senha deve ter no mínimo 8 caracteres."); return; }
+    if (!/[a-zA-Z]/.test(senha) || !/\d/.test(senha)) { setError("A senha deve conter letras e números."); return; }
+    if (senha !== senha2) { setError("As senhas não conferem."); return; }
+    if (!aceitouTermos || !aceitouLgpd) { setError("É preciso aceitar os Termos e a Política de Privacidade."); return; }
     setLoading(true);
     try {
       const digits = cpf.replace(/\D/g, "");
-      const env = await atlas.primeiroAcesso.codigo(digits);
-      setAvisoCodigo(env.enviado ? "Codigo reenviado." : (env.aviso || `Codigo de teste: ${env.codigo_teste ?? "—"}`));
+      const r = await atlas.primeiroAcesso.codigo(digits, email.trim().toLowerCase(), senha);
+      setDestinoMasked(r.destino || email);
+      setAvisoCodigo(r.enviado ? null : (r.aviso || `Código de teste: ${r.codigo_teste ?? "—"}`));
+      setStep("codigo");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao reenviar codigo.");
+      setError(err instanceof Error ? err.message : "Falha ao enviar o código.");
     } finally {
       setLoading(false);
     }
   }
 
-  function irParaSenha(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (codigo.replace(/\D/g, "").length !== 6) {
-      setError("Codigo invalido. Verifique seu e-mail.");
-      return;
-    }
-    setStep("senha");
-  }
-
-  async function criarSenha(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (senha.length < 8) {
-      setError("A senha deve ter no minimo 8 caracteres.");
-      return;
-    }
-    if (!/[a-zA-Z]/.test(senha) || !/\d/.test(senha)) {
-      setError("A senha deve conter pelo menos uma letra e um numero.");
-      return;
-    }
-    if (senha !== senha2) {
-      setError("As senhas nao conferem.");
-      return;
-    }
-    setStep("termos");
-  }
-
-  async function finalizar() {
+  async function reenviarCodigo() {
     setError(null);
     setLoading(true);
     try {
       const digits = cpf.replace(/\D/g, "");
-      await atlas.primeiroAcesso.senha(digits, codigo.replace(/\D/g, ""), senha);
+      const r = await atlas.primeiroAcesso.codigo(digits, email.trim().toLowerCase(), senha);
+      setAvisoCodigo(r.enviado ? "Código reenviado." : (r.aviso || `Código de teste: ${r.codigo_teste ?? "—"}`));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Falha ao reenviar.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function confirmar(e: FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (codigo.replace(/\D/g, "").length !== 6) { setError("Código precisa ter 6 dígitos."); return; }
+    setLoading(true);
+    try {
+      const digits = cpf.replace(/\D/g, "");
+      await atlas.primeiroAcesso.confirmar(digits, codigo.replace(/\D/g, ""));
       setStep("ok");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Codigo invalido ou expirado.");
-      setStep("codigo");
+      setError(err instanceof Error ? err.message : "Código inválido ou expirado.");
     } finally {
       setLoading(false);
     }
@@ -161,7 +138,7 @@ export function PrimeiroAcessoPage() {
           {step === "cpf" ? (
             <form onSubmit={validarCpf} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
-                Vamos verificar se seu CPF esta cadastrado na sua prefeitura.
+                Vamos verificar se seu CPF está cadastrado na sua prefeitura.
               </p>
               <Input
                 label="CPF"
@@ -181,58 +158,27 @@ export function PrimeiroAcessoPage() {
             </form>
           ) : null}
 
-          {step === "codigo" && profile ? (
-            <form onSubmit={irParaSenha} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {step === "email" && profile ? (
+            <form onSubmit={enviarCodigo} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
               <InfoCard>
                 <div style={{ fontWeight: 600 }}>{profile.nome}</div>
                 <div style={{ fontSize: ".85rem", color: "var(--text-muted)" }}>
-                  {profile.cargo}{profile.matricula ? ` · Matricula ${profile.matricula}` : ""}
+                  {profile.cargo}{profile.matricula ? ` · Matrícula ${profile.matricula}` : ""}
                 </div>
               </InfoCard>
               <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
-                Enviamos um codigo de 6 digitos por e-mail para:<br />
-                <b>{profile.emailMasked}</b>
+                Informe um <b>e-mail seu</b> — pode ser pessoal, não precisa ser o institucional. Vamos enviar um código para confirmar que é seu.
+                Escolha também uma senha para acessar a plataforma.
               </p>
-              {avisoCodigo ? <InfoBox>{avisoCodigo}</InfoBox> : null}
               <Input
-                label="Codigo de verificacao"
-                value={codigo}
-                onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="000000"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
+                label="Seu e-mail"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="voce@gmail.com"
+                autoComplete="email"
                 required
               />
-              {error ? <ErrorBox>{error}</ErrorBox> : null}
-              <Button type="submit" disabled={loading || codigo.length < 6}>
-                Continuar →
-              </Button>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <button
-                  type="button"
-                  onClick={() => setStep("cpf")}
-                  style={{ background: "transparent", border: 0, color: "var(--text-muted)", fontSize: ".88rem", cursor: "pointer" }}
-                >
-                  ← Voltar
-                </button>
-                <button
-                  type="button"
-                  onClick={reenviarCodigo}
-                  disabled={loading}
-                  style={{ background: "transparent", border: 0, color: "var(--accent)", fontSize: ".88rem", cursor: loading ? "not-allowed" : "pointer" }}
-                >
-                  Reenviar codigo
-                </button>
-              </div>
-            </form>
-          ) : null}
-
-          {step === "senha" ? (
-            <form onSubmit={criarSenha} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
-                Crie uma senha forte. Minimo 8 caracteres, com letras e numeros.
-              </p>
               <Input
                 label="Nova senha"
                 type="password"
@@ -249,83 +195,72 @@ export function PrimeiroAcessoPage() {
                 autoComplete="new-password"
                 required
               />
-              {error ? <ErrorBox>{error}</ErrorBox> : null}
-              <Button type="submit">Continuar →</Button>
-              <button
-                type="button"
-                onClick={() => setStep("codigo")}
-                style={{ background: "transparent", border: 0, color: "var(--text-muted)", fontSize: ".88rem", cursor: "pointer" }}
-              >
-                ← Voltar
-              </button>
-            </form>
-          ) : null}
-
-          {step === "termos" ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
-                Para concluir, leia e aceite os termos abaixo.
-              </p>
               <div
                 style={{
-                  maxHeight: 220, overflow: "auto", padding: 14,
+                  maxHeight: 140, overflow: "auto", padding: 12,
                   background: "var(--bg-elev-2)", border: "1px solid var(--border)", borderRadius: 10,
-                  fontSize: ".82rem", color: "var(--text-muted)", lineHeight: 1.6,
+                  fontSize: ".78rem", color: "var(--text-muted)", lineHeight: 1.55,
                 }}
               >
-                <b>Termo de uso e privacidade Atlas Averbadora</b>
-                <p>
-                  Ao aceitar este termo, voce autoriza o uso da plataforma Atlas para consulta de margem consignavel,
-                  averbacao de operacoes de credito junto a sua prefeitura e bancos parceiros, e recebimento de
-                  notificacoes operacionais.
-                </p>
-                <p>
-                  <b>LGPD.</b> Seus dados pessoais (nome, CPF, e-mail, telefone, matricula, salario liquido e historico de
-                  consignacoes) sao tratados conforme a Lei 13.709/2018. Voce pode solicitar a exclusao a qualquer momento.
-                </p>
-                <p>
-                  Voce e responsavel pela guarda da sua senha e do dispositivo cadastrado. A Atlas nao realiza emprestimos
-                  diretamente — somente intermedia operacoes entre voce e bancos credenciados.
-                </p>
+                <b>Termos.</b> Ao ativar, você autoriza a Atlas a consultar sua margem e intermediar averbações junto à prefeitura e bancos parceiros.
+                <br /><b>LGPD.</b> Seus dados (nome, CPF, e-mail, telefone, matrícula, salário, contratos) são tratados conforme a Lei 13.709/2018. Você pode pedir exclusão a qualquer momento.
               </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".88rem" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".85rem" }}>
                 <input type="checkbox" checked={aceitouTermos} onChange={(e) => setAceitou(e.target.checked)} />
                 Li e aceito os Termos de uso
               </label>
-              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".88rem" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".85rem" }}>
                 <input type="checkbox" checked={aceitouLgpd} onChange={(e) => setAceitouLgpd(e.target.checked)} />
-                Concordo com a Politica de Privacidade (LGPD)
+                Concordo com a Política de Privacidade (LGPD)
               </label>
               {error ? <ErrorBox>{error}</ErrorBox> : null}
-              <Button onClick={finalizar} disabled={!aceitouTermos || !aceitouLgpd || loading}>
-                {loading ? "Concluindo..." : "Ativar minha conta"}
+              <Button type="submit" disabled={loading}>
+                {loading ? "Enviando..." : "Enviar código para meu e-mail →"}
               </Button>
-              <button
-                type="button"
-                onClick={() => setStep("senha")}
-                disabled={loading}
-                style={{ background: "transparent", border: 0, color: "var(--text-muted)", fontSize: ".88rem", cursor: loading ? "not-allowed" : "pointer" }}
-              >
-                ← Voltar
-              </button>
-            </div>
+              <button type="button" onClick={() => setStep("cpf")} style={linkBtn}>← Voltar</button>
+            </form>
+          ) : null}
+
+          {step === "codigo" ? (
+            <form onSubmit={confirmar} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
+                Enviamos um código de 6 dígitos para <b style={{ color: "var(--text)" }}>{destinoMasked}</b>. Ele expira em 10 minutos.
+              </p>
+              {avisoCodigo ? <InfoBox>{avisoCodigo}</InfoBox> : null}
+              <Input
+                label="Código de verificação"
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                placeholder="000000"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+              />
+              {error ? <ErrorBox>{error}</ErrorBox> : null}
+              <Button type="submit" disabled={loading || codigo.length < 6}>
+                {loading ? "Confirmando..." : "Ativar minha conta"}
+              </Button>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <button type="button" onClick={() => setStep("email")} style={linkBtn}>← Voltar</button>
+                <button type="button" onClick={reenviarCodigo} disabled={loading} style={{ ...linkBtn, color: "var(--accent)" }}>
+                  Reenviar código
+                </button>
+              </div>
+            </form>
           ) : null}
 
           {step === "ok" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 14, textAlign: "center" }}>
-              <div
-                style={{
-                  width: 64, height: 64, borderRadius: "50%",
-                  background: "color-mix(in srgb, var(--emerald-500) 20%, transparent)",
-                  color: "var(--emerald-500)", display: "grid", placeItems: "center",
-                  fontSize: 32, fontWeight: 800, margin: "0 auto",
-                }}
-              >
-                ✓
-              </div>
+              <div style={{
+                width: 64, height: 64, borderRadius: "50%",
+                background: "color-mix(in srgb, var(--emerald-500) 20%, transparent)",
+                color: "var(--emerald-500)", display: "grid", placeItems: "center",
+                fontSize: 32, fontWeight: 800, margin: "0 auto",
+              }}>✓</div>
               <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Conta ativada!</div>
               <p style={{ color: "var(--text-muted)", margin: 0 }}>
-                Voce ja pode entrar com seu CPF e a senha que acabou de criar.
+                Você já pode entrar com seu CPF e a senha que acabou de criar.
               </p>
               <p style={{ color: "var(--text-dim)", fontSize: ".82rem", margin: 0 }}>
                 Redirecionando em alguns segundos…
@@ -337,7 +272,7 @@ export function PrimeiroAcessoPage() {
           {step !== "ok" ? (
             <div style={{ marginTop: 20, textAlign: "center" }}>
               <Link to="/login" style={{ color: "var(--text-muted)", fontSize: ".88rem" }}>
-                Ja tenho conta — entrar
+                Já tenho conta — entrar
               </Link>
             </div>
           ) : null}
@@ -350,9 +285,8 @@ export function PrimeiroAcessoPage() {
 function Stepper({ step }: { step: Step }) {
   const steps: { key: Step; label: string }[] = [
     { key: "cpf", label: "CPF" },
-    { key: "codigo", label: "Codigo" },
-    { key: "senha", label: "Senha" },
-    { key: "termos", label: "Termos" },
+    { key: "email", label: "Dados" },
+    { key: "codigo", label: "Código" },
   ];
   const currentIdx = step === "ok" ? steps.length : steps.findIndex((s) => s.key === step);
   return (
@@ -383,50 +317,25 @@ function Stepper({ step }: { step: Step }) {
   );
 }
 
+const linkBtn: React.CSSProperties = { background: "transparent", border: 0, color: "var(--text-muted)", fontSize: ".88rem", cursor: "pointer", padding: 0 };
+
 function ErrorBox({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        padding: "12px 14px",
-        borderRadius: 10,
-        border: "1px solid var(--danger-500)",
-        background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
-        color: "var(--text)",
-        fontSize: ".88rem",
-      }}
-    >
+    <div style={{ padding: "12px 14px", borderRadius: 10, border: "1px solid var(--danger-500)", background: "color-mix(in srgb, var(--danger-500) 10%, transparent)", color: "var(--text)", fontSize: ".88rem" }}>
       {children}
     </div>
   );
 }
-
 function InfoBox({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        padding: "10px 14px",
-        borderRadius: 10,
-        border: "1px dashed var(--gold-500)",
-        background: "color-mix(in srgb, var(--gold-500) 10%, transparent)",
-        color: "var(--text)",
-        fontSize: ".85rem",
-      }}
-    >
+    <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px dashed var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 10%, transparent)", color: "var(--text)", fontSize: ".85rem" }}>
       {children}
     </div>
   );
 }
-
 function InfoCard({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        padding: 14,
-        borderRadius: 10,
-        background: "var(--bg-elev-2)",
-        border: "1px solid var(--border)",
-      }}
-    >
+    <div style={{ padding: 14, borderRadius: 10, background: "var(--bg-elev-2)", border: "1px solid var(--border)" }}>
       {children}
     </div>
   );

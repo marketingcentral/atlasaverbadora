@@ -239,37 +239,56 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     });
   })
   // 2) Envia (test-mode: retorna) o código de 6 dígitos.
+  // 2) Servidor escolhe SEU proprio email + senha; o codigo vai pra esse email
+  //    (nao pro cadastrado pela prefeitura — que pode ser institucional).
+  //    O email so e considerado valido apos o codigo ser confirmado.
   .post("/v1/auth/primeiro-acesso/codigo", async (c) => {
-    const { cpf } = z.object({ cpf: z.string() }).parse(await c.req.json());
+    const { cpf, email, senha } = z
+      .object({
+        cpf: z.string(),
+        email: z.string().email("E-mail invalido"),
+        senha: z.string().min(8, "Senha precisa de ao menos 8 caracteres"),
+      })
+      .parse(await c.req.json());
     const digits = cpf.replace(/\D/g, "");
     await ensureServidoresLoaded(c.env);
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
     if (!s) throw Errors.notFound("servidor");
-    const codigo = await gerarCodigoUnico(c.env); // 6 dígitos, sem reuso por 30 dias
-    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`pa:${digits}`, codigo, { expirationTtl: 600 });
-    // Envia por e-mail de verdade se o SMTP estiver configurado (para o destino
-    // de notificação, se definido). Senão, modo teste (código na resposta).
-    const r = await enviarCodigo(c.env, { destinoPadrao: s.email, contexto: "ativar seu primeiro acesso", codigo });
+    if (s.passwordHash) throw Errors.validation({ cpf: "Este CPF ja fez o primeiro acesso. Use 'Esqueci minha senha'." });
+    const codigo = await gerarCodigoUnico(c.env);
+    const senhaHash = await sha256Hex(senha);
+    // Guarda o pacote pendente ate a confirmacao (10 min).
+    const pending = { codigo, email: email.trim().toLowerCase(), senhaHash };
+    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`pa:${digits}`, JSON.stringify(pending), { expirationTtl: 600 });
+    // Envia pro email QUE O SERVIDOR ESCOLHEU (nao pro cadastrado).
+    const r = await enviarCodigo(c.env, { destinoPadrao: email, contexto: "ativar seu acesso Atlas", codigo });
     return c.json({
       enviado: r.sent,
-      destino: maskEmail(r.destino || s.email),
-      ...(r.sent ? {} : { codigo_teste: codigo, aviso: `E-mail não enviado (${r.reason}) — modo teste.` }),
+      destino: maskEmail(r.destino || email),
+      ...(r.sent ? {} : { codigo_teste: codigo, aviso: `E-mail nao enviado (${r.reason}) — modo teste.` }),
     });
   })
-  // 3) Valida o código e define a senha (grava passwordHash no Postgres).
+  // 3) Confirma o codigo — grava passwordHash E o novo email no Postgres.
   .post("/v1/auth/primeiro-acesso/senha", async (c) => {
-    const { cpf, codigo, senha } = z
-      .object({ cpf: z.string(), codigo: z.string(), senha: z.string().min(6) })
+    const { cpf, codigo } = z
+      .object({ cpf: z.string(), codigo: z.string() })
       .parse(await c.req.json());
     const digits = cpf.replace(/\D/g, "");
-    if (!c.env.KV_SESSIONS) throw Errors.validation({ kv: "sessões indisponíveis" });
-    const stored = await c.env.KV_SESSIONS.get(`pa:${digits}`);
-    if (!stored || stored !== codigo) throw Errors.unauthorized("Código inválido ou expirado");
-    const hash = await sha256Hex(senha);
-    const n = await setServidorPassword(c.env, digits, hash);
+    if (!c.env.KV_SESSIONS) throw Errors.validation({ kv: "sessoes indisponiveis" });
+    const raw = await c.env.KV_SESSIONS.get(`pa:${digits}`);
+    if (!raw) throw Errors.unauthorized("Codigo expirado. Solicite um novo.");
+    let pending: { codigo: string; email: string; senhaHash: string };
+    try { pending = JSON.parse(raw); } catch { throw Errors.unauthorized("Sessao invalida — solicite um novo codigo."); }
+    if (pending.codigo !== codigo) throw Errors.unauthorized("Codigo invalido");
+    // Grava senha + email (novo) em TODAS as matriculas desse CPF.
+    const n = await setServidorPassword(c.env, digits, pending.senhaHash);
     if (n === 0) throw Errors.notFound("servidor");
-    // Atualiza o cache em memória do isolate para o login funcionar imediatamente.
-    SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => { x.passwordHash = hash; });
+    await setServidorContato(c.env, digits, { email: pending.email });
+    // Cache in-memory do isolate — login e 2FA funcionam imediatamente.
+    SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => {
+      x.passwordHash = pending.senhaHash;
+      x.email = pending.email;
+    });
     await c.env.KV_SESSIONS.delete(`pa:${digits}`);
     return c.json({ ok: true });
   })
