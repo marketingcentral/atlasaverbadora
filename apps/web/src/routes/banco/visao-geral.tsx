@@ -99,12 +99,43 @@ export function BancoVisaoGeral() {
   // estado "Sem convênio ativo" em vez de fabricar competencias fantasmas.
   const semConvenio = v.dataCorte.dia === 0;
   const cortes = semConvenio ? [] : buildCortes(v.dataCorte.dia, v.dataCorte.origem, v.dataCorte.operacoes);
+  // Mural: mesmo modelo dos exemplos — item em processamento tem "recebido ha X min",
+  // itens concluidos mostram a data de conclusao (dia seguinte ao corte da competencia)
+  // e o texto expandido "ATENCAO: ...".
+  const agora = new Date();
+  const recebidoHaMin = 30; // valor estavel — nao usa Date.now() no build/isolate
   const mural = semConvenio
     ? []
-    : [
-        { competencia: cortes[6]!.competencia, status: "processando" as const },
-        ...[5, 4, 3, 2].map((i) => ({ competencia: cortes[i]!.competencia, status: "concluido" as const })),
-      ];
+    : (() => {
+        const atual = cortes[6]!;
+        const previsaoLabel = "hoje";
+        return [
+          {
+            competencia: atual.competencia,
+            status: "processando" as const,
+            previsao: previsaoLabel,
+            recebidoHaMin,
+          },
+          ...[5, 4, 3, 2].map((i) => {
+            const c = cortes[i]!;
+            // Data em que o retorno "ficou disponivel" — 1 dia apos o corte.
+            const refMes = agora.getMonth() + (i - 6);
+            const ref = new Date(agora.getFullYear(), refMes + 1, 1); // primeiro dia do mes seguinte a competencia
+            const dd = String(ref.getDate()).padStart(2, "0");
+            const mm = String(ref.getMonth() + 1).padStart(2, "0");
+            const yyyy = ref.getFullYear();
+            // "mes seguinte" para o texto da mensagem
+            const proximoMes = MESES_PT[(ref.getMonth() + 1) % 12]!;
+            const proximoAno = ref.getMonth() === 11 ? yyyy + 1 : yyyy;
+            return {
+              competencia: c.competencia,
+              status: "concluido" as const,
+              disponibilizadoEm: `${dd}/${mm}/${yyyy}`,
+              mesSeguinte: `${proximoMes}/${proximoAno}`,
+            };
+          }),
+        ];
+      })();
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
       <header>
@@ -131,13 +162,13 @@ export function BancoVisaoGeral() {
           label="Novos Contratos"
           value={v.kpis.novosNoMes.count}
           hint="Neste mês"
-          cta={{ label: "Contratos novos", onClick: () => (window.location.href = "/banco/carteira") }}
+          cta={{ label: "Ver contratos", onClick: () => (window.location.href = "/banco/carteira") }}
         />
         <KpiCard
           label="Pendências em Contratos"
           value={v.kpis.pendencias.count}
-          hint={v.kpis.pendencias.count > 0 ? "Atenção" : "Tudo em dia"}
-          cta={{ label: "Minhas pendências", onClick: () => (window.location.href = "/banco/carteira") }}
+          hint={v.kpis.pendencias.count > 0 ? "Aguardando ação" : "Tudo em dia"}
+          cta={{ label: "Resolver", onClick: () => (window.location.href = "/banco/carteira") }}
           accent={v.kpis.pendencias.count > 0 ? "warn" : "success"}
         />
         {semConvenio ? (
@@ -247,11 +278,20 @@ export function BancoVisaoGeral() {
                   <div style={{ fontSize: 10.5, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 700 }}>
                     Retorno {m.competencia}
                   </div>
-                  <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
-                    {proc
-                      ? "Arquivo recebido — processando descontos e atualizando margens."
-                      : "Retorno da folha disponível — margens dos servidores atualizadas."}
-                  </div>
+                  {proc ? (
+                    <>
+                      <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+                        Arquivo recebido — processando descontos e atualizando margens.
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>
+                        Previsão de conclusão: <b style={{ color: "var(--text-muted)" }}>{m.previsao}</b> · recebido há {m.recebidoHaMin}min
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+                      <b style={{ color: "var(--text)" }}>{m.disponibilizadoEm}</b> — <b>ATENÇÃO:</b> Já está disponível o retorno da integração com a folha. As margens dos servidores estão atualizadas para o mês de {m.mesSeguinte}.
+                    </div>
+                  )}
                 </div>
                 <span
                   style={{
