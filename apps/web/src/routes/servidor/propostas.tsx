@@ -137,7 +137,7 @@ export function ServidorPropostas() {
         <span className="eyebrow">Minhas propostas</span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Historico</h1>
         <p style={{ color: "var(--text-muted)" }}>
-          Acompanhe o ciclo de vida das suas propostas e formalize as aprovadas.
+          Acompanhe o andamento das suas propostas. Quando aprovada, o banco entra em contato para assinar o contrato — a formalização é feita direto com ele.
         </p>
       </header>
 

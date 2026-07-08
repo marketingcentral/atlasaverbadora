@@ -128,7 +128,7 @@ export function ServidorTermo() {
             }}
           >
             <b>Proxima etapa:</b> voce recebera uma notificacao quando o {banco} responder a analise. Caso a proposta seja
-            aprovada, o link de formalizacao chegara por push e e-mail.
+            aprovada, o proprio {banco} entrara em contato para formalizar o contrato — a assinatura acontece direto com o banco (telefone, e-mail ou app do banco).
           </div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 20 }}>

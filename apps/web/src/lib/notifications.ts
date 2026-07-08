@@ -94,25 +94,23 @@ function notifFromProposta(p: Proposta): Notification | null {
         id: `proposta:${p.id}:aprovada`,
         type: "proposta_aprovada",
         titulo: `Proposta ${p.id} aprovada`,
-        mensagem: p.linkFormalizacao
-          ? `O ${p.banco} aprovou — clique para abrir a tela de formalização.`
-          : `O ${p.banco} aprovou. Aguarde próxima etapa.`,
+        // Assinatura acontece no proprio banco (nao ha formalizacao in-app por enquanto).
+        mensagem: `O ${p.banco} aprovou. Entrará em contato para assinar o contrato.`,
         quando: tempoRelativo(p.criadaEm),
         href: internalHref,
-        externalLink: p.linkFormalizacao,
         lida: false,
       };
     case "aguardando_formalizacao":
       return {
         id: `proposta:${p.id}:aguardando`,
         type: "proposta_aguardando_formalizacao",
-        titulo: `Aguardando formalização da ${p.id}`,
+        titulo: `Aguardando assinatura de ${p.id}`,
+        // O contrato e' assinado diretamente com o banco (canal proprio dele).
         mensagem: p.expiraEm
-          ? `Acesse o ${p.banco} para assinar. Trava expira em ${fmtDateTime(p.expiraEm)}.`
-          : `Acesse o ${p.banco} para assinar o contrato.`,
+          ? `Assine com o ${p.banco} (por telefone, e-mail ou app do banco). Trava expira em ${fmtDateTime(p.expiraEm)}.`
+          : `Assine com o ${p.banco} — o banco entrará em contato pelo canal dele.`,
         quando: tempoRelativo(p.criadaEm),
         href: internalHref,
-        externalLink: p.linkFormalizacao,
         lida: false,
       };
     case "recusada":
