@@ -97,17 +97,27 @@ export function NotificationBell() {
   const ofertas = ofertasQ.data?.ofertas ?? [];
   const notifs = useMemo(
     () => {
-      void tickKey; // usado pra re-render periodico dos "ha Xmin"
+      void tickKey; // usado pra re-render periodico dos "ha Xmin" e countdown de promo relampago
       return buildNotificationsFromPropostas(propostas, ofertas);
     },
     [propostas, ofertas, tickKey],
   );
 
-  // Recalcula os "ha Xmin/Xh" a cada 30s sem refetch.
+  // Recalcula "ha Xmin/Xh" e countdown de promo relampago. Se ha alguma oferta
+  // com expiraEm em menos de 1h, refresh a cada 1s pra o countdown ser suave;
+  // 24h -> 15s; caso contrario 30s (so pra atualizar "ha Xmin").
   useEffect(() => {
-    const i = setInterval(() => setTickKey((k) => k + 1), 30_000);
+    const now = Date.now();
+    const menorRestante = ofertas
+      .map((o) => (o.expiraEm ? new Date(o.expiraEm).getTime() - now : Infinity))
+      .filter((n) => Number.isFinite(n) && n > 0)
+      .reduce((m, n) => Math.min(m, n), Infinity);
+    const intervalo = menorRestante < 3600_000 ? 1_000
+                    : menorRestante < 24 * 3600_000 ? 15_000
+                    : 30_000;
+    const i = setInterval(() => setTickKey((k) => k + 1), intervalo);
     return () => clearInterval(i);
-  }, []);
+  }, [ofertas]);
 
   // Storage: matricula/lidas mudou → forca re-render pra reaplicar filtros.
   useEffect(() => {

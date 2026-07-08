@@ -178,13 +178,33 @@ export interface OfertaBancoParaNotif {
   parcelasMax: number;
   valorMax: number;
   criadoEm: string;
+  expiraEm?: string | null;
 }
-function notifDeOferta(o: OfertaBancoParaNotif): Notification {
+/** "1h 23min" ou "45min" ou "12s". Para countdown de promocao relampago. */
+function formatCountdown(msRestantes: number): string {
+  const total = Math.max(0, Math.floor(msRestantes / 1000));
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${String(m).padStart(2, "0")}min`;
+  if (m > 0) return `${m}min ${String(s).padStart(2, "0")}s`;
+  return `${s}s`;
+}
+function notifDeOferta(o: OfertaBancoParaNotif): Notification | null {
+  let sufixo = "";
+  if (o.expiraEm) {
+    const restante = new Date(o.expiraEm).getTime() - Date.now();
+    if (restante <= 0) return null; // ja expirou — nao aparece no sino
+    // Promocao relampago (≤ 24h): destaca o countdown.
+    if (restante <= 24 * 3600 * 1000) sufixo = ` ⏰ Termina em ${formatCountdown(restante)}.`;
+  }
   return {
     id: `oferta:${o.id}`,
     type: "oferta_banco",
     titulo: `${o.bancoNome}: ${o.titulo}`,
-    mensagem: `${o.mensagem} — ${o.taxaAm.toFixed(2)}% a.m. em até ${o.parcelasMax}x.`,
+    mensagem: `${o.mensagem} — ${o.taxaAm.toFixed(2)}% a.m. em até ${o.parcelasMax}x.${sufixo}`,
     quando: tempoRelativo(o.criadoEm),
     href: "/servidor/ofertas",
     lida: false,
@@ -198,7 +218,9 @@ export function buildNotificationsFromPropostas(
   const derivadas = propostas
     .map(notifFromProposta)
     .filter((n): n is Notification => n != null);
-  const ofertas = ofertasBanco.map(notifDeOferta);
+  const ofertas = ofertasBanco
+    .map(notifDeOferta)
+    .filter((n): n is Notification => n != null);
   const lista = [...derivadas, ...ofertas, folhaProcessada()];
   return lista.map((n) => ({ ...n, lida: readIds.has(n.id) }));
 }
