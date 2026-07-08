@@ -10,6 +10,7 @@ import { MatriculaSwitcher } from "../../components/MatriculaSwitcher";
 
 const NAV = [
   { key: "dashboard", label: "Início", href: "/servidor/dashboard" },
+  { key: "minha-margem", label: "Minha Margem", href: "/servidor/minha-margem" },
   { key: "marketplace", label: "Ofertas", href: "/servidor/marketplace" },
   { key: "marketplace-port", label: "MarketPlace · Portabilidade", href: "/servidor/marketplace/portabilidade", badge: "NOVO" },
   { key: "simular", label: "Simular", href: "/servidor/simular" },
