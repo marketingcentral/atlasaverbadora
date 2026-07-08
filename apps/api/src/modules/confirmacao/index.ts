@@ -79,7 +79,11 @@ export const confirmacaoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // TUDO vai pra la — util pra fase de teste. Vazio = vai pro e-mail cadastrado da persona.
     const smtp = await getSmtpConfigForSend(c.env);
     const notify = (smtp?.notifyEmail ?? "").trim();
-    const destino = notify || email;
+    // notifyEmail global e override SO para perfis administrativos (banco,
+    // prefeitura, averbadora) — util pra testar com contas ficticias.
+    // Servidor sempre recebe no email dele.
+    const isAdmin = j.role === "banco" || j.role === "prefeitura" || j.role === "averbadora";
+    const destino = isAdmin ? (notify || email) : (email || notify);
 
     const challengeId = crypto.randomUUID();
     const codigo = await gerarCodigoUnico(c.env);
