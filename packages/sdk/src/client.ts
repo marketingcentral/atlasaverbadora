@@ -643,6 +643,13 @@ export interface PrefeituraFolha {
   dataRepasse: string | null;
   status: "aberta" | "fechada" | "consolidada";
 }
+export interface FolhaAdfSummary {
+  total: number;
+  recebidas: number;
+  aplicadas: number;
+  falhas: number;
+  totalParcelasAplicadas: number;
+}
 export interface PrefeituraConvenio {
   id: string;
   nome: string;
@@ -1212,7 +1219,7 @@ export class AtlasClient {
     servidoresCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/servidores/csv-template`,
 
     // Folha (passo 4)
-    folhas: () => this.request<{ folhas: (PrefeituraFolha & { movimentacoes: number })[] }>("/v1/prefeitura/folhas"),
+    folhas: () => this.request<{ folhas: (PrefeituraFolha & { movimentacoes: number; adfs: FolhaAdfSummary })[] }>("/v1/prefeitura/folhas"),
     abrirFolha: (body: { competencia: string; dataCorte: string; dataRepasse?: string }) =>
       this.request<{ folha: PrefeituraFolha }>("/v1/prefeitura/folhas", { method: "POST", body }),
     atualizarFolha: (id: string, body: Partial<{ status: "aberta" | "fechada" | "consolidada"; dataCorte: string; dataRepasse: string | null }>) =>

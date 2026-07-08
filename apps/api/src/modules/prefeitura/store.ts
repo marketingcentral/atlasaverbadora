@@ -204,6 +204,21 @@ export function listAdfsGlobal(competencia?: string): AdfEntry[] {
   return _adfs.filter((a) => !competencia || a.competencia === competencia);
 }
 
+/** Resumo dos ADFs de uma (prefeitura, competencia) — usado para enriquecer a folha da prefeitura. */
+export function folhaAdfSummary(prefeituraId: number, competencia: string): {
+  total: number; recebidas: number; aplicadas: number; falhas: number; totalParcelasAplicadas: number;
+} {
+  let total = 0, recebidas = 0, aplicadas = 0, falhas = 0, totalParcelasAplicadas = 0;
+  for (const a of _adfs) {
+    if (a.prefeituraId !== prefeituraId || a.competencia !== competencia) continue;
+    total++;
+    if (a.status === "recebida") recebidas++;
+    else if (a.status === "aplicada") { aplicadas++; totalParcelasAplicadas += a.valorParcela; }
+    else if (a.status === "falha") falhas++;
+  }
+  return { total, recebidas, aplicadas, falhas, totalParcelasAplicadas };
+}
+
 /** Materializa ADFs para TODAS as prefeituras da competencia. Usado pela averbadora. */
 export function ensureAdfsGlobal(competencia: string, bancoNomeById: (id: number) => string, now: string, prefeituraIds: number[]): void {
   for (const pid of prefeituraIds) ensureAdfs(pid, competencia, bancoNomeById, now);
