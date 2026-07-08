@@ -1,6 +1,8 @@
 package io.atlas.servidor.core
 
 import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import io.atlas.servidor.data.remote.dto.ApiErrorBody
 import retrofit2.HttpException
 import java.io.IOException
@@ -35,7 +37,32 @@ suspend fun <T> safeApi(gson: Gson, block: suspend () -> T): T {
 private fun extractMessage(gson: Gson, e: HttpException): String? {
     return try {
         val raw = e.response()?.errorBody()?.string() ?: return null
-        gson.fromJson(raw, ApiErrorBody::class.java)?.error?.message
+        // Prefer a custom flat field message (e.g. {"email":"E-mail em uso..."}) over the
+        // generic top-level "Dados invalidos". Zod errors ({formErrors,fieldErrors}) are left
+        // to the generic message since their field text is technical English.
+        customFieldMessage(raw) ?: gson.fromJson(raw, ApiErrorBody::class.java)?.error?.message
+    } catch (t: Exception) {
+        null
+    }
+}
+
+/** Returns the first friendly PT-BR field message from a custom `details` object, or null. */
+private fun customFieldMessage(raw: String): String? {
+    return try {
+        val error = JsonParser.parseString(raw).asJsonObject
+            .getAsJsonObject("error") ?: return null
+        val details = error.get("details")
+        if (details == null || !details.isJsonObject) return null
+        val obj: JsonObject = details.asJsonObject
+        // Skip the Zod flatten shape — its messages are technical.
+        if (obj.has("fieldErrors") || obj.has("formErrors")) return null
+        for ((_, v) in obj.entrySet()) {
+            if (v != null && v.isJsonPrimitive && v.asJsonPrimitive.isString) {
+                val s = v.asString
+                if (s.isNotBlank()) return s
+            }
+        }
+        null
     } catch (t: Exception) {
         null
     }
