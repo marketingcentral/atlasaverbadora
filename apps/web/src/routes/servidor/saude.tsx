@@ -142,7 +142,7 @@ export function ServidorSaude() {
               </div>
             </div>
           </div>
-          <CartaoResumo margem={margemBeneficios ?? { tipo: "CARTAO_BENEFICIOS", total: 0, disponivel: 0 }} />
+          <CartaoResumo margem={margemBeneficios ?? { total: 0, disponivel: 0 }} />
         </Card>
       </section>
 
