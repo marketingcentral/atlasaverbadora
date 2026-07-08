@@ -240,12 +240,20 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     await refreshOfertas(c.env);
+    // Aceita ?matricula=X pra respeitar o switcher do app (mesmo tratamento
+    // do endpoint /me/ofertas). Sem esse param, cai na matricula do JWT.
+    const url = new URL(c.req.url);
+    const matAtiva = url.searchParams.get("matricula");
+    const entryAtivo = matAtiva
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
+      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
+    const conv = entryAtivo ? CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio) : undefined;
     const perfil = {
-      idConvenio: SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula)?.idConvenio,
+      idConvenio: entryAtivo?.idConvenio,
       vinculo: s.vinculo,
       situacaoFuncional: s.situacao_funcional,
-      prefeituraId: s.prefeitura_id,
-      salarioLiquido: s.salarioLiquido,
+      prefeituraId: conv?.prefeituraId ?? s.prefeitura_id,
+      salarioLiquido: entryAtivo?.salarioLiquido ?? s.salarioLiquido,
     };
     const list = (await loadOfertas(c.env)).filter((o) => ofertaCasaComServidor(o, perfil));
     // enriquece com nome do banco pra UI

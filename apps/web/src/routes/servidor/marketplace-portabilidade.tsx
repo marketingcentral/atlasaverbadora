@@ -80,12 +80,13 @@ export function ServidorMarketplacePortabilidade() {
 
   const matAtiva = info?.matricula;
 
-  // Ofertas dos bancos parceiros (tabelas de emprestimo publicadas pro convenio).
-  // O backend ja filtra por prefeituraId da matricula ativa — nao precisamos
-  // mais do filtro por slug de cidade (fragil). Refetch quando trocar matricula.
+  // Ofertas: SO ofertas que o banco criou e publicou manualmente (marketing/
+  // campanha). NAO as tabelas de emprestimo automaticas — o cliente disse:
+  // "esse espaco e apenas para ofertas que o banco criar e publicar".
+  // Backend ja filtra por perfil (convenio+prefeitura+vinculo+situacao+salario).
   const ofertasQ = useQuery({
-    queryKey: ["servidor", "ofertas", matAtiva],
-    queryFn: () => atlas.servidor.ofertas(matAtiva),
+    queryKey: ["servidor", "ofertas-banco", matAtiva],
+    queryFn: () => atlas.servidor.getMyOfertasBanco(matAtiva),
     staleTime: 0,
     refetchOnMount: "always",
     refetchOnWindowFocus: true,
@@ -150,51 +151,45 @@ export function ServidorMarketplacePortabilidade() {
             <div style={{ fontSize: 24, marginBottom: 6 }}>📭</div>
             <div style={{ fontWeight: 600 }}>Nenhuma oferta ativa no momento</div>
             <p style={{ fontSize: 13, margin: "6px auto 0", maxWidth: 480 }}>
-              Assim que um banco parceiro publicar uma tabela pro seu convênio, ela aparece aqui.
+              Este espaço mostra apenas ofertas que os bancos parceiros criam e publicam pra você.
+              Assim que uma cair, aparece aqui.
             </p>
           </div>
         ) : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
-            {ofertas.map((o) => (
-              <Card key={o.id}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
-                  {o.bancoNome}
-                </div>
-                <h3 style={{ margin: "6px 0", fontSize: "1.1rem" }}>Crédito consignado</h3>
-                <p style={{ color: "var(--text-muted)", margin: "4px 0", fontSize: 14 }}>
-                  Convênio {o.convenio}. Vigência a partir de{" "}
-                  {new Date(o.vigenciaInicio + "T00:00:00").toLocaleDateString("pt-BR")}
-                  {o.vigenciaFim ? ` até ${new Date(o.vigenciaFim + "T00:00:00").toLocaleDateString("pt-BR")}` : ""}.
-                </p>
-                <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <span style={chip}>{pct(o.taxaMinAm)} a {pct(o.taxaMaxAm)}</span>
-                  <span style={chip}>Até {o.prazoMaxMeses}×</span>
-                </div>
-                <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-                  <Button
-                    size="sm"
-                    onClick={() =>
-                      nav(
-                        `/servidor/simular?valor=10000&parcelas=${Math.min(o.prazoMaxMeses, 60)}&taxa=${(o.taxaMinAm * 100).toFixed(2)}`,
-                      )
-                    }
-                  >
-                    Simular →
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      nav(
-                        `/servidor/termo?tipo=novo&valor=10000&parcelas=${Math.min(o.prazoMaxMeses, 60)}&taxaAm=${(o.taxaMinAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`,
-                      )
-                    }
-                  >
-                    Aceitar oferta →
-                  </Button>
-                </div>
-              </Card>
-            ))}
+            {ofertas.map((o) => {
+              const valorSug = Math.min(o.valorMax, 10000);
+              const parcelasSug = Math.min(o.parcelasMax, 60);
+              return (
+                <Card key={o.id}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
+                    {o.bancoNome}
+                  </div>
+                  <h3 style={{ margin: "6px 0", fontSize: "1.1rem" }}>{o.titulo}</h3>
+                  <p style={{ color: "var(--text-muted)", margin: "4px 0", fontSize: 14 }}>
+                    {o.mensagem}
+                  </p>
+                  <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span style={chip}>{pct(o.taxaAm)}</span>
+                    <span style={chip}>Até {o.parcelasMax}×</span>
+                    <span style={chip}>Até {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(o.valorMax)}</span>
+                  </div>
+                  <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        nav(
+                          `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`,
+                        )
+                      }
+                    >
+                      Aceitar oferta →
+                    </Button>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )}
       </section>

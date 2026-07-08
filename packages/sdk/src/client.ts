@@ -825,9 +825,13 @@ export class AtlasClient {
           vigenciaFim: string | null;
         }[];
       }>(matricula ? `/v1/servidores/me/ofertas?matricula=${encodeURIComponent(matricula)}` : "/v1/servidores/me/ofertas"),
-    /** Ofertas ativas criadas pelos bancos que casam com o perfil do servidor. */
-    getMyOfertasBanco: () =>
-      this.request<{ ofertas: ServidorOfertaBanco[] }>("/v1/servidores/me/ofertas-banco"),
+    /** Ofertas ativas criadas pelos bancos que casam com o perfil do servidor.
+     *  Passe `matricula` pra respeitar a matricula ativa no switcher (senao usa
+     *  a do login, o que confunde quem tem acumulacao de cargos). */
+    getMyOfertasBanco: (matricula?: string) =>
+      this.request<{ ofertas: ServidorOfertaBanco[] }>(
+        matricula ? `/v1/servidores/me/ofertas-banco?matricula=${encodeURIComponent(matricula)}` : "/v1/servidores/me/ofertas-banco",
+      ),
     /** Beneficios/descontos da prefeitura do servidor. Filtrado por categoria opcional. */
     getMyBeneficios: (categoria?: CategoriaBeneficio) =>
       this.request<{ beneficios: ServidorBeneficio[] }>(
