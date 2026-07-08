@@ -1130,6 +1130,7 @@ export class AtlasClient {
       this.request<{ servidor: AdminServidor }>(`/v1/admin/servidores/${matricula}`, { method: "PATCH", body }),
     listFolhas: () => this.request<{ folhas: AdminFolha[] }>("/v1/admin/folhas"),
     upsertFolha: (f: AdminFolhaInput) => this.request<{ folha: AdminFolha }>("/v1/admin/folhas", { method: "POST", body: f }),
+    consolidarFolha: (id: string) => this.request<{ folha: AdminFolha }>(`/v1/admin/folhas/${id}/consolidar`, { method: "POST" }),
     // Visao global de contratos averbados (ADF averbadora — todos os bancos).
     contratos: () =>
       this.request<{
@@ -1221,7 +1222,7 @@ export class AtlasClient {
     folhas: () => this.request<{ folhas: (PrefeituraFolha & { movimentacoes: number })[] }>("/v1/prefeitura/folhas"),
     abrirFolha: (body: { competencia: string; dataCorte: string; dataRepasse?: string }) =>
       this.request<{ folha: PrefeituraFolha }>("/v1/prefeitura/folhas", { method: "POST", body }),
-    atualizarFolha: (id: string, body: Partial<{ status: "aberta" | "fechada" | "consolidada"; dataCorte: string; dataRepasse: string | null }>) =>
+    atualizarFolha: (id: string, body: Partial<{ status: "aberta" | "fechada"; dataCorte: string; dataRepasse: string | null }>) =>
       this.request<{ folha: PrefeituraFolha }>(`/v1/prefeitura/folhas/${id}`, { method: "PATCH", body }),
     movimentacoes: (folhaId: string) =>
       this.request<{ movimentacoes: { id: string; tipo: string; matricula: string; nome: string; detalhe: string; criadoEm: string }[] }>(`/v1/prefeitura/folhas/${folhaId}/movimentacoes`),

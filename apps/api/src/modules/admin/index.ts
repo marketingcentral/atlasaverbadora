@@ -1200,6 +1200,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     folhas.push(novo);
     return c.json({ folha: novo });
   })
+  .post("/v1/admin/folhas/:id/consolidar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const f = folhas.find((x) => x.id === c.req.param("id"));
+    if (!f) throw Errors.notFound("folha");
+    if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
+    f.status = "consolidada";
+    return c.json({ folha: f });
+  })
 
   // === ADF (averbadora) — visao global de todos os contratos averbados de
   // todos os bancos. Retorna a mesma forma que /v1/portal/banco/contratos, mas

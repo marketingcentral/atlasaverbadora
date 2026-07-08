@@ -14,7 +14,8 @@ export function PrefeituraFolhas() {
   const q = useQuery({ queryKey: ["prefeitura", "folhas"], queryFn: () => atlas.prefeitura.folhas() });
 
   const setStatus = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: "aberta" | "fechada" | "consolidada" }) => atlas.prefeitura.atualizarFolha(id, { status }),
+    // Consolidar não é ação da prefeitura — só a averbadora consolida (via /averbadora/folhas).
+    mutationFn: ({ id, status }: { id: string; status: "aberta" | "fechada" }) => atlas.prefeitura.atualizarFolha(id, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["prefeitura"] }),
   });
 
@@ -35,9 +36,6 @@ export function PrefeituraFolhas() {
               <Button size="sm" variant="ghost" onClick={() => setMovFolha(f)}>✎ Movimentar</Button>
               <Button size="sm" onClick={() => setStatus.mutate({ id: f.id, status: "fechada" })}>Fechar</Button>
             </>
-          ) : null}
-          {f.status === "fechada" ? (
-            <Button size="sm" onClick={() => setStatus.mutate({ id: f.id, status: "consolidada" })}>✓ Consolidar</Button>
           ) : null}
         </div>
       ),

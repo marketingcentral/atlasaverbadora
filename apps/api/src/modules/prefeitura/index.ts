@@ -395,8 +395,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const pid = requirePrefeitura(c.get("jwt"));
     const f = folhas.find((x) => x.id === c.req.param("id") && x.prefeituraId === pid);
     if (!f) throw Errors.notFound("folha");
+    // Prefeitura só pode ir de aberta → fechada. Consolidar é ação da averbadora,
+    // via POST /v1/admin/folhas/:id/consolidar.
     const body = z.object({
-      status: z.enum(["aberta", "fechada", "consolidada"]).optional(),
+      status: z.enum(["aberta", "fechada"]).optional(),
       dataCorte: z.string().optional(),
       dataRepasse: z.string().nullable().optional(),
     }).parse(await c.req.json());
