@@ -14,6 +14,8 @@ type AdfRow = {
   bancoNome: string; prefeituraId: number; prefeituraNome: string; competencia: string;
   valorParcela: number; totalParcelas: number;
   status: "recebida" | "aplicada" | "falha"; motivo?: string;
+  /** ISO timestamp em que o ADF entrou/mudou de status na averbadora — usado para ordenar recentes no topo. */
+  atualizadoEm?: string;
 };
 
 export function AdminAdf() {
@@ -38,10 +40,17 @@ export function AdminAdf() {
     () => Array.from(new Set(rows.map((r) => r.prefeituraNome))).sort(),
     [rows],
   );
-  const filtradas = useMemo(
-    () => (prefeituraFiltro ? rows.filter((r) => r.prefeituraNome === prefeituraFiltro) : rows),
-    [rows, prefeituraFiltro],
-  );
+  const filtradas = useMemo(() => {
+    const base = prefeituraFiltro ? rows.filter((r) => r.prefeituraNome === prefeituraFiltro) : rows;
+    // Recentes no topo — a API preenche `atualizadoEm` na criação e em toda troca de status.
+    // Fallback pelo `id` (ADF-YYYYMM-<num>) mantém ordem estavel se o campo faltar.
+    return [...base].sort((a, b) => {
+      const ta = a.atualizadoEm ?? "";
+      const tb = b.atualizadoEm ?? "";
+      if (ta !== tb) return tb.localeCompare(ta);
+      return b.id.localeCompare(a.id);
+    });
+  }, [rows, prefeituraFiltro]);
 
   const [sel, setSel] = useState<Set<string>>(new Set());
   useEffect(() => { setSel(new Set()); }, [competencia, prefeituraFiltro]);
