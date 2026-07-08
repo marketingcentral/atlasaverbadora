@@ -317,6 +317,14 @@ async function persistServidorStatus(env: Env, matricula: string, status: Servid
   try { await upsertCollectionRow(env, "admin_servidor_status", matricula, { matricula, status }); } catch { /* fail-safe */ }
 }
 
+/** Le o status do servidor (garantindo o load do override do PG). Usado pelo
+ *  endpoint do proprio servidor pra esconder do switcher matriculas arquivadas
+ *  (soft-delete de um registro fantasma criado por import de exemplo). */
+export async function getServidorStatus(env: Env, matricula: string): Promise<ServidorStatus> {
+  await ensureServidorStatusLoaded(env);
+  return servidorStatusOverride.get(matricula) ?? "ativo";
+}
+
 // Status do servidor não vive na fixture (sempre "ativo"); override por matrícula.
 type ServidorStatus = "ativo" | "bloqueado" | "arquivado";
 const servidorStatusOverride = new Map<string, ServidorStatus>();
@@ -524,21 +532,25 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
       "cargo", "endereco", "email", "telefone", "codigoIbge",
     ],
     [
+      // Linhas de EXEMPLO — CPFs e matriculas com prefixo obviamente-fake pra
+      // ninguem confundir com dado real e importar de volta. Aconteceu 1x: alguem
+      // importou o template "como esta" e criou uma matricula fantasma M-9001 na
+      // producao com o mesmo CPF de um servidor real, poluindo o switcher dele.
       {
-        cpf: "00011122233", matricula: "M-9001", nome: "Ana Carolina Silva",
+        cpf: "99900011122", matricula: "EXEMPLO-9001", nome: "EXEMPLO - Ana Carolina Silva",
         dataAdmissao: "17/04/2017", dataNascimento: "1985-03-12",
         vinculo: "ESTATUTARIO", situacaoFuncional: "TRABALHANDO", salarioLiquido: 4620.50,
         idConvenio: "CONV-001",
         cargo: "Professora II", endereco: "Rua das Palmeiras, 320 - Centro, Palhoca/SC",
-        email: "ana.silva@palhoca.sc.gov.br", telefone: "48991010001", codigoIbge: 4211900,
+        email: "exemplo1@example.com", telefone: "48991010001", codigoIbge: 4211900,
       },
       {
-        cpf: "00011122244", matricula: "M-9002", nome: "Joao da Silva Neves",
+        cpf: "99900011133", matricula: "EXEMPLO-9002", nome: "EXEMPLO - Joao da Silva Neves",
         dataAdmissao: "02/02/2010", dataNascimento: "1976-08-22",
         vinculo: "CLT", situacaoFuncional: "TRABALHANDO", salarioLiquido: 5840,
         idConvenio: "CONV-002",
         cargo: "Motorista", endereco: "Rua Central, 45 - Ingleses, Florianopolis/SC",
-        email: "joao.neves@floripa.sc.gov.br", telefone: "48991020002", codigoIbge: 4205407,
+        email: "exemplo2@example.com", telefone: "48991020002", codigoIbge: 4205407,
       },
     ],
   )));

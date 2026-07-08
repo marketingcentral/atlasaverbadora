@@ -5,7 +5,7 @@ import { authRequired, requireRole, type JwtClaims } from "../../middleware/auth
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded } from "../admin/index.js";
+import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, getServidorStatus } from "../admin/index.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -218,8 +218,16 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await ensureBancosLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
+    // Filtra matriculas arquivadas (soft-delete) — a averbadora pode arquivar
+    // uma matricula fantasma (ex.: registro criado por import do CSV de exemplo)
+    // e a partir daqui ela some do switcher do servidor sem apagar do banco.
     const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
-    const matriculas = entries.map((e) => buildMatriculaInfo(e));
+    const withStatus = await Promise.all(
+      entries.map(async (e) => ({ e, status: await getServidorStatus(c.env, e.matricula) })),
+    );
+    const matriculas = withStatus
+      .filter(({ status }) => status !== "arquivado")
+      .map(({ e }) => buildMatriculaInfo(e));
     return c.json({ matriculas });
   })
   // Ofertas ATIVAS criadas pelos bancos que casam com o perfil do servidor
