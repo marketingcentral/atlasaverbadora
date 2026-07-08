@@ -19,7 +19,7 @@ const PUBLICO_LABEL: Record<ComunicadoPublico, string> = {
   servidor: "Servidor",
 };
 
-export function AdminComunicados() {
+export function AdminComunicados({ publico }: { publico?: ComunicadoPublico } = {}) {
   const qc = useQueryClient();
   const data = useQuery({ queryKey: ["admin", "comunicados"], queryFn: () => atlas.admin.listComunicados() });
   const [editing, setEditing] = useState<Comunicado | "new" | null>(null);
@@ -36,7 +36,11 @@ export function AdminComunicados() {
     onSuccess: invalidate,
   });
 
-  const comunicados = data.data?.comunicados ?? [];
+  // Quando o menu esta em Comunicados > Banco ou > Servidor, filtramos a lista
+  // pra so mostrar (e reordenar) o publico correspondente. A ordem passada pro
+  // backend em mover.mutate ainda usa o id absoluto — o backend re-lineariza.
+  const todos = data.data?.comunicados ?? [];
+  const comunicados = publico ? todos.filter((c) => (c.publico ?? "banco") === publico) : todos;
 
   const ellipsis: React.CSSProperties = {
     display: "inline-block",
@@ -58,16 +62,22 @@ export function AdminComunicados() {
         </span>
       ),
     },
-    {
-      key: "publico",
-      header: "Público",
-      width: 90,
-      render: (c) => {
-        // Fallback caso a API ainda esteja num deploy antigo sem o campo publico.
-        const p: ComunicadoPublico = c.publico ?? "banco";
-        return <Pill variant={p === "servidor" ? "averbado" : "emdia"}>{PUBLICO_LABEL[p]}</Pill>;
-      },
-    },
+    // Quando a lista ja esta filtrada por publico (submenu), a coluna Publico
+    // vira ruido — todos os itens seriam o mesmo pill.
+    ...(publico
+      ? []
+      : [
+          {
+            key: "publico",
+            header: "Público",
+            width: 90,
+            render: (c: Comunicado) => {
+              // Fallback caso a API ainda esteja num deploy antigo sem o campo publico.
+              const p: ComunicadoPublico = c.publico ?? "banco";
+              return <Pill variant={p === "servidor" ? "averbado" : "emdia"}>{PUBLICO_LABEL[p]}</Pill>;
+            },
+          } satisfies Column<Comunicado>,
+        ]),
     {
       key: "titulo",
       header: "Título",
@@ -153,11 +163,21 @@ export function AdminComunicados() {
       <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
         <div>
           <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-            Averbadora
+            Averbadora {publico ? `· Comunicados · ${PUBLICO_LABEL[publico]}` : ""}
           </span>
-          <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Comunicados</h1>
+          <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>
+            {publico === "banco"
+              ? "Comunicados para bancos"
+              : publico === "servidor"
+                ? "Comunicados para servidores"
+                : "Comunicados"}
+          </h1>
           <p style={{ color: "var(--text-muted)" }}>
-            Publique avisos para bancos parceiros ou para servidores. Cada comunicado aparece somente no público escolhido.
+            {publico === "banco"
+              ? "Avisos que aparecem no portal dos bancos parceiros."
+              : publico === "servidor"
+                ? "Avisos que aparecem no app dos servidores municipais."
+                : "Publique avisos para bancos parceiros ou para servidores. Cada comunicado aparece somente no público escolhido."}
           </p>
         </div>
         <Button onClick={() => setEditing("new")}>+ Novo comunicado</Button>
@@ -165,13 +185,14 @@ export function AdminComunicados() {
 
       <DataTable
         columns={columns}
-        rows={data.data?.comunicados ?? []}
+        rows={comunicados}
         rowKey={(c) => c.id}
         loading={data.isLoading}
       />
 
       {editing ? (
         <ComunicadoModal
+          defaultPublico={publico}
           initial={editing === "new" ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={() => qc.invalidateQueries({ queryKey: ["admin", "comunicados"] })}
@@ -183,10 +204,12 @@ export function AdminComunicados() {
 
 function ComunicadoModal({
   initial,
+  defaultPublico,
   onClose,
   onSaved,
 }: {
   initial: Comunicado | null;
+  defaultPublico?: ComunicadoPublico;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -196,7 +219,8 @@ function ComunicadoModal({
     corpo: initial?.corpo ?? "",
     linkLabel: initial?.linkLabel ?? "",
     linkHref: initial?.linkHref ?? "",
-    publico: (initial?.publico ?? "banco") as ComunicadoPublico,
+    // Ao criar via submenu, ja vem pre-selecionado o publico daquele submenu.
+    publico: (initial?.publico ?? defaultPublico ?? "banco") as ComunicadoPublico,
   });
 
   const save = useMutation({

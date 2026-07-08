@@ -16,7 +16,15 @@ const NAV = [
   { key: "bate-carteira", label: "Bate de carteira", href: "/averbadora/bate-carteira", icon: "⇄" },
   { key: "auditoria", label: "Auditoria", href: "/averbadora/auditoria", icon: "⚖" },
   { key: "perfis", label: "Usuários", href: "/averbadora/perfis", icon: "⚙" },
-  { key: "comunicados", label: "Comunicados", href: "/averbadora/comunicados", icon: "❐" },
+  {
+    key: "comunicados",
+    label: "Comunicados",
+    icon: "❐",
+    children: [
+      { key: "comunicados-banco", label: "Banco", href: "/averbadora/comunicados/banco" },
+      { key: "comunicados-servidor", label: "Servidor", href: "/averbadora/comunicados/servidor" },
+    ],
+  },
   { key: "health", label: "Health", href: "/averbadora/health", icon: "♥" },
   { key: "logs", label: "Logs", href: "/averbadora/logs", icon: "≡" },
   { key: "vitrine", label: "Vitrine", href: "/averbadora/vitrine", icon: "▢" },
@@ -39,7 +47,12 @@ export function AverbadoraLayout() {
   const { resolved, setMode } = useThemeMode();
   const parts = location.pathname.split("/").filter(Boolean);
   // /averbadora/api/docs → activeKey = "api-docs"
-  const activeKey = parts[1] === "api" && parts[2] ? `api-${parts[2]}` : (parts[1] ?? "dashboard");
+  // Segmento parts[1] = secao (api, comunicados, ...), parts[2] = filho quando ha submenu.
+  // "api/docs" -> "api-docs"; "comunicados/banco" -> "comunicados-banco".
+  const activeKey =
+    (parts[1] === "api" || parts[1] === "comunicados") && parts[2]
+      ? `${parts[1]}-${parts[2]}`
+      : (parts[1] ?? "dashboard");
 
   return (
     <AppShellAdmin
