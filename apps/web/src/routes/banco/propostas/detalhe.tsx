@@ -7,6 +7,7 @@ import { TwoFactorModal } from "../../../components/TwoFactorModal";
 import {
   PRODUTO_LABEL,
   STATUS_LABEL,
+  contratoToProposta,
   fmtBRL,
   fmtDateTime,
   getBancoPerfil,
@@ -21,7 +22,20 @@ export function BancoPropostaDetalhe() {
   const { id = "" } = useParams();
   const nav = useNavigate();
   const [version, setVersion] = useState(0);
-  const proposta = getProposta(id);
+  // Proposta pode vir de duas fontes: (a) SEED local + overlay (fluxo antigo,
+  // hoje vazio) ou (b) contratos do backend (fluxo real). Primeiro tenta o
+  // local; se nao achar, procura no atlas.banco.contratos() pelo ADF.
+  const local = getProposta(id);
+  const apiQ = useQuery({
+    queryKey: ["banco", "propostas-api"],
+    queryFn: () => atlas.banco.contratos(),
+    refetchInterval: 10_000,
+    enabled: !local,
+  });
+  const fromApi = !local ? apiQ.data?.contratos.find((c) => c.adf === id) : undefined;
+  const proposta: BancoProposta | undefined = local ?? (fromApi ? contratoToProposta(fromApi) : undefined);
+  // Enquanto a query da API ainda esta carregando, nao mostra "nao encontrada".
+  const carregandoApi = !local && apiQ.isLoading;
   const perfil = getBancoPerfil();
   // "mais_info" foi removido — banco entra em contato direto pra pedir informacoes,
   // fora do sistema. Restam: recusar e upload de contrato (envio).
@@ -36,10 +50,14 @@ export function BancoPropostaDetalhe() {
   if (!proposta) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ color: "var(--text-muted)" }}>Proposta não encontrada.</div>
-        <div>
-          <Button variant="ghost" onClick={() => nav("/banco/propostas")}>← Voltar para a fila</Button>
+        <div style={{ color: "var(--text-muted)" }}>
+          {carregandoApi ? "Carregando proposta…" : "Proposta não encontrada."}
         </div>
+        {!carregandoApi ? (
+          <div>
+            <Button variant="ghost" onClick={() => nav("/banco/propostas")}>← Voltar para a fila</Button>
+          </div>
+        ) : null}
       </div>
     );
   }

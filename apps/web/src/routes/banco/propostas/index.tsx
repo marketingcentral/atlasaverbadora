@@ -7,73 +7,16 @@ import {
   getBancoConvenios,
   PRODUTO_LABEL,
   STATUS_LABEL,
+  contratoToProposta,
   fmtBRL,
   getBancoPerfil,
   setBancoPerfil,
   BANCO_PERFIS,
   travaInfo,
   type BancoProduto,
-  type BancoProposta,
+  type BancoPropostaFromApi as PropostaRow,
   type BancoPropostaStatus,
 } from "../../../lib/banco-propostas";
-
-// Proposta vinda do backend + campos de portabilidade (opcionais).
-type PropostaRow = BancoProposta & {
-  _api?: boolean;
-  bancoOrigem?: string;
-  contratoOrigem?: string;
-  saldoDevedorOrigem?: number;
-  tipoContrato?: string;
-};
-
-/** Converte "DD/MM/YYYY" (lancamento do backend) em ISO para o countdown da trava. */
-function parseBrDate(s: string): string {
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
-  if (!m) return new Date().toISOString();
-  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).toISOString();
-}
-
-function contratoToProposta(ct: {
-  adf: string; situacao: string; lancamento: string; cpfMasked: string; matricula: string;
-  nome: string; tipoContrato: string; totalParcelas: number; valorParcela: number;
-  convenio: string; valorFinanciado: number; taxaAm: number;
-  bancoOrigem?: string; contratoOrigem?: string; saldoDevedorOrigem?: number;
-}): PropostaRow {
-  const t = ct.situacao.toLowerCase();
-  const status: BancoPropostaStatus = t.includes("aguard")
-    ? "recebida"
-    : t.includes("cancel") || t.includes("suspens") || t.includes("recus")
-      ? "recusada"
-      : t.includes("ativo") || t.includes("averb") || t.includes("quitad")
-        ? "averbada"
-        : "recebida";
-  return {
-    idUnico: ct.adf,
-    cpfMasked: ct.cpfMasked,
-    nome: ct.nome,
-    convenio: ct.convenio,
-    matricula: ct.matricula,
-    produto: ct.tipoContrato === "REFIN" ? "portabilidade" : "novo",
-    valor: ct.valorFinanciado,
-    parcelas: ct.totalParcelas,
-    parcela: ct.valorParcela,
-    taxaAm: ct.taxaAm * 100,
-    margemComprometida: ct.valorParcela,
-    margemDisponivel: 0,
-    salarioLiquido: 0,
-    vinculo: "",
-    situacaoFuncional: "",
-    status,
-    criadaEm: parseBrDate(ct.lancamento),
-    travaHoras: 48,
-    contratosAtivos: [],
-    _api: true,
-    bancoOrigem: ct.bancoOrigem,
-    contratoOrigem: ct.contratoOrigem,
-    saldoDevedorOrigem: ct.saldoDevedorOrigem,
-    tipoContrato: ct.tipoContrato,
-  };
-}
 
 const STATUS_OPTS: BancoPropostaStatus[] = [
   "recebida", "em_analise", "aprovada", "aguardando_formalizacao",

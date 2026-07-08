@@ -300,6 +300,86 @@ export function getProposta(idUnico: string): BancoProposta | undefined {
   return hydrate(seed, readOverlay());
 }
 
+// ---------------------------------------------------------------------------
+// Conversao "contrato do backend" -> BancoProposta.
+// A lista de propostas e o detalhe ambos carregam via atlas.banco.contratos()
+// e reusam esta funcao pra hidratar o modelo local. Antes vivia inline em
+// routes/banco/propostas/index.tsx — quando o detalhe abriu de um caminho
+// diferente (getProposta consultando SEED vazio) sempre dizia "nao encontrada".
+// ---------------------------------------------------------------------------
+
+export interface BancoContratoApi {
+  adf: string;
+  situacao: string;
+  lancamento: string;
+  cpfMasked: string;
+  matricula: string;
+  nome: string;
+  tipoContrato: string;
+  totalParcelas: number;
+  valorParcela: number;
+  convenio: string;
+  valorFinanciado: number;
+  taxaAm: number;
+  bancoOrigem?: string;
+  contratoOrigem?: string;
+  saldoDevedorOrigem?: number;
+}
+
+export interface BancoPropostaFromApi extends BancoProposta {
+  _api: true;
+  bancoOrigem?: string;
+  contratoOrigem?: string;
+  saldoDevedorOrigem?: number;
+  tipoContrato?: string;
+}
+
+function parseBrDate(s: string): string {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  if (!m) return new Date().toISOString();
+  return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).toISOString();
+}
+
+export function contratoToProposta(ct: BancoContratoApi): BancoPropostaFromApi {
+  const t = ct.situacao.toLowerCase();
+  const status: BancoPropostaStatus = t.includes("aguard")
+    ? "recebida"
+    : t.includes("cancel") || t.includes("suspens") || t.includes("recus")
+      ? "recusada"
+      : t.includes("ativo") || t.includes("averb") || t.includes("quitad")
+        ? "averbada"
+        : "recebida";
+  const overlay = readOverlay();
+  const patch = overlay[ct.adf];
+  const base: BancoPropostaFromApi = {
+    idUnico: ct.adf,
+    cpfMasked: ct.cpfMasked,
+    nome: ct.nome,
+    convenio: ct.convenio,
+    matricula: ct.matricula,
+    produto: ct.tipoContrato === "REFIN" ? "portabilidade" : "novo",
+    valor: ct.valorFinanciado,
+    parcelas: ct.totalParcelas,
+    parcela: ct.valorParcela,
+    taxaAm: ct.taxaAm * 100,
+    margemComprometida: ct.valorParcela,
+    margemDisponivel: 0,
+    salarioLiquido: 0,
+    vinculo: "",
+    situacaoFuncional: "",
+    status,
+    criadaEm: parseBrDate(ct.lancamento),
+    travaHoras: 48,
+    contratosAtivos: [],
+    _api: true,
+    bancoOrigem: ct.bancoOrigem,
+    contratoOrigem: ct.contratoOrigem,
+    saldoDevedorOrigem: ct.saldoDevedorOrigem,
+    tipoContrato: ct.tipoContrato,
+  };
+  return patch ? { ...base, ...patch } : base;
+}
+
 /**
  * Aplica um patch parcial no overlay. Retorna false se a escrita no localStorage
  * falhar (quota / modo privado), pra que a UI possa mostrar erro em vez de fingir
