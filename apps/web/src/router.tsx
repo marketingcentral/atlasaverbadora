@@ -10,6 +10,7 @@ import { ServidorTermo } from "./routes/servidor/termo";
 import { ServidorMarketplace } from "./routes/servidor/marketplace";
 import { ServidorMarketplacePortabilidade } from "./routes/servidor/marketplace-portabilidade";
 import { ServidorMinhaMargem } from "./routes/servidor/minha-margem";
+import { ServidorSaude } from "./routes/servidor/saude";
 import { ServidorSimular } from "./routes/servidor/simular";
 import { ServidorPropostas } from "./routes/servidor/propostas";
 import { ServidorContratos } from "./routes/servidor/contratos";
@@ -115,6 +116,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "propostas", element: <ServidorPropostas /> },
           { path: "contratos", element: <ServidorContratos /> },
           { path: "beneficios", element: <ServidorBeneficios /> },
+          { path: "saude", element: <ServidorSaude /> },
           { path: "conta", element: <ServidorConta /> },
         ],
       },

@@ -6,19 +6,9 @@ import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
-type Categoria = "todos" | "alimentacao" | "educacao" | "lazer";
-
-const CATEGORIAS: { id: Categoria; label: string }[] = [
-  { id: "todos", label: "Todos" },
-  { id: "alimentacao", label: "Alimentação" },
-  { id: "educacao", label: "Educação" },
-  { id: "lazer", label: "Lazer" },
-];
-
 interface Parceiro {
   id: string;
   nome: string;
-  categorias: Exclude<Categoria, "todos">[];
   local: string;
   icone: string;
   cor: string;
@@ -26,18 +16,17 @@ interface Parceiro {
   descontoComplemento: string;
 }
 
-/** Parceiros comerciais (não-saúde) da prefeitura. Averbadora cadastra. */
-function parceirosDaPrefeitura(cidade: string): Parceiro[] {
+/** Parceiros de saúde da prefeitura (banco disponibiliza via cartão consignado). */
+function parceirosSaudeDaPrefeitura(cidade: string): Parceiro[] {
   return [
-    { id: "super-central", nome: "Supermercado Central", categorias: ["alimentacao"], local: cidade, icone: "🛒", cor: "#0891b2", descontoLabel: "5% desconto", descontoComplemento: "em compras" },
-    { id: "sabor", nome: "Restaurante Sabor", categorias: ["alimentacao"], local: cidade, icone: "🍽", cor: "#c2410c", descontoLabel: "15% desconto", descontoComplemento: "no almoço" },
-    { id: "plus-idiomas", nome: "Escola Plus Idiomas", categorias: ["educacao"], local: cidade, icone: "🎓", cor: "#7c3aed", descontoLabel: "30% desconto", descontoComplemento: "na matrícula" },
+    { id: "farmacia-sj", nome: "Farmácia São João", local: `${cidade} Centro`, icone: "💊", cor: "#dc2626", descontoLabel: "10% desconto", descontoComplemento: "em medicamentos" },
+    { id: "bodyfit", nome: "Academia BodyFit", local: cidade, icone: "💪", cor: "#f59e0b", descontoLabel: "20% desconto", descontoComplemento: "na mensalidade" },
+    { id: "otica-vp", nome: "Ótica Visão Plus", local: `${cidade} Centro`, icone: "👓", cor: "#2563eb", descontoLabel: "25% desconto", descontoComplemento: "em armações" },
   ];
 }
 
-export function ServidorBeneficios() {
+export function ServidorSaude() {
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
-  const [tab, setTab] = useState<Categoria>("todos");
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -54,67 +43,106 @@ export function ServidorBeneficios() {
     return info.prefeitura.replace(/^Prefeitura de\s+/i, "");
   }, [info]);
 
-  const parceiros = useMemo(() => parceirosDaPrefeitura(cidade), [cidade]);
-  const filtrados = useMemo(() => {
-    if (tab === "todos") return parceiros;
-    return parceiros.filter((p) => p.categorias.includes(tab));
-  }, [parceiros, tab]);
+  const parceiros = useMemo(() => parceirosSaudeDaPrefeitura(cidade), [cidade]);
 
   if (!info) return null;
 
-  const margemCartaoConsig = info.margem.margens_por_tipo.find((m) => m.tipo === "CARTAO_CONSIGNADO");
+  const margemBeneficios = info.margem.margens_por_tipo.find((m) => m.tipo === "CARTAO_BENEFICIOS");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 1080, width: "100%", margin: "0 auto" }}>
-      <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
-        <div>
-          <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-            Portal do servidor
-          </span>
-          <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>Descontos e Benefícios</h1>
-          <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 640 }}>
-            Descontos em estabelecimentos comerciais da sua cidade, negociados pela averbadora.
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {CATEGORIAS.map((c) => (
-            <CategoriaTab key={c.id} active={tab === c.id} onClick={() => setTab(c.id)} label={c.label} />
-          ))}
-        </div>
+      <header>
+        <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+          Portal do servidor
+        </span>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>Saúde e Bem-Estar</h1>
+        <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 640 }}>
+          Benefícios de saúde disponibilizados pelo seu banco parceiro através do Cartão Benefício Consignado.
+        </p>
       </header>
 
-      {/* Parceiros comerciais */}
+      {/* Banner benefício exclusivo — Telemedicina Gratuita */}
+      <article style={{
+        background: "linear-gradient(120deg, var(--emerald-600, #059669), var(--emerald-500))",
+        borderRadius: 16,
+        padding: 22,
+        display: "flex",
+        alignItems: "center",
+        gap: 18,
+        flexWrap: "wrap",
+        color: "white",
+        boxShadow: "0 4px 14px rgba(16,185,129,.25)",
+      }}>
+        <div style={{
+          width: 62, height: 62, borderRadius: 14,
+          background: "rgba(255,255,255,.16)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 30, flexShrink: 0,
+        }}>🩺</div>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", opacity: 0.85, textTransform: "uppercase" }}>
+            Benefício exclusivo · Servidor
+          </div>
+          <div style={{ fontSize: "1.35rem", fontWeight: 800, marginTop: 2 }}>Telemedicina Gratuita</div>
+          <div style={{ fontSize: 13, opacity: 0.92, marginTop: 4 }}>
+            Consultas online 24h · Clínico Geral, Pediatria, Psicologia, Nutrição
+          </div>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999,
+            background: "rgba(255,255,255,.2)", color: "white",
+            border: "1px solid rgba(255,255,255,.3)",
+          }}>
+            GRATUITO · Sem carência
+          </span>
+          <button
+            type="button"
+            onClick={() => alert("Fluxo de agendamento — em breve.")}
+            style={{
+              padding: "10px 18px", borderRadius: 10,
+              background: "white", color: "var(--emerald-600, #059669)",
+              fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(0,0,0,.15)",
+            }}
+          >
+            Agendar consulta →
+          </button>
+        </div>
+      </article>
+
+      {/* Parceiros de saúde */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Comércio local parceiro
+          Rede de saúde parceira
         </span>
-        {filtrados.length === 0 ? (
+        {parceiros.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
-            Nenhum parceiro nesta categoria — em breve mais opções.
+            Sem parceiros de saúde nesta região — em breve mais opções.
           </div>
         ) : (
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-            {filtrados.map((p) => <ParceiroCard key={p.id} parceiro={p} />)}
+            {parceiros.map((p) => <ParceiroCard key={p.id} parceiro={p} />)}
           </div>
         )}
       </section>
 
-      {/* Cartão Consignado — margem usada nesses estabelecimentos */}
+      {/* Cartão Benefícios — margem usada nos parceiros de saúde */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Cartão Consignado
+          Cartão Benefício Consignado
         </span>
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 26 }}>💳</span>
+            <span style={{ fontSize: 26 }}>🎁</span>
             <div>
-              <div style={{ fontWeight: 700 }}>Limite recorrente para compras</div>
+              <div style={{ fontWeight: 700 }}>Seu limite para saúde e bem-estar</div>
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                Use nos parceiros acima — fatura descontada em folha.
+                Compras nos parceiros acima são debitadas do seu limite. Fatura vem na folha.
               </div>
             </div>
           </div>
-          <CartaoResumo margem={margemCartaoConsig ?? { total: 0, disponivel: 0 }} />
+          <CartaoResumo margem={margemBeneficios ?? { tipo: "CARTAO_BENEFICIOS", total: 0, disponivel: 0 }} />
         </Card>
       </section>
 
@@ -124,35 +152,13 @@ export function ServidorBeneficios() {
         border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
         fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5,
       }}>
-        <b style={{ color: "var(--text)" }}>ℹ️ Sobre esses benefícios:</b> descontos comerciais são negociados pela <b>averbadora</b> junto ao comércio local da sua cidade. Benefícios de saúde (telemedicina, farmácia, ótica) estão na aba <b>Saúde</b>.
+        <b style={{ color: "var(--text)" }}>ℹ️ Sobre esses benefícios:</b> os benefícios de saúde são oferecidos pelo <b>banco parceiro</b> que disponibiliza seu cartão consignado. Descontos comerciais (alimentação, educação, lazer) estão na aba <b>Descontos e Benefícios</b>.
       </div>
     </div>
   );
 }
 
-function CategoriaTab({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        padding: "8px 16px", borderRadius: 10,
-        border: `1px solid ${active ? "var(--emerald-500)" : "var(--border)"}`,
-        background: active ? "color-mix(in srgb, var(--emerald-500) 10%, transparent)" : "transparent",
-        color: active ? "var(--emerald-500)" : "var(--text-muted)",
-        fontSize: 13, fontWeight: 700, cursor: "pointer",
-      }}
-    >
-      {label}
-    </button>
-  );
-}
-
 function ParceiroCard({ parceiro }: { parceiro: Parceiro }) {
-  const catLabel = parceiro.categorias
-    .map((c) => CATEGORIAS.find((x) => x.id === c)?.label)
-    .filter(Boolean)
-    .join(" · ");
   return (
     <article style={{
       background: "var(--surface)",
@@ -174,7 +180,7 @@ function ParceiroCard({ parceiro }: { parceiro: Parceiro }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{parceiro.nome}</div>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-          {catLabel} · {parceiro.local}
+          Saúde · {parceiro.local}
         </div>
         <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-muted)" }}>
           <b style={{ color: "var(--emerald-500)", fontSize: 14 }}>{parceiro.descontoLabel}</b> {parceiro.descontoComplemento}
