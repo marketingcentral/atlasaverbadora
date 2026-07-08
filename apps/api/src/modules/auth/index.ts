@@ -139,6 +139,11 @@ export function devUserById(id: number): DevUser | undefined {
   return DEV_USERS.find((x) => x.id === id);
 }
 
+/** Se este CPF ja tem senha via DEV_USERS (bypass do fixture). */
+function devUserTemSenhaPorCpf(cpf: string): boolean {
+  return DEV_USERS.some((u) => u.role === "servidor" && u.cpf === cpf && !!u.password);
+}
+
 export const authRoutes = new Hono<{ Bindings: Env }>()
   .post("/v1/auth/login", async (c) => {
     const body = LoginRequestSchema.parse(await c.req.json());
@@ -227,6 +232,9 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     await ensureServidoresLoaded(c.env);
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
     if (!s) return c.json({ encontrado: false });
+    // "Ja tem senha" considera AMBOS: passwordHash real (Postgres) E DEV_USERS
+    // (senha de seed). Sem isso, servidores sandbox como Adriana passariam pelo
+    // primeiro-acesso e alguem poderia hijackear a conta com email/senha novos.
     return c.json({
       encontrado: true,
       nome: s.nome,
@@ -235,7 +243,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       origem: s.origem ?? null,
       email_masked: maskEmail(s.email),
       telefone_masked: maskPhone(s.telefone),
-      ja_tem_senha: Boolean(s.passwordHash),
+      ja_tem_senha: Boolean(s.passwordHash) || devUserTemSenhaPorCpf(digits),
     });
   })
   // 2) Envia (test-mode: retorna) o código de 6 dígitos.
@@ -254,7 +262,8 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     await ensureServidoresLoaded(c.env);
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
     if (!s) throw Errors.notFound("servidor");
-    if (s.passwordHash) throw Errors.validation({ cpf: "Este CPF ja fez o primeiro acesso. Use 'Esqueci minha senha'." });
+    // Bloqueia hijack: se ja tem senha (real ou de seed DEV), so aceita "Esqueci senha".
+    if (s.passwordHash || devUserTemSenhaPorCpf(digits)) throw Errors.validation({ cpf: "Este CPF ja fez o primeiro acesso. Use 'Esqueci minha senha'." });
     const codigo = await gerarCodigoUnico(c.env);
     const senhaHash = await sha256Hex(senha);
     // Guarda o pacote pendente ate a confirmacao (10 min).
