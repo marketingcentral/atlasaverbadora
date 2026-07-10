@@ -131,7 +131,7 @@ export function ServidorDashboard() {
         <AtalhoCard
           titulo="Telemedicina"
           descricao="Consulta médica online sem custo, para você e sua família."
-          icon="📱"
+          icon="🩺"
           accent="emerald"
           onClick={() => nav("/servidor/saude")}
         />
@@ -290,6 +290,9 @@ function AtalhoCard({
       <span style={{ fontSize: 24 }}>{icon}</span>
       <span style={{ fontWeight: 700, fontSize: ".98rem", color: "var(--text)" }}>{titulo}</span>
       <span style={{ fontSize: ".82rem", color: "var(--text-muted)" }}>{descricao}</span>
+      <span style={{ marginTop: 6, fontSize: ".82rem", fontWeight: 700, color: accentColor }}>
+        Ver mais →
+      </span>
     </button>
   );
 }
