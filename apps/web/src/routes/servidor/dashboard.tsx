@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Card, Pill } from "@atlas/ui/web";
+import { useQuery } from "@tanstack/react-query";
+import { Card, ComunicadoCarrossel } from "@atlas/ui/web";
+import type { Comunicado } from "@atlas/sdk";
+import { atlas } from "../../lib/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
@@ -16,21 +19,6 @@ const fmtBRL = (n: number) =>
 const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const MESES_PT_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-/** Iniciais do banco pro avatar (Banco do Brasil -> BB). */
-function iniciaisBanco(nome: string): string {
-  const partes = nome.split(/\s+/).filter((p) => !/^(do|da|de|das|dos|de|s\.a\.|sa)$/i.test(p));
-  if (partes.length === 1) return partes[0]!.slice(0, 2).toUpperCase();
-  return partes.slice(0, 2).map((p) => p[0]).join("").toUpperCase();
-}
-
-/** Cor de tinta pro badge do banco — determinística por hash simples. */
-function corBanco(nome: string): string {
-  const paleta = ["#2563eb", "#0e7490", "#059669", "#c2410c", "#7c3aed", "#be185d", "#0891b2", "#a16207"];
-  let hash = 0;
-  for (let i = 0; i < nome.length; i++) hash = (hash * 31 + nome.charCodeAt(i)) >>> 0;
-  return paleta[hash % paleta.length]!;
-}
-
 /** Próximo dia 15 (dia de corte típico) a partir de hoje. */
 function proximoDesconto(): { dia: string; mes: string; iso: Date; extenso: string } {
   const hoje = new Date();
@@ -43,6 +31,47 @@ function proximoDesconto(): { dia: string; mes: string; iso: Date; extenso: stri
     mes: MESES_PT_SHORT[ref.getMonth()]!,
     iso: ref,
     extenso: `${ref.getDate()} de ${MESES_PT[ref.getMonth()]} de ${ref.getFullYear()}`,
+  };
+}
+
+/** Fallbacks locais mostrados quando a API ainda não retornou comunicados
+ *  (primeiro render / offline / servidor sem comunicados cadastrados).
+ *  Os do backend, quando chegam, substituem estes. */
+const COMUNICADOS_FALLBACK: Comunicado[] = [
+  {
+    id: "COM-SRV-1",
+    titulo: "Simule seu empréstimo em 1 minuto",
+    corpo: "Use o simulador do Atlas e veja em segundos a parcela que cabe na sua margem. Sem burocracia, com taxas dos bancos parceiros da sua prefeitura.",
+    linkLabel: "Simular agora",
+    linkHref: "/servidor/simular",
+    publico: "servidor",
+  },
+  {
+    id: "COM-SRV-2",
+    titulo: "Portabilidade: pague menos no seu consignado",
+    corpo: "Já tem um contrato? Compare ofertas de portabilidade e reduza sua parcela mensal sem trocar de banco na folha.",
+    linkLabel: "Ver portabilidade",
+    linkHref: "/servidor/marketplace/portabilidade",
+    publico: "servidor",
+  },
+  {
+    id: "COM-SRV-3",
+    titulo: "Telemedicina 24h incluída no seu cartão",
+    corpo: "Consulta médica online sem sair de casa, sem custo adicional, para você e sua família. Descubra como ativar.",
+    linkLabel: "Acessar Telemedicina",
+    linkHref: "/servidor/saude",
+    publico: "servidor",
+  },
+];
+
+/** Converte o shape do SDK ({linkLabel, linkHref}) pra o shape que o
+ *  ComunicadoCarrossel do @atlas/ui espera ({link: {label, href}}). */
+function toCarrosselShape(c: Comunicado) {
+  return {
+    id: c.id,
+    titulo: c.titulo,
+    corpo: c.corpo,
+    ...(c.linkHref ? { link: { label: c.linkLabel ?? "Saiba mais", href: c.linkHref } } : {}),
   };
 }
 
@@ -74,6 +103,19 @@ export function ServidorDashboard() {
   const totalMensal = useMemo(() => contratosAtivos.reduce((acc, c) => acc + c.parcela, 0), [contratosAtivos]);
   const desconto = useMemo(() => proximoDesconto(), []);
 
+  // Comunicados publicados pela averbadora para publico=servidor.
+  // Fallback local pra tela nunca ficar em branco em caso de rede/deploy sem seed.
+  const comunicadosQ = useQuery({
+    queryKey: ["servidor", "comunicados"],
+    queryFn: () => atlas.servidor.comunicados(),
+    staleTime: 5 * 60_000,
+  });
+  const comunicadosCarrossel = useMemo(() => {
+    const fromApi = comunicadosQ.data?.comunicados ?? [];
+    const base = fromApi.length > 0 ? fromApi : COMUNICADOS_FALLBACK;
+    return base.map(toCarrosselShape);
+  }, [comunicadosQ.data]);
+
   if (!info) return null;
 
   return (
@@ -92,43 +134,10 @@ export function ServidorDashboard() {
       {/* Card grande — MINHA MARGEM POR MODALIDADE */}
       <MinhaMargemPorModalidade info={info} />
 
-      {/* Meus contratos */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-          <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-            Meus contratos
-          </span>
-          {contratosAtivos.length > 0 ? (
-            <button
-              type="button"
-              onClick={() => nav("/servidor/contratos")}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 10,
-                border: "1px solid var(--border-strong)",
-                background: "transparent",
-                color: "var(--text)",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              ↓ Exportar todos PDF
-            </button>
-          ) : null}
-        </div>
-
-        {contratosAtivos.length === 0 ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
-            Nenhum contrato ativo nesta matrícula.
-          </div>
-        ) : (
-          contratosAtivos.map((c) => <ContratoCard key={c.id} contrato={c} />)
-        )}
-      </section>
+      {/* Carrossel de comunicados publicados pela averbadora (publico=servidor).
+          Substitui a antiga seção "Meus contratos" no dashboard — quem quiser ver
+          contratos vai em /servidor/contratos pelo menu superior. */}
+      <ComunicadoCarrossel comunicados={comunicadosCarrossel} />
 
       {/* Próximo desconto em folha */}
       <article style={{
@@ -199,20 +208,24 @@ export function ServidorDashboard() {
         </div>
       </article>
 
-      {/* Ações rápidas — preservado do fluxo anterior */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Ações rápidas
-        </span>
-        <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
-          {/* Atalhos apontam pro MarketPlace unificado — la em cima ficam as
-              ofertas dos bancos + botao de portabilidade + simulador inline. */}
-          <AtalhoCard titulo="Simular" descricao="Calcule parcelas e veja ofertas." icon="💰" accent="emerald" onClick={() => nav("/servidor/marketplace/portabilidade")} />
-          <AtalhoCard titulo="Portabilidade" descricao="Consolide em outro banco com taxa menor." icon="🔁" accent="gold" onClick={() => nav("/servidor/marketplace/portabilidade")} />
-          <AtalhoCard titulo="Meus contratos" descricao="Veja progresso e baixe PDFs." icon="📄" accent="navy" onClick={() => nav("/servidor/contratos")} />
-          <AtalhoCard titulo="Benefícios" descricao="Cartão benefícios e ofertas." icon="🎁" accent="emerald" onClick={() => nav("/servidor/beneficios")} />
-        </div>
-      </section>
+      {/* Substituiu as "Ações rápidas" antigas — cliente pediu 2 blocos, um de
+          Portabilidade e outro de Telemedicina. */}
+      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, 1fr)" }}>
+        <AtalhoCard
+          titulo="Portabilidade"
+          descricao="Consolide em outro banco com taxa menor e reduza sua parcela mensal."
+          icon="🔁"
+          accent="gold"
+          onClick={() => nav("/servidor/marketplace/portabilidade")}
+        />
+        <AtalhoCard
+          titulo="Telemedicina"
+          descricao="Consulta médica online sem custo, para você e sua família."
+          icon="📱"
+          accent="emerald"
+          onClick={() => nav("/servidor/saude")}
+        />
+      </div>
 
       {/* Warning existente — pré-aprovação */}
       <div style={{
@@ -354,77 +367,6 @@ function ValorLinha({ label, value, color, bold }: { label: string; value: strin
       <span style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", color: "#7A8CA8", fontWeight: 700 }}>{label}</span>
       <span style={{ fontSize: 14, fontWeight: bold ? 800 : 700, color, textAlign: "right", whiteSpace: "nowrap" }}>{value}</span>
     </div>
-  );
-}
-
-function ContratoCard({ contrato }: { contrato: MatriculaInfo["contratos"][number] }) {
-  const iniciais = iniciaisBanco(contrato.banco);
-  const cor = corBanco(contrato.banco);
-  const tipoLabel = contrato.banco.toLowerCase().includes("refin") ? "REFINANCIAMENTO" : "EMPRESTIMO";
-  return (
-    <article style={{
-      background: "var(--surface)",
-      border: "1px solid var(--border)",
-      borderRadius: 14,
-      padding: 14,
-      display: "flex",
-      alignItems: "center",
-      gap: 14,
-      flexWrap: "wrap",
-    }}>
-      {/* avatar */}
-      <div style={{
-        width: 42, height: 42, borderRadius: "50%",
-        background: `color-mix(in srgb, ${cor} 18%, transparent)`,
-        color: cor, fontWeight: 800, fontSize: 14,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        border: `1px solid color-mix(in srgb, ${cor} 40%, transparent)`,
-        flexShrink: 0,
-      }}>
-        {iniciais}
-      </div>
-
-      {/* info */}
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>{contrato.banco}</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-          {tipoLabel} · {contrato.parcelasPagas} / {contrato.total} parcelas
-        </div>
-      </div>
-
-      {/* pill */}
-      <Pill variant={contrato.status === "Averbado" ? "averbado" : "aceita"}>
-        {contrato.status}
-      </Pill>
-
-      {/* valor */}
-      <div style={{ textAlign: "right", minWidth: 100 }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)" }}>{fmtBRL(contrato.parcela)}</div>
-        <div style={{ fontSize: 11, color: "var(--text-dim)" }}>/mês</div>
-      </div>
-
-      {/* PDF */}
-      <a
-        href={contrato.pdfUrl}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          padding: "8px 12px",
-          borderRadius: 8,
-          border: "1px solid var(--border-strong)",
-          background: "transparent",
-          color: "var(--text)",
-          fontSize: 12,
-          fontWeight: 600,
-          textDecoration: "none",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-        }}
-      >
-        ↓ PDF
-      </a>
-    </article>
   );
 }
 

@@ -58,6 +58,31 @@ export const COMUNICADOS_MOCK: ComunicadoMock[] = [
     corpo: "Sessao gratuita 15/07 19h. Apresentamos o mapa de equivalencia entre os menus.",
     publico: "banco",
   },
+  // === Comunicados de exemplo pro servidor (demonstração do carrossel no dashboard). ===
+  {
+    id: "COM-SRV-1",
+    titulo: "Simule seu empréstimo em 1 minuto",
+    corpo: "Use o simulador do Atlas e veja em segundos a parcela que cabe na sua margem. Sem burocracia, com taxas dos bancos parceiros da sua prefeitura.",
+    linkLabel: "Simular agora",
+    linkHref: "/servidor/simular",
+    publico: "servidor",
+  },
+  {
+    id: "COM-SRV-2",
+    titulo: "Portabilidade: pague menos no seu consignado",
+    corpo: "Já tem um contrato? Compare ofertas de portabilidade e reduza sua parcela mensal sem trocar de banco na folha.",
+    linkLabel: "Ver portabilidade",
+    linkHref: "/servidor/marketplace/portabilidade",
+    publico: "servidor",
+  },
+  {
+    id: "COM-SRV-3",
+    titulo: "Telemedicina 24h incluída no seu cartão",
+    corpo: "Consulta médica online sem sair de casa, sem custo adicional, para você e sua família. Descubra como ativar.",
+    linkLabel: "Acessar Telemedicina",
+    linkHref: "/servidor/saude",
+    publico: "servidor",
+  },
 ];
 
 export interface ServidorBuscaMock {

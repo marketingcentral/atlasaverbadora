@@ -1087,6 +1087,8 @@ export class AtlasClient {
     /** Propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
      *  Filtra pela matrícula ativa quando informada — evita misturar histórico
      *  entre matrículas de servidor com acumulação de cargos. */
+    /** Comunicados publicados pela averbadora com publico=servidor (usados no carrossel do dashboard). */
+    comunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/servidores/me/comunicados"),
     propostas: (matricula?: string) =>
       this.request<{ propostas: {
         id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number;
