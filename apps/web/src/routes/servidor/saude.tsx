@@ -145,36 +145,83 @@ export function ServidorSaude() {
 }
 
 function ParceiroCard({ parceiro }: { parceiro: ServidorBeneficio }) {
+  const modo = parceiro.modoImagens ?? "nenhum";
+  const imagens = parceiro.imagens ?? [];
+  const temImagens = modo !== "nenhum" && imagens.length > 0;
   return (
     <article style={{
       background: "var(--surface)",
       border: "1px solid var(--border)",
       borderRadius: 14,
-      padding: 16,
+      overflow: "hidden",
       display: "flex",
-      gap: 14,
-      alignItems: "flex-start",
+      flexDirection: "column",
     }}>
-      <div style={{
-        width: 44, height: 44, borderRadius: 10,
-        background: `color-mix(in srgb, ${parceiro.cor} 15%, transparent)`,
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 22, flexShrink: 0, overflow: "hidden",
-      }}>
-        {parceiro.icone.startsWith("http")
-          ? <img src={parceiro.icone} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-          : parceiro.icone}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{parceiro.nome}</div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-          Saúde · {parceiro.local}
+      {temImagens ? <BeneficioImagens imagens={imagens} modo={modo} /> : null}
+      <div style={{ padding: 16, display: "flex", gap: 14, alignItems: "flex-start" }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: 10,
+          background: `color-mix(in srgb, ${parceiro.cor} 15%, transparent)`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 22, flexShrink: 0, overflow: "hidden",
+        }}>
+          {parceiro.icone.startsWith("http")
+            ? <img src={parceiro.icone} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+            : parceiro.icone}
         </div>
-        <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-muted)" }}>
-          <b style={{ color: "var(--emerald-500)", fontSize: 14 }}>{parceiro.descontoLabel}</b> {parceiro.descontoComplemento}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{parceiro.nome}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+            Saúde · {parceiro.local}
+          </div>
+          <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-muted)" }}>
+            <b style={{ color: "var(--emerald-500)", fontSize: 14 }}>{parceiro.descontoLabel}</b> {parceiro.descontoComplemento}
+          </div>
+          {parceiro.linkAcesso?.url ? (
+            <a
+              href={parceiro.linkAcesso.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-block", marginTop: 12,
+                padding: "8px 16px", borderRadius: 8,
+                background: parceiro.cor, color: "white",
+                fontSize: 13, fontWeight: 700, textDecoration: "none",
+              }}
+            >
+              {parceiro.linkAcesso.textoBotao || "Acessar"} →
+            </a>
+          ) : null}
         </div>
       </div>
     </article>
+  );
+}
+
+function BeneficioImagens({ imagens, modo }: { imagens: string[]; modo: "unica" | "carrossel" }) {
+  const [idx, setIdx] = useState(0);
+  const total = imagens.length;
+  const atual = modo === "carrossel" ? imagens[Math.min(idx, total - 1)] : imagens[0];
+  if (!atual) return null;
+  return (
+    <div style={{ position: "relative", aspectRatio: "16 / 9", background: "var(--bg-elev-2)" }}>
+      <img src={atual} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+      {modo === "carrossel" && total > 1 ? (
+        <>
+          <button type="button" onClick={() => setIdx((i) => (i - 1 + total) % total)} aria-label="Anterior"
+            style={{ position: "absolute", top: "50%", left: 8, transform: "translateY(-50%)", width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,.55)", color: "white", border: 0, cursor: "pointer", fontSize: 20, fontWeight: 700 }}>‹</button>
+          <button type="button" onClick={() => setIdx((i) => (i + 1) % total)} aria-label="Próximo"
+            style={{ position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)", width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,.55)", color: "white", border: 0, cursor: "pointer", fontSize: 20, fontWeight: 700 }}>›</button>
+          <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 6 }}>
+            {imagens.map((_, i) => (
+              <button key={i} type="button" onClick={() => setIdx(i)} aria-label={`Ir para imagem ${i + 1}`}
+                style={{ width: 8, height: 8, borderRadius: "50%", border: 0, cursor: "pointer", background: i === Math.min(idx, total - 1) ? "white" : "rgba(255,255,255,.5)" }} />
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 

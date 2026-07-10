@@ -8,7 +8,12 @@
 import type { Env } from "../../env.js";
 import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
 
-export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer";
+export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina";
+export type ModoImagens = "nenhum" | "unica" | "carrossel";
+export interface LinkAcessoBeneficio {
+  url: string;
+  textoBotao?: string;
+}
 export type OrigemBeneficio = "banco" | "averbadora" | "prefeitura" | "convenio";
 export type TipoDesconto = "percentual" | "valor_fixo" | "preco_especial" | "gratuidade";
 export type ModoUso = "cartao_consignado" | "matricula" | "cpf" | "codigo" | "qr";
@@ -93,6 +98,9 @@ export interface Beneficio {
   bancoId?: number;
   /** Obrigatorio quando origem="convenio": id do convenio da prefeitura. */
   convenioId?: string;
+  imagens?: string[];
+  modoImagens?: ModoImagens;
+  linkAcesso?: LinkAcessoBeneficio;
 }
 
 const TABLE = "admin_beneficios";

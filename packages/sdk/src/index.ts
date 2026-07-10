@@ -6,7 +6,7 @@ export type {
   BancoUsuario, BancoUsuarioInput,
   BancoOferta, BancoOfertaInput, BancoOfertaFiltro, BancoOfertaTipo, ServidorOfertaBanco,
   AdminBeneficio, AdminBeneficioInput, ServidorBeneficio, CategoriaBeneficio, OrigemBeneficio,
-  TipoDesconto, ModoUso, DestaqueBeneficio,
+  TipoDesconto, ModoUso, DestaqueBeneficio, ModoImagens, LinkAcessoBeneficio,
   EnderecoBeneficio, ContatoBeneficio, DescontoBeneficio, ComoUsarBeneficio,
   FiltroBeneficio, VigenciaBeneficio, ResponsavelBeneficio,
   AdminBanco, AdminBancoInput,

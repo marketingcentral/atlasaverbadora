@@ -32,6 +32,7 @@ const NAV = [
   { key: "logs", label: "Logs", href: "/averbadora/logs", icon: "≡" },
   { key: "vitrine", label: "Vitrine", href: "/averbadora/vitrine", icon: "▢" },
   { key: "beneficios", label: "Benefícios", href: "/averbadora/beneficios", icon: "◇" },
+  { key: "telemedicina", label: "Telemedicina", href: "/averbadora/telemedicina", icon: "📱" },
   {
     key: "api",
     label: "API",

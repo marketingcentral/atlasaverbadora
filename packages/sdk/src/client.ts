@@ -51,7 +51,20 @@ export interface NovoContratoBody {
 
 export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios";
 
-export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer";
+/** Categorias de beneficio. "telemedicina" separada de "saude" — cliente pediu
+ *  aba exclusiva pra telemedicina na averbadora. */
+export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina";
+
+/** Modo de exibicao das imagens no card do servidor. "unica" = 1 imagem fixa
+ *  (estatica), "carrossel" = varias com navegacao. "nenhum" = so o icone. */
+export type ModoImagens = "nenhum" | "unica" | "carrossel";
+
+export interface LinkAcessoBeneficio {
+  /** URL pra onde o botao leva. Deep-link (whatsapp://, tg://) ou https:// normal. */
+  url: string;
+  /** Texto do botao. Default: "Acessar". */
+  textoBotao?: string;
+}
 export type OrigemBeneficio = "banco" | "averbadora" | "prefeitura" | "convenio";
 export type TipoDesconto = "percentual" | "valor_fixo" | "preco_especial" | "gratuidade";
 /** Como o servidor apresenta o beneficio no parceiro pra ganhar o desconto. */
@@ -153,6 +166,12 @@ export interface AdminBeneficio {
   bancoId?: number;
   /** Obrigatorio quando origem="convenio": qual convenio da prefeitura. */
   convenioId?: string;
+  /** URLs das imagens exibidas no card do servidor. Combinado com modoImagens. */
+  imagens?: string[];
+  /** Como as imagens aparecem: "nenhum" (default) / "unica" / "carrossel". */
+  modoImagens?: ModoImagens;
+  /** Botao "Acessar" que aparece no card do servidor — leva pro site/app do parceiro. */
+  linkAcesso?: LinkAcessoBeneficio;
 }
 export interface AdminBeneficioInput {
   id?: string;
@@ -184,6 +203,9 @@ export interface AdminBeneficioInput {
   prefeituraIdsExtras?: number[];
   bancoId?: number;
   convenioId?: string;
+  imagens?: string[];
+  modoImagens?: ModoImagens;
+  linkAcesso?: LinkAcessoBeneficio;
 }
 export interface ServidorBeneficio {
   id: string;
@@ -202,6 +224,9 @@ export interface ServidorBeneficio {
   bancoNome?: string;
   /** Nome do convenio (quando origem=convenio). Ex.: "PALHOCA / DELTA GLOBAL". */
   convenioNome?: string;
+  imagens?: string[];
+  modoImagens?: ModoImagens;
+  linkAcesso?: LinkAcessoBeneficio;
 }
 
 export interface BancoOfertaFiltro {

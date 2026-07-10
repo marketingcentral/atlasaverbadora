@@ -27,6 +27,7 @@ export const MATRIX: Record<string, AverbadoraPerfil[]> = {
   tombamento: ["supervisor", "operador"],
   adf: ["supervisor", "operador", "financeiro"],
   beneficios: ["supervisor", "operador"],
+  telemedicina: ["supervisor", "operador"],
 
   // Banca — so supervisor (cadastro sensivel)
   bancos: ["supervisor"],

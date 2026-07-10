@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, Card, TextField, TextareaField } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -18,6 +18,7 @@ import type {
 
 const CATEGORIAS: { id: CategoriaBeneficio; label: string; icone: string }[] = [
   { id: "saude", label: "Saúde", icone: "🩺" },
+  { id: "telemedicina", label: "Telemedicina", icone: "📱" },
   { id: "alimentacao", label: "Alimentação", icone: "🍽️" },
   { id: "educacao", label: "Educação", icone: "🎓" },
   { id: "lazer", label: "Lazer", icone: "🎭" },
@@ -75,6 +76,10 @@ const UFS = ["AC","AL","AP","AM","BA","CE","DF","ES","GO","MA","MT","MS","MG","P
 export function AdminBeneficiosForm() {
   const nav = useNavigate();
   const { id } = useParams(); // undefined = novo, string = editar
+  const [sp] = useSearchParams();
+  // ?categoria=telemedicina -> pre-marca a categoria no formulario (usado
+  // pelo botao "+ Nova parceria" da tela /averbadora/telemedicina).
+  const categoriaPreset = sp.get("categoria") as CategoriaBeneficio | null;
 
   const beneficiosQ = useQuery({ queryKey: ["admin", "beneficios"], queryFn: () => atlas.admin.beneficios.list() });
   const prefeiturasQ = useQuery({ queryKey: ["admin", "prefeituras"], queryFn: () => atlas.admin.listPrefeituras() });
@@ -88,9 +93,9 @@ export function AdminBeneficiosForm() {
   const [form, setForm] = useState<AdminBeneficioInput>({
     prefeituraId: 1,
     nome: "",
-    categorias: ["saude"],
+    categorias: categoriaPreset ? [categoriaPreset] : ["saude"],
     local: "",
-    icone: "🎁",
+    icone: categoriaPreset === "telemedicina" ? "📱" : "🎁",
     cor: "#059669",
     descontoLabel: "",
     descontoComplemento: "",
@@ -355,6 +360,91 @@ export function AdminBeneficiosForm() {
             </Chip>
           ))}
         </FieldGroup>
+      </Secao>
+
+      {/* ============ 1B. IMAGENS ============ */}
+      <Secao titulo="Imagens do parceiro" descricao="Imagem estática única OU carrossel de várias — aparecem no card do servidor." icone="🖼️">
+        <FieldGroup label="Modo de exibição">
+          <Chip on={(form.modoImagens ?? "nenhum") === "nenhum"} onClick={() => set("modoImagens", "nenhum")}>Sem imagem (só ícone)</Chip>
+          <Chip on={form.modoImagens === "unica"} onClick={() => setForm((f) => ({ ...f, modoImagens: "unica", imagens: f.imagens?.slice(0, 1) ?? [] }))}>Imagem única</Chip>
+          <Chip on={form.modoImagens === "carrossel"} onClick={() => set("modoImagens", "carrossel")}>Carrossel</Chip>
+        </FieldGroup>
+
+        {form.modoImagens && form.modoImagens !== "nenhum" ? (
+          <>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {(form.imagens ?? []).map((url, idx) => (
+                <div key={idx} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <div style={{
+                    width: 60, height: 60, borderRadius: 8,
+                    border: "1px solid var(--border-strong)", background: "var(--bg-elev-2)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    overflow: "hidden", flexShrink: 0,
+                  }}>
+                    {url ? (
+                      <img src={url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                    ) : <span style={{ fontSize: 24, color: "var(--text-dim)" }}>🖼️</span>}
+                  </div>
+                  <TextField
+                    label=""
+                    value={url}
+                    onChange={(e) => {
+                      const novas = [...(form.imagens ?? [])];
+                      novas[idx] = e.target.value;
+                      set("imagens", novas);
+                    }}
+                    placeholder="https://exemplo.com/foto.jpg"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => set("imagens", (form.imagens ?? []).filter((_, i) => i !== idx))}
+                    style={{
+                      padding: "8px 12px", borderRadius: 8,
+                      border: "1px solid var(--danger-500)", background: "transparent",
+                      color: "var(--danger-500)", cursor: "pointer", fontSize: 13,
+                    }}
+                  >
+                    Remover
+                  </button>
+                </div>
+              ))}
+              {form.modoImagens === "carrossel" || !(form.imagens?.length) ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={form.modoImagens === "unica" && (form.imagens?.length ?? 0) >= 1}
+                  onClick={() => set("imagens", [...(form.imagens ?? []), ""])}
+                >
+                  + Adicionar imagem
+                </Button>
+              ) : null}
+            </div>
+            {form.modoImagens === "unica" ? (
+              <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                Modo "única" — só 1 imagem permitida. Troque pra "carrossel" pra usar mais.
+              </div>
+            ) : null}
+          </>
+        ) : null}
+      </Secao>
+
+      {/* ============ 1C. LINK DE ACESSO ============ */}
+      <Secao titulo="Botão de acesso" descricao="Botão que leva o servidor pro site ou app do parceiro (deep-link)." icone="🔗">
+        <TextField
+          label="URL de destino"
+          value={form.linkAcesso?.url ?? ""}
+          onChange={(e) => set("linkAcesso", e.target.value ? { url: e.target.value, textoBotao: form.linkAcesso?.textoBotao } : undefined)}
+          placeholder="https://parceiro.com/promo ou app://..."
+        />
+        <TextField
+          label="Texto do botão (opcional — default: 'Acessar')"
+          value={form.linkAcesso?.textoBotao ?? ""}
+          onChange={(e) => set("linkAcesso", form.linkAcesso ? { ...form.linkAcesso, textoBotao: e.target.value || undefined } : undefined)}
+          placeholder="Ex.: Agendar consulta, Ver cardápio, Baixar app"
+          disabled={!form.linkAcesso?.url}
+          maxLength={40}
+        />
       </Secao>
 
       {/* ============ 2. DESCONTO ============ */}

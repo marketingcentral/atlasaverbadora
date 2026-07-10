@@ -381,7 +381,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       const cobrePrefeitura = b.prefeituraId === prefeituraAtiva
         || (b.prefeituraIdsExtras?.includes(prefeituraAtiva) ?? false);
       if (!cobrePrefeitura) return false;
-      if (categoria && !b.categorias.includes(categoria as "saude" | "alimentacao" | "educacao" | "lazer")) return false;
+      if (categoria && !b.categorias.includes(categoria as "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina")) return false;
       return true;
     });
     // Enriquece com nome do banco/convenio quando aplicavel — o servidor precisa
@@ -403,6 +403,9 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         destaque: b.destaque,
         bancoNome: b.bancoId != null ? nomeBanco(b.bancoId) : undefined,
         convenioNome: b.convenioId ? (CONVENIOS_MOCK.find((cv) => cv.id === b.convenioId)?.nome) : undefined,
+        imagens: b.imagens,
+        modoImagens: b.modoImagens,
+        linkAcesso: b.linkAcesso,
       })),
     });
   })

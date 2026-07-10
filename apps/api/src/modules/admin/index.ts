@@ -2040,7 +2040,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       id: z.string().optional(),
       prefeituraId: z.number().int(),
       nome: z.string().min(2).max(100),
-      categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer"])).min(1),
+      categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer", "telemedicina"])).min(1),
       local: z.string().min(1).max(80),
       icone: z.string().min(1).max(500), // emoji (ate 8 chars com ZWJ) OU url de imagem (max 500)
       cor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
@@ -2110,6 +2110,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       prefeituraIdsExtras: z.array(z.number().int()).optional(),
       bancoId: z.number().int().optional(),
       convenioId: z.string().optional(),
+      imagens: z.array(z.string().url()).max(10).optional(),
+      modoImagens: z.enum(["nenhum", "unica", "carrossel"]).optional(),
+      linkAcesso: z.object({
+        url: z.string().url(),
+        textoBotao: z.string().max(40).optional(),
+      }).optional(),
     }).parse(await c.req.json());
     // Consistencia origem-vinculo: banco exige bancoId, convenio exige convenioId.
     // Sem isso, o servidor recebe o beneficio sem saber QUAL banco/convenio ofereceu.
@@ -2155,6 +2161,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       prefeituraIdsExtras: body.prefeituraIdsExtras,
       bancoId: body.bancoId,
       convenioId: body.convenioId || undefined,
+      imagens: body.imagens?.length ? body.imagens : undefined,
+      modoImagens: body.modoImagens,
+      linkAcesso: body.linkAcesso?.url ? body.linkAcesso : undefined,
     };
     await persistBeneficio(c.env, b);
     return c.json({ beneficio: b });
