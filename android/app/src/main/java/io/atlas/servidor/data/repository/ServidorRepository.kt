@@ -37,6 +37,10 @@ class ServidorRepository(
     /** Comunicados da averbadora (público servidor) — alimentam os slides do início. */
     suspend fun getComunicados() = safeApi(gson) { api.comunicados() }
 
+    /** Solicita portabilidade (pedido geral) — o banco recebe e avalia os contratos do servidor. */
+    suspend fun solicitarPortabilidade(matricula: String?) =
+        safeApi(gson) { api.solicitarPortabilidade(io.atlas.servidor.data.remote.dto.SolicitarPortabilidadeRequest(matricula)) }
+
     /** Remove as propostas EM ANÁLISE (fase de teste). */
     suspend fun removerPropostasEmAnalise(matricula: String?) = safeApi(gson) { api.removerPropostasEmAnalise(matricula) }
 

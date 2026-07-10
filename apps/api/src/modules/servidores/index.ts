@@ -170,7 +170,7 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     exclusividadesCartaoConsig: pref?.exclusividadesCartaoConsig ?? "",
     margem: {
       servidor_id: servidorId, matricula: e.matricula, prefeitura_id: prefId,
-      margem: { salario_base: e.salarioLiquido, comprometido: round2(comprometidoPorMargem("EMPRESTIMO")), disponivel: emp.disponivel, percentual_uso: percentualUso(e.salarioLiquido, comprometidoPorMargem("EMPRESTIMO"), "EMPRESTIMO") },
+      margem: { salario_base: e.salarioLiquido, comprometido: round2(comprometido), disponivel: emp.disponivel, percentual_uso: percentualUso(e.salarioLiquido, comprometido, "EMPRESTIMO") },
       margens_por_tipo: margens,
       fonte: { tipo: "folha_prefeitura" as const, sincronizado_em: new Date().toISOString(), cache_status: "MISS" as const },
     },
@@ -786,6 +786,55 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       },
       201,
     );
+  })
+  // Servidor SOLICITA portabilidade (lead) — o BANCO recebe como REFIN pendente e avalia os
+  // contratos do servidor. E um pedido de interesse: nao reserva margem livre nem trava 48h;
+  // os valores sao indicativos, confirmados pelo banco depois.
+  .post("/v1/servidores/me/portabilidade", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    await ensureBancosLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = z.object({ matricula: z.string().optional() }).parse(await c.req.json().catch(() => ({})));
+    const entry =
+      (body.matricula ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === body.matricula) : undefined) ??
+      SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === s.matricula) ??
+      SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
+    if (!entry) throw Errors.notFound("matricula");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
+    await refreshContratos(c.env); // sincroniza o contador de adf entre isolates antes de criar
+    const valorIndicativo = round2(margemTotal(entry.salarioLiquido, "EMPRESTIMO")); // so indicativo pro banco
+    const contrato = criarContratoOuReserva({
+      bancoId: conv?.bancoId ?? 1,
+      servidorId: s.id,
+      idMatricula: entry.idMatricula,
+      matricula: entry.matricula,
+      nome: entry.nome,
+      cpfMasked: entry.cpfMasked,
+      convenioId: conv?.id ?? entry.idConvenio,
+      convenio: conv?.nome ?? "Banco Atlas",
+      tipoContrato: "REFIN",
+      valorFinanciado: valorIndicativo,
+      parcelas: 60,
+      taxaAm: 0.0145,
+      cetAm: 0.0145,
+      iof: 0,
+      diasCarencia: 30,
+      valorParcela: round2(valorIndicativo / 60),
+      codigoVerba: conv?.codigoVerba ?? "",
+      observacoes: "Solicitacao de portabilidade enviada pelo servidor via app — valores a confirmar com o banco.",
+      isReserva: true,
+      ator: `servidor:${s.id}`,
+    });
+    await persistContrato(c.env, contrato.adf);
+    notifyServidor(c, entry.email, {
+      titulo: `Solicitação de portabilidade ${contrato.adf} enviada`,
+      mensagem: `Sua solicitação de portabilidade foi enviada ao ${bancoNome(contrato.bancoId)}. O banco vai avaliar seus contratos de outros bancos e entrar em contato.`,
+      detalhes: [{ label: "Situação", valor: contrato.situacao }],
+    });
+    return c.json({ id: contrato.adf, situacao: contrato.situacao }, 201);
   })
   // Lista as propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
   // Opcionalmente filtra pela matricula ativa — sem esse filtro o servidor

@@ -27,6 +27,11 @@ class PortabilidadeViewModel : ViewModel() {
         private set
     var submitting by mutableStateOf(false)
         private set
+    // Resultado da solicitação geral de portabilidade (botão "Solicitar Portabilidade").
+    var solicitacaoEnviada by mutableStateOf(false)
+        private set
+    var solicitacaoErro by mutableStateOf<String?>(null)
+        private set
     private var matriculaAtiva: String? = null
 
     init { load() }
@@ -54,6 +59,23 @@ class PortabilidadeViewModel : ViewModel() {
         Simulation.parcela(e.saldoDevedor, e.parcelasRestantes, taxaAtlas)
 
     fun economiaMensal(e: ElegivelDto): Double = (e.parcela - novaParcela(e)).coerceAtLeast(0.0)
+
+    /** Solicitação GERAL de portabilidade (botão dedicado): envia o pedido ao banco, que
+     *  avalia os contratos do servidor. Não trava margem (é um pedido de interesse). */
+    fun solicitarPortabilidade() {
+        if (submitting || solicitacaoEnviada) return
+        submitting = true
+        solicitacaoErro = null
+        viewModelScope.launch {
+            try {
+                repo.solicitarPortabilidade(matriculaAtiva)
+                solicitacaoEnviada = true
+            } catch (ex: ApiException) {
+                solicitacaoErro = ex.userMessage
+            }
+            submitting = false
+        }
+    }
 
     fun solicitar(e: ElegivelDto, onDone: () -> Unit) {
         val mat = matriculaAtiva ?: return

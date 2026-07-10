@@ -69,6 +69,36 @@ fun PortabilidadeScreen(
             color = InkMuted,
             fontSize = 14.sp,
         )
+
+        // Solicitação geral: envia o pedido ao banco (que avalia os contratos do servidor).
+        Spacer(Modifier.height(16.dp))
+        AtlasCard {
+            if (vm.solicitacaoEnviada) {
+                Text("✓ Solicitação enviada", color = Verde, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Seu pedido de portabilidade foi enviado ao banco. Ele vai avaliar seus contratos de outros bancos e entrar em contato.",
+                    color = InkMuted,
+                    fontSize = 13.sp,
+                )
+            } else {
+                Text(
+                    "Quer trazer seus empréstimos para o Atlas? Envie uma solicitação e o banco cuida do resto.",
+                    color = InkMuted,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                AtlasPrimaryButton(
+                    text = "Solicitar Portabilidade",
+                    onClick = { vm.solicitarPortabilidade() },
+                    loading = vm.submitting,
+                )
+                vm.solicitacaoErro?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text(it, color = io.atlas.servidor.ui.theme.DangerRed, fontSize = 13.sp)
+                }
+            }
+        }
         Spacer(Modifier.height(20.dp))
 
         when (val s = vm.state) {

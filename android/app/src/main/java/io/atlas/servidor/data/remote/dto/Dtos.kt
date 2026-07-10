@@ -137,6 +137,9 @@ data class ComunicadoDto(
 
 data class ComunicadosResponse(val comunicados: List<ComunicadoDto> = emptyList())
 
+data class SolicitarPortabilidadeRequest(val matricula: String? = null)
+data class PortabilidadeSolicitadaResponse(val id: String? = null, val situacao: String? = null)
+
 // ---------- Servidor profile ----------
 
 data class MeResponse(
