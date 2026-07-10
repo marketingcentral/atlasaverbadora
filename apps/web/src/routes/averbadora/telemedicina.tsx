@@ -1,19 +1,24 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, IconButton, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminBeneficio } from "@atlas/sdk";
 
-/** Tela dedicada de Telemedicina. Cliente pediu aba separada de "Benefícios" —
- *  aqui só aparecem beneficios com categoria=telemedicina. Reusa o mesmo form
- *  de /averbadora/beneficios/novo (com categoria pre-marcada). A logica de
- *  pausar/reativar/editar continua a mesma. */
+/** Tela dedicada de Telemedicina — mesmo padrao de tabs de /banco/ofertas:
+ *  "Ativas" x "Encerradas". Encerrar (🗑) = soft-delete (pausar), volta pra
+ *  Ativas via ▶ Reativar. Nunca ha hard-delete. */
 export function AverbadoraTelemedicina() {
   const qc = useQueryClient();
   const nav = useNavigate();
+  const [tab, setTab] = useState<"ativas" | "encerradas">("ativas");
   const beneficiosQ = useQuery({ queryKey: ["admin", "beneficios"], queryFn: () => atlas.admin.beneficios.list() });
   const prefeiturasQ = useQuery({ queryKey: ["admin", "prefeituras"], queryFn: () => atlas.admin.listPrefeituras() });
+  const interessadosResumoQ = useQuery({
+    queryKey: ["admin", "beneficios", "interessados", "resumo"],
+    queryFn: () => atlas.admin.beneficios.interessadosResumo(),
+    refetchInterval: 30_000,
+  });
 
   const pausar = useMutation({
     mutationFn: (id: string) => atlas.admin.beneficios.pausar(id),
@@ -30,13 +35,27 @@ export function AverbadoraTelemedicina() {
     return map;
   }, [prefeiturasQ.data]);
 
-  const rows = useMemo(
+  const contagemInteressados = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of interessadosResumoQ.data?.contagens ?? []) map.set(c.beneficioId, c.total);
+    return map;
+  }, [interessadosResumoQ.data]);
+
+  // Todos os beneficios de telemedicina, divididos por ativo/pausado.
+  const todos = useMemo(
     () => (beneficiosQ.data?.beneficios ?? []).filter((b) => b.categorias.includes("telemedicina")),
     [beneficiosQ.data],
   );
+  const { ativas, encerradas } = useMemo(() => {
+    const a: AdminBeneficio[] = [];
+    const e: AdminBeneficio[] = [];
+    for (const b of todos) (b.ativo ? a : e).push(b);
+    return { ativas: a, encerradas: e };
+  }, [todos]);
+  const rows = tab === "ativas" ? ativas : encerradas;
 
   const columns: Column<AdminBeneficio>[] = [
-    { key: "ativo", header: "Situação", render: (b) => <Pill variant={b.ativo ? "averbado" : "expirado"}>{b.ativo ? "Ativo" : "Pausado"}</Pill> },
+    { key: "ativo", header: "Situação", render: (b) => <Pill variant={b.ativo ? "averbado" : "expirado"}>{b.ativo ? "Ativa" : "Encerrada"}</Pill> },
     {
       key: "icone",
       header: "",
@@ -58,7 +77,21 @@ export function AverbadoraTelemedicina() {
     { key: "local", header: "Local" },
     { key: "desc", header: "Desconto/preço", render: (b) => `${b.descontoLabel} ${b.descontoComplemento}` },
     { key: "origem", header: "Origem", render: (b) => <Pill variant={b.origem === "banco" ? "aceita" : "emdia"}>{b.origem}</Pill> },
-    { key: "link", header: "Link", render: (b) => b.linkAcesso?.url ? <span style={{ fontSize: 11, color: "var(--emerald-500)" }}>✓ Sim</span> : <span style={{ color: "var(--text-dim)" }}>—</span> },
+    {
+      key: "interessados",
+      header: "Interessados",
+      align: "right",
+      render: (b) => {
+        const n = contagemInteressados.get(b.id) ?? 0;
+        return n > 0
+          ? <button type="button" onClick={() => nav(`/averbadora/interessados?beneficioId=${b.id}&categoria=telemedicina`)}
+              style={{ padding: "3px 8px", borderRadius: 999, border: "1px solid var(--emerald-500)", background: "color-mix(in srgb, var(--emerald-500) 10%, transparent)", color: "var(--emerald-500)", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              👥 {n}
+            </button>
+          : <span style={{ color: "var(--text-dim)" }}>—</span>;
+      },
+    },
+    { key: "link", header: "Link", render: (b) => b.linkAcesso?.url ? <span style={{ fontSize: 11, color: "var(--emerald-500)" }}>✓</span> : <span style={{ color: "var(--text-dim)" }}>—</span> },
   ];
 
   return (
@@ -84,27 +117,62 @@ export function AverbadoraTelemedicina() {
         </div>
       </header>
 
+      {/* Tabs Ativas / Encerradas — mesmo padrao de /banco/ofertas. Encerrar (🗑) e soft-delete via pausar; reativar via ▶. Nunca ha hard-delete. */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <TabBtn active={tab === "ativas"} onClick={() => setTab("ativas")} label={`Ativas (${ativas.length})`} />
+        <TabBtn active={tab === "encerradas"} onClick={() => setTab("encerradas")} label={`Encerradas (${encerradas.length})`} />
+      </div>
+
       <DataTable
         columns={columns}
         rows={rows}
         rowKey={(b) => b.id}
         loading={beneficiosQ.isLoading}
-        emptyState="Nenhuma parceria de telemedicina ainda. Clique em '+ Nova parceria' pra começar."
+        emptyState={tab === "ativas"
+          ? "Nenhuma parceria de telemedicina ativa. Clique em '+ Nova parceria' pra começar."
+          : "Nenhuma parceria encerrada."}
         actions={(b) => (
           <>
             <IconButton title="Editar" onClick={() => nav(`/averbadora/beneficios/${b.id}/editar`)}>✎</IconButton>
-            {b.ativo ? (
+            {tab === "ativas" ? (
               <IconButton
-                title="Pausar"
+                title="Encerrar (move pra aba Encerradas — sem apagar)"
                 danger
-                onClick={() => { if (confirm(`Pausar "${b.nome}"?\n\nSai do app do servidor até você reativar.`)) pausar.mutate(b.id); }}
-              >⏸</IconButton>
+                onClick={() => {
+                  if (confirm(`Encerrar "${b.nome}"?\n\nSai do app do servidor e vai pra aba "Encerradas". Você ainda pode reativar depois.`)) {
+                    pausar.mutate(b.id);
+                  }
+                }}
+              >
+                🗑
+              </IconButton>
             ) : (
-              <IconButton title="Reativar" onClick={() => reativar.mutate(b.id)}>▶</IconButton>
+              <IconButton title="Reativar (volta pra Ativas)" onClick={() => reativar.mutate(b.id)}>▶</IconButton>
             )}
           </>
         )}
       />
     </div>
+  );
+}
+
+function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        padding: "8px 16px",
+        borderRadius: 10,
+        border: `1px solid ${active ? "var(--emerald-500)" : "var(--border)"}`,
+        background: active ? "color-mix(in srgb, var(--emerald-500) 10%, transparent)" : "transparent",
+        color: active ? "var(--emerald-500)" : "var(--text-muted)",
+        fontSize: 13,
+        fontWeight: 700,
+        cursor: "pointer",
+      }}
+    >
+      {label}
+    </button>
   );
 }
