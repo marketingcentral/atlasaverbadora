@@ -3,7 +3,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, FormActions, Pill, TextareaField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
-import { TwoFactorModal } from "../../../components/TwoFactorModal";
 import {
   PRODUTO_LABEL,
   STATUS_LABEL,
@@ -37,15 +36,10 @@ export function BancoPropostaDetalhe() {
   // Enquanto a query da API ainda esta carregando, nao mostra "nao encontrada".
   const carregandoApi = !local && apiQ.isLoading;
   const perfil = getBancoPerfil();
-  // "mais_info" foi removido — banco entra em contato direto pra pedir informacoes,
-  // fora do sistema. Restam: recusar e upload de contrato (envio).
-  const [modal, setModal] = useState<null | "recusar" | "envio">(null);
-  const [pendingAverbacao, setPendingAverbacao] = useState(false);
-  // Exigências definidas pela prefeitura do convênio ativo (algumas exigem CCB/2FA, outras não).
-  const convQ = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
-  const activeConv = convQ.data?.convenios.find((c) => c.id === convQ.data!.activeId);
-  const exigeCcb = activeConv?.exigeCcb ?? false;
-  const exigeBanco2FA = activeConv?.exigeBanco2FA ?? false;
+  // Unico modal aberto direto daqui e o de recusar. "Anexar contrato" hoje
+  // apenas baixa um modelo em PDF — nao ha upload nem averbacao pelo site,
+  // toda a formalizacao acontece offline (banco liga pro servidor).
+  const [modal, setModal] = useState<null | "recusar">(null);
 
   if (!proposta) {
     return (
@@ -65,7 +59,6 @@ export function BancoPropostaDetalhe() {
   const refresh = () => setVersion((v) => v + 1);
   const trava = travaInfo(proposta);
 
-  const [confirmando, setConfirmando] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Wrapper generico que valida transicao legal + protege contra falha de
@@ -86,35 +79,6 @@ export function BancoPropostaDetalhe() {
 
   const aprovar = () => {
     if (transicionar(["recebida", "em_analise", "mais_info"], "aprovada")) refresh();
-  };
-  const registrarFormalizacao = () => {
-    if (
-      transicionar(["aguardando_formalizacao"], "formalizada", {
-        ccbUrl: proposta.ccbUrl ?? `https://formaliza.bancodelta.com.br/ccb/${proposta.idUnico}.pdf`,
-      })
-    ) refresh();
-  };
-  // Confirmacao de averbacao e acao sensivel (libera recurso ao servidor e
-  // torna a margem efetiva). Exige 2FA antes de aplicar o patch.
-  const confirmarAverbacao = () => {
-    if (confirmando) return; // idempotencia contra double-click
-    // 2FA só se a prefeitura exigir; senão averba direto.
-    if (!exigeBanco2FA) { void executarConfirmacao(); return; }
-    setPendingAverbacao(true);
-  };
-  const executarConfirmacao = async () => {
-    if (confirmando) return; // guarda extra contra 2FA disparado 2x
-    setConfirmando(true);
-    try {
-      // Se a prefeitura não exige CCB, pode averbar direto de qualquer etapa acionável.
-      const origem = exigeCcb
-        ? (["formalizada"] as BancoProposta["status"][])
-        : (["recebida", "em_analise", "mais_info", "aprovada", "aguardando_formalizacao", "formalizada"] as BancoProposta["status"][]);
-      if (transicionar(origem, "averbada")) refresh();
-    } finally {
-      setConfirmando(false);
-      setPendingAverbacao(false);
-    }
   };
 
   return (
@@ -227,12 +191,8 @@ export function BancoPropostaDetalhe() {
           proposta={proposta}
           podeAgir={perfil.perms.aprovacao}
           perfilNome={perfil.nome}
-          exigeCcb={exigeCcb}
           onAprovar={aprovar}
-          onEnviarLink={() => setModal("envio")}
           onBaixarContrato={() => baixarContratoModelo(proposta)}
-          onRegistrarFormalizacao={registrarFormalizacao}
-          onConfirmarAverbacao={confirmarAverbacao}
           onRecusar={() => setModal("recusar")}
         />
       </div>
@@ -244,16 +204,7 @@ export function BancoPropostaDetalhe() {
         <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Observação / info solicitada: {proposta.observacao}</div>
       ) : null}
 
-      {modal === "envio" ? (
-        <EnvioModal
-          proposta={proposta}
-          onClose={() => setModal(null)}
-          onDone={() => {
-            setModal(null);
-            refresh();
-          }}
-        />
-      ) : modal === "recusar" ? (
+      {modal === "recusar" ? (
         <DecisaoModal
           proposta={proposta}
           onClose={() => setModal(null)}
@@ -261,15 +212,6 @@ export function BancoPropostaDetalhe() {
             setModal(null);
             refresh();
           }}
-        />
-      ) : null}
-
-      {pendingAverbacao ? (
-        <TwoFactorModal
-          acao="confirmar a averbacao e liberar o recurso ao servidor"
-          canal="email"
-          onCancel={() => setPendingAverbacao(false)}
-          onConfirm={executarConfirmacao}
         />
       ) : null}
     </div>
@@ -280,23 +222,15 @@ function NextStep({
   proposta,
   podeAgir,
   perfilNome,
-  exigeCcb,
   onAprovar,
-  onEnviarLink,
   onBaixarContrato,
-  onRegistrarFormalizacao,
-  onConfirmarAverbacao,
   onRecusar,
 }: {
   proposta: BancoProposta;
   podeAgir: boolean;
   perfilNome: string;
-  exigeCcb: boolean;
   onAprovar: () => void;
-  onEnviarLink: () => void;
   onBaixarContrato: () => void;
-  onRegistrarFormalizacao: () => void;
-  onConfirmarAverbacao: () => void;
   onRecusar: () => void;
 }) {
   const s = proposta.status;
@@ -310,30 +244,14 @@ function NextStep({
     );
   }
 
-  // Prefeitura NÃO exige CCB: banco averba direto, sem anexar contrato.
-  if (!exigeCcb && acionavel && s !== "formalizada") {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Esta prefeitura não exige anexo da CCB. Você pode averbar diretamente e liberar o recurso ao servidor.
-        </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Button variant="primary" onClick={onConfirmarAverbacao}>Averbar contrato</Button>
-          <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Passo 4 — decisao inicial: aprovar ou recusar. Se aprovada, o proximo passo
-  // (baixar contrato pra assinatura presencial + anexar assinado) aparece
-  // automaticamente porque o status vira "aprovada".
+  // Passo 4 — decisao inicial: aprovar ou recusar. Aprovando, o proximo passo
+  // ("Anexar contrato" — baixa um modelo em PDF) aparece automaticamente.
   if (s === "recebida" || s === "em_analise" || s === "mais_info") {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
           Analise os dados do servidor e a margem. Se estiver tudo certo, aprove — depois disso,
-          você baixa o contrato pra ser assinado presencialmente pela equipe do banco.
+          voce anexa o contrato modelo e entra em contato com o servidor pra formalizar offline.
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <Button variant="primary" onClick={onAprovar}>Aprovar proposta →</Button>
@@ -345,84 +263,36 @@ function NextStep({
     );
   }
 
-  // Passo 5 — proposta aprovada: banco baixa o contrato (CCB) pra assinatura
-  // PRESENCIAL (fora do sistema) e depois anexa o PDF assinado.
-  if (s === "aprovada") {
+  // Passo 5 (unico caminho depois de aprovar): baixar contrato modelo. Nao ha
+  // averbacao pelo site — a formalizacao acontece offline. O usuario pediu
+  // "por enquanto" so o download do modelo; upload de CCB assinada e averbacao
+  // podem voltar como fluxo separado depois.
+  if (s === "aprovada" || s === "aguardando_formalizacao" || s === "formalizada") {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Proposta <strong>aprovada</strong>. Baixe o contrato, imprima, colete a assinatura do
-          servidor <strong>presencialmente</strong> (a assinatura não acontece pelo site) e depois
-          anexe aqui o PDF assinado.
+          Proposta <strong>aprovada</strong>. Anexe o contrato (por enquanto baixamos um
+          modelo em PDF) e entre em contato com o servidor pra fechar a formalizacao
+          — a assinatura acontece <strong>offline</strong>, fora do site.
         </div>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Button variant="primary" onClick={onBaixarContrato}>Baixar contrato (CCB)</Button>
-          <Button variant="ghost" onClick={onEnviarLink}>Anexar contrato assinado</Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Passo 6 → aguardando assinatura do servidor
-  if (s === "aguardando_formalizacao") {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Link enviado{proposta.canalEnvio ? ` por ${proposta.canalEnvio === "email" ? "e-mail" : "SMS"}` : ""}. Aguardando
-          assinatura da CCB pelo servidor.
-        </div>
-        {proposta.linkFormalizacao ? (
-          <a href={proposta.linkFormalizacao} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
-            {proposta.linkFormalizacao}
-          </a>
-        ) : null}
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Button variant="success" onClick={onRegistrarFormalizacao}>Registrar formalização (CCB assinada)</Button>
-          <Button variant="ghost" onClick={onEnviarLink}>Reenviar link</Button>
-        </div>
-      </div>
-    );
-  }
-
-  // Passo 7 — confirmacao de averbacao e liberacao
-  if (s === "formalizada") {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          CCB assinada. Confirme a averbação para tornar a margem <strong>efetiva</strong> e liberar o recurso ao servidor.
-        </div>
-        {proposta.ccbUrl ? (
-          <a href={proposta.ccbUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
-            Ver CCB (PDF)
-          </a>
-        ) : null}
         <div>
-          <Button variant="primary" onClick={onConfirmarAverbacao}>Confirmar averbação e liberação</Button>
+          <Button variant="primary" onClick={onBaixarContrato}>Anexar contrato →</Button>
         </div>
       </div>
     );
   }
 
-  // Passo 7 — concluido
+  // averbada / recusada / expirada — sem botoes.
   if (s === "averbada") {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ fontSize: 14, color: "var(--success)" }}>
-          ✓ Averbação confirmada. Margem efetiva para o banco e recurso liberado ao servidor.
-        </div>
-        {proposta.ccbUrl ? (
-          <a href={proposta.ccbUrl} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "var(--accent)", fontFamily: "var(--font-mono)" }}>
-            Ver CCB (PDF)
-          </a>
-        ) : null}
-      </div>
+      <span style={{ fontSize: 14, color: "var(--success)" }}>
+        ✓ Contrato anexado. Prossiga com o servidor por telefone/e-mail pra fechar a formalizacao.
+      </span>
     );
   }
-
-  // recusada / expirada
   return (
     <span style={{ color: "var(--text-muted)", fontSize: 14 }}>
-      Proposta em <strong>{STATUS_LABEL[s]}</strong> — sem próximos passos.
+      Proposta em <strong>{STATUS_LABEL[s]}</strong> — sem proximos passos.
     </span>
   );
 }
@@ -456,119 +326,6 @@ function Metric({ label, value, warn }: { label: string; value: string; warn?: b
     <div style={{ background: "var(--bg-elev-2)", border: "1px solid var(--border)", borderRadius: 10, padding: "10px 12px" }}>
       <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 700, marginTop: 4, color: warn ? "var(--gold-500)" : "var(--text)" }}>{value}</div>
-    </div>
-  );
-}
-
-function EnvioModal({ proposta, onClose, onDone }: { proposta: BancoProposta; onClose: () => void; onDone: () => void }) {
-  const [arquivo, setArquivo] = useState<File | null>(null);
-  const [erro, setErro] = useState<string | null>(null);
-  const [enviando, setEnviando] = useState(false);
-
-  async function enviar() {
-    if (!arquivo) {
-      setErro("Selecione o arquivo do contrato (CCB) antes de enviar.");
-      return;
-    }
-    setErro(null);
-    setEnviando(true);
-    try {
-      // Upload REAL pro R2. Retorna a key persistida; a URL de visualizacao
-      // exige a mesma sessao (autorizacao por banco_id).
-      const r = await atlas.banco.uploadCcb(proposta.idUnico, arquivo);
-      const ccbUrl = atlas.banco.ccbUrl(r.key);
-      // Contrato ja assinado -> transiciona direto para "formalizada" (pula
-      // "aguardando_formalizacao" do fluxo antigo).
-      patchProposta(proposta.idUnico, { status: "formalizada", ccbUrl });
-      onDone();
-    } catch (err) {
-      setErro(err instanceof Error ? err.message : "Falha ao enviar arquivo.");
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0] ?? null;
-    if (f && f.type && f.type !== "application/pdf") {
-      setErro("Apenas arquivos PDF sao aceitos.");
-      setArquivo(null);
-      return;
-    }
-    setErro(null);
-    setArquivo(f);
-  }
-
-  return (
-    <div onClick={onClose} style={modalBackdrop}>
-      <div onClick={(e) => e.stopPropagation()} style={modalCard}>
-        <h3 style={{ margin: 0 }}>Upload de contrato</h3>
-        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-          {proposta.nome} · <code>{proposta.idUnico}</code>
-        </div>
-        <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4 }}>
-          Anexe a CCB assinada em PDF. Apos o upload, a proposta passa para o status <strong>formalizada</strong> e voce
-          podera confirmar a averbacao.
-        </div>
-
-        <label
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            padding: 20,
-            marginTop: 8,
-            border: "2px dashed var(--border-strong)",
-            borderRadius: 12,
-            background: "var(--bg-elev-2)",
-            cursor: "pointer",
-            alignItems: "center",
-            textAlign: "center",
-          }}
-        >
-          <span style={{ fontSize: 24 }}>📄</span>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>
-            {arquivo ? arquivo.name : "Clique para selecionar o arquivo (PDF)"}
-          </span>
-          {arquivo ? (
-            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              {(arquivo.size / 1024).toFixed(0)} KB
-            </span>
-          ) : (
-            <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Ou arraste e solte aqui</span>
-          )}
-          <input
-            type="file"
-            accept="application/pdf,.pdf"
-            style={{ display: "none" }}
-            onChange={onFileChange}
-          />
-        </label>
-
-        {erro ? (
-          <div
-            style={{
-              padding: "8px 12px",
-              borderRadius: 8,
-              background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
-              border: "1px solid var(--danger-500)",
-              fontSize: 13,
-              color: "var(--danger-500)",
-            }}
-          >
-            {erro}
-          </div>
-        ) : null}
-
-        <FormActions>
-          <Button variant="ghost" type="button" onClick={onClose} disabled={enviando}>
-            Voltar
-          </Button>
-          <Button type="button" disabled={!arquivo || enviando} onClick={enviar}>
-            {enviando ? "Enviando..." : "Fazer upload"}
-          </Button>
-        </FormActions>
-      </div>
     </div>
   );
 }
