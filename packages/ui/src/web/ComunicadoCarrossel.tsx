@@ -28,14 +28,16 @@ export function ComunicadoCarrossel({ comunicados, autoplayMs = 6000 }: Props) {
   return (
     <article
       style={{
-        background: "linear-gradient(135deg, var(--navy-700), var(--navy-800))",
+        // Tokens semanticos (surface + border) adaptam ao tema — antes era
+        // navy fixo, ficava incoerente no tema claro.
+        background: "var(--surface-solid)",
         border: "1px solid var(--border-strong)",
         borderRadius: 16,
         padding: 24,
         minHeight: 180,
         position: "relative",
         overflow: "hidden",
-        color: "#EAF0FA",
+        color: "var(--text)",
         boxShadow: "var(--shadow-md)",
       }}
     >
@@ -43,14 +45,14 @@ export function ComunicadoCarrossel({ comunicados, autoplayMs = 6000 }: Props) {
         style={{
           position: "absolute",
           inset: -100,
-          background: "radial-gradient(circle at 30% 30%, rgba(201,169,97,.2), transparent 50%)",
+          background: "radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--gold-500) 20%, transparent), transparent 50%)",
           pointerEvents: "none",
         }}
       />
       <div style={{ position: "relative", display: "grid", gridTemplateColumns: c.imagemUrl ? "1fr auto" : "1fr", gap: 24, alignItems: "center" }}>
         <div>
           <h3 style={{ margin: 0, fontSize: "1.4rem", fontWeight: 800, color: "var(--gold-500)" }}>{c.titulo}</h3>
-          <p style={{ margin: "10px 0 0", maxWidth: 540, color: "#C7D2E0", fontSize: 14, lineHeight: 1.5 }}>{c.corpo}</p>
+          <p style={{ margin: "10px 0 0", maxWidth: 540, color: "var(--text-muted)", fontSize: 14, lineHeight: 1.5 }}>{c.corpo}</p>
           {c.link ? (
             <a
               href={c.link.href}
@@ -86,7 +88,7 @@ export function ComunicadoCarrossel({ comunicados, autoplayMs = 6000 }: Props) {
                 height: 8,
                 borderRadius: 4,
                 border: "none",
-                background: i === idx ? "var(--gold-500)" : "rgba(255,255,255,.3)",
+                background: i === idx ? "var(--gold-500)" : "color-mix(in srgb, var(--text) 25%, transparent)",
                 cursor: "pointer",
                 transition: "width .25s",
               }}

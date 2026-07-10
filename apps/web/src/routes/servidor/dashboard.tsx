@@ -152,11 +152,13 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
 
   return (
     <article style={{
-      background: "linear-gradient(160deg, var(--navy-700), var(--navy-900))",
-      border: "1px solid var(--navy-700)",
+      // Tokens semanticos (surface + border) adaptam sozinhos ao tema
+      // claro/escuro. Antes era navy fixo, ficava incoerente no tema claro.
+      background: "var(--surface-solid)",
+      border: "1px solid var(--border-strong)",
       borderRadius: 16,
       padding: 20,
-      color: "#EAF0FA",
+      color: "var(--text)",
       boxShadow: "var(--shadow-md)",
     }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
@@ -188,8 +190,8 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
 
   return (
     <div style={{
-      background: "rgba(255,255,255,.04)",
-      border: "1px solid rgba(255,255,255,.08)",
+      background: "var(--bg-elev-2)",
+      border: "1px solid var(--border)",
       borderRadius: 14,
       padding: 18,
       display: "flex",
@@ -197,24 +199,24 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
       gap: 14,
       minWidth: 0,
     }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: "#EAF0FA", lineHeight: 1.3 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)", lineHeight: 1.3 }}>{label}</div>
 
       <div>
-        <div style={{ height: 5, background: "rgba(255,255,255,.08)", borderRadius: 4, overflow: "hidden" }}>
+        <div style={{ height: 5, background: "var(--border)", borderRadius: 4, overflow: "hidden" }}>
           <div style={{ width: `${pctUtilizado}%`, height: "100%", background: barra, transition: "width .4s ease" }} />
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: 11 }}>
-          <span style={{ color: utilizado > 0 ? "#C9A961" : "#7A8CA8" }}>
+          <span style={{ color: utilizado > 0 ? "var(--gold-500)" : "var(--text-dim)" }}>
             {utilizado === 0 ? "0%" : `${pctUtilizado.toFixed(1)}% util.`}
           </span>
-          <span style={{ color: "#10B981" }}>{pctLivre.toFixed(1)}% livre</span>
+          <span style={{ color: "var(--emerald-500)" }}>{pctLivre.toFixed(1)}% livre</span>
         </div>
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <ValorLinha label="Total" value={fmtBRL(data.total)} color="#EAF0FA" />
-        <ValorLinha label="Utilizado" value={fmtBRL(utilizado)} color={utilizado > 0 ? "#C9A961" : "#7A8CA8"} />
-        <ValorLinha label="Disponível" value={fmtBRL(data.disponivel)} color="#10B981" bold />
+        <ValorLinha label="Total" value={fmtBRL(data.total)} color="var(--text)" />
+        <ValorLinha label="Utilizado" value={fmtBRL(utilizado)} color={utilizado > 0 ? "var(--gold-500)" : "var(--text-dim)"} />
+        <ValorLinha label="Disponível" value={fmtBRL(data.disponivel)} color="var(--emerald-500)" bold />
       </div>
 
       {acao ? (
@@ -244,7 +246,7 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
 function ValorLinha({ label, value, color, bold }: { label: string; value: string; color: string; bold?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
-      <span style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", color: "#7A8CA8", fontWeight: 700 }}>{label}</span>
+      <span style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--text-dim)", fontWeight: 700 }}>{label}</span>
       <span style={{ fontSize: 14, fontWeight: bold ? 800 : 700, color, textAlign: "right", whiteSpace: "nowrap" }}>{value}</span>
     </div>
   );
