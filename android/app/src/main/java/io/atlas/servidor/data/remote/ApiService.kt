@@ -33,6 +33,10 @@ interface ApiService {
     @GET("v1/servidores/me/propostas")
     suspend fun propostas(@retrofit2.http.Query("matricula") matricula: String?): io.atlas.servidor.data.remote.dto.PropostasResponse
 
+    /** Remove as propostas EM ANÁLISE (fase de teste). Retorna quantas saíram. */
+    @retrofit2.http.DELETE("v1/servidores/me/propostas")
+    suspend fun removerPropostasEmAnalise(@retrofit2.http.Query("matricula") matricula: String?): io.atlas.servidor.data.remote.dto.RemoverPropostasResponse
+
     @POST("v1/servidores/me/codigo")
     suspend fun contaCodigo(): io.atlas.servidor.data.remote.dto.CodigoResponse
 

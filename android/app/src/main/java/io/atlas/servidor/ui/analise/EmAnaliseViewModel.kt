@@ -42,9 +42,18 @@ class EmAnaliseViewModel : ViewModel() {
         }
     }
 
-    /** Fase de teste: libera a trava de 48h da matrícula ativa pra permitir nova simulação.
-     *  Não há cancelamento server-side da reserva — ela expira sozinha. */
-    fun liberarSimulacao() {
-        prefs.selectedMatricula?.let { prefs.clearSimLock(it) }
+    /** Fase de teste: apaga TODAS as propostas em análise no servidor e libera a trava de
+     *  48h da matrícula ativa. Recarrega a lista ao final. */
+    fun liberarSimulacao(onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                repo.removerPropostasEmAnalise(prefs.selectedMatricula)
+            } catch (_: ApiException) {
+                // Mesmo se a remoção server-side falhar, libera a trava local pra não travar o teste.
+            }
+            prefs.selectedMatricula?.let { prefs.clearSimLock(it) }
+            load()
+            onDone()
+        }
     }
 }

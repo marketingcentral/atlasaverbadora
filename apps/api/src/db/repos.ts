@@ -395,6 +395,15 @@ export async function deleteContratosByMatriculas(env: Env, matriculas: string[]
   return rows.length;
 }
 
+/** Apaga contratos/reservas pelos seus ADFs. Retorna quantas linhas saíram. */
+export async function deleteContratosByAdfs(env: Env, adfs: string[]): Promise<number> {
+  if (adfs.length === 0) return 0;
+  const lista = sql.join(adfs.map((a) => sql`${a}`), sql`, `);
+  const rows = (await getDb(env).execute(sql`
+    DELETE FROM portal_banco_contratos WHERE adf IN (${lista}) RETURNING adf`)) as unknown as { adf: string }[];
+  return rows.length;
+}
+
 export async function seedContratosIfEmpty(env: Env, seed: ContratoLike[]): Promise<boolean> {
   const db = getDb(env);
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM portal_banco_contratos`)) as unknown as { n: number }[];

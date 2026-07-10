@@ -81,7 +81,7 @@ fun ContratosScreen(vm: HomeViewModel) {
                 // Recusadas/expiradas/canceladas vêm da lista de propostas → Histórico.
                 val recusadas = vm.propostas.filter { terminalHistorico(it.situacao) }
                 val emAnaliseCount = emAnaliseAtivas(vm.propostas).size
-                ContratosContent(info, recusadas, emAnaliseCount, tab, onTab = { tab = it })
+                ContratosContent(info, recusadas, emAnaliseCount, tab, onTab = { tab = it }, onMudou = { vm.load(force = true) })
             }
         }
     }
@@ -94,6 +94,7 @@ private fun ContratosContent(
     emAnaliseCount: Int,
     tab: Int,
     onTab: (Int) -> Unit,
+    onMudou: () -> Unit,
 ) {
     var lerContrato by remember { mutableStateOf<ContratoDto?>(null) }
     val saldoById = info.elegiveisPortabilidade.associate { it.id to it.saldoDevedor }
@@ -142,7 +143,7 @@ private fun ContratosContent(
                     Spacer(Modifier.height(24.dp))
                 }
             }
-            1 -> EmAnaliseContent()
+            1 -> EmAnaliseContent(onMudou = onMudou)
             else -> if (histCount == 0) {
                 EmptyHint("Nenhum contrato no histórico.")
             } else {

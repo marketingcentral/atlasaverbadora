@@ -58,9 +58,10 @@ fun emAnaliseAtivas(propostas: List<PropostaDto>): List<PropostaDto> = propostas
         !faseChain(it.situacao ?: "—", it.folhaStatus, it.folhaMotivo).concluido
 }
 
-/** Conteúdo da aba "Em análise" (dentro de Contratos). Sem título de página — o pai já tem. */
+/** Conteúdo da aba "Em análise" (dentro de Contratos). Sem título de página — o pai já tem.
+ *  `onMudou` avisa o pai (HomeViewModel) para revalidar contagens/margem após liberar. */
 @Composable
-fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel()) {
+fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel(), onMudou: () -> Unit = {}) {
     Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -92,7 +93,7 @@ fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel()) {
                 } else {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         emAnalise.forEach { p ->
-                            PropostaCard(p, onLiberar = { vm.liberarSimulacao(); vm.load() })
+                            PropostaCard(p, onLiberar = { vm.liberarSimulacao(onDone = onMudou) })
                             Spacer(Modifier.height(12.dp))
                         }
                         Spacer(Modifier.height(20.dp))

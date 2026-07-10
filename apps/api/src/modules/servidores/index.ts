@@ -6,7 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
-import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato, removeContratosByAdf } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
@@ -17,7 +17,7 @@ import { enviarCodigo, enviarNotificacao, dispatchTemplateEmail } from "../admin
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, cancelarIntencao, aceitarOferta, getIntencao } from "../admin/portabilidade-store.js";
 import { ensureTermosLoaded, getTermo, renderTermo, type TermoTipo } from "../admin/termos-store.js";
-import { setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { setServidorPassword, setServidorContato, deleteContratosByAdfs } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
 function maskEmailSrv(email?: string): string {
@@ -843,6 +843,32 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!s) throw Errors.notFound("servidor");
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
     return c.json({ ok: true });
+  })
+  // FASE DE TESTE — remove as propostas EM ANÁLISE do próprio servidor e libera a margem.
+  // Só apaga reservas pendentes ("Aguardando..."), que não comprometem margem: um contrato
+  // já vigente ou quitado NUNCA é removido por aqui. Usado pelos scripts de manutenção/reset.
+  .delete("/v1/servidores/me/propostas", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    await refreshContratos(c.env);
+    const matAtiva = c.req.query("matricula")?.trim();
+    const mats = new Set(
+      SERVIDORES_BUSCA_MOCK
+        .filter((x) => x.cpf === s.cpf && (!matAtiva || x.matricula === matAtiva))
+        .map((e) => e.matricula),
+    );
+    const pendentes = listContratos({})
+      .filter((ct) => mats.has(ct.matricula) && ct.situacao.toLowerCase().includes("aguard"))
+      .map((ct) => ct.adf);
+    if (pendentes.length === 0) return c.json({ removidas: 0, ids: [] });
+
+    const removidasPg = await deleteContratosByAdfs(c.env, pendentes);
+    removeContratosByAdf(pendentes);
+    pushEvent("info", "servidor.propostas_removidas", `Servidor removeu ${pendentes.length} proposta(s) em analise (teste).`);
+    return c.json({ removidas: removidasPg || pendentes.length, ids: pendentes });
   })
   // Envia um código de verificação (test-mode: retorna no corpo) pro e-mail do servidor.
   .post("/v1/servidores/me/codigo", async (c) => {

@@ -293,6 +293,14 @@ export function getContrato(adf: string): ContratoFull | undefined {
   return c ? normalizeContrato(c) : undefined;
 }
 
+/** Remove do Map em memória os contratos/reservas de dados ADFs
+ *  (a remoção no Postgres é feita pelo chamador). Retorna quantos saíram. */
+export function removeContratosByAdf(adfs: string[]): number {
+  let n = 0;
+  for (const adf of adfs) if (_contratos.delete(adf)) n++;
+  return n;
+}
+
 /** Remove do Map em memória todos os contratos/reservas de dadas matrículas
  *  (a remoção no Postgres é feita pelo chamador). Retorna quantos saíram. */
 export function removeContratosByMatricula(matriculas: string[]): number {

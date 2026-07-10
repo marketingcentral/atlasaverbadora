@@ -34,6 +34,9 @@ class ServidorRepository(
     /** Lista as propostas do servidor direto do servidor (mesma fonte que o banco lê). */
     suspend fun getPropostas(matricula: String?) = safeApi(gson) { api.propostas(matricula) }
 
+    /** Remove as propostas EM ANÁLISE (fase de teste). */
+    suspend fun removerPropostasEmAnalise(matricula: String?) = safeApi(gson) { api.removerPropostasEmAnalise(matricula) }
+
     /** Envia a proposta ao ecossistema — cria a pré-reserva que o banco recebe. */
     suspend fun criarProposta(valor: Double, parcelas: Int, taxaAm: Double, matricula: String, bancoNome: String) =
         safeApi(gson) {

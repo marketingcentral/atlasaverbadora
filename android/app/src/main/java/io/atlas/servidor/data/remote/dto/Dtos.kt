@@ -122,6 +122,8 @@ data class PropostaDto(
 
 data class PropostasResponse(val propostas: List<PropostaDto> = emptyList())
 
+data class RemoverPropostasResponse(val removidas: Int = 0, val ids: List<String> = emptyList())
+
 // ---------- Servidor profile ----------
 
 data class MeResponse(
