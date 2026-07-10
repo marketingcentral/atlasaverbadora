@@ -40,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.atlas.servidor.core.UiState
+import io.atlas.servidor.data.remote.dto.MargemTipoDto
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
 import io.atlas.servidor.data.remote.dto.OfertasResponse
 import io.atlas.servidor.ui.navigation.Produtos
@@ -56,12 +57,14 @@ import io.atlas.servidor.ui.components.StatusChip
 import io.atlas.servidor.ui.shell.HomeViewModel
 import io.atlas.servidor.ui.theme.Ambar
 import io.atlas.servidor.ui.theme.DangerRed
+import io.atlas.servidor.ui.theme.Divider
 import io.atlas.servidor.ui.theme.Fundo
 import io.atlas.servidor.ui.theme.Ink
 import io.atlas.servidor.ui.theme.InkMuted
 import io.atlas.servidor.ui.theme.Superficie
 import io.atlas.servidor.ui.theme.Verde
 import io.atlas.servidor.ui.theme.VerdeDark
+import io.atlas.servidor.ui.theme.VerdeSoft
 import kotlinx.coroutines.delay
 import java.util.Calendar
 
@@ -299,15 +302,16 @@ private fun ProdutosSection(
     val porTipo = info.margem.margensPorTipo.associateBy { it.tipo }
     val m = info.margem.margem
     // Fallback do empréstimo: deriva do bloco `margem` se a linha não vier.
-    val emprestimo = porTipo[Produtos.EMPRESTIMO]?.disponivel ?: m.disponivel
-    val cartaoCredito = porTipo[Produtos.CARTAO_CONSIGNADO]?.disponivel ?: 0.0
-    val cartaoBeneficio = porTipo[Produtos.CARTAO_BENEFICIOS]?.disponivel ?: 0.0
+    val emprestimo = porTipo[Produtos.EMPRESTIMO]
+        ?: MargemTipoDto(Produtos.EMPRESTIMO, m.comprometido + m.disponivel, m.disponivel)
+    val cartaoCredito = porTipo[Produtos.CARTAO_CONSIGNADO] ?: MargemTipoDto(Produtos.CARTAO_CONSIGNADO, 0.0, 0.0)
+    val cartaoBeneficio = porTipo[Produtos.CARTAO_BENEFICIOS] ?: MargemTipoDto(Produtos.CARTAO_BENEFICIOS, 0.0, 0.0)
 
     ProdutoCard(
         emoji = "💵",
         titulo = "Empréstimo Consignado",
         descricao = "Dinheiro na sua conta, descontado direto da folha.",
-        disponivel = emprestimo,
+        margem = emprestimo,
         aviso = if (locked) "Você tem uma solicitação em análise. Sua margem está bloqueada." else null,
         textoBotao = if (locked) "Acompanhar análise" else "Simular",
         onClick = if (locked) onOpenAnalise else ({ onSimularProduto(Produtos.EMPRESTIMO) }),
@@ -317,7 +321,7 @@ private fun ProdutosSection(
         emoji = "💳",
         titulo = "Cartão de Crédito Consignado",
         descricao = "Cartão com limite próprio e fatura descontada em folha.",
-        disponivel = cartaoCredito,
+        margem = cartaoCredito,
         aviso = null,
         textoBotao = "Simular",
         onClick = { onSimularProduto(Produtos.CARTAO_CONSIGNADO) },
@@ -327,52 +331,104 @@ private fun ProdutosSection(
         emoji = "🎁",
         titulo = "Cartão Benefício Consignado",
         descricao = "Use seus benefícios nos parceiros do convênio.",
-        disponivel = cartaoBeneficio,
+        margem = cartaoBeneficio,
         aviso = null,
         textoBotao = "Ver Marketplace",
         onClick = onOpenMarketplace,
     )
 }
 
-/** Card de um produto: o que é, quanto sobra de margem e o que fazer a seguir. */
+/** Card de um produto: o que é, quanto sobra de margem, quanto já está em uso,
+ *  e o que fazer a seguir. */
 @Composable
 private fun ProdutoCard(
     emoji: String,
     titulo: String,
     descricao: String,
-    disponivel: Double,
+    margem: MargemTipoDto,
     aviso: String?,
     textoBotao: String,
     onClick: () -> Unit,
 ) {
+    val utilizado = (margem.total - margem.disponivel).coerceAtLeast(0.0)
+    val fracUsada = if (margem.total > 0) (utilizado / margem.total).coerceIn(0.0, 1.0) else 0.0
+    val corBarra = when {
+        utilizado == 0.0 -> Verde
+        fracUsada > 0.8 -> DangerRed
+        else -> Ambar
+    }
+
     AtlasCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(emoji, fontSize = 28.sp)
+            // Ícone num círculo suave — mais leve que o emoji solto.
+            Box(
+                modifier = Modifier.size(46.dp).clip(CircleShape).background(VerdeSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(emoji, fontSize = 22.sp)
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text(titulo, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text(descricao, color = InkMuted, fontSize = 12.sp)
+                Text(titulo, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold, lineHeight = 20.sp)
+                Spacer(Modifier.height(2.dp))
+                Text(descricao, color = InkMuted, fontSize = 12.sp, lineHeight = 16.sp)
             }
         }
 
         Spacer(Modifier.height(16.dp))
+        Box(Modifier.fillMaxWidth().height(1.dp).background(Divider))
+        Spacer(Modifier.height(14.dp))
+
         Text(
             "MARGEM DISPONÍVEL",
             color = InkMuted,
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 0.6.sp,
+            letterSpacing = 0.8.sp,
         )
         Spacer(Modifier.height(4.dp))
-        Text(Format.money(disponivel), color = Verde, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+        Text(Format.money(margem.disponivel), color = Verde, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
+
+        // Logo abaixo do valor: quanto já está sendo usado, e de qual limite.
+        if (margem.total > 0) {
+            Spacer(Modifier.height(12.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(6.dp)
+                    .clip(RoundedCornerShape(999.dp))
+                    .background(Divider),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fracUsada.toFloat())
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(999.dp))
+                        .background(corBarra),
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(
+                    if (utilizado > 0) "Em uso ${Format.money(utilizado)}" else "Nada em uso",
+                    color = if (utilizado > 0) Ambar else InkMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    "Limite ${Format.money(margem.total)}",
+                    color = InkMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+        }
 
         if (aviso != null) {
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StatusChip("Bloqueada", ChipTone.Ambar)
-            }
+            Spacer(Modifier.height(12.dp))
+            StatusChip("Bloqueada", ChipTone.Ambar)
             Spacer(Modifier.height(6.dp))
-            Text(aviso, color = InkMuted, fontSize = 12.sp)
+            Text(aviso, color = InkMuted, fontSize = 12.sp, lineHeight = 16.sp)
         }
 
         Spacer(Modifier.height(16.dp))
