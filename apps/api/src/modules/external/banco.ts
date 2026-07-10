@@ -54,7 +54,7 @@ export const externalBancoRoutes = new Hono<{ Bindings: Env }>()
     const s = SERVIDORES_BUSCA_MOCK.find((x) => (cpf && x.cpf === cpf) || (matricula && x.matricula === matricula));
     if (!s) throw Errors.notFound("colaborador");
     const comprometido = listContratos({ matricula: s.matricula })
-      .filter((ct) => comprometeMargem(ct.situacao)) // só após aprovação do banco
+      .filter((ct) => comprometeMargem(ct.situacao)) // bloqueia já na proposta em análise
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
     const tipos = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
       tipo,

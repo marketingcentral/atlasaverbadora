@@ -69,7 +69,7 @@ function contratosDaPrefeitura(prefeituraId: number) {
 /** Comprometido (soma de parcelas ativas) por matrícula. */
 function comprometidoDe(matricula: string, contratos: ReturnType<typeof listContratos>): number {
   return contratos
-    .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao)) // só após aprovação do banco
+    .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao)) // bloqueia já na proposta em análise
     .reduce((acc, ct) => acc + ct.valorParcela, 0);
 }
 

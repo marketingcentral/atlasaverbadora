@@ -33,7 +33,7 @@ export const externalServidorRoutes = new Hono<{ Bindings: Env }>()
     const t = c.get("apiToken");
     const s = resolveServidor(t.partnerId);
     const comprometido = listContratos({ matricula: s.matricula })
-      .filter((ct) => comprometeMargem(ct.situacao)) // só após aprovação do banco
+      .filter((ct) => comprometeMargem(ct.situacao)) // bloqueia já na proposta em análise
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
     const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
       tipo,
@@ -70,7 +70,7 @@ export const externalServidorRoutes = new Hono<{ Bindings: Env }>()
       taxa_am: z.number().positive().default(0.0179),
     }).parse(await c.req.json());
     const comprometido = listContratos({ matricula: s.matricula })
-      .filter((ct) => comprometeMargem(ct.situacao)) // só após aprovação do banco
+      .filter((ct) => comprometeMargem(ct.situacao)) // bloqueia já na proposta em análise
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
     const disponivel = margemDisponivel(s.salarioLiquido, comprometido, "EMPRESTIMO");
     const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxa_am });

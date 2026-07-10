@@ -73,8 +73,9 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
   const pref = prefeituras.find((p) => p.id === prefId);
   const servidorId = Number(e.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
   const contratos = listContratos({ matricula: e.matricula });
-  // Margem comprometida só após o BANCO APROVAR (situacao vigente) — proposta/reserva
-  // pendente do banco ("Aguardando…") ainda não consome margem.
+  // Margem comprometida JA NA PROPOSTA — assim que o servidor aceita o termo,
+  // a parcela sai da margem disponivel (evita solicitar 2 operacoes sobrepondo
+  // a mesma margem). So volta se a proposta for recusada/expirada/cancelada.
   const ativos = contratos.filter((ct) => comprometeMargem(ct.situacao));
   const comprometido = ativos.reduce((a, ct) => a + ct.valorParcela, 0);
   const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
