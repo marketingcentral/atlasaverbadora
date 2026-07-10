@@ -243,6 +243,8 @@ export function ServidorContratos() {
                   <KV label="Parcelas" v={`${p.parcelas}x de ${fmtBRL(p.parcela)}`} />
                   <KV label="Taxa a.m." v={`${p.taxaAm.toFixed(2)}%`} />
                 </div>
+                {/* Mesma linha de progresso — pinta em vermelho onde parou. */}
+                <ProgressoProposta estado={p.estado} />
               </Card>
             ))}
           </div>
@@ -332,34 +334,47 @@ function KV({ label, v, accent }: { label: string; v: string; accent?: boolean }
   );
 }
 
-/** Etapas do ciclo de vida da proposta pro servidor acompanhar. */
-const ETAPAS = ["Solicitada", "Em análise", "Aprovada", "Averbada"] as const;
+/** Etapas do ciclo de vida da proposta pro servidor acompanhar (5 estagios). */
+const ETAPAS_BASE = [
+  "Proposta enviada",
+  "Em análise",
+  "Aprovado",
+  "Aguardando ADF",
+  "Autorização completa",
+] as const;
 
-/** Mapeia o estado interno pro indice da etapa atual (0..3).
- *  em_analise -> 1 (Em analise)
- *  aprovada / aguardando_formalizacao -> 2 (Aprovada)
- *  liberada -> 3 (Averbada, ja virou contrato — nao aparece em "em andamento", mas cobre defensivamente)
- *  qualquer outro (recusada/expirada/cancelada) -> 0 (ficou na Solicitada) */
-function etapaAtual(estado: EstadoProposta): number {
-  if (estado === "em_analise") return 1;
-  if (estado === "aprovada" || estado === "aguardando_formalizacao") return 2;
-  if (estado === "liberada") return 3;
-  return 0;
+/** Retorna { atual, falha, labelEtapa2? }.
+ *  - `atual`: indice (0..4) da etapa em curso.
+ *  - `falha`: quando true, a etapa atual vira vermelha e as demais ficam cinza.
+ *  - `labelEtapa2`: sobrescreve o label da etapa 2 quando o estado terminou negativo. */
+function estadoParaEtapa(estado: EstadoProposta): { atual: number; falha: boolean; labelEtapa2?: string } {
+  if (estado === "em_analise") return { atual: 1, falha: false };
+  if (estado === "aprovada" || estado === "aguardando_formalizacao") return { atual: 2, falha: false };
+  if (estado === "liberada") return { atual: 4, falha: false };
+  if (estado === "recusada") return { atual: 1, falha: true, labelEtapa2: "Recusada pelo banco" };
+  if (estado === "expirada") return { atual: 1, falha: true, labelEtapa2: "Expirada" };
+  if (estado === "cancelada") return { atual: 1, falha: true, labelEtapa2: "Cancelada" };
+  return { atual: 0, falha: false };
 }
 
 function ProgressoProposta({ estado }: { estado: EstadoProposta }) {
-  const atual = etapaAtual(estado);
+  const { atual, falha, labelEtapa2 } = estadoParaEtapa(estado);
+  const labels = [...ETAPAS_BASE] as string[];
+  if (labelEtapa2) labels[1] = labelEtapa2;
+
   return (
     <div style={{ marginTop: 16 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-        {ETAPAS.map((nome, i) => {
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 }}>
+        {labels.map((nome, i) => {
           const feita = i < atual;
           const ativa = i === atual;
-          const cor = feita || ativa ? "var(--emerald-500)" : "var(--border-strong)";
-          const corTexto = feita || ativa ? "var(--emerald-500)" : "var(--text-dim)";
+          // Se a proposta falhou, a etapa "atual" (ponto de parada) vira vermelha.
+          const corAtiva = falha && ativa ? "var(--danger-500)" : "var(--emerald-500)";
+          const cor = feita || ativa ? corAtiva : "var(--border-strong)";
+          const corTexto = feita || ativa ? corAtiva : "var(--text-dim)";
           return (
-            <div key={nome} style={{ display: "flex", alignItems: "center", flex: i < ETAPAS.length - 1 ? 1 : "0 0 auto", gap: 6, minWidth: 0 }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, gap: 4 }}>
+            <div key={nome + i} style={{ display: "flex", alignItems: "flex-start", flex: i < labels.length - 1 ? 1 : "0 0 auto", gap: 4, minWidth: 0 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, gap: 4, minWidth: 0 }}>
                 <div
                   style={{
                     width: ativa ? 14 : 10,
@@ -378,18 +393,19 @@ function ProgressoProposta({ estado }: { estado: EstadoProposta }) {
                     fontWeight: ativa ? 700 : 600,
                     color: corTexto,
                     textAlign: "center",
-                    whiteSpace: "nowrap",
+                    lineHeight: 1.2,
+                    maxWidth: 92,
                   }}
                 >
                   {nome}
                 </span>
               </div>
-              {i < ETAPAS.length - 1 ? (
+              {i < labels.length - 1 ? (
                 <div style={{
                   flex: 1,
                   height: 2,
                   background: i < atual ? "var(--emerald-500)" : "var(--border-strong)",
-                  marginBottom: 16, // alinha com o meio do circulo (o label vem abaixo)
+                  marginTop: 6, // alinha com o meio do circulo (o label vem abaixo)
                 }} />
               ) : null}
             </div>
