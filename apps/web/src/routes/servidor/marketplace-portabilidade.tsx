@@ -259,56 +259,12 @@ export function ServidorMarketplacePortabilidade() {
         onClick={() => nav("/servidor/portabilidade")}
       />
 
-      {/* 3. Simulador inline — o cliente pediu o "menuzinho" aqui em vez de um botao. */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ fontSize: 20 }}>💰</span>
-          <div>
-            <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-              Simular empréstimo
-            </div>
-            <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-              Ajuste valor e parcelas para ver se cabe na sua margem — a solicitação já sai daqui.
-            </div>
-          </div>
-        </div>
-        <SimuladorInline info={info} compact />
-      </section>
-
-      {/* 4. Propostas de portabilidade dos bancos (mantidas aqui por hierarquia — mais no fim) */}
-      {propostas.length > 0 || propostasQ.isLoading ? (
-        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-            <span style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-              Propostas de portabilidade dos bancos
-            </span>
-            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-          </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <TabBtn active={tab === "todas"} tone="emerald" onClick={() => setTab("todas")} label={`Todas (${propostas.length})`} />
-            <TabBtn active={tab === "com_troco"} tone="gold" onClick={() => setTab("com_troco")} label={`Com Troco (${comTroco.length})`} />
-            <TabBtn active={tab === "simples"} tone="neutro" onClick={() => setTab("simples")} label={`Simples (${simples.length})`} />
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {propostasQ.isLoading ? (
-              <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>Carregando propostas...</div>
-            ) : filtradas.length === 0 ? (
-              <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
-                Nenhuma proposta nesta categoria.
-              </div>
-            ) : (
-              filtradas.map((p) => (
-                temTroco(p)
-                  ? <FeaturedComTrocoCard key={p.id} proposta={p} onConfirmar={() => nav(`/servidor/termo?adf=${p.id}`)} />
-                  : <SimplesCard key={p.id} proposta={p} onSolicitar={() => nav(`/servidor/termo?adf=${p.id}`)} />
-              ))
-            )}
-          </div>
-        </section>
-      ) : null}
+      {/* Cliente pediu que o Marketplace mostre SO Ofertas + Solicitar portabilidade.
+          Simulador (era secao 3) foi removido — servidor simula pelos botoes "Simular"
+          dos cards de margem no dashboard, nao aqui.
+          Propostas de portabilidade dos bancos (era secao 4) tambem foi removida por
+          pedido explicito ("so quero que apareca (Ofertas para voce e Solicitar Portabilidade)").
+          As propostas seguem chegando via /servidor/portabilidade. */}
     </div>
   );
 }
