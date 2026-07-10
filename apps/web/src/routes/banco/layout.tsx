@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShellAdmin, Button, ConvenioSwitcher, useThemeMode } from "@atlas/ui/web";
@@ -41,12 +42,26 @@ export function BancoLayout() {
   const qc = useQueryClient();
 
   const convenios = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
+  // Loading da troca de convenio: overlay full-screen por no minimo 4s a
+  // partir do clique — evita "flash" de tela nova antes das queries do banco
+  // rehidratarem no novo escopo (contratos, ofertas, etc.).
+  const [trocandoConvenio, setTrocandoConvenio] = useState<null | { nome: string }>(null);
   const setActive = useMutation({
     mutationFn: (id: string) => atlas.banco.setConvenioAtivo(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["banco"] });
     },
   });
+
+  const trocarConvenio = (id: string) => {
+    const alvo = convenios.data?.convenios.find((c) => c.id === id);
+    if (!alvo || alvo.id === convenios.data?.activeId) return; // clique no proprio
+    setTrocandoConvenio({ nome: alvo.nome });
+    setActive.mutate(id);
+    // Piso fixo de 4s (cliente pediu). Se a API demorar mais, o overlay
+    // fecha so depois. Se for mais rapido, aguarda os 4s.
+    window.setTimeout(() => setTrocandoConvenio(null), 4_000);
+  };
 
   const activeKey = location.pathname.split("/").pop() ?? "visao-geral";
 
@@ -58,7 +73,7 @@ export function BancoLayout() {
           <ConvenioSwitcher
             convenios={convenios.data.convenios}
             activeId={convenios.data.activeId}
-            onChange={(id) => setActive.mutate(id)}
+            onChange={trocarConvenio}
           />
         ) : null
       }
@@ -91,6 +106,48 @@ export function BancoLayout() {
       }}
     >
       <Outlet />
+      {trocandoConvenio ? <TrocandoConvenioOverlay nome={trocandoConvenio.nome} /> : null}
     </AppShellAdmin>
+  );
+}
+
+function TrocandoConvenioOverlay({ nome }: { nome: string }) {
+  return (
+    <>
+      <style>{`@keyframes atlas-spin { to { transform: rotate(360deg); } }`}</style>
+      <div
+        role="status"
+        aria-live="polite"
+        style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          display: "grid", placeItems: "center",
+          background: "color-mix(in srgb, var(--bg) 88%, transparent)",
+          backdropFilter: "blur(4px)",
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 20, padding: 32, maxWidth: 360, textAlign: "center" }}>
+          <div
+            aria-hidden
+            style={{
+              width: 56, height: 56, borderRadius: "50%",
+              border: "3px solid color-mix(in srgb, var(--accent) 20%, transparent)",
+              borderTopColor: "var(--accent)",
+              animation: "atlas-spin 900ms linear infinite",
+            }}
+          />
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--text-dim)" }}>
+              Trocando convênio
+            </div>
+            <div style={{ marginTop: 6, fontSize: "1.05rem", fontWeight: 700, color: "var(--text)" }}>
+              {nome}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 13, color: "var(--text-muted)" }}>
+              Carregando dados do novo convênio...
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
