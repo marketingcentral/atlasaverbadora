@@ -1161,6 +1161,10 @@ export class AtlasClient {
            *  aprovar, averbar, folha aplicada). Usado pra ordenar
            *  carteira/ADF com "acabou de acontecer" no topo. */
           atualizadoEm?: string;
+          /** Telefone do servidor (não mascarado) — o banco precisa
+           *  entrar em contato pra tocar a formalização offline. Só é
+           *  devolvido pra contratos do próprio banco logado. */
+          telefoneServidor?: string;
         }[];
         total: number;
       }>("/v1/portal/banco/contratos", {

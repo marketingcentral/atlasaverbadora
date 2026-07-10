@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button, SelectField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import {
@@ -48,28 +48,12 @@ export function BancoPropostas() {
     return () => clearInterval(t);
   }, []);
 
-  const qc = useQueryClient();
   const apiQ = useQuery({
     queryKey: ["banco", "propostas-api"],
     queryFn: () => atlas.banco.contratos(),
     refetchInterval: 5_000,
     refetchOnWindowFocus: true,
   });
-
-  const [decidedAt, setDecidedAt] = useState<Record<string, number>>({});
-  // decidir suporta motivo opcional na recusa (banco pode preferir nao expor
-  // motivos internos — padrao do mercado).
-  const decidir = useMutation({
-    mutationFn: ({ adf, acao, motivo }: { adf: string; acao: "confirmar" | "cancelar"; motivo?: string }) =>
-      atlas.banco.acao(adf, acao, motivo ? { motivo } : undefined),
-    onSuccess: (_data, vars) => {
-      setDecidedAt((prev) => ({ ...prev, [vars.adf]: Date.now() }));
-      qc.invalidateQueries({ queryKey: ["banco", "propostas-api"] });
-      qc.invalidateQueries({ queryKey: ["servidor", "propostas"] });
-    },
-  });
-  // Estado do modal de recusa (motivo opcional). Guarda o adf; quando null, modal fechado.
-  const [recusandoAdf, setRecusandoAdf] = useState<string | null>(null);
 
   const todas: PropostaRow[] = useMemo(
     () => (apiQ.data?.contratos ?? []).map(contratoToProposta),
@@ -95,8 +79,7 @@ export function BancoPropostas() {
 
   const filtradas = useMemo(() => {
     const isPendente = (s: BancoPropostaStatus) => statusPertenceTab(s, "aguardando");
-    const atividade = (p: PropostaRow) =>
-      Math.max(new Date(p.criadaEm).getTime() || 0, decidedAt[p.idUnico] ?? 0);
+    const atividade = (p: PropostaRow) => new Date(p.criadaEm).getTime() || 0;
     return todas
       .filter((p) => {
         if (!statusPertenceTab(p.status, tab)) return false;
@@ -115,7 +98,7 @@ export function BancoPropostas() {
         if (pa !== pb) return pa - pb;
         return atividade(b) - atividade(a);
       });
-  }, [todas, tab, convenio, produto, status, expirando, decidedAt]);
+  }, [todas, tab, convenio, produto, status, expirando]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -185,69 +168,10 @@ export function BancoPropostas() {
             <PropostaCard
               key={p.idUnico}
               proposta={p}
-              onAprovar={() => decidir.mutate({ adf: p.idUnico, acao: "confirmar" })}
-              onRecusar={() => setRecusandoAdf(p.idUnico)}
               onAbrir={() => nav(`/banco/propostas/${p.idUnico}`)}
-              decidindo={decidir.isPending}
             />
           ))
         )}
-      </div>
-
-      {recusandoAdf ? (
-        <RecusaModal
-          onCancel={() => setRecusandoAdf(null)}
-          onConfirm={(motivo) => {
-            decidir.mutate({ adf: recusandoAdf, acao: "cancelar", motivo });
-            setRecusandoAdf(null);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-/** Modal simples pra recusar com motivo OPCIONAL (banco pode preferir nao expor motivos internos). */
-function RecusaModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm: (motivo?: string) => void }) {
-  const [texto, setTexto] = useState("");
-  return (
-    <div
-      onClick={onCancel}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,.5)",
-        display: "grid", placeItems: "center", zIndex: 100, padding: 16,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: "var(--surface-solid)", border: "1px solid var(--border)",
-          borderRadius: 12, padding: 24, maxWidth: 460, width: "100%",
-          display: "flex", flexDirection: "column", gap: 14,
-        }}
-      >
-        <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Recusar proposta</h3>
-        <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>
-          Se preenchido, o motivo aparece pro servidor. Deixe em branco para recusar sem justificativa — é comum o banco não expor motivos internos.
-        </div>
-        <textarea
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          rows={4}
-          maxLength={300}
-          placeholder="Motivo (opcional)"
-          style={{
-            width: "100%", padding: 10, borderRadius: 8,
-            border: "1px solid var(--border-strong)",
-            background: "var(--bg-elev)", color: "var(--text)",
-            fontSize: 13, resize: "vertical", fontFamily: "inherit",
-            boxSizing: "border-box",
-          }}
-        />
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <Button variant="ghost" size="sm" onClick={onCancel}>Voltar</Button>
-          <Button size="sm" onClick={() => onConfirm(texto.trim() || undefined)}>Confirmar recusa</Button>
-        </div>
       </div>
     </div>
   );
@@ -255,16 +179,10 @@ function RecusaModal({ onCancel, onConfirm }: { onCancel: () => void; onConfirm:
 
 function PropostaCard({
   proposta: p,
-  onAprovar,
-  onRecusar,
   onAbrir,
-  decidindo,
 }: {
   proposta: PropostaRow;
-  onAprovar: () => void;
-  onRecusar: () => void;
   onAbrir: () => void;
-  decidindo: boolean;
 }) {
   const trava = travaInfo(p);
   const isPortabilidade = p.produto === "portabilidade";
@@ -274,11 +192,11 @@ function PropostaCard({
 
   // Card grande destacado: portabilidade com troco, em analise, com trava.
   if (temTroco && isPendente) {
-    return <FeaturedPortabilidadeCard proposta={p} trocoValor={trocoValor} trava={trava} onAprovar={onAprovar} onRecusar={onRecusar} decidindo={decidindo} />;
+    return <FeaturedPortabilidadeCard proposta={p} trocoValor={trocoValor} trava={trava} onAbrir={onAbrir} />;
   }
   // Card padrao: aguardando analise.
   if (isPendente) {
-    return <PendenteCard proposta={p} isPortabilidade={isPortabilidade} onAprovar={onAprovar} onRecusar={onRecusar} onAbrir={onAbrir} decidindo={decidindo} />;
+    return <PendenteCard proposta={p} isPortabilidade={isPortabilidade} onAbrir={onAbrir} />;
   }
   // Card compacto: aprovadas/recusadas/averbadas.
   return <DecididaCard proposta={p} isPortabilidade={isPortabilidade} onAbrir={onAbrir} />;
@@ -289,16 +207,12 @@ function FeaturedPortabilidadeCard({
   proposta: p,
   trocoValor,
   trava,
-  onAprovar,
-  onRecusar,
-  decidindo,
+  onAbrir,
 }: {
   proposta: PropostaRow;
   trocoValor: number;
   trava: ReturnType<typeof travaInfo>;
-  onAprovar: () => void;
-  onRecusar: () => void;
-  decidindo: boolean;
+  onAbrir: () => void;
 }) {
   const diasRestantes = trava && !trava.expirada ? Math.max(0, Math.floor(trava.msRestantes / 86_400_000)) : 0;
   return (
@@ -336,7 +250,6 @@ function FeaturedPortabilidadeCard({
             {" · "}{p.convenio}
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={onRecusar} disabled={decidindo}>Recusar</Button>
       </div>
 
       {/* 3 sub-cards: CONTRATO ATUAL / PROPOSTA / TROCO */}
@@ -366,9 +279,7 @@ function FeaturedPortabilidadeCard({
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <Button onClick={onAprovar} disabled={decidindo}>
-          {decidindo ? "Enviando..." : "Aprovar e Averbar →"}
-        </Button>
+        <Button onClick={onAbrir}>Ver mais →</Button>
       </div>
     </article>
   );
@@ -378,17 +289,11 @@ function FeaturedPortabilidadeCard({
 function PendenteCard({
   proposta: p,
   isPortabilidade,
-  onAprovar,
-  onRecusar,
   onAbrir,
-  decidindo,
 }: {
   proposta: PropostaRow;
   isPortabilidade: boolean;
-  onAprovar: () => void;
-  onRecusar: () => void;
   onAbrir: () => void;
-  decidindo: boolean;
 }) {
   const tipoLabel = isPortabilidade
     ? p.saldoDevedorOrigem != null && p.valor > p.saldoDevedorOrigem
@@ -429,11 +334,7 @@ function PendenteCard({
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-          <Button variant="ghost" size="sm" onClick={onRecusar} disabled={decidindo}>Recusar</Button>
-          <Button size="sm" onClick={onAprovar} disabled={decidindo}>
-            {decidindo ? "..." : "Aprovar →"}
-          </Button>
-          <button onClick={onAbrir} style={{ background: "transparent", border: 0, color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }} aria-label="Abrir">›</button>
+          <Button size="sm" onClick={onAbrir}>Ver mais →</Button>
         </div>
       </div>
     </article>

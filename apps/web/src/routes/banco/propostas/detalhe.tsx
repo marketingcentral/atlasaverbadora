@@ -162,6 +162,11 @@ export function BancoPropostaDetalhe() {
           <Row label="Convênio" value={proposta.convenio} />
           <Row label="Vínculo" value={proposta.vinculo} />
           <Row label="Situação funcional" value={proposta.situacaoFuncional} />
+          {proposta.telefoneServidor ? (
+            <TelefoneRow telefone={proposta.telefoneServidor} />
+          ) : (
+            <Row label="Celular" value="—" />
+          )}
         </InfoCard>
 
         <InfoCard title="Dados da operação">
@@ -225,6 +230,7 @@ export function BancoPropostaDetalhe() {
           exigeCcb={exigeCcb}
           onAprovar={aprovar}
           onEnviarLink={() => setModal("envio")}
+          onBaixarContrato={() => baixarContratoModelo(proposta)}
           onRegistrarFormalizacao={registrarFormalizacao}
           onConfirmarAverbacao={confirmarAverbacao}
           onRecusar={() => setModal("recusar")}
@@ -277,6 +283,7 @@ function NextStep({
   exigeCcb,
   onAprovar,
   onEnviarLink,
+  onBaixarContrato,
   onRegistrarFormalizacao,
   onConfirmarAverbacao,
   onRecusar,
@@ -287,6 +294,7 @@ function NextStep({
   exigeCcb: boolean;
   onAprovar: () => void;
   onEnviarLink: () => void;
+  onBaixarContrato: () => void;
   onRegistrarFormalizacao: () => void;
   onConfirmarAverbacao: () => void;
   onRecusar: () => void;
@@ -317,27 +325,40 @@ function NextStep({
     );
   }
 
-  // Passo 4 — decisao inicial: banco aprova via upload do contrato assinado
-  // (skip do state "aprovada"; upload -> "formalizada" direto no fluxo novo).
+  // Passo 4 — decisao inicial: aprovar ou recusar. Se aprovada, o proximo passo
+  // (baixar contrato pra assinatura presencial + anexar assinado) aparece
+  // automaticamente porque o status vira "aprovada".
   if (s === "recebida" || s === "em_analise" || s === "mais_info") {
     return (
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Button variant="primary" onClick={onEnviarLink}>Fazer upload de contrato</Button>
-        <div style={{ marginLeft: "auto" }}>
-          <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
+          Analise os dados do servidor e a margem. Se estiver tudo certo, aprove — depois disso,
+          você baixa o contrato pra ser assinado presencialmente pela equipe do banco.
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <Button variant="primary" onClick={onAprovar}>Aprovar proposta →</Button>
+          <div style={{ marginLeft: "auto" }}>
+            <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Passo 6 — upload de contrato assinado (CCB)
+  // Passo 5 — proposta aprovada: banco baixa o contrato (CCB) pra assinatura
+  // PRESENCIAL (fora do sistema) e depois anexa o PDF assinado.
   if (s === "aprovada") {
     return (
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Button variant="primary" onClick={onEnviarLink}>Upload de contrato</Button>
-        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          Faça o upload da CCB assinada (PDF). Após o upload, confirme a averbação para tornar a margem efetiva.
-        </span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
+          Proposta <strong>aprovada</strong>. Baixe o contrato, imprima, colete a assinatura do
+          servidor <strong>presencialmente</strong> (a assinatura não acontece pelo site) e depois
+          anexe aqui o PDF assinado.
+        </div>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <Button variant="primary" onClick={onBaixarContrato}>Baixar contrato (CCB)</Button>
+          <Button variant="ghost" onClick={onEnviarLink}>Anexar contrato assinado</Button>
+        </div>
       </div>
     );
   }
@@ -606,6 +627,53 @@ function InfoCard({ title, children }: { title: string; children: React.ReactNod
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{children}</div>
     </div>
   );
+}
+
+/** Row de celular do servidor com atalho "Ligar" (`tel:`) e "Copiar". O banco
+ *  precisa entrar em contato pra tocar a formalizacao offline. */
+function TelefoneRow({ telefone }: { telefone: string }) {
+  const digits = telefone.replace(/\D/g, "");
+  const fmt = digits.length === 11
+    ? `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+    : digits.length === 10
+      ? `(${digits.slice(0, 2)}) ${digits.slice(2, 6)}-${digits.slice(6)}`
+      : telefone;
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 14, alignItems: "center" }}>
+      <span style={{ color: "var(--text-muted)" }}>Celular</span>
+      <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <a
+          href={`tel:${digits}`}
+          style={{ fontWeight: 600, fontFamily: "var(--font-mono)", color: "var(--accent)", textDecoration: "none" }}
+        >
+          {fmt}
+        </a>
+        <button
+          type="button"
+          onClick={() => { void navigator.clipboard?.writeText(digits); }}
+          title="Copiar"
+          style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)", borderRadius: 6, padding: "2px 8px", fontSize: 11, cursor: "pointer" }}
+        >
+          Copiar
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/** Baixa um contrato CCB em PDF (modelo) para o banco imprimir e coletar
+ *  a assinatura do servidor PRESENCIALMENTE. Usa o comprovante do backend
+ *  como base — mesmo endpoint que ja serve o resumo da operacao em PDF. */
+function baixarContratoModelo(proposta: BancoProposta): void {
+  const url = atlas.banco.comprovanteUrl(proposta.idUnico);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `contrato-${proposta.idUnico}.pdf`;
+  a.target = "_blank";
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {

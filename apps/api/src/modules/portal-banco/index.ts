@@ -331,7 +331,16 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const contratos = contratosBase.map((ct) => {
       const eventos = getContratoEventos(ct.adf);
       const ultimo = eventos.length > 0 ? eventos[eventos.length - 1]?.criadoEm : undefined;
-      return { ...ct, atualizadoEm: ultimo ?? new Date().toISOString() };
+      // Telefone do servidor na resposta do banco: o banco precisa ligar pro
+      // servidor pra tocar a formalizacao offline (analise + coleta de doc +
+      // assinatura presencial). Contexto ja isolado por bancoId + convenio
+      // ativo, entao expor o numero e' seguro dentro desse escopo.
+      const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
+      return {
+        ...ct,
+        atualizadoEm: ultimo ?? new Date().toISOString(),
+        telefoneServidor: srv?.telefone,
+      };
     });
     return c.json({ contratos, total: contratos.length });
   })

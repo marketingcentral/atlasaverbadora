@@ -95,6 +95,9 @@ export interface BancoProposta {
   criadaEm: string; // ISO
   travaHoras: number; // horas totais da trava a partir de criadaEm
   contratosAtivos: ContratoRelacionado[];
+  /** Telefone do servidor — usado pelo banco pra ligar e tocar a formalização
+   *  presencial (assinatura offline). Vem sem máscara pro banco dono. */
+  telefoneServidor?: string;
   // Preenchidos ao longo do fluxo (batch 2):
   linkFormalizacao?: string;
   canalEnvio?: "email" | "sms";
@@ -324,6 +327,7 @@ export interface BancoContratoApi {
   bancoOrigem?: string;
   contratoOrigem?: string;
   saldoDevedorOrigem?: number;
+  telefoneServidor?: string;
 }
 
 export interface BancoPropostaFromApi extends BancoProposta {
@@ -376,6 +380,7 @@ export function contratoToProposta(ct: BancoContratoApi): BancoPropostaFromApi {
     contratoOrigem: ct.contratoOrigem,
     saldoDevedorOrigem: ct.saldoDevedorOrigem,
     tipoContrato: ct.tipoContrato,
+    telefoneServidor: ct.telefoneServidor,
   };
   return patch ? { ...base, ...patch } : base;
 }
