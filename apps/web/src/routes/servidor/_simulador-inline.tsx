@@ -23,6 +23,8 @@ const fmtBRL = (n: number) =>
  *
  *  A prop `compact` esconde o card "Sua margem para emprestimo" (que ja aparece
  *  em outra parte da tela onde o simulador esta embutido). */
+type ModalidadeSim = "emprestimo" | "cartao_consignado" | "cartao_beneficio";
+
 export function SimuladorInline({
   info,
   taxaAmDefault = 0.0179,
@@ -37,6 +39,7 @@ export function SimuladorInline({
   compact?: boolean;
 }) {
   const nav = useNavigate();
+  const [tab, setTab] = useState<ModalidadeSim>("emprestimo");
   const [valor, setValor] = useState<number>(valorDefault);
   const [parcelas, setParcelas] = useState<number>(parcelasDefault);
   const taxaAm = taxaAmDefault;
@@ -187,6 +190,19 @@ export function SimuladorInline({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Tabs de modalidade — empréstimo (Price + parcelas) x cartão consig/benef
+          (limite + fatura minima). Cliente pediu que cartao consig e benef
+          tambem apareçam nesta area de simulacao. */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <ModalidadeTab active={tab === "emprestimo"} onClick={() => setTab("emprestimo")} icone="💰" label="Empréstimo" />
+        <ModalidadeTab active={tab === "cartao_consignado"} onClick={() => setTab("cartao_consignado")} icone="💳" label="Cartão consignado" />
+        <ModalidadeTab active={tab === "cartao_beneficio"} onClick={() => setTab("cartao_beneficio")} icone="🎫" label="Cartão benefício" />
+      </div>
+
+      {tab !== "emprestimo" ? (
+        <SimuladorCartao info={info} produto={tab} />
+      ) : (
+        <>
       {!compact && info ? (
         <Card>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
@@ -289,6 +305,8 @@ export function SimuladorInline({
           Ao solicitar, sua margem fica travada por 48h enquanto o banco analisa.
         </p>
       </Card>
+        </>
+      )}
     </div>
   );
 }
@@ -299,6 +317,168 @@ function Metric({ label, valor, accent, danger }: { label: string; valor: string
     <div>
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>{label}</div>
       <div style={{ marginTop: 4, fontSize: 20, fontWeight: 700, color }}>{valor}</div>
+    </div>
+  );
+}
+
+function ModalidadeTab({ active, onClick, icone, label }: { active: boolean; onClick: () => void; icone: string; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "8px 14px",
+        borderRadius: 999,
+        border: `1px solid ${active ? "var(--gold-500)" : "var(--border)"}`,
+        background: active ? "color-mix(in srgb, var(--gold-500) 15%, transparent)" : "transparent",
+        color: active ? "var(--text)" : "var(--text-muted)",
+        fontSize: 13,
+        fontWeight: active ? 700 : 500,
+        cursor: "pointer",
+      }}
+    >
+      <span style={{ fontSize: 15 }}>{icone}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
+/** Simulador de cartao (consignado ou beneficio). Sem tabela Price — cartao
+ *  nao tem parcela fixa. O que importa e o LIMITE (o servidor usa como cartao
+ *  normal); a fatura minima ~2.5% do limite desconta em folha, e precisa
+ *  caber na margem cartao (5%, regulado).
+ *
+ *  Regra pragmatica pra teto: limite max ~= margem cartao * 40 (fatura minima
+ *  ~= 2.5% do limite bate na margem). Servidor ajusta pra baixo pelo slider.
+ *  Ao solicitar, redireciona pra /servidor/solicitar-cartao (fluxo existente).
+ */
+function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produto: "cartao_consignado" | "cartao_beneficio" }) {
+  const nav = useNavigate();
+  const meta = produto === "cartao_consignado"
+    ? {
+        titulo: "Cartão consignado",
+        icone: "💳",
+        margemLabel: "Sua margem cartão consignado",
+        tipoMargem: "CARTAO_CONSIGNADO" as const,
+        descricao: "Cartão de crédito com fatura mínima descontada em folha.",
+      }
+    : {
+        titulo: "Cartão benefício",
+        icone: "🎫",
+        margemLabel: "Sua margem cartão benefício",
+        tipoMargem: "CARTAO_BENEFICIOS" as const,
+        descricao: "Cartão restrito (farmácia/mercado/saúde) descontado em folha.",
+      };
+
+  const margemDisp = useMemo(() => {
+    if (!info) return 0;
+    const t = info.margem.margens_por_tipo.find((m) => m.tipo === meta.tipoMargem);
+    return t?.disponivel ?? 0;
+  }, [info, meta.tipoMargem]);
+
+  const semMargem = margemDisp <= 0;
+  // Teto pragmatico: fatura minima ~2.5% do limite. Pra caber na margem,
+  // limite max = margem / 0.025 = margem * 40. Piso: R$500 se sem margem.
+  const limiteMax = Math.max(500, Math.floor((margemDisp * 40) / 100) * 100);
+  const [limite, setLimite] = useState<number>(Math.min(5000, limiteMax));
+  useEffect(() => {
+    if (limite > limiteMax) setLimite(limiteMax);
+  }, [limiteMax, limite]);
+
+  const faturaMinima = limite * 0.025;
+  const excedeMargem = faturaMinima > margemDisp;
+  const bancoDefault = "Banco Atlas"; // consistente com solicitar-cartao.tsx
+
+  function solicitar() {
+    if (semMargem || excedeMargem) return;
+    nav(`/servidor/solicitar-cartao?produto=${produto}&banco=${encodeURIComponent(bancoDefault)}&limite=${Math.round(limite)}`);
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+              {meta.margemLabel}
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: semMargem ? "var(--danger-500)" : "var(--emerald-500)", marginTop: 4 }}>
+              {fmtBRL(margemDisp)}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", maxWidth: 320, textAlign: "right" }}>
+            {meta.descricao} Fatura mínima na folha (regulado em 5% do salário).
+          </div>
+        </div>
+      </Card>
+
+      {semMargem ? (
+        <Card style={{ borderColor: "var(--danger-500)" }}>
+          <h3 style={{ marginTop: 0, color: "var(--danger-500)" }}>Sem margem disponível</h3>
+          <p style={{ color: "var(--text-muted)", margin: 0, fontSize: 13 }}>
+            Sua margem de {meta.titulo.toLowerCase()} está zerada nesta matrícula. Não é possível simular agora.
+            Quite ou suspenda outro cartão do mesmo tipo pra liberar espaço.
+          </p>
+        </Card>
+      ) : (
+        <>
+          <Card>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+                Limite pretendido
+              </span>
+              <div style={{ fontSize: 28, fontWeight: 800, color: "var(--accent)" }}>{fmtBRL(limite)}</div>
+              <input
+                type="range"
+                min={500}
+                max={Math.max(limiteMax, 1000)}
+                step={100}
+                value={Math.min(limite, limiteMax)}
+                onChange={(e) => setLimite(Number(e.target.value))}
+                style={{ width: "100%", accentColor: "var(--accent)" }}
+              />
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                Máximo pela sua margem: <b>{fmtBRL(limiteMax)}</b>
+              </span>
+            </div>
+          </Card>
+
+          <Card>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <Metric label="Fatura mínima" valor={fmtBRL(faturaMinima)} accent danger={excedeMargem} />
+              <Metric label="% do limite" valor="2,50%" />
+              <Metric label="Margem cartão" valor={fmtBRL(margemDisp)} />
+              <Metric label="Sobra na margem" valor={fmtBRL(Math.max(0, margemDisp - faturaMinima))} />
+            </div>
+
+            {excedeMargem ? (
+              <div style={{
+                marginTop: 18, padding: "12px 14px", borderRadius: 10,
+                border: "1px solid color-mix(in srgb, var(--danger-500) 60%, transparent)",
+                background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+                color: "var(--text)", fontSize: 13, lineHeight: 1.5,
+              }}>
+                <b style={{ color: "var(--danger-500)" }}>Fatura mínima acima da sua margem.</b>
+                <br />
+                Reduza o limite pretendido para caber em {fmtBRL(margemDisp)} de fatura mínima.
+              </div>
+            ) : null}
+
+            <div style={{ marginTop: 20, display: "flex", gap: 12 }}>
+              <Button disabled={excedeMargem} onClick={solicitar}>
+                Solicitar {meta.titulo.toLowerCase()} →
+              </Button>
+            </div>
+            <p style={{ marginTop: 12, fontSize: ".78rem", color: "var(--text-dim)", margin: "12px 0 0" }}>
+              Ao solicitar, o banco recebe o pedido e entra em contato pra emitir e ativar o cartão.
+              A margem só é comprometida quando o banco confirma a averbação.
+            </p>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
