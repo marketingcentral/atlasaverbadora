@@ -16,24 +16,6 @@ const PRODUTO_LABEL: Record<string, string> = {
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
-const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
-const MESES_PT_SHORT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
-
-/** Próximo dia 15 (dia de corte típico) a partir de hoje. */
-function proximoDesconto(): { dia: string; mes: string; iso: Date; extenso: string } {
-  const hoje = new Date();
-  const dia = 15;
-  const ref = hoje.getDate() >= dia
-    ? new Date(hoje.getFullYear(), hoje.getMonth() + 1, dia)
-    : new Date(hoje.getFullYear(), hoje.getMonth(), dia);
-  return {
-    dia: String(ref.getDate()).padStart(2, "0"),
-    mes: MESES_PT_SHORT[ref.getMonth()]!,
-    iso: ref,
-    extenso: `${ref.getDate()} de ${MESES_PT[ref.getMonth()]} de ${ref.getFullYear()}`,
-  };
-}
-
 /** Fallbacks locais mostrados quando a API ainda não retornou comunicados
  *  (primeiro render / offline / servidor sem comunicados cadastrados).
  *  Os do backend, quando chegam, substituem estes. */
@@ -99,9 +81,6 @@ export function ServidorDashboard() {
   }, []);
 
   const primeiroNome = useMemo(() => (info?.nome ?? "").split(" ")[0] ?? "", [info?.nome]);
-  const contratosAtivos = useMemo(() => (info?.contratos ?? []).filter((c) => c.status !== "Quitado"), [info?.contratos]);
-  const totalMensal = useMemo(() => contratosAtivos.reduce((acc, c) => acc + c.parcela, 0), [contratosAtivos]);
-  const desconto = useMemo(() => proximoDesconto(), []);
 
   // Comunicados publicados pela averbadora para publico=servidor.
   // Fallback local pra tela nunca ficar em branco em caso de rede/deploy sem seed.
@@ -138,75 +117,6 @@ export function ServidorDashboard() {
           Substitui a antiga seção "Meus contratos" no dashboard — quem quiser ver
           contratos vai em /servidor/contratos pelo menu superior. */}
       <ComunicadoCarrossel comunicados={comunicadosCarrossel} />
-
-      {/* Próximo desconto em folha */}
-      <article style={{
-        background: "var(--surface)",
-        border: "1px solid var(--border)",
-        borderRadius: 14,
-        padding: 18,
-        display: "flex",
-        alignItems: "center",
-        gap: 16,
-        flexWrap: "wrap",
-      }}>
-        <div style={{
-          width: 60,
-          height: 60,
-          borderRadius: 12,
-          background: "color-mix(in srgb, var(--gold-500) 15%, transparent)",
-          border: "1px solid var(--gold-500)",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "var(--gold-500)",
-          fontWeight: 800,
-          flexShrink: 0,
-        }}>
-          <div style={{ fontSize: 20, lineHeight: 1 }}>{desconto.dia}</div>
-          <div style={{ fontSize: 10, letterSpacing: ".08em", textTransform: "uppercase" }}>{desconto.mes}</div>
-        </div>
-        <div style={{ flex: 1, minWidth: 200 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>Próximo desconto em folha</div>
-          <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
-            {desconto.extenso} · {info.prefeitura}
-          </div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--text)" }}>{fmtBRL(totalMensal)}</div>
-          <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em" }}>total</div>
-        </div>
-      </article>
-
-      {/* Em roadmap — Autenticação por Senha/Token */}
-      <article style={{
-        background: "color-mix(in srgb, var(--accent) 5%, var(--surface))",
-        border: "1px solid color-mix(in srgb, var(--accent) 30%, var(--border))",
-        borderRadius: 14,
-        padding: 18,
-        display: "flex",
-        gap: 14,
-        alignItems: "flex-start",
-      }}>
-        <div style={{
-          width: 40, height: 40, borderRadius: 10,
-          background: "color-mix(in srgb, var(--accent) 15%, transparent)",
-          color: "var(--accent)", display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 20, flexShrink: 0,
-        }}>ℹ</div>
-        <div>
-          <div style={{ fontSize: 10, letterSpacing: ".08em", fontWeight: 700, color: "var(--accent)", textTransform: "uppercase", marginBottom: 3 }}>
-            Em roadmap
-          </div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)" }}>
-            Autenticação por Senha/Token para Averbação
-          </div>
-          <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
-            Algumas prefeituras poderão exigir que o servidor forneça uma senha ou token para que as instituições financeiras possam averbar a margem.
-          </div>
-        </div>
-      </article>
 
       {/* Substituiu as "Ações rápidas" antigas — cliente pediu 2 blocos, um de
           Portabilidade e outro de Telemedicina. */}
