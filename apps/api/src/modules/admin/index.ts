@@ -23,6 +23,7 @@ import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
+import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
@@ -2187,6 +2188,38 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.ativo = true;
     await persistBeneficio(c.env, b);
     return c.json({ beneficio: b });
+  })
+  // Interessados = servidores que clicaram no botao "Acessar" de um beneficio.
+  // ?beneficioId=BEN-X filtra por beneficio; sem filtro, retorna todos os
+  // cliques (ate 500 mais recentes). Ordenados do mais recente pro mais antigo.
+  .get("/v1/admin/beneficios/interessados", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    await refreshCliques(c.env);
+    const url = new URL(c.req.url);
+    const beneficioId = url.searchParams.get("beneficioId");
+    let cliques = await loadCliques(c.env);
+    if (beneficioId) cliques = cliques.filter((clk) => clk.beneficioId === beneficioId);
+    // Ordena desc por criadoEm e limita a 500.
+    cliques = [...cliques]
+      .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))
+      .slice(0, 500);
+    // Agrega totais por beneficio pra a UI mostrar "N interessados" sem
+    // precisar contar no client.
+    const total = cliques.length;
+    return c.json({ cliques, total });
+  })
+  // Contadores por beneficio — usado pelas listas (badge de N interessados).
+  .get("/v1/admin/beneficios/interessados/resumo", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    await refreshCliques(c.env);
+    const cliques = await loadCliques(c.env);
+    const contagemPorBeneficio = new Map<string, number>();
+    for (const clk of cliques) {
+      contagemPorBeneficio.set(clk.beneficioId, (contagemPorBeneficio.get(clk.beneficioId) ?? 0) + 1);
+    }
+    return c.json({
+      contagens: Array.from(contagemPorBeneficio.entries()).map(([beneficioId, total]) => ({ beneficioId, total })),
+    });
   })
   // ============================================================
   // ADF — a averbadora aplica/reporta falha; prefeitura so recebe/consulta.

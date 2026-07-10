@@ -74,7 +74,14 @@ export function AverbadoraTelemedicina() {
             Aparecem numa aba própria no app do servidor, separada dos parceiros de saúde presencial.
           </p>
         </div>
-        <Button onClick={() => nav("/averbadora/beneficios/novo?categoria=telemedicina")}>+ Nova parceria de telemedicina</Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant="ghost" onClick={() => nav("/averbadora/interessados?categoria=telemedicina")}>
+            👥 Interessados
+          </Button>
+          <Button onClick={() => nav("/averbadora/beneficios/novo?categoria=telemedicina")}>
+            + Nova parceria de telemedicina
+          </Button>
+        </div>
       </header>
 
       <DataTable

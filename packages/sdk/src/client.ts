@@ -1058,6 +1058,13 @@ export class AtlasClient {
         "/v1/servidores/me/propostas",
         { method: "POST", body: input },
       ),
+    /** Registra o clique do servidor no botao "Acessar" de um beneficio.
+     *  Best-effort — o botao abre a URL de qualquer jeito (nao bloqueia se falhar). */
+    registrarCliqueBeneficio: (beneficioId: string, input?: { matricula?: string; origemTela?: string }) =>
+      this.request<{ ok: true; deduplicado?: boolean }>(
+        `/v1/servidores/me/beneficios/${encodeURIComponent(beneficioId)}/clique`,
+        { method: "POST", body: input ?? {} },
+      ),
     /** Solicita cartao consignado ou cartao beneficio. Nao cria contrato tradicional
      *  (o modelo ainda so aceita EMPRESTIMO/REFIN/ECONSIGNADO) — registra a
      *  solicitacao pra averbadora e devolve um protocolo. O banco recebe pra
@@ -1355,6 +1362,27 @@ export class AtlasClient {
       upsert: (body: AdminBeneficioInput) => this.request<{ beneficio: AdminBeneficio }>("/v1/admin/beneficios", { method: "POST", body }),
       pausar: (id: string) => this.request<{ beneficio: AdminBeneficio }>(`/v1/admin/beneficios/${id}/pausar`, { method: "PATCH" }),
       reativar: (id: string) => this.request<{ beneficio: AdminBeneficio }>(`/v1/admin/beneficios/${id}/reativar`, { method: "PATCH" }),
+      /** Interessados (servidores que clicaram no botao Acessar). ?beneficioId filtra. */
+      interessados: (beneficioId?: string) =>
+        this.request<{
+          cliques: {
+            id: string;
+            beneficioId: string;
+            servidorId: number;
+            nome: string;
+            cpfMasked: string;
+            matricula: string;
+            prefeituraId: number;
+            criadoEm: string;
+            origemTela?: string;
+          }[];
+          total: number;
+        }>("/v1/admin/beneficios/interessados", { query: beneficioId ? { beneficioId } : {} }),
+      /** Contagem de interessados por beneficio (badge nas listas). */
+      interessadosResumo: () =>
+        this.request<{ contagens: { beneficioId: string; total: number }[] }>(
+          "/v1/admin/beneficios/interessados/resumo",
+        ),
     },
 
     listServidores: (q?: { prefeitura_id?: number; status?: string }) =>

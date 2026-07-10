@@ -70,7 +70,12 @@ export function AdminBeneficios() {
             Cadastre parceiros comerciais, benefícios de saúde, convênios e vantagens por prefeitura. Cada benefício tem uma tela dedicada com todos os detalhes (endereço, contato, público-alvo, vigência, como usar).
           </p>
         </div>
-        <Button onClick={() => nav("/averbadora/beneficios/novo")}>+ Novo benefício</Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant="ghost" onClick={() => nav("/averbadora/interessados")}>
+            👥 Interessados
+          </Button>
+          <Button onClick={() => nav("/averbadora/beneficios/novo")}>+ Novo benefício</Button>
+        </div>
       </header>
 
       <DataTable

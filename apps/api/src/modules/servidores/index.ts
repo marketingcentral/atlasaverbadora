@@ -9,6 +9,7 @@ import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, getSer
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
+import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
@@ -410,6 +411,58 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         linkAcesso: b.linkAcesso,
       })),
     });
+  })
+  // Registra o clique do servidor no botao "Acessar" de um beneficio. A
+  // averbadora usa isso pra ver quem se interessou por cada parceria (util
+  // em telemedicina — clique = intencao de agendar consulta). Idempotente
+  // por (servidor, beneficio) num intervalo curto pra evitar spam.
+  .post("/v1/servidores/me/beneficios/:id/clique", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    await refreshBeneficios(c.env);
+    const beneficioId = c.req.param("id");
+    const beneficio = (await loadBeneficios(c.env)).find((b) => b.id === beneficioId);
+    if (!beneficio) throw Errors.notFound("beneficio");
+    if (!beneficio.ativo) throw Errors.validation({ beneficio: "beneficio pausado" });
+
+    // Resolve matricula ativa (mesmo padrao dos outros endpoints).
+    const body = await c.req.json().catch(() => ({}));
+    const matAtiva = typeof body?.matricula === "string" ? body.matricula : undefined;
+    const origemTela = typeof body?.origemTela === "string" ? body.origemTela : undefined;
+    const entryAtivo = matAtiva
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
+      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
+    if (!entryAtivo) throw Errors.notFound("matricula");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio);
+    const prefeituraId = conv?.prefeituraId ?? s.prefeitura_id;
+
+    // Dedup: se ja clicou nos ultimos 60 minutos, nao duplica.
+    await refreshCliques(c.env);
+    const agora = Date.now();
+    const jaExiste = (await loadCliques(c.env)).some((clk) =>
+      clk.beneficioId === beneficioId
+      && clk.servidorId === s.id
+      && clk.matricula === entryAtivo.matricula
+      && (agora - new Date(clk.criadoEm).getTime()) < 60 * 60 * 1000,
+    );
+    if (jaExiste) return c.json({ ok: true, deduplicado: true });
+
+    const clique: BeneficioClique = {
+      id: nextCliqueId(),
+      beneficioId,
+      servidorId: s.id,
+      nome: entryAtivo.nome,
+      cpfMasked: entryAtivo.cpfMasked,
+      matricula: entryAtivo.matricula,
+      prefeituraId,
+      criadoEm: new Date().toISOString(),
+      origemTela,
+    };
+    await persistClique(c.env, clique);
+    return c.json({ ok: true });
   })
   // Marketplace de ofertas do servidor — deriva das tabelas de emprestimo
   // publicadas pelos bancos parceiros. So retorna tabelas ativas e dentro

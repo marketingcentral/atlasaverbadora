@@ -191,6 +191,13 @@ function ParceiroCard({ parceiro }: { parceiro: ServidorBeneficio }) {
               href={parceiro.linkAcesso.url}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => {
+                // Best-effort: registra o interesse mas nao bloqueia a navegacao.
+                void atlas.servidor.registrarCliqueBeneficio(parceiro.id, {
+                  matricula: readActiveMatricula()?.matricula,
+                  origemTela: "beneficios",
+                }).catch(() => undefined);
+              }}
               style={{
                 display: "inline-block", marginTop: 12,
                 padding: "8px 16px", borderRadius: 8,
