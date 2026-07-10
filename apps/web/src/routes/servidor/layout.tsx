@@ -9,17 +9,17 @@ import { NotificationBell } from "../../components/NotificationBell";
 import { MatriculaSwitcher } from "../../components/MatriculaSwitcher";
 
 const NAV = [
-  { key: "dashboard", label: "Início", href: "/servidor/dashboard" },
+  { key: "dashboard", label: "Início", href: "/servidor/dashboard", icon: "🏠" },
   // "Minha Margem" e "Descontos e Benefícios" saíram do menu superior (as rotas
   // continuam existindo pra links diretos e para o dashboard/marketplace apontarem).
   // MarketPlace unificado: ofertas de bancos + simular + portabilidade +
   // propostas de portabilidade dos bancos.
-  { key: "marketplace-port", label: "MarketPlace", href: "/servidor/marketplace/portabilidade" },
+  { key: "marketplace-port", label: "MarketPlace", href: "/servidor/marketplace/portabilidade", icon: "🛒" },
   // Contratos passa a mostrar propostas em andamento no topo (o servidor ve
   // sua solicitacao virar contrato depois que o banco aprova).
-  { key: "contratos", label: "Contratos", href: "/servidor/contratos" },
-  { key: "saude", label: "Telemedicina", href: "/servidor/saude" },
-  { key: "conta", label: "Conta", href: "/servidor/conta" },
+  { key: "contratos", label: "Contratos", href: "/servidor/contratos", icon: "📄" },
+  { key: "saude", label: "Telemedicina", href: "/servidor/saude", icon: "🏥" },
+  { key: "conta", label: "Conta", href: "/servidor/conta", icon: "👤" },
 ];
 
 export function ServidorLayout() {
@@ -89,9 +89,13 @@ export function ServidorLayout() {
                       background: isActive ? "var(--surface)" : "transparent",
                       border: "1px solid transparent",
                       cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
                     }}
                   >
-                    {n.label}
+                    <span style={{ fontSize: 14, lineHeight: 1 }} aria-hidden="true">{n.icon}</span>
+                    <span>{n.label}</span>
                   </button>
                 );
               })}
