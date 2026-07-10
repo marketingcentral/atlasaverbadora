@@ -257,13 +257,13 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
       background: "linear-gradient(160deg, var(--navy-700), var(--navy-900))",
       border: "1px solid var(--navy-700)",
       borderRadius: 16,
-      padding: 16,
+      padding: 20,
       color: "#EAF0FA",
       boxShadow: "var(--shadow-md)",
     }}>
       {/* 3 quadrados lado a lado. repeat(3,1fr) força as 3 colunas mesmo em
           largura apertada — cliente pediu "um do lado do outro". */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
         {linhas.map((m) => (
           <MargemCard key={m.tipo} data={m} />
         ))}
@@ -293,22 +293,22 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
     <div style={{
       background: "rgba(255,255,255,.04)",
       border: "1px solid rgba(255,255,255,.08)",
-      borderRadius: 12,
-      padding: 14,
+      borderRadius: 14,
+      padding: 18,
       display: "flex",
       flexDirection: "column",
-      gap: 10,
+      gap: 14,
       minWidth: 0,
     }}>
       {/* nome da modalidade */}
-      <div style={{ fontSize: 13, fontWeight: 700, color: "#EAF0FA", lineHeight: 1.25 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "#EAF0FA", lineHeight: 1.3 }}>{label}</div>
 
       {/* barra de progresso + percentuais */}
       <div>
-        <div style={{ height: 4, background: "rgba(255,255,255,.08)", borderRadius: 4, overflow: "hidden" }}>
+        <div style={{ height: 5, background: "rgba(255,255,255,.08)", borderRadius: 4, overflow: "hidden" }}>
           <div style={{ width: `${pctUtilizado}%`, height: "100%", background: barra, transition: "width .4s ease" }} />
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5, fontSize: 11 }}>
           <span style={{ color: utilizado > 0 ? "#C9A961" : "#7A8CA8" }}>
             {utilizado === 0 ? "0%" : `${pctUtilizado.toFixed(1)}% util.`}
           </span>
@@ -317,7 +317,7 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
       </div>
 
       {/* Total / Utilizado / Disponivel — empilhados dentro do card */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <ValorLinha label="Total" value={fmtBRL(data.total)} color="#EAF0FA" />
         <ValorLinha label="Utilizado" value={fmtBRL(utilizado)} color={utilizado > 0 ? "#C9A961" : "#7A8CA8"} />
         <ValorLinha label="Disponível" value={fmtBRL(data.disponivel)} color="#10B981" bold />
@@ -329,14 +329,14 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
           type="button"
           onClick={() => nav(acao.href)}
           style={{
-            marginTop: 2,
-            padding: "8px 10px",
-            borderRadius: 8,
+            marginTop: 4,
+            padding: "10px 12px",
+            borderRadius: 10,
             border: "none",
             background: "var(--emerald-500)",
             color: "white",
             fontWeight: 700,
-            fontSize: 12,
+            fontSize: 13,
             cursor: "pointer",
             width: "100%",
           }}
@@ -351,8 +351,8 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
 function ValorLinha({ label, value, color, bold }: { label: string; value: string; color: string; bold?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 }}>
-      <span style={{ fontSize: 10, letterSpacing: ".06em", textTransform: "uppercase", color: "#7A8CA8", fontWeight: 700 }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: bold ? 800 : 700, color, textAlign: "right", whiteSpace: "nowrap" }}>{value}</span>
+      <span style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", color: "#7A8CA8", fontWeight: 700 }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: bold ? 800 : 700, color, textAlign: "right", whiteSpace: "nowrap" }}>{value}</span>
     </div>
   );
 }
