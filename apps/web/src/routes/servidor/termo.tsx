@@ -124,7 +124,7 @@ export function ServidorTermo() {
           </div>
 
           <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
-            <Button onClick={() => nav("/servidor/propostas")}>Ver minhas propostas →</Button>
+            <Button onClick={() => nav("/servidor/contratos")}>Ver minhas propostas →</Button>
             <Button variant="ghost" onClick={() => nav("/servidor/dashboard")}>
               Voltar ao inicio
             </Button>
