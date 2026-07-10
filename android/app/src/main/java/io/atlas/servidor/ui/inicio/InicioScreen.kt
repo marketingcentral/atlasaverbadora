@@ -40,9 +40,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.atlas.servidor.core.UiState
+import io.atlas.servidor.data.remote.dto.ComunicadoDto
 import io.atlas.servidor.data.remote.dto.MargemTipoDto
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
-import io.atlas.servidor.data.remote.dto.OfertasResponse
 import io.atlas.servidor.ui.navigation.Produtos
 import io.atlas.servidor.domain.Format
 import io.atlas.servidor.ui.components.AtlasCard
@@ -142,23 +142,23 @@ fun InicioScreen(
                     Spacer(Modifier.height(24.dp))
                 }
 
-                BannerCarousel()
+                BannerCarousel(vm.comunicados)
                 Spacer(Modifier.height(24.dp))
 
-                SectionLabel("Oferta para sua margem")
+                SectionLabel("Portabilidade")
                 Spacer(Modifier.height(12.dp))
-                OfertaAtlas(vm.ofertasState) { onSimularProduto(Produtos.EMPRESTIMO) }
-
-                Spacer(Modifier.height(16.dp))
                 AtlasCard {
                     Text("Portabilidade", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
                     Text(
-                        "Traga contratos de outros bancos para o Atlas com taxa menor.",
+                        "Traga os empréstimos que você tem em outros bancos para o Atlas e pague " +
+                            "menos juros. Confira as condições e veja quanto pode economizar.",
                         color = InkMuted,
                         fontSize = 13.sp,
+                        lineHeight = 18.sp,
                     )
                     Spacer(Modifier.height(12.dp))
-                    AtlasSecondaryButton(text = "Ver portabilidade", onClick = onOpenPortabilidade)
+                    AtlasSecondaryButton(text = "Ver Condições", onClick = onOpenPortabilidade)
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -440,20 +440,28 @@ private fun ProdutoCard(
     }
 }
 
+/** Slides do início. Puxa os Comunicados da averbadora (público servidor); enquanto não
+ *  houver nenhum, mostra os banners padrão do Atlas. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BannerCarousel() {
-    val pagerState = rememberPagerState(pageCount = { BANNERS.size })
-    LaunchedEffect(Unit) {
+private fun BannerCarousel(comunicados: List<ComunicadoDto>) {
+    val slides = if (comunicados.isNotEmpty()) {
+        comunicados.map { Banner("COMUNICADO", it.titulo, it.corpo) }
+    } else {
+        BANNERS
+    }
+    val pagerState = rememberPagerState(pageCount = { slides.size })
+    LaunchedEffect(slides.size) {
+        if (slides.size <= 1) return@LaunchedEffect
         while (true) {
             delay(4000)
-            val next = (pagerState.currentPage + 1) % BANNERS.size
+            val next = (pagerState.currentPage + 1) % slides.size
             pagerState.animateScrollToPage(next)
         }
     }
     Column {
         HorizontalPager(state = pagerState, modifier = Modifier.fillMaxWidth()) { page ->
-            val b = BANNERS[page]
+            val b = slides[page]
             Surface(
                 modifier = Modifier.fillMaxWidth().padding(end = 2.dp),
                 shape = RoundedCornerShape(18.dp),
@@ -470,46 +478,30 @@ private fun BannerCarousel() {
                         )
                     }
                     Spacer(Modifier.height(10.dp))
-                    Text(b.titulo, color = Superficie, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(b.titulo, color = Superficie, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 24.sp)
                     Spacer(Modifier.height(4.dp))
-                    Text(b.sub, color = Superficie.copy(alpha = 0.9f), fontSize = 13.sp)
+                    Text(b.sub, color = Superficie.copy(alpha = 0.9f), fontSize = 13.sp, lineHeight = 18.sp)
                 }
             }
         }
-        Spacer(Modifier.height(10.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.Center,
-        ) {
-            repeat(BANNERS.size) { i ->
-                val selected = i == pagerState.currentPage
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 3.dp)
-                        .size(if (selected) 8.dp else 6.dp)
-                        .clip(CircleShape)
-                        .background(if (selected) Verde else InkMuted.copy(alpha = 0.4f)),
-                )
+        if (slides.size > 1) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                repeat(slides.size) { i ->
+                    val selected = i == pagerState.currentPage
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 3.dp)
+                            .size(if (selected) 8.dp else 6.dp)
+                            .clip(CircleShape)
+                            .background(if (selected) Verde else InkMuted.copy(alpha = 0.4f)),
+                    )
+                }
             }
         }
-    }
-}
-
-@Composable
-private fun OfertaAtlas(state: UiState<OfertasResponse>, onSimular: () -> Unit) {
-    // Uma única oferta consolidada "Banco Atlas", com a melhor taxa/prazo disponíveis.
-    val ofertas = (state as? UiState.Success)?.data?.ofertas.orEmpty()
-    val taxaMin = ofertas.minOfOrNull { it.taxaMinAm } ?: 0.0155
-    val prazoMax = ofertas.maxOfOrNull { it.prazoMaxMeses } ?: 96
-
-    AtlasCard {
-        // Nome/subtítulo e a taxa em linhas próprias — evita a quebra de linha feia do chip.
-        Text("Banco Atlas", color = Ink, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-        Text("Crédito consignado · até ${prazoMax}×", color = InkMuted, fontSize = 13.sp)
-        Spacer(Modifier.height(12.dp))
-        StatusChip("A partir de ${Format.rateAm(taxaMin)}", ChipTone.Verde)
-        Spacer(Modifier.height(16.dp))
-        AtlasPrimaryButton(text = "Simular", onClick = onSimular)
     }
 }
 

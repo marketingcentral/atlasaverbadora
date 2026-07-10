@@ -683,8 +683,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       for (const t of limpar) if ((await clearServidorConta(c.env, t.cpf)) > 0) contasZeradas++;
     } catch (e) { passos.clearServidorConta = (e as Error).message; }
 
-    // 2) Apaga os empréstimos de TODAS as matrículas de teste (Postgres + memória).
-    const matriculas = TESTE.map((t) => t.matricula);
+    // 2) Apaga os empréstimos de TODAS as matrículas de teste + do Diego (993410027),
+    //    servidor principal de teste que deve ficar zerado. A conta do Diego (login/senha)
+    //    NÃO é tocada — só os contratos/propostas dele.
+    const matriculas = [...TESTE.map((t) => t.matricula), "993410027"];
     let contratosPg = 0;
     try { contratosPg = await deleteContratosByMatriculas(c.env, matriculas); } catch (e) { passos.deleteContratos = (e as Error).message; }
     const contratosMem = removeContratosByMatricula(matriculas);

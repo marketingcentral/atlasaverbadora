@@ -42,6 +42,10 @@ class HomeViewModel : ViewModel() {
     var propostas by mutableStateOf<List<io.atlas.servidor.data.remote.dto.PropostaDto>>(emptyList())
         private set
 
+    // Comunicados da averbadora (público servidor) — alimentam os slides do início.
+    var comunicados by mutableStateOf<List<io.atlas.servidor.data.remote.dto.ComunicadoDto>>(emptyList())
+        private set
+
     // Aba pedida ao abrir Contratos (0 Ativos, 1 Em análise, 2 Histórico). Lida uma única vez.
     private var contratosTabRequest: Int? = null
 
@@ -103,6 +107,10 @@ class HomeViewModel : ViewModel() {
             } catch (e: ApiException) {
                 ofertasState = UiState.Error(e.userMessage)
             }
+        }
+        viewModelScope.launch {
+            // Best-effort: sem comunicados os slides caem no conteúdo padrão.
+            try { comunicados = repo.getComunicados().comunicados } catch (_: ApiException) { }
         }
     }
 

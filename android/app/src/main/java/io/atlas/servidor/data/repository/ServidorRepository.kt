@@ -34,6 +34,9 @@ class ServidorRepository(
     /** Lista as propostas do servidor direto do servidor (mesma fonte que o banco lê). */
     suspend fun getPropostas(matricula: String?) = safeApi(gson) { api.propostas(matricula) }
 
+    /** Comunicados da averbadora (público servidor) — alimentam os slides do início. */
+    suspend fun getComunicados() = safeApi(gson) { api.comunicados() }
+
     /** Remove as propostas EM ANÁLISE (fase de teste). */
     suspend fun removerPropostasEmAnalise(matricula: String?) = safeApi(gson) { api.removerPropostasEmAnalise(matricula) }
 

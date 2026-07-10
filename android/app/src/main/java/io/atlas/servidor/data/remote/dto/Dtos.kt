@@ -126,6 +126,17 @@ data class PropostasResponse(val propostas: List<PropostaDto> = emptyList())
 
 data class RemoverPropostasResponse(val removidas: Int = 0, val ids: List<String> = emptyList())
 
+/** Comunicado publicado pela averbadora com público-alvo "servidor" (aparece nos slides). */
+data class ComunicadoDto(
+    val id: String,
+    val titulo: String,
+    val corpo: String,
+    val linkLabel: String? = null,
+    val linkHref: String? = null,
+)
+
+data class ComunicadosResponse(val comunicados: List<ComunicadoDto> = emptyList())
+
 // ---------- Servidor profile ----------
 
 data class MeResponse(

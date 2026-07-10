@@ -27,6 +27,10 @@ interface ApiService {
     @GET("v1/servidores/me/ofertas")
     suspend fun ofertas(): OfertasResponse
 
+    /** Comunicados publicados pela averbadora para o servidor (slides do início). */
+    @GET("v1/servidores/me/comunicados")
+    suspend fun comunicados(): io.atlas.servidor.data.remote.dto.ComunicadosResponse
+
     @POST("v1/servidores/me/propostas")
     suspend fun criarProposta(@Body body: io.atlas.servidor.data.remote.dto.CriarPropostaRequest): io.atlas.servidor.data.remote.dto.PropostaResponse
 
