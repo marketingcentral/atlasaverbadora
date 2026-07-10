@@ -41,6 +41,15 @@ class HomeViewModel : ViewModel() {
     var propostas by mutableStateOf<List<io.atlas.servidor.data.remote.dto.PropostaDto>>(emptyList())
         private set
 
+    // Aba pedida ao abrir Contratos (0 Ativos, 1 Em análise, 2 Histórico). Lida uma única vez.
+    private var contratosTabRequest: Int? = null
+
+    /** Abre Contratos já numa aba específica (ex.: após solicitar, cai em "Em análise"). */
+    fun pedirAbaContratos(index: Int) { contratosTabRequest = index }
+
+    /** Consome o pedido de aba — retorna null se não havia. */
+    fun consumirAbaContratos(): Int? = contratosTabRequest.also { contratosTabRequest = null }
+
     // Notificações derivadas das propostas (sino do Início) + estado lida/dispensada.
     private var notifRaw by mutableStateOf<List<io.atlas.servidor.domain.AppNotif>>(emptyList())
     private var notifReadIds by mutableStateOf(prefs.readNotifIds())

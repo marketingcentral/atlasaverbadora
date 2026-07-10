@@ -30,6 +30,7 @@ import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +46,8 @@ import io.atlas.servidor.core.UiState
 import io.atlas.servidor.data.remote.dto.ContratoDto
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
 import io.atlas.servidor.data.remote.dto.PropostaDto
+import io.atlas.servidor.ui.analise.EmAnaliseContent
+import io.atlas.servidor.ui.analise.emAnaliseAtivas
 import io.atlas.servidor.ui.components.terminalHistorico
 import io.atlas.servidor.domain.Format
 import io.atlas.servidor.ui.components.AtlasCard
@@ -63,6 +66,10 @@ import io.atlas.servidor.ui.theme.Verde
 
 @Composable
 fun ContratosScreen(vm: HomeViewModel) {
+    // Abas: 0 Ativos · 1 Em análise · 2 Histórico. Quem solicita uma proposta cai na 1.
+    var tab by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { vm.consumirAbaContratos()?.let { tab = it } }
+
     when (val s = vm.matriculasState) {
         is UiState.Loading -> LoadingBox(Modifier.background(Fundo))
         is UiState.Error -> ErrorBox(s.message, onRetry = { vm.load() }, modifier = Modifier.background(Fundo))
@@ -73,15 +80,21 @@ fun ContratosScreen(vm: HomeViewModel) {
             } else {
                 // Recusadas/expiradas/canceladas vêm da lista de propostas → Histórico.
                 val recusadas = vm.propostas.filter { terminalHistorico(it.situacao) }
-                ContratosContent(info, recusadas)
+                val emAnaliseCount = emAnaliseAtivas(vm.propostas).size
+                ContratosContent(info, recusadas, emAnaliseCount, tab, onTab = { tab = it })
             }
         }
     }
 }
 
 @Composable
-private fun ContratosContent(info: MatriculaInfoDto, recusadas: List<PropostaDto>) {
-    var tab by remember { mutableIntStateOf(0) }
+private fun ContratosContent(
+    info: MatriculaInfoDto,
+    recusadas: List<PropostaDto>,
+    emAnaliseCount: Int,
+    tab: Int,
+    onTab: (Int) -> Unit,
+) {
     var lerContrato by remember { mutableStateOf<ContratoDto?>(null) }
     val saldoById = info.elegiveisPortabilidade.associate { it.id to it.saldoDevedor }
     // Uma proposta recusada/cancelada/expirada NÃO é contrato ativo — mesmo que o backend
@@ -111,13 +124,14 @@ private fun ContratosContent(info: MatriculaInfoDto, recusadas: List<PropostaDto
                 .padding(4.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            SegButton("Ativos (${ativos.size})", tab == 0, Modifier.weight(1f)) { tab = 0 }
-            SegButton("Histórico ($histCount)", tab == 1, Modifier.weight(1f)) { tab = 1 }
+            SegButton("Ativos", ativos.size, tab == 0, Modifier.weight(1f)) { onTab(0) }
+            SegButton("Em análise", emAnaliseCount, tab == 1, Modifier.weight(1f)) { onTab(1) }
+            SegButton("Histórico", histCount, tab == 2, Modifier.weight(1f)) { onTab(2) }
         }
         Spacer(Modifier.height(16.dp))
 
-        if (tab == 0) {
-            if (ativos.isEmpty()) {
+        when (tab) {
+            0 -> if (ativos.isEmpty()) {
                 EmptyHint("Você não tem contratos ativos.")
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -128,8 +142,8 @@ private fun ContratosContent(info: MatriculaInfoDto, recusadas: List<PropostaDto
                     Spacer(Modifier.height(24.dp))
                 }
             }
-        } else {
-            if (histCount == 0) {
+            1 -> EmAnaliseContent()
+            else -> if (histCount == 0) {
                 EmptyHint("Nenhum contrato no histórico.")
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
@@ -217,21 +231,34 @@ private fun recusaRotulo(situacao: String?): String {
     }
 }
 
+/** Aba do seletor: rótulo em cima, contagem embaixo — cabe nas 3 abas sem truncar. */
 @Composable
-private fun SegButton(text: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+private fun SegButton(label: String, count: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     Surface(
         modifier = modifier.clip(RoundedCornerShape(9.dp)).clickable(onClick = onClick),
         color = if (selected) Verde else Superficie,
         shape = RoundedCornerShape(9.dp),
     ) {
-        Text(
-            text,
-            color = if (selected) Superficie else InkMuted,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.fillMaxWidth().padding(vertical = 9.dp),
-        )
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp, horizontal = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                label,
+                color = if (selected) Superficie else InkMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                count.toString(),
+                color = if (selected) Superficie else Ink,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.ExtraBold,
+                textAlign = TextAlign.Center,
+            )
+        }
     }
 }
 

@@ -12,6 +12,7 @@ import io.atlas.servidor.data.local.ProposalRequestEntity
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
 import io.atlas.servidor.data.remote.dto.OfertaDto
 import io.atlas.servidor.domain.Simulation
+import io.atlas.servidor.ui.navigation.Produtos
 import kotlinx.coroutines.launch
 import kotlin.math.round
 
@@ -44,7 +45,21 @@ class SimularViewModel : ViewModel() {
     var cidade by mutableStateOf("")
         private set
 
+    /** Produto simulado. Só troca qual margem limita a parcela — o cálculo é o mesmo. */
+    var produto by mutableStateOf(Produtos.EMPRESTIMO)
+        private set
+
+    val produtoLabel: String
+        get() = if (produto == Produtos.CARTAO_CONSIGNADO) "Cartão de Crédito Consignado" else "Empréstimo Consignado"
+
     init { load() }
+
+    /** Define o produto antes/depois do load — recalcula o valor sugerido pela margem certa. */
+    fun selecionarProduto(p: String) {
+        if (produto == p) return
+        produto = p
+        valor = round((valorMaximo * 0.6).coerceIn(500.0, maxOf(500.0, valorMaximo)))
+    }
 
     fun load() {
         viewModelScope.launch {
@@ -73,7 +88,15 @@ class SimularViewModel : ViewModel() {
         }
     }
 
-    val margemDisponivel: Double get() = matricula?.margem?.margem?.disponivel ?: 0.0
+    /** Margem que limita a parcela deste produto. Empréstimo usa o bloco `margem`;
+     *  cartão de crédito consignado usa a linha correspondente de `margens_por_tipo`. */
+    val margemDisponivel: Double
+        get() {
+            val m = matricula ?: return 0.0
+            if (produto == Produtos.EMPRESTIMO) return m.margem.margem.disponivel
+            return m.margem.margensPorTipo.firstOrNull { it.tipo == produto }?.disponivel ?: 0.0
+        }
+
     val valorMaximo: Double get() = Simulation.valorMaximo(margemDisponivel, parcelas, taxaAm)
 
     /** Expiração da trava de 48h da matrícula atual (null se liberada). Chave = matrícula.

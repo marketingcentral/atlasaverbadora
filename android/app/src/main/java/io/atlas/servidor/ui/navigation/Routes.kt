@@ -13,8 +13,20 @@ object Routes {
 
     // Bottom-tab destinations (inner graph)
     const val TAB_INICIO = "tab_inicio"
-    const val TAB_SIMULAR = "tab_simular"
-    const val TAB_ANALISE = "tab_analise"
     const val TAB_CONTRATOS = "tab_contratos"
+    const val TAB_MARKETPLACE = "tab_marketplace"
+    const val TAB_TELEMEDICINA = "tab_telemedicina"
     const val TAB_CONTA = "tab_conta"
+
+    /** Simulador dentro do shell — recebe o produto (EMPRESTIMO / CARTAO_CONSIGNADO). */
+    const val SIMULAR_PRODUTO = "simular/{produto}"
+    const val ARG_PRODUTO = "produto"
+    fun simular(produto: String): String = "simular/$produto"
+}
+
+/** Produtos consignados. A lógica de crédito é a mesma; muda só a margem usada. */
+object Produtos {
+    const val EMPRESTIMO = "EMPRESTIMO"
+    const val CARTAO_CONSIGNADO = "CARTAO_CONSIGNADO"
+    const val CARTAO_BENEFICIOS = "CARTAO_BENEFICIOS"
 }

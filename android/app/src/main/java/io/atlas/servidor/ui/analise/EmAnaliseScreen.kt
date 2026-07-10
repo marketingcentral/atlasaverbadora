@@ -49,43 +49,44 @@ import io.atlas.servidor.ui.theme.Superficie
 import io.atlas.servidor.ui.theme.Verde
 import java.util.Locale
 
+/** Propostas realmente EM ANDAMENTO. Saem daqui: as concluídas (viram contrato ativo)
+ *  e as recusadas/expiradas/canceladas (vão pro Histórico). */
+fun emAnaliseAtivas(propostas: List<PropostaDto>): List<PropostaDto> = propostas.filter {
+    val sit = (it.situacao ?: "").lowercase()
+    !terminalHistorico(it.situacao) &&
+        !sit.contains("quitad") &&
+        !faseChain(it.situacao ?: "—", it.folhaStatus, it.folhaMotivo).concluido
+}
+
+/** Conteúdo da aba "Em análise" (dentro de Contratos). Sem título de página — o pai já tem. */
 @Composable
-fun EmAnaliseScreen(vm: EmAnaliseViewModel = viewModel()) {
-    Column(
-        modifier = Modifier.fillMaxSize().background(Fundo).padding(20.dp),
-    ) {
+fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel()) {
+    Column(Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Top,
         ) {
-            Text("Em análise", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+            Text(
+                "Solicitações enviadas ao banco. O status atualiza conforme a análise " +
+                    "(banco) e a aplicação em folha (prefeitura).",
+                color = InkMuted,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
             TextButton(onClick = { vm.load() }) {
                 Text("Atualizar", color = Verde, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             }
         }
-        Text(
-            "Solicitações enviadas ao banco. O status atualiza conforme a análise " +
-                "(banco) e a aplicação em folha (prefeitura).",
-            color = InkMuted,
-            fontSize = 14.sp,
-        )
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
         when (val s = vm.state) {
             is UiState.Loading -> LoadingBox()
             is UiState.Error -> ErrorBox(s.message, onRetry = { vm.load() })
             is UiState.Success -> {
-                // Em análise = só as em andamento. Saem daqui: aprovadas por completo
-                // (viram contrato) e recusadas/expiradas/canceladas (vão pro Histórico).
-                val emAnalise = s.data.filter {
-                    val sit = (it.situacao ?: "").lowercase()
-                    !terminalHistorico(it.situacao) &&
-                        !sit.contains("quitad") &&
-                        !faseChain(it.situacao ?: "—", it.folhaStatus, it.folhaMotivo).concluido
-                }
+                val emAnalise = emAnaliseAtivas(s.data)
                 if (emAnalise.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
                         Text("Você não tem solicitações em análise.", color = InkMuted, fontSize = 14.sp)
                     }
                 } else {

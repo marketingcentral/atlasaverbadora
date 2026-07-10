@@ -1,6 +1,7 @@
 package io.atlas.servidor.ui.simular
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -58,9 +60,14 @@ private val PARCELA_OPTIONS = listOf(12, 24, 36, 48, 60, 72, 84, 96)
 
 @Composable
 fun SimularScreen(
+    produto: String,
     onSolicitado: () -> Unit,
+    onVoltar: () -> Unit,
     vm: SimularViewModel = viewModel(),
 ) {
+    // Fixa o produto (empréstimo ou cartão de crédito) antes de simular.
+    LaunchedEffect(produto) { vm.selecionarProduto(produto) }
+
     // Relógio de 1s para o countdown / liberação automática da trava.
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) {
@@ -79,7 +86,7 @@ fun SimularScreen(
             if (locked) {
                 MargemTravadaLock(remainingMs = expiry!! - now, onVerAnalise = onSolicitado)
             } else {
-                Simulador(vm, onSolicitado)
+                Simulador(vm, onSolicitado, onVoltar)
             }
         }
     }
@@ -132,17 +139,18 @@ private fun MargemTravadaLock(remainingMs: Long, onVerAnalise: () -> Unit) {
 }
 
 @Composable
-private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit) {
+private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit, onVoltar: () -> Unit) {
     var showTermo by remember { mutableStateOf(false) }
     val result = vm.result()
     // Sem margem consignável disponível → não é permitido simular/solicitar.
     if (vm.margemDisponivel < 0.01) {
-        SemMargemView()
+        SemMargemView(vm.produtoLabel, onVoltar)
         return
     }
 
     if (showTermo) {
         TermoDialog(
+            produtoLabel = vm.produtoLabel,
             valor = result.valor,
             parcelas = result.parcelas,
             parcela = result.parcelaMensal,
@@ -158,7 +166,10 @@ private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit) {
             .verticalScroll(rememberScrollState())
             .padding(20.dp),
     ) {
-        Text("Simular empréstimo", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+        VoltarLink(onVoltar)
+        Spacer(Modifier.height(8.dp))
+        Text("Simular", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+        Text(vm.produtoLabel, color = InkMuted, fontSize = 14.sp)
         Spacer(Modifier.height(16.dp))
 
         SectionLabel("Banco")
@@ -277,13 +288,33 @@ private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit) {
     }
 }
 
+/** Link "‹ Voltar" — o simulador não é mais uma aba, precisa de saída explícita. */
 @Composable
-private fun SemMargemView() {
+private fun VoltarLink(onVoltar: () -> Unit) {
+    Text(
+        "‹ Voltar",
+        color = Verde,
+        fontSize = 15.sp,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onVoltar)
+            .padding(vertical = 6.dp, horizontal = 2.dp),
+    )
+}
+
+@Composable
+private fun SemMargemView(produtoLabel: String, onVoltar: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().background(Fundo).padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Simular empréstimo", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, modifier = Modifier.fillMaxWidth())
+        Column(Modifier.fillMaxWidth()) {
+            VoltarLink(onVoltar)
+            Spacer(Modifier.height(8.dp))
+            Text("Simular", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+            Text(produtoLabel, color = InkMuted, fontSize = 14.sp)
+        }
         Spacer(Modifier.height(48.dp))
         Text("🔒", fontSize = 44.sp)
         Spacer(Modifier.height(16.dp))
@@ -296,7 +327,7 @@ private fun SemMargemView() {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Você não tem margem consignável disponível para novos empréstimos. " +
+            "Você não tem margem disponível para $produtoLabel. " +
                 "A margem é liberada conforme seus contratos são quitados.",
             color = InkMuted,
             fontSize = 14.sp,
@@ -307,6 +338,7 @@ private fun SemMargemView() {
 
 @Composable
 private fun TermoDialog(
+    produtoLabel: String,
     valor: Double,
     parcelas: Int,
     parcela: Double,
@@ -321,7 +353,7 @@ private fun TermoDialog(
         text = {
             androidx.compose.foundation.layout.Column {
                 Text(
-                    "Você está solicitando um empréstimo consignado junto ao Banco Atlas:",
+                    "Você está solicitando $produtoLabel junto ao Banco Atlas:",
                     color = InkMuted,
                     fontSize = 14.sp,
                 )

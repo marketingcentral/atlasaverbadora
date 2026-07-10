@@ -40,9 +40,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.atlas.servidor.core.UiState
-import io.atlas.servidor.data.remote.dto.MargemTipoDto
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
 import io.atlas.servidor.data.remote.dto.OfertasResponse
+import io.atlas.servidor.ui.navigation.Produtos
 import io.atlas.servidor.domain.Format
 import io.atlas.servidor.ui.components.AtlasCard
 import io.atlas.servidor.ui.components.AtlasPrimaryButton
@@ -76,7 +76,8 @@ private val BANNERS = listOf(
 @Composable
 fun InicioScreen(
     vm: HomeViewModel,
-    onOpenSimular: () -> Unit,
+    onSimularProduto: (String) -> Unit,
+    onOpenMarketplace: () -> Unit,
     onOpenAnalise: () -> Unit,
     onOpenPortabilidade: () -> Unit,
 ) {
@@ -124,12 +125,16 @@ fun InicioScreen(
                 }
 
                 if (info != null) {
-                    MargemPorModalidadeCard(
+                    SectionLabel("Minhas margens")
+                    Spacer(Modifier.height(12.dp))
+                    ProdutosSection(
                         info = info,
                         locked = locked,
-                        remainingMs = if (locked) (expiry!! - now) else 0L,
+                        onSimularProduto = onSimularProduto,
+                        onOpenMarketplace = onOpenMarketplace,
+                        onOpenAnalise = onOpenAnalise,
                     )
-                    Spacer(Modifier.height(20.dp))
+                    Spacer(Modifier.height(24.dp))
                 }
 
                 BannerCarousel()
@@ -137,7 +142,7 @@ fun InicioScreen(
 
                 SectionLabel("Oferta para sua margem")
                 Spacer(Modifier.height(12.dp))
-                OfertaAtlas(vm.ofertasState, onOpenSimular)
+                OfertaAtlas(vm.ofertasState) { onSimularProduto(Produtos.EMPRESTIMO) }
 
                 Spacer(Modifier.height(16.dp))
                 AtlasCard {
@@ -149,12 +154,6 @@ fun InicioScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     AtlasSecondaryButton(text = "Ver portabilidade", onClick = onOpenPortabilidade)
-                }
-
-                // "Acompanhar análise" só aparece quando há uma pré-reserva em andamento.
-                if (locked) {
-                    Spacer(Modifier.height(16.dp))
-                    AtlasPrimaryButton(text = "Acompanhar análise", onClick = onOpenAnalise)
                 }
                 Spacer(Modifier.height(24.dp))
             }
@@ -287,148 +286,97 @@ private fun firstName(name: String): String {
     return first.lowercase().replaceFirstChar { it.uppercase() }
 }
 
-/** Rótulos das modalidades — mesmos textos da versão web (dashboard.tsx). */
-private val PRODUTO_LABEL = mapOf(
-    "EMPRESTIMO" to "Empréstimo Consignado",
-    "CARTAO_CONSIGNADO" to "Cartão de Crédito Consignado",
-    "CARTAO_BENEFICIOS" to "Cartão Benefício Consignado",
-)
-private val ORDEM_MODALIDADES = listOf("EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS")
-
-/** Card escuro "Minha margem por modalidade" — espelha a web, empilhado para o celular.
- *  Cada produto tem seu próprio limite: a margem de empréstimo não serve para cartão. */
+/** Os três produtos consignados, cada um com a SUA margem e a SUA ação.
+ *  Cada produto tem limite próprio — a margem de empréstimo não serve para cartão. */
 @Composable
-private fun MargemPorModalidadeCard(info: MatriculaInfoDto, locked: Boolean, remainingMs: Long) {
+private fun ProdutosSection(
+    info: MatriculaInfoDto,
+    locked: Boolean,
+    onSimularProduto: (String) -> Unit,
+    onOpenMarketplace: () -> Unit,
+    onOpenAnalise: () -> Unit,
+) {
     val porTipo = info.margem.margensPorTipo.associateBy { it.tipo }
     val m = info.margem.margem
-    val linhas = ORDEM_MODALIDADES.map { tipo ->
-        porTipo[tipo] ?: if (tipo == "EMPRESTIMO") {
-            // Fallback: deriva do bloco `margem` se o backend não mandar a linha.
-            MargemTipoDto(tipo = tipo, total = m.comprometido + m.disponivel, disponivel = m.disponivel)
-        } else {
-            MargemTipoDto(tipo = tipo, total = 0.0, disponivel = 0.0)
-        }
-    }
+    // Fallback do empréstimo: deriva do bloco `margem` se a linha não vier.
+    val emprestimo = porTipo[Produtos.EMPRESTIMO]?.disponivel ?: m.disponivel
+    val cartaoCredito = porTipo[Produtos.CARTAO_CONSIGNADO]?.disponivel ?: 0.0
+    val cartaoBeneficio = porTipo[Produtos.CARTAO_BENEFICIOS]?.disponivel ?: 0.0
 
-    Surface(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)),
-        color = Ink,
-    ) {
-        Column(Modifier.padding(20.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "MINHA MARGEM POR MODALIDADE",
-                    color = Superficie.copy(alpha = 0.6f),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp,
-                )
-                if (locked) StatusChip("Bloqueada", ChipTone.Ambar)
-            }
-            Spacer(Modifier.height(16.dp))
-
-            linhas.forEachIndexed { i, linha ->
-                MargemLinha(linha)
-                if (i < linhas.lastIndex) {
-                    Spacer(Modifier.height(14.dp))
-                    Box(Modifier.fillMaxWidth().height(1.dp).background(Superficie.copy(alpha = 0.10f)))
-                    Spacer(Modifier.height(14.dp))
-                }
-            }
-
-            if (locked) {
-                Spacer(Modifier.height(16.dp))
-                Box(Modifier.fillMaxWidth().height(1.dp).background(Superficie.copy(alpha = 0.10f)))
-                Spacer(Modifier.height(14.dp))
-                Text("Liberação da margem em", color = Superficie.copy(alpha = 0.7f), fontSize = 12.sp)
-                Text(formatRemaining(remainingMs), color = Ambar, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
-            }
-        }
-    }
+    ProdutoCard(
+        emoji = "💵",
+        titulo = "Empréstimo Consignado",
+        descricao = "Dinheiro na sua conta, descontado direto da folha.",
+        disponivel = emprestimo,
+        aviso = if (locked) "Você tem uma solicitação em análise. Sua margem está bloqueada." else null,
+        textoBotao = if (locked) "Acompanhar análise" else "Simular",
+        onClick = if (locked) onOpenAnalise else ({ onSimularProduto(Produtos.EMPRESTIMO) }),
+    )
+    Spacer(Modifier.height(14.dp))
+    ProdutoCard(
+        emoji = "💳",
+        titulo = "Cartão de Crédito Consignado",
+        descricao = "Cartão com limite próprio e fatura descontada em folha.",
+        disponivel = cartaoCredito,
+        aviso = null,
+        textoBotao = "Simular",
+        onClick = { onSimularProduto(Produtos.CARTAO_CONSIGNADO) },
+    )
+    Spacer(Modifier.height(14.dp))
+    ProdutoCard(
+        emoji = "🎁",
+        titulo = "Cartão Benefício Consignado",
+        descricao = "Use seus benefícios nos parceiros do convênio.",
+        disponivel = cartaoBeneficio,
+        aviso = null,
+        textoBotao = "Ver Marketplace",
+        onClick = onOpenMarketplace,
+    )
 }
 
-/** Uma modalidade: nome, barra de uso, % utilizado/livre e Total/Utilizado/Disponível. */
+/** Card de um produto: o que é, quanto sobra de margem e o que fazer a seguir. */
 @Composable
-private fun MargemLinha(data: MargemTipoDto) {
-    val utilizado = (data.total - data.disponivel).coerceAtLeast(0.0)
-    // Frações (0..1) — Format.percent1 espera fração, não percentual.
-    val fracUtilizado = if (data.total > 0) (utilizado / data.total).coerceIn(0.0, 1.0) else 0.0
-    val fracLivre = 1.0 - fracUtilizado
-    val barColor = when {
-        utilizado == 0.0 -> Verde
-        fracUtilizado > 0.8 -> DangerRed
-        else -> Ambar
-    }
-    val label = PRODUTO_LABEL[data.tipo] ?: data.tipo
-
-    Column(Modifier.fillMaxWidth()) {
-        Text(label, color = Superficie, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(5.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(Superficie.copy(alpha = 0.15f)),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(fracUtilizado.toFloat())
-                    .height(5.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(barColor),
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(
-                if (utilizado == 0.0) "0%" else "${Format.percent1(fracUtilizado)} utilizado",
-                color = if (utilizado > 0) Ambar else Superficie.copy(alpha = 0.5f),
-                fontSize = 11.sp,
-            )
-            Text("${Format.percent1(fracLivre)} livre", color = Verde, fontSize = 11.sp)
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth()) {
-            ValorColuna("Total", Format.money(data.total), Modifier.weight(1f), Superficie)
-            ValorColuna(
-                "Utilizado",
-                Format.money(utilizado),
-                Modifier.weight(1f),
-                if (utilizado > 0) Ambar else Superficie.copy(alpha = 0.5f),
-            )
-            ValorColuna("Disponível", Format.money(data.disponivel), Modifier.weight(1f), Verde, bold = true)
-        }
-    }
-}
-
-@Composable
-private fun ValorColuna(
-    label: String,
-    value: String,
-    modifier: Modifier = Modifier,
-    color: Color,
-    bold: Boolean = false,
+private fun ProdutoCard(
+    emoji: String,
+    titulo: String,
+    descricao: String,
+    disponivel: Double,
+    aviso: String?,
+    textoBotao: String,
+    onClick: () -> Unit,
 ) {
-    Column(modifier = modifier) {
+    AtlasCard {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(emoji, fontSize = 28.sp)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(titulo, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(descricao, color = InkMuted, fontSize = 12.sp)
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
         Text(
-            label.uppercase(),
-            color = Superficie.copy(alpha = 0.5f),
-            fontSize = 9.sp,
+            "MARGEM DISPONÍVEL",
+            color = InkMuted,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 0.5.sp,
+            letterSpacing = 0.6.sp,
         )
-        Spacer(Modifier.height(3.dp))
-        Text(
-            value,
-            color = color,
-            fontSize = 13.sp,
-            fontWeight = if (bold) FontWeight.ExtraBold else FontWeight.Bold,
-        )
+        Spacer(Modifier.height(4.dp))
+        Text(Format.money(disponivel), color = Verde, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+
+        if (aviso != null) {
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusChip("Bloqueada", ChipTone.Ambar)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(aviso, color = InkMuted, fontSize = 12.sp)
+        }
+
+        Spacer(Modifier.height(16.dp))
+        AtlasPrimaryButton(text = textoBotao, onClick = onClick)
     }
 }
 
@@ -503,14 +451,6 @@ private fun OfertaAtlas(state: UiState<OfertasResponse>, onSimular: () -> Unit) 
         Spacer(Modifier.height(16.dp))
         AtlasPrimaryButton(text = "Simular", onClick = onSimular)
     }
-}
-
-private fun formatRemaining(ms: Long): String {
-    if (ms <= 0) return "00h 00min"
-    val totalMin = ms / 60000
-    val h = totalMin / 60
-    val m = totalMin % 60
-    return "${h}h ${m.toString().padStart(2, '0')}min"
 }
 
 private fun greeting(): String {
