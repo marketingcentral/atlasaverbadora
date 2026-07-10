@@ -264,16 +264,18 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#9BAAC2", marginBottom: 14 }}>
         Minha margem por modalidade
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* 3 quadrados lado a lado — cada modalidade em seu proprio card.
+          auto-fit + minmax garante quebra pra 2 e depois 1 coluna em telas menores. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
         {linhas.map((m) => (
-          <MargemLinha key={m.tipo} data={m} />
+          <MargemCard key={m.tipo} data={m} />
         ))}
       </div>
     </article>
   );
 }
 
-function MargemLinha({ data }: { data: { tipo: string; total: number; disponivel: number } }) {
+function MargemCard({ data }: { data: { tipo: string; total: number; disponivel: number } }) {
   const utilizado = Math.max(0, data.total - data.disponivel);
   const pctUtilizado = data.total > 0 ? (utilizado / data.total) * 100 : 0;
   const pctLivre = 100 - pctUtilizado;
@@ -281,10 +283,20 @@ function MargemLinha({ data }: { data: { tipo: string; total: number; disponivel
   const label = PRODUTO_LABEL[data.tipo] ?? data.tipo;
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: 20, alignItems: "center" }}>
-      {/* nome + barra */}
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#EAF0FA", marginBottom: 6 }}>{label}</div>
+    <div style={{
+      background: "rgba(255,255,255,.04)",
+      border: "1px solid rgba(255,255,255,.08)",
+      borderRadius: 12,
+      padding: 16,
+      display: "flex",
+      flexDirection: "column",
+      gap: 12,
+    }}>
+      {/* nome da modalidade */}
+      <div style={{ fontSize: 13, fontWeight: 700, color: "#EAF0FA" }}>{label}</div>
+
+      {/* barra de progresso + percentuais */}
+      <div>
         <div style={{ height: 4, background: "rgba(255,255,255,.08)", borderRadius: 4, overflow: "hidden" }}>
           <div style={{ width: `${pctUtilizado}%`, height: "100%", background: barra, transition: "width .4s ease" }} />
         </div>
@@ -295,19 +307,22 @@ function MargemLinha({ data }: { data: { tipo: string; total: number; disponivel
           <span style={{ color: "#10B981" }}>{pctLivre.toFixed(1)}% livre</span>
         </div>
       </div>
-      {/* Total / Utilizado / Disponível */}
-      <ValorColuna label="Total" value={fmtBRL(data.total)} color="#EAF0FA" />
-      <ValorColuna label="Utilizado" value={fmtBRL(utilizado)} color={utilizado > 0 ? "#C9A961" : "#7A8CA8"} />
-      <ValorColuna label="Disponível" value={fmtBRL(data.disponivel)} color="#10B981" bold />
+
+      {/* Total / Utilizado / Disponivel — empilhados dentro do card */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <ValorLinha label="Total" value={fmtBRL(data.total)} color="#EAF0FA" />
+        <ValorLinha label="Utilizado" value={fmtBRL(utilizado)} color={utilizado > 0 ? "#C9A961" : "#7A8CA8"} />
+        <ValorLinha label="Disponível" value={fmtBRL(data.disponivel)} color="#10B981" bold />
+      </div>
     </div>
   );
 }
 
-function ValorColuna({ label, value, color, bold }: { label: string; value: string; color: string; bold?: boolean }) {
+function ValorLinha({ label, value, color, bold }: { label: string; value: string; color: string; bold?: boolean }) {
   return (
-    <div style={{ textAlign: "right", minWidth: 90 }}>
-      <div style={{ fontSize: 10, letterSpacing: ".06em", textTransform: "uppercase", color: "#7A8CA8", fontWeight: 700 }}>{label}</div>
-      <div style={{ fontSize: 15, fontWeight: bold ? 800 : 700, color, marginTop: 2 }}>{value}</div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+      <span style={{ fontSize: 10, letterSpacing: ".06em", textTransform: "uppercase", color: "#7A8CA8", fontWeight: 700 }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: bold ? 800 : 700, color, textAlign: "right" }}>{value}</span>
     </div>
   );
 }
