@@ -367,11 +367,19 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await refreshBeneficios(c.env);
     const url = new URL(c.req.url);
     const categoria = url.searchParams.get("categoria");
+    // Aceita ?matricula=X pra respeitar o switcher do app (mesmo padrao de
+    // /me/ofertas e /me/ofertas-banco). Sem esse param, cai na prefeitura do JWT.
+    const matAtiva = url.searchParams.get("matricula");
+    const entryAtivo = matAtiva
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
+      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
+    const convAtivo = entryAtivo ? CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio) : undefined;
+    const prefeituraAtiva = convAtivo?.prefeituraId ?? s.prefeitura_id;
     // Filtro por prefeitura ATIVA + suporte a multi-prefeitura (prefeituraIdsExtras).
     const list = (await loadBeneficios(c.env)).filter((b) => {
       if (!b.ativo) return false;
-      const cobrePrefeitura = b.prefeituraId === s.prefeitura_id
-        || (b.prefeituraIdsExtras?.includes(s.prefeitura_id) ?? false);
+      const cobrePrefeitura = b.prefeituraId === prefeituraAtiva
+        || (b.prefeituraIdsExtras?.includes(prefeituraAtiva) ?? false);
       if (!cobrePrefeitura) return false;
       if (categoria && !b.categorias.includes(categoria as "saude" | "alimentacao" | "educacao" | "lazer")) return false;
       return true;

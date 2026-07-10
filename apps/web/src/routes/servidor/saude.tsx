@@ -22,11 +22,12 @@ export function ServidorSaude() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Beneficios de saude cadastrados pela averbadora para a prefeitura do servidor.
+  // Beneficios de saude da prefeitura da matricula ATIVA (respeita switcher).
   const beneficiosQ = useQuery({
-    queryKey: ["servidor", "beneficios", "saude"],
-    queryFn: () => atlas.servidor.getMyBeneficios("saude"),
+    queryKey: ["servidor", "beneficios", "saude", info?.matricula],
+    queryFn: () => atlas.servidor.getMyBeneficios("saude", info?.matricula),
     refetchOnWindowFocus: true,
+    enabled: !!info?.matricula,
   });
   const parceiros = beneficiosQ.data?.beneficios ?? [];
 

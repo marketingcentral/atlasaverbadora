@@ -33,10 +33,13 @@ export function ServidorBeneficios() {
   }, []);
 
   // Descontos comerciais (nao-saude) cadastrados pela averbadora para a prefeitura.
+  // Passa a matricula ATIVA pra respeitar o switcher (Adriana em Palhoca vs Floripa
+  // ve beneficios diferentes).
   const beneficiosQ = useQuery({
-    queryKey: ["servidor", "beneficios", "todos"],
-    queryFn: () => atlas.servidor.getMyBeneficios(),
+    queryKey: ["servidor", "beneficios", "todos", info?.matricula],
+    queryFn: () => atlas.servidor.getMyBeneficios(undefined, info?.matricula),
     refetchOnWindowFocus: true,
+    enabled: !!info?.matricula,
   });
   const parceiros = useMemo(
     () => (beneficiosQ.data?.beneficios ?? []).filter((p) =>
@@ -79,7 +82,11 @@ export function ServidorBeneficios() {
         </span>
         {filtrados.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
-            Nenhum parceiro nesta categoria — em breve mais opções.
+            {beneficiosQ.data?.beneficios.some((b) => b.categorias.includes("saude")) && !parceiros.length ? (
+              <>Você tem parceiros de <b>Saúde</b> ({beneficiosQ.data.beneficios.filter((b) => b.categorias.includes("saude")).length}) — veja na aba <b>Saúde</b> do menu.<br />Nenhum parceiro comercial disponível para <b>{info.prefeitura}</b> por enquanto.</>
+            ) : (
+              <>Nenhum parceiro nesta categoria em <b>{info.prefeitura}</b> — em breve mais opções.</>
+            )}
           </div>
         ) : (
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>

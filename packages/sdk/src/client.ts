@@ -1011,11 +1011,17 @@ export class AtlasClient {
       this.request<{ ofertas: ServidorOfertaBanco[] }>(
         matricula ? `/v1/servidores/me/ofertas-banco?matricula=${encodeURIComponent(matricula)}` : "/v1/servidores/me/ofertas-banco",
       ),
-    /** Beneficios/descontos da prefeitura do servidor. Filtrado por categoria opcional. */
-    getMyBeneficios: (categoria?: CategoriaBeneficio) =>
+    /** Beneficios/descontos da prefeitura do servidor. Passe matricula pra respeitar
+     *  o switcher (senao usa a prefeitura do JWT, que fixa a matricula do login). */
+    getMyBeneficios: (categoria?: CategoriaBeneficio, matricula?: string) =>
       this.request<{ beneficios: ServidorBeneficio[] }>(
         "/v1/servidores/me/beneficios",
-        { query: categoria ? { categoria } : {} },
+        {
+          query: {
+            ...(categoria ? { categoria } : {}),
+            ...(matricula ? { matricula } : {}),
+          },
+        },
       ),
     /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
     criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string }) =>
