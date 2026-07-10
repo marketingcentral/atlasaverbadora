@@ -6,7 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
-import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
@@ -74,14 +74,26 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
   const servidorId = Number(e.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
   const contratos = listContratos({ matricula: e.matricula });
   // Margem comprometida JA NA PROPOSTA — assim que o servidor aceita o termo,
-  // a parcela sai da margem disponivel (evita solicitar 2 operacoes sobrepondo
-  // a mesma margem). So volta se a proposta for recusada/expirada/cancelada.
+  // a parcela sai da margem disponivel do BUCKET correspondente (evita
+  // solicitar 2 operacoes sobrepondo a mesma margem). So volta se a proposta
+  // for recusada/expirada/cancelada.
   const ativos = contratos.filter((ct) => comprometeMargem(ct.situacao));
-  const comprometido = ativos.reduce((a, ct) => a + ct.valorParcela, 0);
+  // Comprometido POR BUCKET — cartao consignado nao desconta da margem de
+  // emprestimo (e vice-versa), sao servicos independentes com 3 buckets:
+  // EMPRESTIMO (35%), CARTAO_CONSIGNADO (5%), CARTAO_BENEFICIOS (5%).
+  const comprometidoPorTipo: Record<"EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS", number> = {
+    EMPRESTIMO: 0, CARTAO_CONSIGNADO: 0, CARTAO_BENEFICIOS: 0,
+  };
+  for (const ct of ativos) {
+    const bucket = deriveTipoMargem(ct);
+    comprometidoPorTipo[bucket] += ct.valorParcela;
+  }
+  // Total comprometido de emprestimo (pra retro-compat no campo comprometido raiz).
+  const comprometido = comprometidoPorTipo.EMPRESTIMO;
   const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
     tipo,
     total: round2(margemTotal(e.salarioLiquido, tipo)),
-    disponivel: round2(margemDisponivel(e.salarioLiquido, tipo === "EMPRESTIMO" ? comprometido : 0, tipo)),
+    disponivel: round2(margemDisponivel(e.salarioLiquido, comprometidoPorTipo[tipo], tipo)),
   }));
   const emp = margens.find((m) => m.tipo === "EMPRESTIMO")!;
   // A aba Contratos mostra só contratos REAIS: aprovados (vigentes) ou quitados.
@@ -334,15 +346,23 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
     if (!entry) throw Errors.notFound("matricula");
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
-    // Valida que o servidor tem margem cartao correspondente > 0. Sem isso, a
-    // solicitacao nao faz sentido (a fatura minima nao caberia em folha).
+    await refreshContratos(c.env); // ve contratos criados em outros isolates
+    // Valida que o servidor tem margem cartao correspondente > 0 e que soma
+    // do ja comprometido no BUCKET dele + nova fatura minima nao ultrapassa
+    // a margem total. Assim o servidor nao consegue solicitar 2 cartoes
+    // sobrepondo a mesma margem (fluxo espelho do emprestimo).
     const tipoMargem = body.produto === "cartao_consignado" ? "CARTAO_CONSIGNADO" : "CARTAO_BENEFICIOS";
-    const margemDisp = margemDisponivel(entry.salarioLiquido, 0, tipoMargem);
+    const comprometidoBucket = listContratos({ matricula: entry.matricula })
+      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === tipoMargem)
+      .reduce((acc, ct) => acc + ct.valorParcela, 0);
+    const margemDisp = margemDisponivel(entry.salarioLiquido, comprometidoBucket, tipoMargem);
     if (margemDisp <= 0) {
-      throw Errors.validation({ margem: `sem margem disponivel de ${tipoMargem} pra esta matricula` });
+      const nomeMargem = tipoMargem === "CARTAO_CONSIGNADO" ? "cartao consignado" : "cartao beneficio";
+      throw Errors.validation({
+        margem: `sem margem de ${nomeMargem} disponivel — voce ja tem uma solicitacao em analise ou contrato ativo que consome essa margem.`,
+      });
     }
     const nomeProduto = body.produto === "cartao_consignado" ? "Cartao Consignado" : "Cartao Beneficio";
-    await refreshContratos(c.env); // sincroniza contador de adf entre isolates
     // Cria contrato real de cartao (ECONSIGNADO) — assim aparece em
     // /servidor/contratos, na fila do banco em /banco/propostas (aba Cartao)
     // e materializa ADF pra averbadora. Antes era so pushEvent no log —
@@ -371,6 +391,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       codigoVerba: conv?.codigoVerba ?? "",
       observacoes: `Solicitacao de ${nomeProduto} via app do servidor (${body.bancoNome})`,
       isReserva: true,
+      tipoMargem, // bucket explicito — cartao consig / cartao benef
       ator: `servidor:${s.id}`,
     });
     await persistContrato(c.env, contrato.adf);
@@ -611,8 +632,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // SEGURANÇA (server-side): a parcela nunca pode exceder a margem consignável
     // disponível da matrícula. O cliente já limita o valor, mas o backend é a fonte
     // de verdade — sem isto, uma chamada adulterada criaria empréstimo acima da margem.
+    // Compromete apenas o bucket EMPRESTIMO — cartao consig/beneficio nao
+    // afetam a margem de emprestimo (buckets independentes).
     const comprometidoAtual = listContratos({ matricula: entry.matricula })
-      .filter((ct) => comprometeMargem(ct.situacao))
+      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
     const margemDisp = margemDisponivel(entry.salarioLiquido, comprometidoAtual, "EMPRESTIMO");
     if (round2(cet.parcela) > round2(margemDisp) + 0.01) {
@@ -643,6 +666,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       codigoVerba: conv?.codigoVerba ?? "",
       observacoes: `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
       isReserva: true,
+      tipoMargem: "EMPRESTIMO", // explicit bucket — nao confunde com margem de cartao
       ator: `servidor:${s.id}`,
     });
     await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh

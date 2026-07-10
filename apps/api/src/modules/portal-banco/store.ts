@@ -40,6 +40,20 @@ export interface ContratoFull extends ContratoMock {
   ccbKey?: string;
   /** ISO — quando o CCB foi anexado (pra exibir "anexado em..."). */
   ccbAnexadoEm?: string;
+  /** Bucket de margem que este contrato compromete: EMPRESTIMO (35%),
+   *  CARTAO_CONSIGNADO (5%) ou CARTAO_BENEFICIOS (5%). Necessario pra
+   *  cartao consignado nao descontar da margem de emprestimo (e vice-versa).
+   *  Se ausente (dado antigo), infere de tipoContrato: ECONSIGNADO ->
+   *  CARTAO_CONSIGNADO, restante -> EMPRESTIMO. */
+  tipoMargem?: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS";
+}
+
+/** Deriva o bucket de margem que um contrato ocupa. Explicito no campo
+ *  tipoMargem (fluxo novo) tem prioridade; senao infere pelo tipoContrato
+ *  pra dados antigos. */
+export function deriveTipoMargem(ct: Pick<ContratoFull, "tipoMargem" | "tipoContrato">): "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS" {
+  if (ct.tipoMargem) return ct.tipoMargem;
+  return ct.tipoContrato === "ECONSIGNADO" ? "CARTAO_CONSIGNADO" : "EMPRESTIMO";
 }
 
 export interface ContratoEvento {
@@ -338,6 +352,10 @@ export interface NovoContratoInput {
   bancoOrigem?: string;
   contratoOrigem?: string;
   saldoDevedorOrigem?: number;
+  /** Bucket de margem — opcional. Se ausente, inferido pelo tipoContrato
+   *  (via deriveTipoMargem). Cartao consignado usa "CARTAO_CONSIGNADO",
+   *  cartao beneficio usa "CARTAO_BENEFICIOS", emprestimo/refin usa "EMPRESTIMO". */
+  tipoMargem?: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS";
   ator: string;
 }
 
@@ -378,6 +396,7 @@ export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
     bancoOrigem: input.bancoOrigem,
     contratoOrigem: input.contratoOrigem,
     saldoDevedorOrigem: input.saldoDevedorOrigem,
+    tipoMargem: input.tipoMargem,
   };
   _contratos.set(adf, c);
   _eventos.push({
