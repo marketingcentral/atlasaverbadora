@@ -9,7 +9,46 @@ import type { Env } from "../../env.js";
 import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
 
 export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer";
-export type OrigemBeneficio = "banco" | "averbadora";
+export type OrigemBeneficio = "banco" | "averbadora" | "prefeitura" | "convenio";
+export type TipoDesconto = "percentual" | "valor_fixo" | "preco_especial" | "gratuidade";
+export type ModoUso = "cartao_consignado" | "matricula" | "cpf" | "codigo" | "qr";
+export type DestaqueBeneficio = "novo" | "popular" | "exclusivo" | "desconto_extra";
+
+export interface EnderecoBeneficio {
+  cep?: string; logradouro?: string; numero?: string; complemento?: string;
+  bairro?: string; cidade?: string; uf?: string;
+}
+export interface ContatoBeneficio {
+  telefone?: string; whatsapp?: string; email?: string; site?: string; instagram?: string;
+}
+export interface DescontoBeneficio {
+  tipo: TipoDesconto;
+  valor?: number;
+  aplicavelEm?: string;
+  limiteMensal?: number;
+  cumulativo?: boolean;
+}
+export interface ComoUsarBeneficio {
+  modo: ModoUso;
+  codigoPromocional?: string;
+  instrucoes?: string;
+}
+export interface FiltroBeneficio {
+  convenioIds?: string[];
+  vinculos?: string[];
+  situacaoFuncional?: string[];
+  salarioMin?: number;
+  salarioMax?: number;
+  idadeMin?: number;
+  idadeMax?: number;
+}
+export interface VigenciaBeneficio {
+  inicio?: string; fim?: string;
+  diasSemana?: number[]; horaInicio?: string; horaFim?: string;
+}
+export interface ResponsavelBeneficio {
+  nome?: string; email?: string; telefone?: string; cargo?: string;
+}
 
 export interface Beneficio {
   id: string;
@@ -27,11 +66,29 @@ export interface Beneficio {
   descontoLabel: string;
   /** "em medicamentos". */
   descontoComplemento: string;
-  /** Quem disponibiliza: banco (via cartao consignado) ou averbadora (comercio local). */
+  /** Quem disponibiliza. banco (via cartao consignado), averbadora (comercio local
+   *  negociado), prefeitura (direto do RH), convenio (convenio medico/farmacia). */
   origem: OrigemBeneficio;
   ativo: boolean;
   criadoEm: string;
   criadoPor: string;
+  // ===== Campos estendidos (fatia "detalhes completos") — todos opcionais =====
+  cnpj?: string;
+  descricaoCurta?: string;
+  descricaoLonga?: string;
+  logoUrl?: string;
+  endereco?: EnderecoBeneficio;
+  contato?: ContatoBeneficio;
+  desconto?: DescontoBeneficio;
+  comoUsar?: ComoUsarBeneficio;
+  filtro?: FiltroBeneficio;
+  vigencia?: VigenciaBeneficio;
+  responsavel?: ResponsavelBeneficio;
+  restricoes?: string;
+  destaque?: DestaqueBeneficio;
+  comissaoPct?: number;
+  notasInternas?: string;
+  prefeituraIdsExtras?: number[];
 }
 
 const TABLE = "admin_beneficios";

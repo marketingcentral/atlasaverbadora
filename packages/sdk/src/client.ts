@@ -52,7 +52,72 @@ export interface NovoContratoBody {
 export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios";
 
 export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer";
-export type OrigemBeneficio = "banco" | "averbadora";
+export type OrigemBeneficio = "banco" | "averbadora" | "prefeitura" | "convenio";
+export type TipoDesconto = "percentual" | "valor_fixo" | "preco_especial" | "gratuidade";
+/** Como o servidor apresenta o beneficio no parceiro pra ganhar o desconto. */
+export type ModoUso = "cartao_consignado" | "matricula" | "cpf" | "codigo" | "qr";
+export type DestaqueBeneficio = "novo" | "popular" | "exclusivo" | "desconto_extra";
+
+/** Endereco completo — opcional. Uma unidade fisica do parceiro. */
+export interface EnderecoBeneficio {
+  cep?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  uf?: string;
+}
+
+export interface ContatoBeneficio {
+  telefone?: string;
+  whatsapp?: string;
+  email?: string;
+  site?: string;
+  instagram?: string;
+}
+
+export interface DescontoBeneficio {
+  tipo: TipoDesconto;
+  /** Valor numerico do desconto — % pra percentual, R$ pra valor_fixo, R$ do preco pra preco_especial, ignorado pra gratuidade. */
+  valor?: number;
+  aplicavelEm?: string; // Ex.: "medicamentos genericos", "todo o cardapio", "matriculas novas"
+  limiteMensal?: number; // R$ (opcional — teto de uso mensal por servidor)
+  cumulativo?: boolean; // Cumulativo com outros descontos?
+}
+
+export interface ComoUsarBeneficio {
+  modo: ModoUso;
+  /** Codigo/senha unico (ex.: "SERVIDOR2026") — quando modo=codigo. */
+  codigoPromocional?: string;
+  instrucoes?: string; // Texto livre pra explicar o passo-a-passo
+}
+
+export interface FiltroBeneficio {
+  convenioIds?: string[];
+  vinculos?: string[];
+  situacaoFuncional?: string[];
+  salarioMin?: number;
+  salarioMax?: number;
+  idadeMin?: number;
+  idadeMax?: number;
+}
+
+export interface VigenciaBeneficio {
+  inicio?: string; // ISO date
+  fim?: string;    // ISO date — opcional (sem fim = permanente)
+  diasSemana?: number[]; // 0=domingo, 6=sabado
+  horaInicio?: string; // "HH:MM"
+  horaFim?: string;
+}
+
+export interface ResponsavelBeneficio {
+  nome?: string;
+  email?: string;
+  telefone?: string;
+  cargo?: string;
+}
+
 export interface AdminBeneficio {
   id: string;
   prefeituraId: number;
@@ -67,6 +132,23 @@ export interface AdminBeneficio {
   ativo: boolean;
   criadoEm: string;
   criadoPor: string;
+  // ===== Campos opcionais estendidos (fatia "detalhes completos") =====
+  cnpj?: string;
+  descricaoCurta?: string;
+  descricaoLonga?: string;
+  logoUrl?: string;
+  endereco?: EnderecoBeneficio;
+  contato?: ContatoBeneficio;
+  desconto?: DescontoBeneficio;
+  comoUsar?: ComoUsarBeneficio;
+  filtro?: FiltroBeneficio;
+  vigencia?: VigenciaBeneficio;
+  responsavel?: ResponsavelBeneficio;
+  restricoes?: string;
+  destaque?: DestaqueBeneficio;
+  comissaoPct?: number; // Comissao da averbadora sobre o valor consumido
+  notasInternas?: string; // Apenas admin ve
+  prefeituraIdsExtras?: number[]; // Multi-prefeitura — beneficio aparece em varias
 }
 export interface AdminBeneficioInput {
   id?: string;
@@ -80,6 +162,22 @@ export interface AdminBeneficioInput {
   descontoComplemento: string;
   origem: OrigemBeneficio;
   ativo?: boolean;
+  cnpj?: string;
+  descricaoCurta?: string;
+  descricaoLonga?: string;
+  logoUrl?: string;
+  endereco?: EnderecoBeneficio;
+  contato?: ContatoBeneficio;
+  desconto?: DescontoBeneficio;
+  comoUsar?: ComoUsarBeneficio;
+  filtro?: FiltroBeneficio;
+  vigencia?: VigenciaBeneficio;
+  responsavel?: ResponsavelBeneficio;
+  restricoes?: string;
+  destaque?: DestaqueBeneficio;
+  comissaoPct?: number;
+  notasInternas?: string;
+  prefeituraIdsExtras?: number[];
 }
 export interface ServidorBeneficio {
   id: string;
@@ -91,6 +189,9 @@ export interface ServidorBeneficio {
   descontoLabel: string;
   descontoComplemento: string;
   origem: OrigemBeneficio;
+  descricaoCurta?: string;
+  contato?: ContatoBeneficio;
+  destaque?: DestaqueBeneficio;
 }
 
 export interface BancoOfertaFiltro {

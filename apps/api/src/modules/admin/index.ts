@@ -2034,7 +2034,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ beneficios: list });
   })
   .post("/v1/admin/beneficios", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
     await refreshBeneficios(c.env);
     const body = z.object({
       id: z.string().optional(),
@@ -2042,12 +2042,72 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       nome: z.string().min(2).max(100),
       categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer"])).min(1),
       local: z.string().min(1).max(80),
-      icone: z.string().min(1).max(4), // emoji
+      icone: z.string().min(1).max(8), // emoji (ZWJ pode ser ate 8 chars)
       cor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-      descontoLabel: z.string().min(1).max(50),
-      descontoComplemento: z.string().min(1).max(80),
-      origem: z.enum(["banco", "averbadora"]),
+      descontoLabel: z.string().min(1).max(80),
+      descontoComplemento: z.string().min(1).max(120),
+      origem: z.enum(["banco", "averbadora", "prefeitura", "convenio"]),
       ativo: z.boolean().default(true),
+      // ===== Campos estendidos =====
+      cnpj: z.string().max(20).optional(),
+      descricaoCurta: z.string().max(280).optional(),
+      descricaoLonga: z.string().max(4000).optional(),
+      logoUrl: z.string().url().optional().or(z.literal("")),
+      endereco: z.object({
+        cep: z.string().max(10).optional(),
+        logradouro: z.string().max(120).optional(),
+        numero: z.string().max(10).optional(),
+        complemento: z.string().max(60).optional(),
+        bairro: z.string().max(80).optional(),
+        cidade: z.string().max(80).optional(),
+        uf: z.string().length(2).optional(),
+      }).optional(),
+      contato: z.object({
+        telefone: z.string().max(20).optional(),
+        whatsapp: z.string().max(20).optional(),
+        email: z.string().email().optional().or(z.literal("")),
+        site: z.string().url().optional().or(z.literal("")),
+        instagram: z.string().max(40).optional(),
+      }).optional(),
+      desconto: z.object({
+        tipo: z.enum(["percentual", "valor_fixo", "preco_especial", "gratuidade"]),
+        valor: z.number().nonnegative().optional(),
+        aplicavelEm: z.string().max(160).optional(),
+        limiteMensal: z.number().nonnegative().optional(),
+        cumulativo: z.boolean().optional(),
+      }).optional(),
+      comoUsar: z.object({
+        modo: z.enum(["cartao_consignado", "matricula", "cpf", "codigo", "qr"]),
+        codigoPromocional: z.string().max(60).optional(),
+        instrucoes: z.string().max(1000).optional(),
+      }).optional(),
+      filtro: z.object({
+        convenioIds: z.array(z.string()).optional(),
+        vinculos: z.array(z.string()).optional(),
+        situacaoFuncional: z.array(z.string()).optional(),
+        salarioMin: z.number().nonnegative().optional(),
+        salarioMax: z.number().nonnegative().optional(),
+        idadeMin: z.number().int().nonnegative().optional(),
+        idadeMax: z.number().int().nonnegative().optional(),
+      }).optional(),
+      vigencia: z.object({
+        inicio: z.string().optional(),
+        fim: z.string().optional(),
+        diasSemana: z.array(z.number().int().min(0).max(6)).optional(),
+        horaInicio: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+        horaFim: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+      }).optional(),
+      responsavel: z.object({
+        nome: z.string().max(120).optional(),
+        email: z.string().email().optional().or(z.literal("")),
+        telefone: z.string().max(20).optional(),
+        cargo: z.string().max(80).optional(),
+      }).optional(),
+      restricoes: z.string().max(1000).optional(),
+      destaque: z.enum(["novo", "popular", "exclusivo", "desconto_extra"]).optional(),
+      comissaoPct: z.number().nonnegative().max(100).optional(),
+      notasInternas: z.string().max(2000).optional(),
+      prefeituraIdsExtras: z.array(z.number().int()).optional(),
     }).parse(await c.req.json());
     if (body.id) {
       const existing = (await loadBeneficios(c.env)).find((b) => b.id === body.id);
@@ -2066,7 +2126,23 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       origem: body.origem,
       ativo: body.ativo,
       criadoEm: body.id ? (await loadBeneficios(c.env)).find((x) => x.id === body.id)!.criadoEm : new Date().toISOString(),
-      criadoPor: String(c.get("jwt").sub),
+      criadoPor: String(j.sub),
+      cnpj: body.cnpj || undefined,
+      descricaoCurta: body.descricaoCurta || undefined,
+      descricaoLonga: body.descricaoLonga || undefined,
+      logoUrl: body.logoUrl || undefined,
+      endereco: body.endereco,
+      contato: body.contato,
+      desconto: body.desconto,
+      comoUsar: body.comoUsar,
+      filtro: body.filtro,
+      vigencia: body.vigencia,
+      responsavel: body.responsavel,
+      restricoes: body.restricoes || undefined,
+      destaque: body.destaque,
+      comissaoPct: body.comissaoPct,
+      notasInternas: body.notasInternas || undefined,
+      prefeituraIdsExtras: body.prefeituraIdsExtras,
     };
     await persistBeneficio(c.env, b);
     return c.json({ beneficio: b });
