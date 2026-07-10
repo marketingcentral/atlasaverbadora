@@ -342,15 +342,56 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       throw Errors.validation({ margem: `sem margem disponivel de ${tipoMargem} pra esta matricula` });
     }
     const nomeProduto = body.produto === "cartao_consignado" ? "Cartao Consignado" : "Cartao Beneficio";
-    // Notifica a averbadora (canal ja existente pushEvent -> perfil "averbadora").
+    await refreshContratos(c.env); // sincroniza contador de adf entre isolates
+    // Cria contrato real de cartao (ECONSIGNADO) — assim aparece em
+    // /servidor/contratos, na fila do banco em /banco/propostas (aba Cartao)
+    // e materializa ADF pra averbadora. Antes era so pushEvent no log —
+    // proposta sumia. Modelo do cartao consignado: valorFinanciado=limite
+    // proposto; parcela=5% do limite (fatura minima que casa com a margem
+    // cartao); totalParcelas=12 (simbolico, cartao rotativo nao tem prazo
+    // fixo mas o schema exige positive). Reserva 48h ate o banco aprovar.
+    const parcelaMin = Math.min(round2(body.limite * 0.05), margemDisp);
+    const contrato = criarContratoOuReserva({
+      bancoId: conv?.bancoId ?? 1,
+      servidorId: s.id,
+      idMatricula: entry.idMatricula,
+      matricula: entry.matricula,
+      nome: entry.nome,
+      cpfMasked: entry.cpfMasked,
+      convenioId: conv?.id ?? entry.idConvenio,
+      convenio: conv?.nome ?? "Banco Atlas",
+      tipoContrato: "ECONSIGNADO",
+      valorFinanciado: body.limite,
+      parcelas: 12,
+      taxaAm: 0,
+      cetAm: 0,
+      iof: 0,
+      diasCarencia: 30,
+      valorParcela: parcelaMin,
+      codigoVerba: conv?.codigoVerba ?? "",
+      observacoes: `Solicitacao de ${nomeProduto} via app do servidor (${body.bancoNome})`,
+      isReserva: true,
+      ator: `servidor:${s.id}`,
+    });
+    await persistContrato(c.env, contrato.adf);
     pushEvent(
       "info",
       "averbadora.solicitacao_cartao",
       `${entry.nome} (matricula ${entry.matricula}, ${conv?.prefeitura ?? "prefeitura"}) solicitou ${nomeProduto} com ${body.bancoNome} — limite proposto R$ ${body.limite.toFixed(2)}.`,
     );
+    // Notifica o servidor da criacao (in-app + e-mail).
+    notifyServidor(c, entry.email, {
+      titulo: `Solicitacao ${contrato.adf} enviada ao banco`,
+      mensagem: `Sua solicitacao de ${nomeProduto} foi enviada ao ${body.bancoNome} e esta em analise. Voce sera avisado quando houver uma atualizacao.`,
+      detalhes: [
+        { label: "Banco", valor: body.bancoNome },
+        { label: "Produto", valor: nomeProduto },
+        { label: "Limite proposto", valor: `R$ ${body.limite.toFixed(2)}` },
+      ],
+    });
     return c.json({
       ok: true,
-      protocolo: `CART-${entry.matricula}-${Date.now().toString(36).toUpperCase()}`,
+      protocolo: contrato.adf,
       produto: body.produto,
       bancoNome: body.bancoNome,
       limite: body.limite,

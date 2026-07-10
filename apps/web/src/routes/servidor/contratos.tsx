@@ -29,6 +29,16 @@ function mapSituacao(situacao: string): EstadoProposta {
   return "em_analise";
 }
 
+/** Label do produto pro card do servidor. tipoContrato vem do backend
+ *  (EMPRESTIMO | REFIN | ECONSIGNADO). Fallback pra "Empréstimo consignado"
+ *  se vier undefined (dado antigo antes deste campo existir). */
+function mapProduto(tipoContrato: string | undefined): string {
+  const t = (tipoContrato ?? "").toUpperCase();
+  if (t === "REFIN") return "Portabilidade";
+  if (t === "ECONSIGNADO") return "Cartão consignado";
+  return "Empréstimo consignado";
+}
+
 const ESTADO_LABEL: Record<EstadoProposta, string> = {
   em_analise: "Em análise pelo banco",
   aprovada: "Aprovada",
@@ -90,6 +100,10 @@ export function ServidorContratos() {
       id: p.id,
       banco: p.banco,
       estado: mapSituacao(p.situacao),
+      // tipoContrato do backend: EMPRESTIMO | REFIN | ECONSIGNADO.
+      // Usado pra mostrar "Empréstimo / Portabilidade / Cartão" no card
+      // (senao o servidor nao sabe pra qual produto e a proposta).
+      produto: mapProduto(p.tipoContrato),
       valor: p.valor,
       parcelas: p.parcelas,
       parcela: p.parcela,
@@ -228,8 +242,13 @@ export function ServidorContratos() {
               <Card key={p.id} style={{ opacity: 0.85 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                   <div>
-                    <div style={{ fontWeight: 700 }}>{p.banco}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700 }}>{p.banco}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)", padding: "2px 8px", borderRadius: 999, border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)" }}>
+                        {p.produto}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginTop: 4 }}>
                       Proposta {p.id} · criada em {p.data}
                     </div>
                   </div>
@@ -334,10 +353,14 @@ function KV({ label, v, accent }: { label: string; v: string; accent?: boolean }
   );
 }
 
-/** Etapas do ciclo de vida da proposta pro servidor acompanhar (5 estagios). */
+/** Etapas do ciclo de vida da proposta pro servidor acompanhar (5 estagios).
+ *  A etapa 2 tem label NEUTRO ("Analise pelo banco") — so vira "Recusada pelo
+ *  banco" via labelEtapa2 quando a proposta for de fato recusada. Antes o
+ *  label BASE dizia "Recusada" mesmo em propostas em analise, o que confundia
+ *  o servidor (parecia que ja tinha sido recusada). */
 const ETAPAS_BASE = [
   "Proposta enviada",
-  "Recusada pelo banco",
+  "Análise pelo banco",
   "Aprovado pelo banco",
   "Aguardando ADF da averbadora",
   "Autorização completa",
