@@ -223,27 +223,33 @@ export function ServidorMinhaMargem() {
         )}
       </section>
 
-      {/* Ação sugerida — vinculada à modalidade escolhida */}
+      {/* Ação sugerida — vinculada à modalidade escolhida.
+          EMPRESTIMO e CARTAO_CONSIGNADO -> Simular (/servidor/simular).
+          CARTAO_BENEFICIOS -> Ver ofertas no marketplace (não simula). */}
       {dados.disponivel > 0 ? (
         <Card>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 200 }}>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>
-                {tab === "EMPRESTIMO" ? "Quer simular um empréstimo?" : "Quer ativar este produto?"}
+                {tab === "EMPRESTIMO"
+                  ? "Quer simular um empréstimo?"
+                  : tab === "CARTAO_CONSIGNADO"
+                    ? "Quer simular um cartão de crédito consignado?"
+                    : "Quer ativar este produto?"}
               </div>
               <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                Você tem <b style={{ color: "var(--emerald-500)" }}>{fmtBRL(dados.disponivel)}</b> disponível nesta modalidade. As ofertas dos bancos parceiros aparecem abaixo do simulador.
+                Você tem <b style={{ color: "var(--emerald-500)" }}>{fmtBRL(dados.disponivel)}</b> disponível nesta modalidade. {tab === "CARTAO_BENEFICIOS" ? "Veja as ofertas dos bancos parceiros." : "As ofertas dos bancos parceiros aparecem abaixo do simulador."}
               </div>
             </div>
             <button
               type="button"
-              onClick={() => nav(tab === "EMPRESTIMO" ? "/servidor/simular" : "/servidor/marketplace")}
+              onClick={() => nav(tab === "CARTAO_BENEFICIOS" ? "/servidor/marketplace" : "/servidor/simular")}
               style={{
                 padding: "10px 18px", borderRadius: 10, border: "none",
                 background: "var(--emerald-500)", color: "white", fontWeight: 700, cursor: "pointer",
               }}
             >
-              {tab === "EMPRESTIMO" ? "Simular →" : "Ver ofertas →"}
+              {tab === "CARTAO_BENEFICIOS" ? "Ver ofertas →" : "Simular →"}
             </button>
           </div>
         </Card>
