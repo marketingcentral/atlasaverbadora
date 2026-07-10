@@ -171,7 +171,9 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
 const ACAO_POR_TIPO: Record<string, { label: string; href: string } | undefined> = {
   EMPRESTIMO: { label: "Simular →", href: "/servidor/simular?produto=emprestimo" },
   CARTAO_CONSIGNADO: { label: "Simular →", href: "/servidor/simular?produto=cartao_consignado" },
-  CARTAO_BENEFICIOS: { label: "Simular →", href: "/servidor/simular?produto=cartao_beneficio" },
+  // Cartao Beneficio nao simula — vai direto pro marketplace ver as ofertas
+  // (marketplace filtra pra mostrar so ofertas de cartao_beneficio + Portabilidade).
+  CARTAO_BENEFICIOS: { label: "Ver ofertas →", href: "/servidor/marketplace" },
 };
 
 function MargemCard({ data }: { data: { tipo: string; total: number; disponivel: number } }) {

@@ -36,7 +36,11 @@ export function ServidorMarketplace() {
     enabled: !!info?.matricula,
   });
 
-  const ofertas = q.data?.ofertas ?? [];
+  // Marketplace agora e escopado so pras ofertas de Cartao Beneficio +
+  // um CTA de Solicitar Portabilidade. As demais modalidades tem seus proprios
+  // fluxos (Emprestimo/Cartao Credito -> /servidor/simular; Portabilidade ->
+  // /servidor/portabilidade), entao aqui filtramos tudo que nao seja cartao_beneficio.
+  const ofertas = (q.data?.ofertas ?? []).filter((o) => o.tipo === "cartao_beneficio");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -46,9 +50,35 @@ export function ServidorMarketplace() {
         </span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem" }}>Marketplace</h1>
         <p style={{ color: "var(--text-muted)" }}>
-          Ofertas que os bancos parceiros criaram pra <b>{info?.prefeitura ?? "sua matrícula"}</b>. Auto-averbação em 3 cliques.
+          Ofertas de <b>Cartão Benefício</b> que os bancos parceiros criaram pra <b>{info?.prefeitura ?? "sua matrícula"}</b>. Se quiser reduzir a taxa de um contrato existente, use a portabilidade abaixo.
         </p>
       </header>
+
+      {/* Bloco Solicitar Portabilidade — vai pra /servidor/portabilidade. */}
+      <article
+        style={{
+          background: "linear-gradient(135deg, color-mix(in srgb, var(--gold-500) 14%, transparent), color-mix(in srgb, var(--gold-500) 4%, var(--surface)))",
+          border: "1px solid color-mix(in srgb, var(--gold-500) 40%, var(--border))",
+          borderRadius: 14,
+          padding: 20,
+          display: "flex",
+          alignItems: "center",
+          gap: 16,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ fontSize: 34, lineHeight: 1 }} aria-hidden="true">🔁</div>
+        <div style={{ flex: 1, minWidth: 220 }}>
+          <div style={{ fontSize: 10, letterSpacing: ".08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase" }}>Portabilidade</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "var(--text)", marginTop: 2 }}>Solicitar Portabilidade</div>
+          <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
+            Consolide seus contratos em outro banco com taxa menor e reduza sua parcela mensal.
+          </div>
+        </div>
+        <Button onClick={() => nav("/servidor/portabilidade")}>
+          Solicitar Portabilidade →
+        </Button>
+      </article>
 
       {q.isLoading ? (
         <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Carregando ofertas…</div>
@@ -65,9 +95,9 @@ export function ServidorMarketplace() {
           }}
         >
           <div style={{ fontSize: 28, marginBottom: 8 }}>📭</div>
-          <div style={{ fontWeight: 600 }}>Nenhuma oferta ativa no momento</div>
+          <div style={{ fontWeight: 600 }}>Nenhuma oferta de Cartão Benefício ativa no momento</div>
           <p style={{ fontSize: 13, margin: "6px auto 0", maxWidth: 480 }}>
-            Este espaço mostra apenas ofertas que os bancos parceiros criam e publicam pra você.
+            Este espaço mostra apenas ofertas de Cartão Benefício que os bancos parceiros criam e publicam pra você.
             Assim que uma cair, aparece aqui.
           </p>
         </div>
