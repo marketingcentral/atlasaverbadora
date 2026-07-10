@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card } from "@atlas/ui/web";
-import { TwoFactorModal } from "../../components/TwoFactorModal";
 import { atlas } from "../../lib/sdk";
 import { readActiveMatricula } from "../../lib/matricula-data";
 
@@ -43,20 +42,13 @@ export function ServidorTermo() {
 
   const [aceito, setAceito] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [show2FA, setShow2FA] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [done, setDone] = useState<null | { propostaId: string; quando: Date; ip: string; device: string }>(null);
 
   const prazo = PRAZOS[tipo];
   const tipoLabel = TIPO_LABEL[tipo];
 
-  function pedirAutorizacao() {
-    // Acao sensivel — abre 2FA antes de fechar a pre-reserva.
-    setShow2FA(true);
-  }
-
   async function autorizar() {
-    setShow2FA(false);
     setSubmitting(true);
     setErro(null);
     const quando = new Date();
@@ -206,7 +198,7 @@ export function ServidorTermo() {
       </Card>
 
       <div style={{ display: "flex", gap: 8 }}>
-        <Button onClick={pedirAutorizacao} disabled={!aceito || submitting}>
+        <Button onClick={autorizar} disabled={!aceito || submitting}>
           {submitting ? "Registrando aceite..." : "Aceito e autorizo →"}
         </Button>
         <Button variant="ghost" onClick={() => nav("/servidor/dashboard")} disabled={submitting}>
@@ -218,15 +210,6 @@ export function ServidorTermo() {
         <div style={{ padding: 14, borderRadius: 10, background: "color-mix(in srgb, var(--danger-500) 12%, transparent)", border: "1px solid var(--danger-500)", color: "var(--text)", fontSize: ".9rem" }}>
           {erro}
         </div>
-      ) : null}
-
-      {show2FA ? (
-        <TwoFactorModal
-          acao="confirmar o termo e travar sua margem"
-          canal="email"
-          onCancel={() => setShow2FA(false)}
-          onConfirm={autorizar}
-        />
       ) : null}
     </div>
   );
