@@ -31,15 +31,18 @@ export function SimuladorInline({
   valorDefault = 8500,
   parcelasDefault = 36,
   compact = false,
+  produto = "emprestimo",
 }: {
   info: MatriculaInfo | null;
   taxaAmDefault?: number;
   valorDefault?: number;
   parcelasDefault?: number;
   compact?: boolean;
+  /** Produto do simulador. Sem tabs — a tela que embute o SimuladorInline decide
+   *  qual mostrar (dashboard aponta cada botao "Simular" pra tela dedicada). */
+  produto?: ModalidadeSim;
 }) {
   const nav = useNavigate();
-  const [tab, setTab] = useState<ModalidadeSim>("emprestimo");
   const [valor, setValor] = useState<number>(valorDefault);
   const [parcelas, setParcelas] = useState<number>(parcelasDefault);
   const taxaAm = taxaAmDefault;
@@ -190,17 +193,8 @@ export function SimuladorInline({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Tabs de modalidade — empréstimo (Price + parcelas) x cartão consig/benef
-          (limite + fatura minima). Cliente pediu que cartao consig e benef
-          tambem apareçam nesta area de simulacao. */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <ModalidadeTab active={tab === "emprestimo"} onClick={() => setTab("emprestimo")} icone="💰" label="Empréstimo" />
-        <ModalidadeTab active={tab === "cartao_consignado"} onClick={() => setTab("cartao_consignado")} icone="💳" label="Cartão consignado" />
-        <ModalidadeTab active={tab === "cartao_beneficio"} onClick={() => setTab("cartao_beneficio")} icone="🎫" label="Cartão benefício" />
-      </div>
-
-      {tab !== "emprestimo" ? (
-        <SimuladorCartao info={info} produto={tab} />
+      {produto !== "emprestimo" ? (
+        <SimuladorCartao info={info} produto={produto} />
       ) : (
         <>
       {!compact && info ? (
@@ -318,31 +312,6 @@ function Metric({ label, valor, accent, danger }: { label: string; valor: string
       <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>{label}</div>
       <div style={{ marginTop: 4, fontSize: 20, fontWeight: 700, color }}>{valor}</div>
     </div>
-  );
-}
-
-function ModalidadeTab({ active, onClick, icone, label }: { active: boolean; onClick: () => void; icone: string; label: string }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "8px 14px",
-        borderRadius: 999,
-        border: `1px solid ${active ? "var(--gold-500)" : "var(--border)"}`,
-        background: active ? "color-mix(in srgb, var(--gold-500) 15%, transparent)" : "transparent",
-        color: active ? "var(--text)" : "var(--text-muted)",
-        fontSize: 13,
-        fontWeight: active ? 700 : 500,
-        cursor: "pointer",
-      }}
-    >
-      <span style={{ fontSize: 15 }}>{icone}</span>
-      <span>{label}</span>
-    </button>
   );
 }
 
