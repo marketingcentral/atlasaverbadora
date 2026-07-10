@@ -1065,6 +1065,12 @@ export class AtlasClient {
         `/v1/servidores/me/beneficios/${encodeURIComponent(beneficioId)}/clique`,
         { method: "POST", body: input ?? {} },
       ),
+    /** Vitrine (carrossel) mostrada no dashboard do servidor — banners ativos
+     *  cadastrados pela averbadora em /averbadora/vitrine. */
+    vitrine: () =>
+      this.request<{ banners: { id: string; titulo: string; bancoNome: string; imagemUrl: string | null }[] }>(
+        "/v1/servidores/me/vitrine",
+      ),
     /** Solicita cartao consignado ou cartao beneficio. Nao cria contrato tradicional
      *  (o modelo ainda so aceita EMPRESTIMO/REFIN/ECONSIGNADO) — registra a
      *  solicitacao pra averbadora e devolve um protocolo. O banco recebe pra

@@ -38,10 +38,10 @@ const COMUNICADOS_FALLBACK: Comunicado[] = [
   },
   {
     id: "COM-SRV-3",
-    titulo: "Telemedicina 24h incluída no seu cartão",
-    corpo: "Consulta médica online sem sair de casa, sem custo adicional, para você e sua família. Descubra como ativar.",
-    linkLabel: "Acessar Telemedicina",
-    linkHref: "/servidor/saude",
+    titulo: "Descontos exclusivos pra servidores",
+    corpo: "Farmácia, mercado, saúde, educação e mais — parceiros negociados pela averbadora com descontos em todas as prefeituras parceiras.",
+    linkLabel: "Ver benefícios",
+    linkHref: "/servidor/beneficios",
     publico: "servidor",
   },
 ];
@@ -99,7 +99,7 @@ export function ServidorDashboard() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24, maxWidth: 1000, margin: "0 auto", width: "100%" }}>
-      {/* Header no modelo */}
+      {/* Header */}
       <header>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
           Meu painel
@@ -110,16 +110,11 @@ export function ServidorDashboard() {
         </div>
       </header>
 
-      {/* Card grande — MINHA MARGEM POR MODALIDADE */}
+      {/* 3 cards de margem lado a lado — botao de acao em cada (herdado do colega, cliente aprovou). */}
       <MinhaMargemPorModalidade info={info} />
 
-      {/* Carrossel de comunicados publicados pela averbadora (publico=servidor).
-          Substitui a antiga seção "Meus contratos" no dashboard — quem quiser ver
-          contratos vai em /servidor/contratos pelo menu superior. */}
-      <ComunicadoCarrossel comunicados={comunicadosCarrossel} />
-
-      {/* Substituiu as "Ações rápidas" antigas — cliente pediu 2 blocos, um de
-          Portabilidade e outro de Telemedicina. */}
+      {/* 2 blocos grandes lado a lado logo abaixo — Portabilidade e Beneficios.
+          Cliente pediu explicitamente esses dois "abaixo dos tipos de emprestimos". */}
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, 1fr)" }}>
         <AtalhoCard
           titulo="Portabilidade"
@@ -129,21 +124,23 @@ export function ServidorDashboard() {
           onClick={() => nav("/servidor/marketplace/portabilidade")}
         />
         <AtalhoCard
-          titulo="Telemedicina"
-          descricao="Consulta médica online sem custo, para você e sua família."
-          icon="🩺"
+          titulo="Benefícios"
+          descricao="Descontos em farmácias, mercado, saúde, educação e mais."
+          icon="🎁"
           accent="emerald"
-          onClick={() => nav("/servidor/saude")}
+          onClick={() => nav("/servidor/beneficios")}
         />
       </div>
 
+      {/* Carrossel de comunicados/vitrine da averbadora — publico=servidor. */}
+      <ComunicadoCarrossel comunicados={comunicadosCarrossel} />
     </div>
   );
 }
 
-/** Card grande dark com 3 linhas de margem (Empréstimo, Cartão Crédito, Cartão Benefício). */
+/** Card grande dark com 3 quadrados de margem lado a lado. Herdado do trabalho
+ *  do colega: cliente aprovou o formato — mantido como esta. */
 function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
-  // Garante as 3 modalidades na ordem do modelo, mesmo que o backend só devolva EMPRESTIMO.
   const porTipo = new Map(info.margem.margens_por_tipo.map((m) => [m.tipo, m]));
   const ordem = ["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const;
   const linhas = ordem.map((t) => porTipo.get(t) ?? { tipo: t, total: 0, disponivel: 0 });
@@ -157,8 +154,6 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
       color: "#EAF0FA",
       boxShadow: "var(--shadow-md)",
     }}>
-      {/* 3 quadrados lado a lado. repeat(3,1fr) força as 3 colunas mesmo em
-          largura apertada — cliente pediu "um do lado do outro". */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
         {linhas.map((m) => (
           <MargemCard key={m.tipo} data={m} />
@@ -168,8 +163,6 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
   );
 }
 
-/** Configuracao do botao de acao por modalidade — Emprestimo/Cartao credito abrem
- *  simulador; Cartao Beneficio manda direto para ofertas (nao simula). */
 const ACAO_POR_TIPO: Record<string, { label: string; href: string } | undefined> = {
   EMPRESTIMO: { label: "Simular →", href: "/servidor/simular" },
   CARTAO_CONSIGNADO: { label: "Simular →", href: "/servidor/simular" },
@@ -196,10 +189,8 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
       gap: 14,
       minWidth: 0,
     }}>
-      {/* nome da modalidade */}
       <div style={{ fontSize: 14, fontWeight: 700, color: "#EAF0FA", lineHeight: 1.3 }}>{label}</div>
 
-      {/* barra de progresso + percentuais */}
       <div>
         <div style={{ height: 5, background: "rgba(255,255,255,.08)", borderRadius: 4, overflow: "hidden" }}>
           <div style={{ width: `${pctUtilizado}%`, height: "100%", background: barra, transition: "width .4s ease" }} />
@@ -212,14 +203,12 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
         </div>
       </div>
 
-      {/* Total / Utilizado / Disponivel — empilhados dentro do card */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <ValorLinha label="Total" value={fmtBRL(data.total)} color="#EAF0FA" />
         <ValorLinha label="Utilizado" value={fmtBRL(utilizado)} color={utilizado > 0 ? "#C9A961" : "#7A8CA8"} />
         <ValorLinha label="Disponível" value={fmtBRL(data.disponivel)} color="#10B981" bold />
       </div>
 
-      {/* Botao de acao — Simular (emprestimo/cartao credito) ou Ver ofertas (cartao beneficio). */}
       {acao ? (
         <button
           type="button"
@@ -254,17 +243,10 @@ function ValorLinha({ label, value, color, bold }: { label: string; value: strin
 }
 
 function AtalhoCard({
-  titulo,
-  descricao,
-  icon,
-  accent,
-  onClick,
+  titulo, descricao, icon, accent, onClick,
 }: {
-  titulo: string;
-  descricao: string;
-  icon: string;
-  accent: "emerald" | "gold" | "navy";
-  onClick: () => void;
+  titulo: string; descricao: string; icon: string;
+  accent: "emerald" | "gold" | "navy"; onClick: () => void;
 }) {
   const accentColor =
     accent === "emerald" ? "var(--emerald-500)" : accent === "gold" ? "var(--gold-500)" : "var(--accent)";
@@ -275,7 +257,7 @@ function AtalhoCard({
       style={{
         textAlign: "left", cursor: "pointer",
         background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14,
-        padding: 16, display: "flex", flexDirection: "column", gap: 6,
+        padding: 18, display: "flex", flexDirection: "column", gap: 8,
         transition: "transform .12s ease, border-color .12s ease",
       }}
       onMouseEnter={(e) => {
@@ -287,10 +269,10 @@ function AtalhoCard({
         e.currentTarget.style.transform = "translateY(0)";
       }}
     >
-      <span style={{ fontSize: 24 }}>{icon}</span>
-      <span style={{ fontWeight: 700, fontSize: ".98rem", color: "var(--text)" }}>{titulo}</span>
-      <span style={{ fontSize: ".82rem", color: "var(--text-muted)" }}>{descricao}</span>
-      <span style={{ marginTop: 6, fontSize: ".82rem", fontWeight: 700, color: accentColor }}>
+      <span style={{ fontSize: 28 }}>{icon}</span>
+      <span style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--text)" }}>{titulo}</span>
+      <span style={{ fontSize: ".88rem", color: "var(--text-muted)", lineHeight: 1.4 }}>{descricao}</span>
+      <span style={{ marginTop: 6, fontSize: ".88rem", fontWeight: 700, color: accentColor }}>
         Ver mais →
       </span>
     </button>

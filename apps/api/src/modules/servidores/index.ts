@@ -5,7 +5,7 @@ import { authRequired, requireRole, type JwtClaims } from "../../middleware/auth
 import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, getServidorStatus, pushEvent } from "../admin/index.js";
+import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -463,6 +463,23 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     };
     await persistClique(c.env, clique);
     return c.json({ ok: true });
+  })
+  // Vitrine (carrossel) exibido no dashboard do servidor. So banners ativos.
+  // Fonte de verdade: admin_vitrine (a averbadora cadastra em /averbadora/vitrine).
+  .get("/v1/servidores/me/vitrine", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureVitrineLoaded(c.env);
+    // So banners ativos; nao expoe metricas internas (impressoes, cliques, receita).
+    const banners = vitrine
+      .filter((b) => b.ativo)
+      .map((b) => ({
+        id: b.id,
+        titulo: b.titulo,
+        bancoNome: b.bancoNome,
+        imagemUrl: b.imagemUrl ?? null,
+      }));
+    return c.json({ banners });
   })
   // Marketplace de ofertas do servidor — deriva das tabelas de emprestimo
   // publicadas pelos bancos parceiros. So retorna tabelas ativas e dentro

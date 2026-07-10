@@ -162,7 +162,7 @@ export interface FolhaAdmin {
   status: "aberta" | "fechada" | "consolidada";
 }
 
-interface VitrineBanner {
+export interface VitrineBanner {
   id: string;
   bancoId: number;
   bancoNome: string;
@@ -287,14 +287,14 @@ export const folhas: FolhaAdmin[] = [
   { id: "F-2026-07-1", prefeituraId: 1, prefeitura: "Palhoca", competencia: "202607", dataCorte: "2026-07-15", dataRepasse: null, status: "aberta" },
 ];
 
-const vitrine: VitrineBanner[] = [
+export const vitrine: VitrineBanner[] = [
   { id: "BAN-1", bancoId: 2, bancoNome: "Banco Y", titulo: "Empréstimo a 1,72% a.m.", impressoes: 42000, cliques: 3360, receitaMes: 18000, ativo: true },
   { id: "BAN-2", bancoId: 1, bancoNome: "SCred Financeira", titulo: "Portabilidade com troco", impressoes: 28000, cliques: 1400, receitaMes: 9200, ativo: true },
 ];
 const VITRINE_SEED: VitrineBanner[] = vitrine.map((v) => ({ ...v }));
 // Persistência da vitrine (write-through + hydrate; fail-safe pras fixtures).
 let _vitrineLoad: Promise<void> | null = null;
-function ensureVitrineLoaded(env: Env): Promise<void> {
+export function ensureVitrineLoaded(env: Env): Promise<void> {
   if (_vitrineLoad) return _vitrineLoad;
   _vitrineLoad = (async () => {
     try {
