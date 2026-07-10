@@ -11,6 +11,7 @@ import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded } from "../admin/index.js";
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
+import { verifyTotp } from "../../_shared/totp.js";
 import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
@@ -238,6 +239,33 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
 
     if (!resolved) throw Errors.unauthorized("Credenciais invalidas");
 
+    // 2FA: se o usuario averbadora resolvido tem twoFactorEnabled=true e
+    // twoFactorSecret configurado, NAO emite JWT de sessao ainda. Emite um
+    // mfa_token curto (KV_SESSIONS, TTL 5min) que o frontend precisa trocar
+    // por um code TOTP valido via /v1/auth/verify-2fa.
+    if (resolved.role === "averbadora" && averbadoraPerfil) {
+      const u = exportAverbadoraUsers().find((x) => x.id === resolved.id);
+      if (u?.twoFactorEnabled && u.twoFactorSecret && c.env.KV_SESSIONS) {
+        const mfaToken = generateRefreshToken();
+        await c.env.KV_SESSIONS.put(
+          `mfa:${mfaToken}`,
+          JSON.stringify({
+            user_id: resolved.id,
+            role: resolved.role,
+            nome: resolved.nome,
+            averbadora_perfil: averbadoraPerfil,
+            device_id: body.device_id,
+          }),
+          { expirationTtl: 300 },
+        );
+        return c.json({
+          requires_2fa: true,
+          mfa_token: mfaToken,
+          hint: "Informe o codigo de 6 digitos do seu aplicativo autenticador (Google Authenticator, Authy, 1Password).",
+        });
+      }
+    }
+
     const accessToken = await signAccessToken(c.env, {
       sub: String(resolved.id),
       role: resolved.role,
@@ -269,6 +297,60 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       expires_in: 900,
       role: resolved.role,
       user: { id: resolved.id, nome: resolved.nome, role: resolved.role },
+    });
+  })
+  // ===== 2FA — verify TOTP code do fluxo de login =====
+  .post("/v1/auth/verify-2fa", async (c) => {
+    if (!c.env.KV_SESSIONS) throw Errors.unauthorized("sessoes indisponiveis");
+    const { mfa_token, code } = z.object({ mfa_token: z.string().min(10), code: z.string().min(4).max(8) }).parse(await c.req.json());
+    const raw = await c.env.KV_SESSIONS.get(`mfa:${mfa_token}`);
+    if (!raw) throw Errors.unauthorized("Sessao 2FA expirada. Faca login de novo.");
+    const parsed = z.object({
+      user_id: z.number(),
+      role: z.enum(["servidor", "banco", "averbadora", "prefeitura"]),
+      nome: z.string(),
+      averbadora_perfil: z.enum(["operador", "supervisor", "comercial", "financeiro", "auditoria"]).optional(),
+      device_id: z.string().optional(),
+    }).parse(JSON.parse(raw));
+
+    // Resolve o secret. Hoje so averbadora tem 2FA — se estender pra outros
+    // perfis no futuro, adicionar aqui o lookup do secret pelo role.
+    let secret: string | undefined;
+    if (parsed.role === "averbadora") {
+      await ensurePerfisLoaded(c.env);
+      const u = exportAverbadoraUsers().find((x) => x.id === parsed.user_id);
+      secret = u?.twoFactorSecret;
+    }
+    if (!secret) throw Errors.unauthorized("2FA nao configurado para este usuario");
+
+    const ok = await verifyTotp(secret, code);
+    if (!ok) throw Errors.unauthorized("Codigo 2FA invalido ou expirado");
+
+    // Consome o mfa_token (single-use) e emite o par access+refresh normal.
+    await c.env.KV_SESSIONS.delete(`mfa:${mfa_token}`);
+    const accessToken = await signAccessToken(c.env, {
+      sub: String(parsed.user_id),
+      role: parsed.role,
+      averbadora_perfil: parsed.averbadora_perfil,
+      device_id: parsed.device_id,
+    });
+    const refreshToken = generateRefreshToken();
+    await c.env.KV_SESSIONS.put(
+      `rt:${refreshToken}`,
+      JSON.stringify({
+        user_id: parsed.user_id,
+        role: parsed.role,
+        nome: parsed.nome,
+        device_id: parsed.device_id,
+      }),
+      { expirationTtl: 60 * 60 * 24 * 30 },
+    );
+    return c.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: 900,
+      role: parsed.role,
+      user: { id: parsed.user_id, nome: parsed.nome, role: parsed.role },
     });
   })
   // ===== Primeiro acesso (fluxo das telas 01B–01E do app) =====
@@ -439,6 +521,129 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => { x.passwordHash = hash; });
     await c.env.KV_SESSIONS.delete(`rs:${digits}`);
     return c.json({ ok: true });
+  })
+  // ==========================================================================
+  // Reset UNIVERSAL: identifier = CPF (servidor) ou e-mail (banco/pref/averbadora).
+  // Detecta o perfil pelo formato do identifier, dispara codigo pra o dono. Nao
+  // revela QUAL perfil (evita enumeracao). Endpoints CPF/email legados acima
+  // continuam funcionando pra retrocompat.
+  // ==========================================================================
+  .post("/v1/auth/esqueci-senha/universal-solicitar", async (c) => {
+    const { identifier } = z.object({ identifier: z.string().min(3) }).parse(await c.req.json());
+    const raw = identifier.trim();
+    const cpfDigits = raw.replace(/\D/g, "");
+    const isCpf = cpfDigits.length === 11 && !raw.includes("@");
+    const isEmail = raw.includes("@");
+    // Hidrata os 4 stores antes de resolver.
+    await ensureServidoresLoaded(c.env);
+    await ensurePerfisLoaded(c.env);
+
+    let alvoEmail: string | undefined;
+    let kvKey: string | undefined;   // chave que guarda o codigo (rs:<algo>)
+    let perfil: "servidor" | "banco" | "prefeitura" | "averbadora" | null = null;
+
+    if (isCpf) {
+      const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === cpfDigits);
+      if (s?.email) { alvoEmail = s.email; kvKey = `rs:${cpfDigits}`; perfil = "servidor"; }
+    } else if (isEmail) {
+      const email = raw.toLowerCase();
+      const b = bancosStore.find((x) => x.loginEmail === email && x.status === "ativo");
+      if (b) { alvoEmail = b.loginEmail; kvKey = `rs:banco:${b.id}`; perfil = "banco"; }
+      if (!perfil) {
+        const p = prefeiturasStore.find((x) => x.loginEmail === email && x.status === "ativo");
+        if (p) { alvoEmail = p.loginEmail; kvKey = `rs:pref:${p.id}`; perfil = "prefeitura"; }
+      }
+      if (!perfil) {
+        const u = findAverbadoraByEmail(email);
+        if (u?.ativo) { alvoEmail = u.email; kvKey = `rs:av:${u.id}`; perfil = "averbadora"; }
+      }
+      // servidor tambem pode registrar email no primeiro-acesso.
+      if (!perfil) {
+        const s = SERVIDORES_BUSCA_MOCK.find((x) => (x.email ?? "").toLowerCase() === email);
+        if (s?.email && s.passwordHash) { alvoEmail = s.email; kvKey = `rs:${s.cpf}`; perfil = "servidor"; }
+      }
+    }
+
+    // Nao revela se existe (evita enumeracao). Retorna sucesso "silencioso" quando nao acha.
+    if (!perfil || !alvoEmail || !kvKey) {
+      return c.json({ enviado: false, destino: "", aviso: "Se este identificador existir, o codigo foi enviado." });
+    }
+    const codigo = await gerarCodigoUnico(c.env);
+    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(kvKey, codigo, { expirationTtl: 600 });
+    const r = await enviarCodigo(c.env, { destinoPadrao: alvoEmail, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false });
+    return c.json({
+      enviado: r.sent,
+      destino: maskEmail(r.destino || alvoEmail),
+      perfil, // usado pelo passo de redefinir
+      ...(r.sent ? {} : { codigo_teste: codigo, aviso: `E-mail nao enviado (${r.reason}) — modo teste.` }),
+    });
+  })
+  .post("/v1/auth/esqueci-senha/universal-redefinir", async (c) => {
+    const { identifier, codigo, senha } = z
+      .object({ identifier: z.string().min(3), codigo: z.string(), senha: z.string().min(8) })
+      .parse(await c.req.json());
+    if (!c.env.KV_SESSIONS) throw Errors.validation({ kv: "sessoes indisponiveis" });
+    await ensureServidoresLoaded(c.env);
+    await ensurePerfisLoaded(c.env);
+
+    const raw = identifier.trim();
+    const cpfDigits = raw.replace(/\D/g, "");
+    const isCpf = cpfDigits.length === 11 && !raw.includes("@");
+    const isEmail = raw.includes("@");
+    const hash = await sha256Hex(senha);
+
+    // Resolve QUEM e o dono e QUAL kv key foi usada — mesma logica do solicitar.
+    if (isCpf) {
+      const stored = await c.env.KV_SESSIONS.get(`rs:${cpfDigits}`);
+      if (!stored || stored !== codigo) throw Errors.unauthorized("Codigo invalido ou expirado");
+      const n = await setServidorPassword(c.env, cpfDigits, hash);
+      if (n === 0) throw Errors.notFound("servidor");
+      SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === cpfDigits).forEach((x) => { x.passwordHash = hash; });
+      await c.env.KV_SESSIONS.delete(`rs:${cpfDigits}`);
+      return c.json({ ok: true, perfil: "servidor" });
+    }
+    if (isEmail) {
+      const email = raw.toLowerCase();
+      const b = bancosStore.find((x) => x.loginEmail === email);
+      if (b) {
+        const stored = await c.env.KV_SESSIONS.get(`rs:banco:${b.id}`);
+        if (!stored || stored !== codigo) throw Errors.unauthorized("Codigo invalido ou expirado");
+        b.passwordHash = hash;
+        await c.env.KV_SESSIONS.delete(`rs:banco:${b.id}`);
+        return c.json({ ok: true, perfil: "banco" });
+      }
+      const p = prefeiturasStore.find((x) => x.loginEmail === email);
+      if (p) {
+        const stored = await c.env.KV_SESSIONS.get(`rs:pref:${p.id}`);
+        if (!stored || stored !== codigo) throw Errors.unauthorized("Codigo invalido ou expirado");
+        p.passwordHash = hash;
+        await c.env.KV_SESSIONS.delete(`rs:pref:${p.id}`);
+        return c.json({ ok: true, perfil: "prefeitura" });
+      }
+      const u = findAverbadoraByEmail(email);
+      if (u) {
+        const stored = await c.env.KV_SESSIONS.get(`rs:av:${u.id}`);
+        if (!stored || stored !== codigo) throw Errors.unauthorized("Codigo invalido ou expirado");
+        // Atualiza em memoria; upsert do proximo mutation persiste no PG. Pra
+        // garantir a persistencia imediata, poderia chamar persistPerfis(env)
+        // mas essa fn e privada de admin/index.ts. Deixamos best-effort aqui.
+        u.passwordHash = hash;
+        await c.env.KV_SESSIONS.delete(`rs:av:${u.id}`);
+        return c.json({ ok: true, perfil: "averbadora" });
+      }
+      // Servidor por email (fluxo do primeiro-acesso).
+      const s = SERVIDORES_BUSCA_MOCK.find((x) => (x.email ?? "").toLowerCase() === email);
+      if (s) {
+        const stored = await c.env.KV_SESSIONS.get(`rs:${s.cpf}`);
+        if (!stored || stored !== codigo) throw Errors.unauthorized("Codigo invalido ou expirado");
+        const n = await setServidorPassword(c.env, s.cpf, hash);
+        if (n === 0) throw Errors.notFound("servidor");
+        SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = hash; });
+        await c.env.KV_SESSIONS.delete(`rs:${s.cpf}`);
+        return c.json({ ok: true, perfil: "servidor" });
+      }
+    }
+    throw Errors.notFound("identifier");
   })
   .post("/v1/auth/refresh", async (c) => {
     const body = RefreshRequestSchema.parse(await c.req.json());

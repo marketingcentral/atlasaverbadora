@@ -745,13 +745,31 @@ export class AtlasClient {
   }
 
   // ============ Auth ============
-  async login(req: LoginRequest): Promise<AuthSuccess> {
-    const res = await this.request<AuthSuccess>("/v1/auth/login", { method: "POST", body: req, skipAuth: true });
+  /** Login. Se o usuario tem 2FA ativo, resposta e `{ requires_2fa: true, mfa_token }`
+   *  — nenhum token e persistido no storage. O caller precisa chamar verify2fa() com
+   *  o mfa_token e o codigo TOTP pra concluir o login. */
+  async login(req: LoginRequest): Promise<AuthSuccess | { requires_2fa: true; mfa_token: string; hint?: string }> {
+    const res = await this.request<AuthSuccess | { requires_2fa: true; mfa_token: string; hint?: string }>(
+      "/v1/auth/login", { method: "POST", body: req, skipAuth: true },
+    );
+    if ("requires_2fa" in res && res.requires_2fa) {
+      // Nao persiste — o access_token ainda nao existe.
+      return res;
+    }
+    const ok = res as AuthSuccess;
+    await this.storage.set({ access_token: ok.access_token, refresh_token: ok.refresh_token, expires_in: ok.expires_in });
+    return ok;
+  }
+  /** Conclui o login apos o passo de 2FA — troca (mfa_token, code) por access+refresh. */
+  async verify2fa(mfa_token: string, code: string): Promise<AuthSuccess> {
+    const res = await this.request<AuthSuccess>(
+      "/v1/auth/verify-2fa", { method: "POST", body: { mfa_token, code }, skipAuth: true },
+    );
     await this.storage.set({ access_token: res.access_token, refresh_token: res.refresh_token, expires_in: res.expires_in });
     return res;
   }
 
-  // ===== Recuperar senha do servidor =====
+  // ===== Recuperar senha do servidor (fluxo antigo, CPF-only — mantido pra retrocompat) =====
   readonly esqueciSenha = {
     solicitar: (cpf: string) =>
       this.request<{ enviado: boolean; destino: string; codigo_teste?: string; aviso?: string }>(
@@ -759,6 +777,20 @@ export class AtlasClient {
     redefinir: (cpf: string, codigo: string, senha: string) =>
       this.request<{ ok: boolean }>(
         "/v1/auth/esqueci-senha/redefinir", { method: "POST", body: { cpf, codigo, senha }, skipAuth: true }),
+    /** Universal: aceita CPF (servidor) ou e-mail (banco/prefeitura/averbadora). */
+    universalSolicitar: (identifier: string) =>
+      this.request<{
+        enviado: boolean;
+        destino: string;
+        perfil?: "servidor" | "banco" | "prefeitura" | "averbadora";
+        codigo_teste?: string;
+        aviso?: string;
+      }>("/v1/auth/esqueci-senha/universal-solicitar", { method: "POST", body: { identifier }, skipAuth: true }),
+    universalRedefinir: (identifier: string, codigo: string, senha: string) =>
+      this.request<{ ok: boolean; perfil: "servidor" | "banco" | "prefeitura" | "averbadora" }>(
+        "/v1/auth/esqueci-senha/universal-redefinir",
+        { method: "POST", body: { identifier, codigo, senha }, skipAuth: true },
+      ),
   };
 
   // ===== Primeiro acesso do servidor (ativa a conta a partir do cadastro da prefeitura) =====
