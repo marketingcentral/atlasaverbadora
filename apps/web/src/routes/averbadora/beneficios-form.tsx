@@ -53,7 +53,19 @@ const DESTAQUES: { id: DestaqueBeneficio; label: string; cor: string }[] = [
 ];
 
 const CORES_SUGERIDAS = ["#dc2626", "#0891b2", "#f59e0b", "#c2410c", "#2563eb", "#7c3aed", "#059669", "#be185d"];
-const EMOJIS_SUGERIDOS = ["💊", "🩺", "💉", "🦷", "🍽️", "🛒", "🎓", "📚", "🎭", "🎬", "🏋️", "🎁", "🚗", "☕", "🎯"];
+
+/** Emojis curados agrupados por contexto — cobre os principais tipos de
+ *  beneficio pra servidor publico. Admin pode digitar/colar outro no campo
+ *  livre abaixo do grid OU passar uma URL de icone customizado (SVG/PNG). */
+const EMOJIS_POR_CATEGORIA: { grupo: string; emojis: string[] }[] = [
+  { grupo: "Saúde", emojis: ["💊", "🩺", "💉", "🦷", "🩹", "🏥", "🧴", "🌡️", "❤️", "🧬", "👓", "🦴"] },
+  { grupo: "Alimentação", emojis: ["🍽️", "🛒", "🥗", "🍔", "🥖", "☕", "🍕", "🍰", "🥩", "🍎", "🥑", "🧀"] },
+  { grupo: "Educação", emojis: ["🎓", "📚", "✏️", "📖", "🏫", "💻", "🎒", "📝", "🔬", "🎨", "🌍", "🧮"] },
+  { grupo: "Lazer & esporte", emojis: ["🎭", "🎬", "🏋️", "🎯", "🎮", "🎵", "🎪", "🎳", "🏖️", "⚽", "🏊", "🚴"] },
+  { grupo: "Casa & serviços", emojis: ["🏠", "🛋️", "🛏️", "🚿", "🍳", "💡", "🔧", "🌱", "🧹", "🐾", "🎁", "📦"] },
+  { grupo: "Mobilidade", emojis: ["🚗", "🚙", "🚕", "🚌", "🚲", "🏍️", "⛽", "🅿️", "✈️", "🛴", "🚆", "🚀"] },
+  { grupo: "Financeiro & outros", emojis: ["💰", "💳", "🏦", "⭐", "✨", "💎", "🔥", "🎯", "🔔", "📱", "🎓", "🛡️"] },
+];
 
 const VINCULOS = ["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONISTA"];
 const SITUACOES = ["ATIVO", "TRABALHANDO", "FERIAS", "AFASTADO", "LICENCA", "APOSENTADO"];
@@ -300,60 +312,31 @@ export function AdminBeneficiosForm() {
           </div>
         ) : null}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div>
-            <div style={fieldLabelStyle}>Ícone (emoji)</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-              {EMOJIS_SUGERIDOS.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => set("icone", e)}
-                  style={{
-                    width: 36, height: 36, borderRadius: 8,
-                    border: form.icone === e ? "2px solid var(--emerald-500)" : "1px solid var(--border-strong)",
-                    background: form.icone === e ? "color-mix(in srgb, var(--emerald-500) 15%, transparent)" : "transparent",
-                    fontSize: 20, cursor: "pointer",
-                  }}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-            <input
-              type="text"
-              value={form.icone}
-              onChange={(e) => set("icone", e.target.value)}
-              placeholder="Ou digite outro"
-              maxLength={8}
-              style={{ ...selectStyle, fontSize: 18, textAlign: "center" }}
-            />
-          </div>
+        <SeletorIcone valor={form.icone} onChange={(v) => set("icone", v)} corDestaque={form.cor} />
 
-          <div>
-            <div style={fieldLabelStyle}>Cor de destaque</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {CORES_SUGERIDAS.map((cor) => (
-                <button
-                  key={cor}
-                  type="button"
-                  onClick={() => set("cor", cor)}
-                  aria-label={`Cor ${cor}`}
-                  style={{
-                    width: 32, height: 32, borderRadius: 6, background: cor,
-                    border: form.cor === cor ? "3px solid var(--text)" : "1px solid var(--border)",
-                    cursor: "pointer",
-                  }}
-                />
-              ))}
-              <input
-                type="color"
-                value={form.cor}
-                onChange={(e) => set("cor", e.target.value)}
-                style={{ width: 32, height: 32, cursor: "pointer", background: "transparent", border: "1px solid var(--border-strong)", borderRadius: 6 }}
-                title="Cor personalizada"
+        <div>
+          <div style={fieldLabelStyle}>Cor de destaque</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {CORES_SUGERIDAS.map((cor) => (
+              <button
+                key={cor}
+                type="button"
+                onClick={() => set("cor", cor)}
+                aria-label={`Cor ${cor}`}
+                style={{
+                  width: 32, height: 32, borderRadius: 6, background: cor,
+                  border: form.cor === cor ? "3px solid var(--text)" : "1px solid var(--border)",
+                  cursor: "pointer",
+                }}
               />
-            </div>
+            ))}
+            <input
+              type="color"
+              value={form.cor}
+              onChange={(e) => set("cor", e.target.value)}
+              style={{ width: 32, height: 32, cursor: "pointer", background: "transparent", border: "1px solid var(--border-strong)", borderRadius: 6 }}
+              title="Cor personalizada"
+            />
           </div>
         </div>
 
@@ -732,6 +715,143 @@ function FieldGroup({ label, children }: { label: string; children: React.ReactN
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{children}</div>
     </div>
   );
+}
+
+/** Seletor de icone: grid de emojis por categoria com abas + preview do card
+ *  + input opcional pra URL de imagem/SVG customizado.
+ *  - Emoji: string curta (ex.: "💊")
+ *  - URL: precisa comecar com http(s):// — o card do servidor detecta e mostra img.
+ */
+function SeletorIcone({ valor, onChange, corDestaque }: { valor: string; onChange: (v: string) => void; corDestaque: string }) {
+  const [aba, setAba] = useState<string>(EMOJIS_POR_CATEGORIA[0]!.grupo);
+  const [modoUrl, setModoUrl] = useState(valor.startsWith("http"));
+  const gruposComEmojis = EMOJIS_POR_CATEGORIA;
+
+  function corBg(): string {
+    return `color-mix(in srgb, ${corDestaque} 15%, transparent)`;
+  }
+  function isUrl(v: string): boolean {
+    return v.startsWith("http://") || v.startsWith("https://");
+  }
+
+  return (
+    <div>
+      <div style={{ ...fieldLabelStyle, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span>Ícone</span>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button
+            type="button"
+            onClick={() => setModoUrl(false)}
+            style={miniTabStyle(!modoUrl)}
+          >
+            Emoji
+          </button>
+          <button
+            type="button"
+            onClick={() => setModoUrl(true)}
+            style={miniTabStyle(modoUrl)}
+          >
+            Imagem (URL)
+          </button>
+        </div>
+      </div>
+
+      {/* Preview + entrada livre */}
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 10 }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: 12,
+          background: corBg(),
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 28,
+          border: "1px solid var(--border-strong)",
+          flexShrink: 0, overflow: "hidden",
+        }}>
+          {isUrl(valor)
+            ? <img src={valor} alt="preview" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+            : (valor || "🎁")}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <input
+            type="text"
+            value={valor}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={modoUrl ? "https://exemplo.com/icone.svg" : "Ou cole outro emoji aqui (ex.: 🎯)"}
+            style={{ ...selectStyle, fontSize: modoUrl ? 13 : 20, textAlign: modoUrl ? "left" : "center" }}
+          />
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+            {modoUrl
+              ? "Cole a URL de um SVG ou PNG. Vira o ícone do card no app do servidor."
+              : "Escolha um dos emojis abaixo ou cole/digite outro no campo."}
+          </div>
+        </div>
+      </div>
+
+      {/* Grid de emojis (só no modo Emoji) */}
+      {!modoUrl ? (
+        <div style={{
+          border: "1px solid var(--border)", borderRadius: 10, padding: 8,
+          background: "var(--bg-elev-2)",
+        }}>
+          {/* Abas por categoria */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 8, overflowX: "auto", paddingBottom: 4 }}>
+            {gruposComEmojis.map((g) => (
+              <button
+                key={g.grupo}
+                type="button"
+                onClick={() => setAba(g.grupo)}
+                style={{
+                  padding: "5px 10px", borderRadius: 8, whiteSpace: "nowrap",
+                  border: `1px solid ${aba === g.grupo ? "var(--emerald-500)" : "transparent"}`,
+                  background: aba === g.grupo ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "transparent",
+                  color: aba === g.grupo ? "var(--text)" : "var(--text-muted)",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                {g.grupo}
+              </button>
+            ))}
+          </div>
+
+          {/* Grid da aba ativa */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(44px, 1fr))",
+            gap: 4,
+          }}>
+            {(gruposComEmojis.find((g) => g.grupo === aba)?.emojis ?? []).map((e) => {
+              const on = valor === e;
+              return (
+                <button
+                  key={e}
+                  type="button"
+                  onClick={() => onChange(e)}
+                  style={{
+                    aspectRatio: "1", borderRadius: 8,
+                    border: on ? "2px solid var(--emerald-500)" : "1px solid var(--border)",
+                    background: on ? "color-mix(in srgb, var(--emerald-500) 15%, transparent)" : "var(--surface)",
+                    fontSize: 22, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >
+                  {e}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function miniTabStyle(active: boolean): React.CSSProperties {
+  return {
+    padding: "4px 10px", borderRadius: 6,
+    border: `1px solid ${active ? "var(--emerald-500)" : "var(--border)"}`,
+    background: active ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "transparent",
+    color: active ? "var(--text)" : "var(--text-muted)",
+    fontSize: 11, fontWeight: 600, cursor: "pointer",
+  };
 }
 
 function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {

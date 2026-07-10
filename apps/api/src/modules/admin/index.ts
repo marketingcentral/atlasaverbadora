@@ -2042,7 +2042,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       nome: z.string().min(2).max(100),
       categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer"])).min(1),
       local: z.string().min(1).max(80),
-      icone: z.string().min(1).max(8), // emoji (ZWJ pode ser ate 8 chars)
+      icone: z.string().min(1).max(500), // emoji (ate 8 chars com ZWJ) OU url de imagem (max 500)
       cor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
       descontoLabel: z.string().min(1).max(80),
       descontoComplemento: z.string().min(1).max(120),

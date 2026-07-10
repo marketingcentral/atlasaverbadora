@@ -156,9 +156,11 @@ function ParceiroCard({ parceiro }: { parceiro: ServidorBeneficio }) {
         width: 44, height: 44, borderRadius: 10,
         background: `color-mix(in srgb, ${parceiro.cor} 15%, transparent)`,
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 22, flexShrink: 0,
+        fontSize: 22, flexShrink: 0, overflow: "hidden",
       }}>
-        {parceiro.icone}
+        {parceiro.icone.startsWith("http")
+          ? <img src={parceiro.icone} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
+          : parceiro.icone}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{parceiro.nome}</div>
