@@ -263,6 +263,10 @@ function AtalhoCard({
         textAlign: "left", cursor: "pointer",
         background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 14,
         padding: 18, display: "flex", flexDirection: "column", gap: 8,
+        // height:100% + parent grid align-items:stretch (default) faz o botao
+        // esticar pra altura do card mais alto; assim marginTop:auto no "Ver mais"
+        // realmente empurra ele pro rodape e alinha as 2 pills horizontalmente.
+        height: "100%",
         transition: "transform .12s ease, border-color .12s ease",
       }}
       onMouseEnter={(e) => {
