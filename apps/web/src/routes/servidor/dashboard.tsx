@@ -119,17 +119,17 @@ export function ServidorDashboard() {
           componente e 6s) — cliente pediu mais rapido. */}
       <ComunicadoCarrossel comunicados={comunicadosCarrossel} autoplayMs={3000} />
 
-      {/* 2 blocos grandes lado a lado — Beneficios (esquerda) e Portabilidade (direita).
-          Cliente pediu explicitamente Beneficios (nao Telemedicina) no card do
-          lado da Portabilidade. Portabilidade vai DIRETO pra /servidor/portabilidade
-          (rota curta configurada em outra sessao pra pular o hub do MarketPlace). */}
+      {/* 2 blocos grandes lado a lado — Telemedicina (esquerda) e Portabilidade (direita).
+          Cliente pediu essa ordem: "Telemedicina e a Portabilidade".
+          Portabilidade vai DIRETO pra /servidor/portabilidade (rota curta configurada
+          em outra sessao pra pular o hub do MarketPlace). */}
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, 1fr)" }}>
         <AtalhoCard
-          titulo="Benefícios"
-          descricao="Descontos em farmácias, mercado, saúde, educação e mais."
-          icon="🎁"
+          titulo="Telemedicina"
+          descricao="Consulta médica online sem custo, para você e sua família."
+          icon="🏥"
           accent="emerald"
-          onClick={() => nav("/servidor/beneficios")}
+          onClick={() => nav("/servidor/saude")}
         />
         <AtalhoCard
           titulo="Portabilidade"
