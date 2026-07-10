@@ -42,7 +42,7 @@ export function BancoLayout() {
   const qc = useQueryClient();
 
   const convenios = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
-  // Loading da troca de convenio: overlay full-screen por no minimo 4s a
+  // Loading da troca de convenio: overlay full-screen por no minimo 3s a
   // partir do clique — evita "flash" de tela nova antes das queries do banco
   // rehidratarem no novo escopo (contratos, ofertas, etc.).
   const [trocandoConvenio, setTrocandoConvenio] = useState<null | { nome: string }>(null);
@@ -58,9 +58,9 @@ export function BancoLayout() {
     if (!alvo || alvo.id === convenios.data?.activeId) return; // clique no proprio
     setTrocandoConvenio({ nome: alvo.nome });
     setActive.mutate(id);
-    // Piso fixo de 4s (cliente pediu). Se a API demorar mais, o overlay
-    // fecha so depois. Se for mais rapido, aguarda os 4s.
-    window.setTimeout(() => setTrocandoConvenio(null), 4_000);
+    // Piso fixo de 3s (cliente pediu). Se a API demorar mais, o overlay
+    // fecha so depois. Se for mais rapido, aguarda os 3s.
+    window.setTimeout(() => setTrocandoConvenio(null), 3_000);
   };
 
   const activeKey = location.pathname.split("/").pop() ?? "visao-geral";
