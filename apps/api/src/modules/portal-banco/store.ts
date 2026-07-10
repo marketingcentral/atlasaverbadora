@@ -34,6 +34,12 @@ export interface ContratoFull extends ContratoMock {
    *  pra ser fonte única (prefeitura confirma, banco vê). */
   folhaStatus?: "recebida" | "aplicada" | "falha";
   folhaMotivo?: string;
+  /** R2 key do arquivo de contrato (CCB) anexado pelo banco. Presente quando
+   *  o banco fez upload do PDF assinado. Serve pra reabrir a qualquer momento
+   *  via GET /v1/portal/banco/ccb/<key>. */
+  ccbKey?: string;
+  /** ISO — quando o CCB foi anexado (pra exibir "anexado em..."). */
+  ccbAnexadoEm?: string;
 }
 
 export interface ContratoEvento {
@@ -253,6 +259,16 @@ export function setContratoFolhaStatus(adf: string, status: "recebida" | "aplica
   if (!c) return undefined;
   c.folhaStatus = status;
   c.folhaMotivo = motivo;
+  return c;
+}
+
+/** Grava a R2 key do CCB anexado no contrato. Retorna o contrato atualizado
+ *  (o chamador chama persistContrato pra write-through). */
+export function setContratoCcb(adf: string, ccbKey: string): ContratoFull | undefined {
+  const c = _contratos.get(adf);
+  if (!c) return undefined;
+  c.ccbKey = ccbKey;
+  c.ccbAnexadoEm = new Date().toISOString();
   return c;
 }
 

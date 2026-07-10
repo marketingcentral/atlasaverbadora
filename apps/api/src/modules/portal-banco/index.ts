@@ -8,7 +8,7 @@ import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtu
 import { refreshConvenios } from "./convenios-store.js";
 import { refreshComunicados } from "./comunicados-store.js";
 import { prefeituras, bancos, pushEvent } from "../admin/index.js";
-import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos } from "./store.js";
+import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
 import { enviarNotificacao } from "../admin/mailer.js";
@@ -344,6 +344,8 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         ...ct,
         atualizadoEm: ultimo ?? new Date().toISOString(),
         telefoneServidor: srv?.telefone,
+        ccbKey: ct.ccbKey,
+        ccbAnexadoEm: ct.ccbAnexadoEm,
       };
     });
     return c.json({ contratos, total: contratos.length });
@@ -542,6 +544,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const key = `ccb/${j.banco_id}/${adf}/${ts}-${safeName}`;
     const buf = await file.arrayBuffer();
     await c.env.R2_FILES.put(key, buf, { httpMetadata: { contentType: "application/pdf" } });
+    // Grava a chave no contrato pra o operador reabrir a qualquer momento.
+    // Isolamento ja garantido acima (owner == banco logado).
+    await refreshContratos(c.env);
+    const owner = getContrato(adf);
+    if (owner && owner.bancoId === (j.banco_id ?? -1)) {
+      setContratoCcb(adf, key);
+      await persistContrato(c.env, adf);
+    }
     return c.json({ key, size: file.size, contentType: "application/pdf" });
   })
   .get("/v1/portal/banco/ccb/*", async (c) => {

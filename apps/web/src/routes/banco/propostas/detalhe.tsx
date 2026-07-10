@@ -41,10 +41,8 @@ export function BancoPropostaDetalhe() {
   // Enquanto a query da API ainda esta carregando, nao mostra "nao encontrada".
   const carregandoApi = !local && apiQ.isLoading;
   const perfil = getBancoPerfil();
-  // Unico modal aberto direto daqui e o de recusar. "Anexar contrato" hoje
-  // apenas baixa um modelo em PDF — nao ha upload nem averbacao pelo site,
-  // toda a formalizacao acontece offline (banco liga pro servidor).
-  const [modal, setModal] = useState<null | "recusar">(null);
+  // Modais: "recusar" (motivo) e "anexar" (menu com baixar modelo + upload).
+  const [modal, setModal] = useState<null | "recusar" | "anexar">(null);
 
   if (!proposta) {
     return (
@@ -201,7 +199,7 @@ export function BancoPropostaDetalhe() {
           perfilNome={perfil.nome}
           submitting={decidir.isPending}
           onAprovar={aprovar}
-          onBaixarContrato={() => baixarContratoModelo(proposta)}
+          onAnexarContrato={() => setModal("anexar")}
           onRecusar={() => setModal("recusar")}
         />
       </div>
@@ -225,6 +223,15 @@ export function BancoPropostaDetalhe() {
             );
           }}
         />
+      ) : modal === "anexar" ? (
+        <AnexarContratoModal
+          proposta={proposta}
+          onClose={() => setModal(null)}
+          onUploaded={() => {
+            qc.invalidateQueries({ queryKey: ["banco", "propostas-api"] });
+            refresh();
+          }}
+        />
       ) : null}
     </div>
   );
@@ -236,7 +243,7 @@ function NextStep({
   perfilNome,
   submitting,
   onAprovar,
-  onBaixarContrato,
+  onAnexarContrato,
   onRecusar,
 }: {
   proposta: BancoProposta;
@@ -244,7 +251,7 @@ function NextStep({
   perfilNome: string;
   submitting: boolean;
   onAprovar: () => void;
-  onBaixarContrato: () => void;
+  onAnexarContrato: () => void;
   onRecusar: () => void;
 }) {
   const s = proposta.status;
@@ -279,20 +286,25 @@ function NextStep({
     );
   }
 
-  // Passo 5 (unico caminho depois de aprovar): baixar contrato modelo. Nao ha
-  // averbacao pelo site — a formalizacao acontece offline. O usuario pediu
-  // "por enquanto" so o download do modelo; upload de CCB assinada e averbacao
-  // podem voltar como fluxo separado depois.
+  // Passo 5 (unico caminho depois de aprovar): "Anexar contrato" abre um menu
+  // com 2 opcoes — baixar modelo (client-side pdf) OU enviar arquivo assinado
+  // (upload pro R2). Nao ha averbacao pelo site — assinatura offline.
   if (s === "aprovada" || s === "aguardando_formalizacao" || s === "formalizada") {
+    const jaAnexado = !!proposta.ccbKey;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Proposta <strong>aprovada</strong>. Anexe o contrato (por enquanto baixamos um
-          modelo em PDF) e entre em contato com o servidor pra fechar a formalizacao
-          — a assinatura acontece <strong>offline</strong>, fora do site.
+          Proposta <strong>aprovada</strong>. Baixe o modelo, colete a assinatura
+          <strong> presencialmente</strong> e depois anexe o PDF assinado — o arquivo
+          fica salvo aqui pra o operador reabrir a qualquer momento.
         </div>
+        {jaAnexado ? (
+          <CcbAnexadoView proposta={proposta} onSubstituir={onAnexarContrato} />
+        ) : null}
         <div>
-          <Button variant="primary" onClick={onBaixarContrato}>Anexar contrato →</Button>
+          <Button variant="primary" onClick={onAnexarContrato}>
+            {jaAnexado ? "Substituir contrato →" : "Anexar contrato →"}
+          </Button>
         </div>
       </div>
     );
@@ -482,6 +494,185 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 14 }}>
       <span style={{ color: "var(--text-muted)" }}>{label}</span>
       <span style={{ fontWeight: 500, fontFamily: mono ? "var(--font-mono)" : undefined, textAlign: "right" }}>{value}</span>
+    </div>
+  );
+}
+
+/** Card mostrando o contrato ja anexado — o operador pode reabrir a qualquer
+ *  momento. Faz fetch autenticado (fetchCcbBlob) e abre em blob URL, senao
+ *  daria 401 no endpoint (mesmo motivo do bug do comprovante). */
+function CcbAnexadoView({ proposta, onSubstituir }: { proposta: BancoProposta; onSubstituir: () => void }) {
+  const [abrindo, setAbrindo] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const abrir = async () => {
+    if (!proposta.ccbKey) return;
+    setErro(null);
+    setAbrindo(true);
+    try {
+      const blob = await atlas.banco.fetchCcbBlob(proposta.ccbKey);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      // Sem `download` — abre pra visualizar. Ao clicar em "Baixar", browser
+      // permite salvar do proprio viewer.
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoga logo — a aba nova ja carregou pra memoria.
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch (e) {
+      setErro((e as Error).message || "Falha ao abrir o arquivo.");
+    } finally {
+      setAbrindo(false);
+    }
+  };
+  const anexadoEm = proposta.ccbAnexadoEm
+    ? new Date(proposta.ccbAnexadoEm).toLocaleString("pt-BR")
+    : null;
+  const nomeArq = proposta.ccbKey?.split("/").pop() ?? "contrato.pdf";
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+      background: "color-mix(in srgb, var(--emerald-500) 8%, transparent)",
+      border: "1px solid var(--emerald-500)", borderRadius: 10, flexWrap: "wrap",
+    }}>
+      <span style={{ fontSize: 20 }}>📄</span>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Contrato anexado</div>
+        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, wordBreak: "break-all" }}>
+          {nomeArq}{anexadoEm ? ` · ${anexadoEm}` : ""}
+        </div>
+        {erro ? <div style={{ fontSize: 11, color: "var(--danger-500)", marginTop: 4 }}>{erro}</div> : null}
+      </div>
+      <Button size="sm" variant="ghost" onClick={abrir} disabled={abrindo}>
+        {abrindo ? "Abrindo..." : "Abrir PDF"}
+      </Button>
+      <Button size="sm" variant="ghost" onClick={onSubstituir}>Substituir</Button>
+    </div>
+  );
+}
+
+/** Modal do fluxo "Anexar contrato" — oferece 2 caminhos:
+ *  (1) Baixar modelo em PDF (client-side, sem auth) pra o banco imprimir e
+ *      coletar assinatura presencial.
+ *  (2) Enviar um PDF do contrato ja assinado — sobe pro R2 e fica salvo na
+ *      proposta pra o operador reabrir depois. */
+function AnexarContratoModal({
+  proposta,
+  onClose,
+  onUploaded,
+}: {
+  proposta: BancoProposta;
+  onClose: () => void;
+  onUploaded: () => void;
+}) {
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  const enviar = async () => {
+    if (!arquivo) {
+      setErro("Selecione o PDF do contrato assinado antes de enviar.");
+      return;
+    }
+    setErro(null);
+    setEnviando(true);
+    try {
+      await atlas.banco.uploadCcb(proposta.idUnico, arquivo);
+      onUploaded();
+      onClose();
+    } catch (e) {
+      setErro((e as Error).message || "Falha ao enviar o arquivo.");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] ?? null;
+    if (f && f.type && f.type !== "application/pdf") {
+      setErro("Apenas arquivos PDF.");
+      setArquivo(null);
+      return;
+    }
+    setErro(null);
+    setArquivo(f);
+  };
+
+  return (
+    <div onClick={enviando ? undefined : onClose} style={modalBackdrop}>
+      <div onClick={(e) => e.stopPropagation()} style={modalCard}>
+        <h3 style={{ margin: 0 }}>Anexar contrato</h3>
+        <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
+          {proposta.nome} · <code>{proposta.idUnico}</code>
+        </div>
+
+        {/* Opcao 1: baixar modelo */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 12, padding: 12,
+          border: "1px solid var(--border-strong)", borderRadius: 10, background: "var(--bg-elev-2)",
+        }}>
+          <span style={{ fontSize: 22 }}>📥</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>Baixar contrato modelo</div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
+              PDF pronto pra imprimir e coletar a assinatura presencialmente.
+            </div>
+          </div>
+          <Button size="sm" variant="ghost" onClick={() => baixarContratoModelo(proposta)} disabled={enviando}>
+            Baixar
+          </Button>
+        </div>
+
+        {/* Opcao 2: upload */}
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Enviar contrato assinado</div>
+          <label style={{
+            display: "flex", flexDirection: "column", gap: 8, padding: 20,
+            border: "2px dashed var(--border-strong)", borderRadius: 12,
+            background: "var(--bg-elev-2)", cursor: enviando ? "not-allowed" : "pointer",
+            alignItems: "center", textAlign: "center", opacity: enviando ? 0.6 : 1,
+          }}>
+            <span style={{ fontSize: 24 }}>📄</span>
+            <span style={{ fontWeight: 600, fontSize: 14 }}>
+              {arquivo ? arquivo.name : "Clique para selecionar o arquivo (PDF)"}
+            </span>
+            {arquivo ? (
+              <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                {(arquivo.size / 1024).toFixed(0)} KB
+              </span>
+            ) : (
+              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Ou arraste e solte aqui</span>
+            )}
+            <input
+              type="file"
+              accept="application/pdf,.pdf"
+              style={{ display: "none" }}
+              onChange={onFileChange}
+              disabled={enviando}
+            />
+          </label>
+        </div>
+
+        {erro ? (
+          <div style={{
+            padding: "8px 12px", borderRadius: 8,
+            background: "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+            border: "1px solid var(--danger-500)", fontSize: 13, color: "var(--danger-500)",
+          }}>
+            {erro}
+          </div>
+        ) : null}
+
+        <FormActions>
+          <Button variant="ghost" type="button" onClick={onClose} disabled={enviando}>Voltar</Button>
+          <Button type="button" disabled={!arquivo || enviando} onClick={enviar}>
+            {enviando ? "Enviando..." : "Enviar contrato"}
+          </Button>
+        </FormActions>
+      </div>
     </div>
   );
 }

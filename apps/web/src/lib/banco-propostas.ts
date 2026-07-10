@@ -104,6 +104,10 @@ export interface BancoProposta {
   motivoRecusa?: string;
   observacao?: string;
   ccbUrl?: string;
+  /** R2 key do CCB anexado — usar atlas.banco.fetchCcbBlob(ccbKey) pra reabrir. */
+  ccbKey?: string;
+  /** ISO — quando o CCB foi anexado. */
+  ccbAnexadoEm?: string;
   // Analise de risco interna (batch 2):
   risco?: {
     scoreInterno: number; // 0-1000
@@ -328,6 +332,8 @@ export interface BancoContratoApi {
   contratoOrigem?: string;
   saldoDevedorOrigem?: number;
   telefoneServidor?: string;
+  ccbKey?: string;
+  ccbAnexadoEm?: string;
 }
 
 export interface BancoPropostaFromApi extends BancoProposta {
@@ -386,6 +392,8 @@ export function contratoToProposta(ct: BancoContratoApi): BancoPropostaFromApi {
     saldoDevedorOrigem: ct.saldoDevedorOrigem,
     tipoContrato: ct.tipoContrato,
     telefoneServidor: ct.telefoneServidor,
+    ccbKey: ct.ccbKey,
+    ccbAnexadoEm: ct.ccbAnexadoEm,
   };
   return patch ? { ...base, ...patch } : base;
 }

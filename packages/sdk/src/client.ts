@@ -1165,6 +1165,12 @@ export class AtlasClient {
            *  entrar em contato pra tocar a formalização offline. Só é
            *  devolvido pra contratos do próprio banco logado. */
           telefoneServidor?: string;
+          /** R2 key do PDF do contrato anexado pelo banco (upload). O
+           *  operador reabre a qualquer momento — buscar via
+           *  fetchCcbBlob(key). */
+          ccbKey?: string;
+          /** ISO — quando o CCB foi anexado. */
+          ccbAnexadoEm?: string;
         }[];
         total: number;
       }>("/v1/portal/banco/contratos", {
@@ -1206,6 +1212,16 @@ export class AtlasClient {
     },
     /** URL absoluta para visualizar a CCB (requer sessao do proprio banco). */
     ccbUrl: (key: string): string => new URL(`/v1/portal/banco/ccb/${key}`, this.opts.baseUrl).toString(),
+    /** Baixa o CCB anexado como Blob (envia Authorization). Necessario
+     *  porque o endpoint exige Bearer — abrir a ccbUrl direto no <a href>
+     *  volta 401. Use com URL.createObjectURL pra abrir/salvar. */
+    fetchCcbBlob: async (key: string): Promise<Blob> => {
+      const token = await this.storage.getAccess();
+      const url = new URL(`/v1/portal/banco/ccb/${key}`, this.opts.baseUrl).toString();
+      const res = await this.fetchImpl(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error(`Falha ao baixar CCB (${res.status})`);
+      return await res.blob();
+    },
     reativarTabela: (id: string) => this.request<{ ok: boolean }>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}/reativar`, { method: "POST" }),
 
     listUsuarios: (q?: { perfil?: BancoPerfil; somenteAdmin?: boolean }) =>
