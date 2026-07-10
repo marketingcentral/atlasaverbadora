@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, FormActions, Pill, TextareaField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
+import { buildSimplePdf, downloadPdf } from "../../../lib/pdf";
 import {
   PRODUTO_LABEL,
   STATUS_LABEL,
@@ -426,19 +427,54 @@ function TelefoneRow({ telefone }: { telefone: string }) {
   );
 }
 
-/** Baixa um contrato CCB em PDF (modelo) para o banco imprimir e coletar
- *  a assinatura do servidor PRESENCIALMENTE. Usa o comprovante do backend
- *  como base — mesmo endpoint que ja serve o resumo da operacao em PDF. */
+/** Gera um contrato CCB modelo em PDF pro banco imprimir e coletar a assinatura
+ *  do servidor PRESENCIALMENTE. Gera client-side (buildSimplePdf) pra nao
+ *  depender de auth no endpoint /comprovante.pdf do backend — o browser nao
+ *  manda o Bearer token quando <a href> abre a URL direto (401). */
 function baixarContratoModelo(proposta: BancoProposta): void {
-  const url = atlas.banco.comprovanteUrl(proposta.idUnico);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `contrato-${proposta.idUnico}.pdf`;
-  a.target = "_blank";
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+  const hoje = new Date().toLocaleDateString("pt-BR");
+  const bytes = buildSimplePdf("CEDULA DE CREDITO BANCARIO (CCB) - MODELO", [
+    { text: `Proposta: ${proposta.idUnico}`, bold: true },
+    { text: `Emitida em: ${hoje}` },
+    "",
+    { text: "1. IDENTIFICACAO DO EMITENTE", bold: true },
+    `Nome: ${proposta.nome}`,
+    `CPF: ${proposta.cpfMasked}`,
+    `Matricula: ${proposta.matricula}`,
+    `Convenio: ${proposta.convenio}`,
+    "",
+    { text: "2. CONDICOES DA OPERACAO", bold: true },
+    `Produto: ${PRODUTO_LABEL[proposta.produto]}`,
+    `Valor financiado: ${fmtBRL(proposta.valor)}`,
+    `Parcelas: ${proposta.parcelas}x de ${fmtBRL(proposta.parcela)}`,
+    `Taxa: ${(proposta.taxaAm * 100).toFixed(2)}% a.m.`,
+    "",
+    { text: "3. CLAUSULAS GERAIS", bold: true },
+    "3.1. O EMITENTE declara ter recebido copia integral desta CCB e das",
+    "     condicoes gerais aplicaveis ao contrato de credito consignado.",
+    "3.2. As parcelas serao descontadas diretamente da folha de pagamento",
+    "     do EMITENTE junto ao convenio identificado no item 1.",
+    "3.3. Em caso de rescisao do vinculo empregaticio, o saldo devedor",
+    "     tornar-se-a exigivel conforme legislacao vigente.",
+    "",
+    { text: "4. ASSINATURAS", bold: true },
+    "",
+    "_______________________________________",
+    `${proposta.nome} - EMITENTE`,
+    `CPF: ${proposta.cpfMasked}`,
+    "",
+    "_______________________________________",
+    "Banco / Representante legal",
+    "",
+    "_______________________________________",
+    "Testemunha 1",
+    "",
+    "_______________________________________",
+    "Testemunha 2",
+    "",
+    { text: "MODELO PARA DEMONSTRACAO - NAO E DOCUMENTO CONTRATUAL VALIDO.", bold: true },
+  ]);
+  downloadPdf(`contrato-modelo-${proposta.idUnico}.pdf`, bytes);
 }
 
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
