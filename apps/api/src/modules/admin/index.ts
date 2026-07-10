@@ -2116,6 +2116,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         url: z.string().url(),
         textoBotao: z.string().max(40).optional(),
       }).optional(),
+      todasPrefeiturasParceiras: z.boolean().optional(),
     }).parse(await c.req.json());
     // Consistencia origem-vinculo: banco exige bancoId, convenio exige convenioId.
     // Sem isso, o servidor recebe o beneficio sem saber QUAL banco/convenio ofereceu.
@@ -2164,6 +2165,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       imagens: body.imagens?.length ? body.imagens : undefined,
       modoImagens: body.modoImagens,
       linkAcesso: body.linkAcesso?.url ? body.linkAcesso : undefined,
+      todasPrefeiturasParceiras: body.todasPrefeiturasParceiras,
     };
     await persistBeneficio(c.env, b);
     return c.json({ beneficio: b });

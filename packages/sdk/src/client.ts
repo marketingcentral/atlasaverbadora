@@ -172,6 +172,9 @@ export interface AdminBeneficio {
   modoImagens?: ModoImagens;
   /** Botao "Acessar" que aparece no card do servidor — leva pro site/app do parceiro. */
   linkAcesso?: LinkAcessoBeneficio;
+  /** Se true, o beneficio aparece em TODAS as prefeituras parceiras — incluindo
+   *  as cadastradas no futuro. Prevalece sobre prefeituraIdsExtras. */
+  todasPrefeiturasParceiras?: boolean;
 }
 export interface AdminBeneficioInput {
   id?: string;
@@ -206,6 +209,7 @@ export interface AdminBeneficioInput {
   imagens?: string[];
   modoImagens?: ModoImagens;
   linkAcesso?: LinkAcessoBeneficio;
+  todasPrefeiturasParceiras?: boolean;
 }
 export interface ServidorBeneficio {
   id: string;

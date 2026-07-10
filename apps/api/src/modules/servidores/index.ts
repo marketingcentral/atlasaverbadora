@@ -375,10 +375,12 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
     const convAtivo = entryAtivo ? CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio) : undefined;
     const prefeituraAtiva = convAtivo?.prefeituraId ?? s.prefeitura_id;
-    // Filtro por prefeitura ATIVA + suporte a multi-prefeitura (prefeituraIdsExtras).
+    // Filtro por prefeitura ATIVA + multi-prefeitura + flag "todas parceiras".
+    // todasPrefeiturasParceiras=true prevalece (aparece em qualquer prefeitura).
     const list = (await loadBeneficios(c.env)).filter((b) => {
       if (!b.ativo) return false;
-      const cobrePrefeitura = b.prefeituraId === prefeituraAtiva
+      const cobrePrefeitura = b.todasPrefeiturasParceiras
+        || b.prefeituraId === prefeituraAtiva
         || (b.prefeituraIdsExtras?.includes(prefeituraAtiva) ?? false);
       if (!cobrePrefeitura) return false;
       if (categoria && !b.categorias.includes(categoria as "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina")) return false;

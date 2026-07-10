@@ -146,9 +146,10 @@ export function AdminBeneficiosForm() {
     return telas;
   }, [form.categorias]);
   const prefeiturasAlvo = useMemo(() => {
+    if (form.todasPrefeiturasParceiras) return prefeituras;
     const ids = [form.prefeituraId, ...(form.prefeituraIdsExtras ?? [])];
     return ids.map((id) => prefeituras.find((p) => p.id === id)).filter(Boolean) as { id: number; nome: string; uf: string }[];
-  }, [form.prefeituraId, form.prefeituraIdsExtras, prefeituras]);
+  }, [form.prefeituraId, form.prefeituraIdsExtras, form.todasPrefeiturasParceiras, prefeituras]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 900 }}>
@@ -189,8 +190,17 @@ export function AdminBeneficiosForm() {
           </li>
           <li>
             <b style={{ color: "var(--text)" }}>Prefeituras alvo:</b>{" "}
-            {prefeiturasAlvo.length ? prefeiturasAlvo.map((p) => `${p.nome}/${p.uf}`).join(", ") : "—"}
-            {" "}<span style={{ color: "var(--text-dim)" }}>(servidores dessas prefeituras verão o benefício)</span>
+            {form.todasPrefeiturasParceiras ? (
+              <>
+                <b style={{ color: "var(--emerald-500)" }}>Todas as prefeituras parceiras</b>{" "}
+                ({prefeiturasAlvo.length} atualmente + qualquer nova que for cadastrada)
+              </>
+            ) : (
+              <>
+                {prefeiturasAlvo.length ? prefeiturasAlvo.map((p) => `${p.nome}/${p.uf}`).join(", ") : "—"}
+                {" "}<span style={{ color: "var(--text-dim)" }}>(servidores dessas prefeituras verão o benefício)</span>
+              </>
+            )}
           </li>
           {form.origem === "banco" ? (
             <li>
@@ -652,6 +662,30 @@ export function AdminBeneficiosForm() {
 
       {/* ============ 7. PREFEITURA(S) ============ */}
       <Secao titulo="Prefeitura(s)" descricao="Onde o benefício aparece pros servidores." icone="🏛️" defaultOpen>
+        {/* Modo de abrangencia: so principal / todas as parceiras / algumas escolhidas.
+            "Todas" persiste como flag no backend — se novas prefeituras entrarem,
+            o beneficio automaticamente aparece pra elas tambem. */}
+        <FieldGroup label="Onde este benefício aparece">
+          <OpcaoRadio
+            on={!form.todasPrefeiturasParceiras && (!form.prefeituraIdsExtras || form.prefeituraIdsExtras.length === 0)}
+            titulo="Só a prefeitura principal"
+            descricao="Aparece apenas para servidores da prefeitura selecionada abaixo."
+            onClick={() => setForm((f) => ({ ...f, todasPrefeiturasParceiras: false, prefeituraIdsExtras: [] }))}
+          />
+          <OpcaoRadio
+            on={!!form.todasPrefeiturasParceiras}
+            titulo="Todas as prefeituras parceiras"
+            descricao="Aparece para servidores de todas as prefeituras — incluindo novas que forem cadastradas depois."
+            onClick={() => setForm((f) => ({ ...f, todasPrefeiturasParceiras: true, prefeituraIdsExtras: undefined }))}
+          />
+          <OpcaoRadio
+            on={!form.todasPrefeiturasParceiras && (form.prefeituraIdsExtras?.length ?? 0) > 0}
+            titulo="Escolher prefeituras específicas"
+            descricao="Marque abaixo apenas as prefeituras onde este benefício vai aparecer."
+            onClick={() => setForm((f) => ({ ...f, todasPrefeiturasParceiras: false, prefeituraIdsExtras: f.prefeituraIdsExtras?.length ? f.prefeituraIdsExtras : [] }))}
+          />
+        </FieldGroup>
+
         <div>
           <div style={fieldLabelStyle}>Prefeitura principal *</div>
           <select
@@ -674,18 +708,50 @@ export function AdminBeneficiosForm() {
               <option key={p.id} value={p.id}>{p.nome}/{p.uf}</option>
             ))}
           </select>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>
+            {form.todasPrefeiturasParceiras
+              ? "No modo \"todas\" a prefeitura principal serve como fallback (ex: para o campo Local no card)."
+              : "A prefeitura principal filtra também os bancos e convênios disponíveis nas outras seções."}
+          </div>
         </div>
 
-        <FieldGroup label="Prefeituras adicionais (opcional — mesmo benefício em várias cidades)">
-          {prefeituras.filter((p) => p.id !== form.prefeituraId).map((p) => {
-            const on = form.prefeituraIdsExtras?.includes(p.id) ?? false;
-            return (
-              <Chip key={p.id} on={on} onClick={() => set("prefeituraIdsExtras", toggleArrayItem(form.prefeituraIdsExtras, p.id) as number[])}>
-                {p.nome}/{p.uf}
-              </Chip>
-            );
-          })}
-        </FieldGroup>
+        {/* So mostra chips no modo "Escolher especificas". No "todas" ficam
+            escondidos pra nao dar impressao errada. */}
+        {!form.todasPrefeiturasParceiras && (form.prefeituraIdsExtras !== undefined) ? (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <div style={fieldLabelStyle}>Prefeituras adicionais</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={() => set("prefeituraIdsExtras", prefeituras.filter((p) => p.id !== form.prefeituraId).map((p) => p.id))}
+                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 8px", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}
+                >
+                  Marcar todas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => set("prefeituraIdsExtras", [])}
+                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 6, padding: "3px 8px", fontSize: 11, color: "var(--text-muted)", cursor: "pointer" }}
+                >
+                  Limpar
+                </button>
+              </div>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {prefeituras.filter((p) => p.id !== form.prefeituraId).length === 0 ? (
+                <span style={{ color: "var(--text-dim)", fontSize: 13 }}>Só há uma prefeitura cadastrada.</span>
+              ) : prefeituras.filter((p) => p.id !== form.prefeituraId).map((p) => {
+                const on = form.prefeituraIdsExtras?.includes(p.id) ?? false;
+                return (
+                  <Chip key={p.id} on={on} onClick={() => set("prefeituraIdsExtras", toggleArrayItem(form.prefeituraIdsExtras, p.id) as number[])}>
+                    {p.nome}/{p.uf}
+                  </Chip>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
       </Secao>
 
       {/* ============ 8. DESCRICAO LONGA / MARKETING ============ */}

@@ -101,6 +101,9 @@ export interface Beneficio {
   imagens?: string[];
   modoImagens?: ModoImagens;
   linkAcesso?: LinkAcessoBeneficio;
+  /** Se true, aparece em todas as prefeituras parceiras — incluindo as
+   *  cadastradas no futuro. Prevalece sobre prefeituraIdsExtras. */
+  todasPrefeiturasParceiras?: boolean;
 }
 
 const TABLE = "admin_beneficios";
