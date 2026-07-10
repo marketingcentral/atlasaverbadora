@@ -51,8 +51,16 @@ function ehEmAndamento(estado: EstadoProposta): boolean {
   return estado === "em_analise" || estado === "aprovada" || estado === "aguardando_formalizacao";
 }
 
+/** Proposta que terminou negativa — vai pro Historico. */
+function ehHistoricoProposta(estado: EstadoProposta): boolean {
+  return estado === "recusada" || estado === "expirada" || estado === "cancelada";
+}
+
 export function ServidorContratos() {
-  const [tab, setTab] = useState<"todos" | "ativos" | "quitados">("todos");
+  // Aba "Todos" foi removida a pedido do cliente. Ficou so Ativos (default)
+  // e Historico. Historico inclui contratos quitados + propostas recusadas/
+  // expiradas/canceladas.
+  const [tab, setTab] = useState<"ativos" | "historico">("ativos");
   const [downloading, setDownloading] = useState<string | null>(null);
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
 
@@ -76,26 +84,34 @@ export function ServidorContratos() {
     refetchOnWindowFocus: true,
   });
 
-  const emAndamento = useMemo(() => {
-    return (propostasQ.data?.propostas ?? [])
-      .map((p) => ({
-        id: p.id,
-        banco: p.banco,
-        estado: mapSituacao(p.situacao),
-        valor: p.valor,
-        parcelas: p.parcelas,
-        parcela: p.parcela,
-        taxaAm: p.taxaAm,
-        data: p.data,
-      }))
-      .filter((p) => ehEmAndamento(p.estado));
+  // Todas as propostas mapeadas — separa em andamento e historico.
+  const propostasMapeadas = useMemo(() => {
+    return (propostasQ.data?.propostas ?? []).map((p) => ({
+      id: p.id,
+      banco: p.banco,
+      estado: mapSituacao(p.situacao),
+      valor: p.valor,
+      parcelas: p.parcelas,
+      parcela: p.parcela,
+      taxaAm: p.taxaAm,
+      data: p.data,
+    }));
   }, [propostasQ.data]);
+
+  const emAndamento = useMemo(
+    () => propostasMapeadas.filter((p) => ehEmAndamento(p.estado)),
+    [propostasMapeadas],
+  );
+  const propostasHistorico = useMemo(
+    () => propostasMapeadas.filter((p) => ehHistoricoProposta(p.estado)),
+    [propostasMapeadas],
+  );
 
   const contratos: Contrato[] = info?.contratos ?? [];
   const filtered = contratos.filter((c) => {
     if (tab === "ativos") return c.status !== "Quitado";
-    if (tab === "quitados") return c.status === "Quitado";
-    return true;
+    // historico
+    return c.status === "Quitado";
   });
 
   async function baixarPdf(c: Contrato) {
@@ -191,35 +207,62 @@ export function ServidorContratos() {
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
           <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-            Contratos averbados
+            {tab === "ativos" ? "Contratos averbados" : "Histórico"}
           </span>
           <Tabs
             variant="pills"
             activeKey={tab}
             onChange={(k) => setTab(k as typeof tab)}
             tabs={[
-              { key: "todos", label: "Todos" },
               { key: "ativos", label: "Ativos" },
-              { key: "quitados", label: "Quitados" },
+              { key: "historico", label: "Histórico" },
             ]}
           />
         </div>
 
-        {filtered.length === 0 ? (
+        {/* Historico: propostas recusadas/expiradas/canceladas aparecem primeiro,
+            depois os contratos quitados. */}
+        {tab === "historico" && propostasHistorico.length > 0 ? (
+          <div style={{ display: "grid", gap: 12 }}>
+            {propostasHistorico.map((p) => (
+              <Card key={p.id} style={{ opacity: 0.85 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>{p.banco}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                      Proposta {p.id} · criada em {p.data}
+                    </div>
+                  </div>
+                  <Pill variant={estadoPillVariant(p.estado)}>{ESTADO_LABEL[p.estado]}</Pill>
+                </div>
+                <div style={{
+                  display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                  gap: 12, marginTop: 14, fontSize: 13,
+                }}>
+                  <KV label="Valor solicitado" v={fmtBRL(p.valor)} />
+                  <KV label="Parcelas" v={`${p.parcelas}x de ${fmtBRL(p.parcela)}`} />
+                  <KV label="Taxa a.m." v={`${p.taxaAm.toFixed(2)}%`} />
+                </div>
+              </Card>
+            ))}
+          </div>
+        ) : null}
+
+        {filtered.length === 0 && (tab === "ativos" || propostasHistorico.length === 0) ? (
           <Card>
             <div style={{ textAlign: "center", padding: "24px 12px" }}>
               <div style={{ fontSize: 36, opacity: 0.5 }}>📄</div>
-              <h3 style={{ marginTop: 12, marginBottom: 6 }}>Sem contratos nesta categoria</h3>
+              <h3 style={{ marginTop: 12, marginBottom: 6 }}>
+                {tab === "ativos" ? "Sem contratos ativos" : "Sem histórico"}
+              </h3>
               <p style={{ color: "var(--text-muted)", fontSize: ".9rem", maxWidth: 380, margin: "0 auto" }}>
                 {tab === "ativos"
                   ? "Você não tem contratos ativos nesta matrícula no momento."
-                  : tab === "quitados"
-                    ? "Você ainda não quitou nenhum contrato nesta matrícula."
-                    : "Nenhum contrato registrado para esta matrícula."}
+                  : "Ainda não há contratos quitados nem propostas recusadas/expiradas nesta matrícula."}
               </p>
             </div>
           </Card>
-        ) : (
+        ) : filtered.length === 0 ? null : (
           <div style={{ display: "grid", gap: 12 }}>
             {filtered.map((c) => {
               const pct = (c.parcelasPagas / c.total) * 100;
