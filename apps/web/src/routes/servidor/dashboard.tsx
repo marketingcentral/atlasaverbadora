@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Card, ComunicadoCarrossel } from "@atlas/ui/web";
+import { ComunicadoCarrossel } from "@atlas/ui/web";
 import type { Comunicado } from "@atlas/sdk";
 import { atlas } from "../../lib/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
@@ -227,33 +227,6 @@ export function ServidorDashboard() {
         />
       </div>
 
-      {/* Warning existente — pré-aprovação */}
-      <div style={{
-        padding: "12px 16px",
-        borderRadius: 10,
-        background: "color-mix(in srgb, var(--gold-500) 8%, transparent)",
-        border: "1px solid color-mix(in srgb, var(--gold-500) 30%, transparent)",
-        fontSize: 13,
-        color: "var(--text-muted)",
-        lineHeight: 1.5,
-      }}>
-        <div><b style={{ color: "var(--text)" }}>⚠️ Pré-aprovação:</b> os valores são pré-aprovados e podem variar conforme coeficiente diário e taxas.</div>
-        <div style={{ marginTop: 4 }}>
-          <b style={{ color: "var(--text)" }}>ℹ️ Margem por produto:</b> a margem de empréstimo não pode ser usada para cartão e vice-versa — cada produto tem seu próprio limite.
-        </div>
-      </div>
-
-      {/* Fonte da margem — info técnica preservada */}
-      <Card>
-        <span className="eyebrow">Fonte</span>
-        <div style={{ marginTop: 12, fontSize: ".9rem", color: "var(--text-muted)", lineHeight: 1.6 }}>
-          <div>Tipo: {info.margem.fonte.tipo}</div>
-          <div>Sincronizado: {new Date(info.margem.fonte.sincronizado_em).toLocaleString("pt-BR")}</div>
-          <div>
-            Cache: <b style={{ color: "var(--accent)" }}>{info.margem.fonte.cache_status}</b>
-          </div>
-        </div>
-      </Card>
     </div>
   );
 }
