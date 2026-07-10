@@ -337,9 +337,9 @@ function KV({ label, v, accent }: { label: string; v: string; accent?: boolean }
 /** Etapas do ciclo de vida da proposta pro servidor acompanhar (5 estagios). */
 const ETAPAS_BASE = [
   "Proposta enviada",
-  "Em análise",
-  "Aprovado",
-  "Aguardando ADF",
+  "Recusada pelo banco",
+  "Aprovado pelo banco",
+  "Aguardando ADF da averbadora",
   "Autorização completa",
 ] as const;
 
