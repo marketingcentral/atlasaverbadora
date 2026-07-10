@@ -83,10 +83,15 @@ export function BancoOfertas() {
       key: "titulo",
       header: "Título",
       render: (o) => (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-          {o.icone ? <span style={{ fontSize: 16 }}>{o.icone}</span> : null}
-          <span>{o.titulo}</span>
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {o.icone ? <span style={{ fontSize: 16 }}>{o.icone}</span> : null}
+            <span>{o.titulo}</span>
+          </span>
+          <span style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-dim)" }}>
+            {(o.tipo ?? "credito_novo") === "portabilidade" ? "🔁 Portabilidade" : "💰 Crédito novo"}
+          </span>
+        </div>
       ),
     },
     { key: "taxa", header: "Taxa a.m.", align: "right", render: (o) => `${o.taxaAm.toFixed(2)}%` },
@@ -188,6 +193,7 @@ function OfertaModal({
     expiraEm: initial?.expiraEm ?? "",
     filtro: initial?.filtro ?? {},
     icone: initial?.icone ?? "",
+    tipo: initial?.tipo ?? "credito_novo",
   });
   const [error, setError] = useState<string | null>(null);
   const [duracaoHoras, setDuracaoHoras] = useState<string>("");
@@ -228,6 +234,29 @@ function OfertaModal({
 
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <SectionHead>Conteúdo da oferta</SectionHead>
+
+          {/* Tipo de produto: muda o CTA no card do servidor. */}
+          <div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
+              Tipo de produto
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <TipoOptionCard
+                on={form.tipo === "credito_novo" || !form.tipo}
+                icone="💰"
+                titulo="Crédito novo"
+                descricao="Empréstimo consignado. CTA leva o servidor pro fluxo de aceite do contrato."
+                onClick={() => setForm({ ...form, tipo: "credito_novo" })}
+              />
+              <TipoOptionCard
+                on={form.tipo === "portabilidade"}
+                icone="🔁"
+                titulo="Portabilidade"
+                descricao="Trazer contrato de outro banco. CTA leva pro fluxo de portabilidade com este banco pré-selecionado."
+                onClick={() => setForm({ ...form, tipo: "portabilidade" })}
+              />
+            </div>
+          </div>
 
           {/* Seletor de icone (emoji) — opcional. Aparece antes do titulo no card do servidor. */}
           <div>
@@ -385,6 +414,37 @@ function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; chi
       }}
     >
       {children}
+    </button>
+  );
+}
+
+function TipoOptionCard({
+  on, icone, titulo, descricao, onClick,
+}: {
+  on: boolean; icone: string; titulo: string; descricao: string; onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        textAlign: "left",
+        padding: 12,
+        borderRadius: 10,
+        border: "1px solid",
+        borderColor: on ? "var(--emerald-500)" : "var(--border-strong)",
+        background: on ? "color-mix(in srgb, var(--emerald-500) 10%, transparent)" : "transparent",
+        cursor: "pointer",
+        display: "flex",
+        gap: 10,
+        alignItems: "flex-start",
+      }}
+    >
+      <span style={{ fontSize: 20 }}>{icone}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{titulo}</div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2, lineHeight: 1.4 }}>{descricao}</div>
+      </div>
     </button>
   );
 }

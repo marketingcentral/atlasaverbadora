@@ -103,6 +103,9 @@ export interface BancoOfertaFiltro {
   idadeMin?: number;
   idadeMax?: number;
 }
+/** Produto ofertado pelo banco. */
+export type BancoOfertaTipo = "credito_novo" | "portabilidade";
+
 export interface BancoOferta {
   id: string;
   bancoId: number;
@@ -118,6 +121,8 @@ export interface BancoOferta {
   criadoPor: string;
   /** Emoji tematico opcional (ex.: "🔥", "🏠", "🎓"). */
   icone?: string;
+  /** Produto ofertado. Default: "credito_novo". */
+  tipo?: BancoOfertaTipo;
 }
 export interface BancoOfertaInput {
   id?: string;
@@ -130,6 +135,7 @@ export interface BancoOfertaInput {
   ativo?: boolean;
   expiraEm?: string;
   icone?: string;
+  tipo?: BancoOfertaTipo;
 }
 export interface ServidorOfertaBanco {
   id: string;
@@ -143,6 +149,7 @@ export interface ServidorOfertaBanco {
   criadoEm: string;
   expiraEm: string | null;
   icone: string | null;
+  tipo: BancoOfertaTipo;
 }
 
 export interface BancoTabela {

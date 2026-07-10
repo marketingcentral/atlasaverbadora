@@ -22,6 +22,13 @@ export interface OfertaFiltro {
   idadeMax?: number;
 }
 
+/** Produto ofertado. "credito_novo" = emprestimo consignado tradicional (fluxo
+ *  padrao termo/aceite). "portabilidade" = campanha "traga seu contrato do
+ *  outro banco" — CTA leva pro /servidor/portabilidade com o banco desta oferta
+ *  pre-selecionado como destino. Refin/cartao consignado/cartao beneficio ficam
+ *  pra fatias B e C. Default (retrocompat): credito_novo. */
+export type OfertaTipo = "credito_novo" | "portabilidade";
+
 export interface Oferta {
   id: string;
   bancoId: number;
@@ -43,6 +50,8 @@ export interface Oferta {
    *  do titulo. Frontend limita o picker a um catalogo curado; backend aceita
    *  qualquer string curta pra nao brigar com escolhas futuras. */
   icone?: string;
+  /** Tipo de produto. Default: "credito_novo" pra ofertas legadas. */
+  tipo?: OfertaTipo;
 }
 
 const TABLE = "admin_ofertas";

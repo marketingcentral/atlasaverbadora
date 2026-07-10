@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card, Pill } from "@atlas/ui/web";
 import {
   ContratoElegivelMock as ContratoElegivel,
@@ -23,10 +23,18 @@ const fmtBRL = (n: number) =>
 
 export function ServidorPortabilidade() {
   const nav = useNavigate();
+  const [sp] = useSearchParams();
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
-  // Banco destino escolhido pelo servidor (default = melhor taxa).
-  const [bancoIdx, setBancoIdx] = useState(0);
+  // Se veio "?banco=Nome" (vindo de uma oferta de portabilidade), pre-seleciona
+  // esse banco na lista de destinos. Caso contrario, default = melhor taxa.
+  const bancoPreselect = useMemo(() => {
+    const nome = sp.get("banco");
+    if (!nome) return 0;
+    const idx = BANCOS_DESTINO.findIndex((b) => b.nome.toLowerCase() === nome.toLowerCase());
+    return idx >= 0 ? idx : 0;
+  }, [sp]);
+  const [bancoIdx, setBancoIdx] = useState(bancoPreselect);
   const BANCO_DESTINO = BANCOS_DESTINO[bancoIdx]!;
 
   useEffect(() => {

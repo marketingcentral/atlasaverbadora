@@ -76,10 +76,21 @@ export function ServidorMarketplace() {
           {ofertas.map((o) => {
             const valorSug = Math.min(o.valorMax, 10000);
             const parcelasSug = Math.min(o.parcelasMax, 60);
+            const ehPortab = o.tipo === "portabilidade";
+            const tipoLabel = ehPortab ? "🔁 Portabilidade" : "💰 Crédito novo";
+            const ctaLabel = ehPortab ? "Consolidar contratos →" : "Aceitar oferta →";
+            const href = ehPortab
+              ? `/servidor/portabilidade?banco=${encodeURIComponent(o.bancoNome)}`
+              : `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`;
             return (
               <Card key={o.id}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
-                  {o.bancoNome}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
+                    {o.bancoNome}
+                  </div>
+                  <span style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: ehPortab ? "var(--gold-500)" : "var(--emerald-500)" }}>
+                    {tipoLabel}
+                  </span>
                 </div>
                 <h3 style={{ margin: "6px 0", fontSize: "1.1rem", display: "flex", alignItems: "center", gap: 8 }}>
                   {o.icone ? <span style={{ fontSize: "1.3rem" }}>{o.icone}</span> : null}
@@ -94,16 +105,8 @@ export function ServidorMarketplace() {
                   <span style={chip}>Até {fmtBRL(o.valorMax)}</span>
                 </div>
                 <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      nav(
-                        `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`,
-                      )
-                    }
-                  >
-                    Aceitar oferta →
+                  <Button size="sm" variant="ghost" onClick={() => nav(href)}>
+                    {ctaLabel}
                   </Button>
                 </div>
               </Card>
