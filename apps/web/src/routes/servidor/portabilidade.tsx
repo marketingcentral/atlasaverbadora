@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button, Card, Pill } from "@atlas/ui/web";
 import {
   ContratoElegivelMock as ContratoElegivel,
@@ -23,10 +23,22 @@ const fmtBRL = (n: number) =>
 
 export function ServidorPortabilidade() {
   const nav = useNavigate();
+  const [sp] = useSearchParams();
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
-  // Banco destino escolhido pelo servidor (default = melhor taxa).
-  const [bancoIdx, setBancoIdx] = useState(0);
+  // Modo refin: mesma tela, mas so lista contratos com o banco da oferta
+  // (o "destino" e o proprio banco de origem) e a copy muda. Cliente que
+  // caiu aqui via oferta "Refinanciamento" ganhou o CTA `?modo=refin&banco=X`.
+  const modoRefin = sp.get("modo") === "refin";
+  const bancoFiltro = sp.get("banco") ?? "";
+  // Se veio "?banco=Nome" (vindo de uma oferta de portabilidade), pre-seleciona
+  // esse banco na lista de destinos. Caso contrario, default = melhor taxa.
+  const bancoPreselect = useMemo(() => {
+    if (!bancoFiltro) return 0;
+    const idx = BANCOS_DESTINO.findIndex((b) => b.nome.toLowerCase() === bancoFiltro.toLowerCase());
+    return idx >= 0 ? idx : 0;
+  }, [bancoFiltro]);
+  const [bancoIdx, setBancoIdx] = useState(bancoPreselect);
   const BANCO_DESTINO = BANCOS_DESTINO[bancoIdx]!;
 
   useEffect(() => {
@@ -40,7 +52,14 @@ export function ServidorPortabilidade() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const ELEGIVEIS: ContratoElegivel[] = info?.elegiveisPortabilidade ?? [];
+  // Refin: so contratos do proprio banco da oferta. Portabilidade: todos.
+  // Comparacao case-insensitive porque o nome do banco vem do backend com
+  // capitalizacao variada ("SCred Financeira" vs "Scred Financeira").
+  const ELEGIVEIS: ContratoElegivel[] = useMemo(() => {
+    const todos = info?.elegiveisPortabilidade ?? [];
+    if (!modoRefin || !bancoFiltro) return todos;
+    return todos.filter((c) => c.banco.toLowerCase() === bancoFiltro.toLowerCase());
+  }, [info, modoRefin, bancoFiltro]);
 
   function toggle(id: string) {
     setSelecionados((s) => {
@@ -67,7 +86,7 @@ export function ServidorPortabilidade() {
 
   function consolidar() {
     const params = new URLSearchParams({
-      tipo: "portabilidade",
+      tipo: modoRefin ? "refin" : "portabilidade",
       banco: BANCO_DESTINO.nome,
       valor: String(Math.round(totalSaldo)),
       parcelas: String(novoPrazo),
@@ -103,55 +122,73 @@ export function ServidorPortabilidade() {
       </button>
 
       <header>
-        <span className="eyebrow">Portabilidade / Compra de divida</span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Consolidar seus contratos</h1>
+        <span className="eyebrow">
+          {modoRefin ? "Refinanciamento" : "Portabilidade / Compra de divida"}
+        </span>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>
+          {modoRefin ? `Refinanciar contrato com ${BANCO_DESTINO.nome}` : "Consolidar seus contratos"}
+        </h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6 }}>
-          Selecione os contratos que voce quer mover e escolha a instituição de destino. A trava de margem para
-          portabilidade dura <b>7 dias uteis</b>.
+          {modoRefin ? (
+            <>
+              Selecione o contrato que voce quer renegociar com o <b>{BANCO_DESTINO.nome}</b>. O saldo devedor
+              vira um novo contrato com prazo estendido — a diferenca de parcela vira troco liberado na sua conta.
+            </>
+          ) : (
+            <>
+              Selecione os contratos que voce quer mover e escolha a instituição de destino. A trava de margem para
+              portabilidade dura <b>7 dias uteis</b>.
+            </>
+          )}
         </p>
       </header>
 
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
-              Instituição de destino
+      {/* No modo refin o banco esta travado: origem = destino. Nao mostra o select. */}
+      {!modoRefin ? (
+        <Card>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+                Instituição de destino
+              </div>
+              <div style={{ marginTop: 4, fontSize: ".92rem", color: "var(--text-muted)" }}>
+                Escolha o banco que vai receber os contratos.
+              </div>
             </div>
-            <div style={{ marginTop: 4, fontSize: ".92rem", color: "var(--text-muted)" }}>
-              Escolha o banco que vai receber os contratos.
-            </div>
+            <select
+              value={bancoIdx}
+              onChange={(e) => setBancoIdx(Number(e.target.value))}
+              style={{
+                minWidth: 240,
+                padding: "10px 12px",
+                borderRadius: 10,
+                background: "var(--bg-elev-2)",
+                border: "1px solid var(--border-strong)",
+                color: "var(--text)",
+                fontSize: ".92rem",
+                cursor: "pointer",
+              }}
+            >
+              {BANCOS_DESTINO.map((b, i) => (
+                <option key={b.nome} value={i}>
+                  {b.nome} — {b.taxaAm.toFixed(2)}% a.m.
+                </option>
+              ))}
+            </select>
           </div>
-          <select
-            value={bancoIdx}
-            onChange={(e) => setBancoIdx(Number(e.target.value))}
-            style={{
-              minWidth: 240,
-              padding: "10px 12px",
-              borderRadius: 10,
-              background: "var(--bg-elev-2)",
-              border: "1px solid var(--border-strong)",
-              color: "var(--text)",
-              fontSize: ".92rem",
-              cursor: "pointer",
-            }}
-          >
-            {BANCOS_DESTINO.map((b, i) => (
-              <option key={b.nome} value={i}>
-                {b.nome} — {b.taxaAm.toFixed(2)}% a.m.
-              </option>
-            ))}
-          </select>
-        </div>
-        <div style={{ marginTop: 12, fontSize: ".82rem", color: "var(--text-muted)" }}>
-          Taxa proposta pelo <b style={{ color: "var(--text)" }}>{BANCO_DESTINO.nome}</b>:{" "}
-          <b style={{ color: "var(--emerald-500)" }}>{BANCO_DESTINO.taxaAm.toFixed(2)}% a.m.</b>
-        </div>
-      </Card>
+          <div style={{ marginTop: 12, fontSize: ".82rem", color: "var(--text-muted)" }}>
+            Taxa proposta pelo <b style={{ color: "var(--text)" }}>{BANCO_DESTINO.nome}</b>:{" "}
+            <b style={{ color: "var(--emerald-500)" }}>{BANCO_DESTINO.taxaAm.toFixed(2)}% a.m.</b>
+          </div>
+        </Card>
+      ) : null}
 
       {ELEGIVEIS.length === 0 ? (
         <Card>
           <p style={{ color: "var(--text-muted)", margin: 0 }}>
-            Voce nao tem contratos elegiveis para portabilidade no momento.
+            {modoRefin
+              ? `Voce nao tem contrato ativo com ${BANCO_DESTINO.nome} pra refinanciar. Veja outras ofertas no MarketPlace.`
+              : "Voce nao tem contratos elegiveis para portabilidade no momento."}
           </p>
         </Card>
       ) : (
@@ -199,19 +236,19 @@ export function ServidorPortabilidade() {
 
       {selecionados.size > 0 ? (
         <Card style={{ position: "sticky", bottom: 16, borderColor: "var(--gold-500)" }}>
-          <h3 style={{ marginTop: 0 }}>Simulacao de portabilidade ({selecionados.size} contrato(s))</h3>
+          <h3 style={{ marginTop: 0 }}>
+            {modoRefin
+              ? `Simulacao de refinanciamento (${selecionados.size} contrato(s))`
+              : `Simulacao de portabilidade (${selecionados.size} contrato(s))`}
+          </h3>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 16, marginTop: 8 }}>
-            <KV label="Saldo a quitar" v={fmtBRL(totalSaldo)} />
+            <KV label={modoRefin ? "Saldo devedor" : "Saldo a quitar"} v={fmtBRL(totalSaldo)} />
             <KV label="Parcela atual (soma)" v={fmtBRL(totalParcelaAtual)} />
             <KV label="Nova parcela" v={fmtBRL(novaParcela)} accent />
             {economia > 0 ? (
               <KV label="Economia / parcela" v={`- ${fmtBRL(economia)}`} accent />
             ) : (
-              <KV
-                label="Diferenca"
-                v={`+ ${fmtBRL(Math.abs(economia))}`}
-                muted
-              />
+              <KV label="Diferenca" v={`+ ${fmtBRL(Math.abs(economia))}`} muted />
             )}
           </div>
           <p style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 12, marginBottom: 16 }}>
@@ -220,12 +257,15 @@ export function ServidorPortabilidade() {
             {economia <= 0 ? (
               <>
                 {" "}
-                <b>Atencao:</b> nesta simulacao a parcela nova ficou maior que a soma das atuais. A portabilidade pode
-                ainda valer a pena se o objetivo for alongar prazo ou consolidar contratos.
+                <b>Atencao:</b> nesta simulacao a parcela nova ficou maior que a soma das atuais. {modoRefin
+                  ? "O refinanciamento pode ainda valer a pena se o objetivo for alongar prazo ou liberar troco."
+                  : "A portabilidade pode ainda valer a pena se o objetivo for alongar prazo ou consolidar contratos."}
               </>
             ) : null}
           </p>
-          <Button onClick={consolidar}>Consolidar e ir para o termo →</Button>
+          <Button onClick={consolidar}>
+            {modoRefin ? "Refinanciar e ir para o termo →" : "Consolidar e ir para o termo →"}
+          </Button>
         </Card>
       ) : null}
     </div>

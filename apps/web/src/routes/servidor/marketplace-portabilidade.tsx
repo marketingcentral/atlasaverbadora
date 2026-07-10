@@ -11,6 +11,57 @@ const fmtBRL = (n: number) =>
 
 const pct = (n: number) => `${(n * 100).toFixed(2)}% a.m.`;
 
+/** Deriva label/cor/CTA/href do card de oferta a partir do tipo. Centraliza o
+ *  roteamento pra manter o JSX enxuto e o comportamento consistente entre esta
+ *  pagina e /servidor/marketplace. */
+function tipoLabelHref(
+  o: {
+    id: string;
+    tipo: "credito_novo" | "portabilidade" | "refinanciamento" | "cartao_consignado" | "cartao_beneficio";
+    bancoNome: string;
+    taxaAm: number;
+    valorMax: number;
+  },
+  valorSug: number,
+  parcelasSug: number,
+): { label: string; cor: string; cta: string; href: string } {
+  if (o.tipo === "portabilidade") {
+    return {
+      label: "🔁 Portabilidade",
+      cor: "var(--gold-500)",
+      cta: "Consolidar contratos →",
+      href: `/servidor/portabilidade?banco=${encodeURIComponent(o.bancoNome)}`,
+    };
+  }
+  if (o.tipo === "refinanciamento") {
+    return {
+      label: "🔄 Refinanciamento",
+      cor: "var(--accent)",
+      cta: "Refinanciar contrato →",
+      // Modo refin: mesma pagina de portabilidade, mas so lista contratos com
+      // este banco (a origem = destino) e libera troco/prazo estendido.
+      href: `/servidor/portabilidade?modo=refin&banco=${encodeURIComponent(o.bancoNome)}`,
+    };
+  }
+  if (o.tipo === "cartao_consignado" || o.tipo === "cartao_beneficio") {
+    const label = o.tipo === "cartao_consignado" ? "💳 Cartão consignado" : "🎫 Cartão benefício";
+    return {
+      label,
+      cor: "var(--gold-500)",
+      cta: "Solicitar cartão →",
+      // Fluxo proprio de cartao — mostra margem cartao correspondente + limite
+      // proposto e faz POST /me/cartoes ao confirmar.
+      href: `/servidor/solicitar-cartao?produto=${o.tipo}&banco=${encodeURIComponent(o.bancoNome)}&limite=${Math.round(o.valorMax)}&oferta=${encodeURIComponent(o.id)}`,
+    };
+  }
+  return {
+    label: "💰 Crédito novo",
+    cor: "var(--emerald-500)",
+    cta: "Aceitar oferta →",
+    href: `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`,
+  };
+}
+
 type Proposta = {
   id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number;
   situacao: string; tipoContrato?: string;
@@ -160,10 +211,20 @@ export function ServidorMarketplacePortabilidade() {
             {ofertas.map((o) => {
               const valorSug = Math.min(o.valorMax, 10000);
               const parcelasSug = Math.min(o.parcelasMax, 60);
+              // CTA por tipo:
+              //  credito_novo    → /servidor/termo (fluxo de aceite ja existente)
+              //  portabilidade   → /servidor/portabilidade com este banco pre-selecionado
+              //  refinanciamento → /servidor/portabilidade em modo refin, filtrado pelos contratos do banco desta oferta
+              const tipoMeta = tipoLabelHref(o, valorSug, parcelasSug);
               return (
                 <Card key={o.id}>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
-                    {o.bancoNome}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
+                      {o.bancoNome}
+                    </div>
+                    <span style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: tipoMeta.cor }}>
+                      {tipoMeta.label}
+                    </span>
                   </div>
                   <h3 style={{ margin: "6px 0", fontSize: "1.1rem", display: "flex", alignItems: "center", gap: 8 }}>
                     {o.icone ? <span style={{ fontSize: "1.3rem" }}>{o.icone}</span> : null}
@@ -178,16 +239,8 @@ export function ServidorMarketplacePortabilidade() {
                     <span style={chip}>Até {new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }).format(o.valorMax)}</span>
                   </div>
                   <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        nav(
-                          `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`,
-                        )
-                      }
-                    >
-                      Aceitar oferta →
+                    <Button size="sm" variant="ghost" onClick={() => nav(tipoMeta.href)}>
+                      {tipoMeta.cta}
                     </Button>
                   </div>
                 </Card>

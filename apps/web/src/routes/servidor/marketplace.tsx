@@ -76,10 +76,34 @@ export function ServidorMarketplace() {
           {ofertas.map((o) => {
             const valorSug = Math.min(o.valorMax, 10000);
             const parcelasSug = Math.min(o.parcelasMax, 60);
+            let tipoLabel: string, tipoCor: string, ctaLabel: string, href: string;
+            if (o.tipo === "portabilidade") {
+              tipoLabel = "🔁 Portabilidade"; tipoCor = "var(--gold-500)";
+              ctaLabel = "Consolidar contratos →";
+              href = `/servidor/portabilidade?banco=${encodeURIComponent(o.bancoNome)}`;
+            } else if (o.tipo === "refinanciamento") {
+              tipoLabel = "🔄 Refinanciamento"; tipoCor = "var(--accent)";
+              ctaLabel = "Refinanciar contrato →";
+              href = `/servidor/portabilidade?modo=refin&banco=${encodeURIComponent(o.bancoNome)}`;
+            } else if (o.tipo === "cartao_consignado" || o.tipo === "cartao_beneficio") {
+              tipoLabel = o.tipo === "cartao_consignado" ? "💳 Cartão consignado" : "🎫 Cartão benefício";
+              tipoCor = "var(--gold-500)";
+              ctaLabel = "Solicitar cartão →";
+              href = `/servidor/solicitar-cartao?produto=${o.tipo}&banco=${encodeURIComponent(o.bancoNome)}&limite=${Math.round(o.valorMax)}&oferta=${encodeURIComponent(o.id)}`;
+            } else {
+              tipoLabel = "💰 Crédito novo"; tipoCor = "var(--emerald-500)";
+              ctaLabel = "Aceitar oferta →";
+              href = `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`;
+            }
             return (
               <Card key={o.id}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
-                  {o.bancoNome}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
+                    {o.bancoNome}
+                  </div>
+                  <span style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: tipoCor }}>
+                    {tipoLabel}
+                  </span>
                 </div>
                 <h3 style={{ margin: "6px 0", fontSize: "1.1rem", display: "flex", alignItems: "center", gap: 8 }}>
                   {o.icone ? <span style={{ fontSize: "1.3rem" }}>{o.icone}</span> : null}
@@ -94,16 +118,8 @@ export function ServidorMarketplace() {
                   <span style={chip}>Até {fmtBRL(o.valorMax)}</span>
                 </div>
                 <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      nav(
-                        `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`,
-                      )
-                    }
-                  >
-                    Aceitar oferta →
+                  <Button size="sm" variant="ghost" onClick={() => nav(href)}>
+                    {ctaLabel}
                   </Button>
                 </div>
               </Card>
