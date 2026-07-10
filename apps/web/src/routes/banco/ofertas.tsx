@@ -93,6 +93,8 @@ export function BancoOfertas() {
               const t = o.tipo ?? "credito_novo";
               if (t === "portabilidade") return "🔁 Portabilidade";
               if (t === "refinanciamento") return "🔄 Refinanciamento";
+              if (t === "cartao_consignado") return "💳 Cartão consignado";
+              if (t === "cartao_beneficio") return "🎫 Cartão benefício";
               return "💰 Crédito novo";
             })()}
           </span>
@@ -266,6 +268,20 @@ function OfertaModal({
                 titulo="Refinanciamento"
                 descricao="Renegociar contrato existente com este banco. Só aparece pra servidores que já têm contrato ativo com você."
                 onClick={() => setForm({ ...form, tipo: "refinanciamento" })}
+              />
+              <TipoOptionCard
+                on={form.tipo === "cartao_consignado"}
+                icone="💳"
+                titulo="Cartão consignado"
+                descricao="Cartão de crédito com fatura mínima descontada em folha. Usa margem cartão (5%). Só aparece pra quem tem espaço."
+                onClick={() => setForm({ ...form, tipo: "cartao_consignado" })}
+              />
+              <TipoOptionCard
+                on={form.tipo === "cartao_beneficio"}
+                icone="🎫"
+                titulo="Cartão benefício"
+                descricao="Cartão restrito (farmácia/mercado/saúde) descontado em folha. Usa margem benefício (5%)."
+                onClick={() => setForm({ ...form, tipo: "cartao_beneficio" })}
               />
             </div>
           </div>

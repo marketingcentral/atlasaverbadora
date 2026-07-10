@@ -85,6 +85,11 @@ export function ServidorMarketplace() {
               tipoLabel = "🔄 Refinanciamento"; tipoCor = "var(--accent)";
               ctaLabel = "Refinanciar contrato →";
               href = `/servidor/portabilidade?modo=refin&banco=${encodeURIComponent(o.bancoNome)}`;
+            } else if (o.tipo === "cartao_consignado" || o.tipo === "cartao_beneficio") {
+              tipoLabel = o.tipo === "cartao_consignado" ? "💳 Cartão consignado" : "🎫 Cartão benefício";
+              tipoCor = "var(--gold-500)";
+              ctaLabel = "Solicitar cartão →";
+              href = `/servidor/solicitar-cartao?produto=${o.tipo}&banco=${encodeURIComponent(o.bancoNome)}&limite=${Math.round(o.valorMax)}&oferta=${encodeURIComponent(o.id)}`;
             } else {
               tipoLabel = "💰 Crédito novo"; tipoCor = "var(--emerald-500)";
               ctaLabel = "Aceitar oferta →";

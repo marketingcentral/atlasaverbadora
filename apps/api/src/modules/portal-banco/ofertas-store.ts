@@ -29,8 +29,18 @@ export interface OfertaFiltro {
  *  - "refinanciamento": renegociar contrato JA EXISTENTE com este mesmo banco
  *    (aumenta prazo/reduz parcela/libera troco). CTA leva pro fluxo de refin
  *    filtrado pelos contratos do banco desta oferta.
- *  Cartao consignado/cartao beneficio ficam pra fatia C. Default (retrocompat): credito_novo. */
-export type OfertaTipo = "credito_novo" | "portabilidade" | "refinanciamento";
+ *  - "cartao_consignado": cartao de credito com fatura minima descontada em
+ *    folha. Usa margem CARTAO_CONSIGNADO (5%). Fluxo proprio de solicitacao
+ *    em /servidor/solicitar-cartao.
+ *  - "cartao_beneficio": cartao restrito (farmacia/mercado/saude) descontado
+ *    em folha. Usa margem CARTAO_BENEFICIOS (5%). Mesmo fluxo do consignado.
+ *  Default (retrocompat): credito_novo. */
+export type OfertaTipo =
+  | "credito_novo"
+  | "portabilidade"
+  | "refinanciamento"
+  | "cartao_consignado"
+  | "cartao_beneficio";
 
 export interface Oferta {
   id: string;
@@ -99,10 +109,20 @@ export interface PerfilServidorParaOferta {
   prefeituraId?: number;
   salarioLiquido?: number;
   idade?: number;
+  /** Margem disponivel do tipo cartao consignado (5%). Se <=0, ofertas
+   *  "cartao_consignado" nao aparecem — servidor nao tem espaco pra contratar. */
+  margemCartaoConsig?: number;
+  /** Idem cartao beneficio. */
+  margemCartaoBenef?: number;
 }
 export function ofertaCasaComServidor(o: Oferta, p: PerfilServidorParaOferta, now: Date = new Date()): boolean {
   if (!o.ativo) return false;
   if (o.expiraEm && new Date(o.expiraEm).getTime() < now.getTime()) return false;
+  // Filtro por margem correspondente ao tipo — cartao so aparece pra quem ainda
+  // tem espaco na margem daquele tipo (regulacao: 5% cada, tratado como duas
+  // margens independentes da margem de emprestimo).
+  if (o.tipo === "cartao_consignado" && p.margemCartaoConsig != null && p.margemCartaoConsig <= 0) return false;
+  if (o.tipo === "cartao_beneficio" && p.margemCartaoBenef != null && p.margemCartaoBenef <= 0) return false;
   const f = o.filtro;
   if (f.convenioIds?.length && (!p.idConvenio || !f.convenioIds.includes(p.idConvenio))) return false;
   if (f.vinculos?.length && (!p.vinculo || !f.vinculos.includes(p.vinculo))) return false;

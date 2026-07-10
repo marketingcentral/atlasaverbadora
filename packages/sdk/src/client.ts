@@ -104,7 +104,12 @@ export interface BancoOfertaFiltro {
   idadeMax?: number;
 }
 /** Produto ofertado pelo banco. */
-export type BancoOfertaTipo = "credito_novo" | "portabilidade" | "refinanciamento";
+export type BancoOfertaTipo =
+  | "credito_novo"
+  | "portabilidade"
+  | "refinanciamento"
+  | "cartao_consignado"
+  | "cartao_beneficio";
 
 export interface BancoOferta {
   id: string;
@@ -855,6 +860,25 @@ export class AtlasClient {
         "/v1/servidores/me/propostas",
         { method: "POST", body: input },
       ),
+    /** Solicita cartao consignado ou cartao beneficio. Nao cria contrato tradicional
+     *  (o modelo ainda so aceita EMPRESTIMO/REFIN/ECONSIGNADO) — registra a
+     *  solicitacao pra averbadora e devolve um protocolo. O banco recebe pra
+     *  emitir/ativar o cartao via canal proprio (padrao do mercado). */
+    solicitarCartao: (input: {
+      produto: "cartao_consignado" | "cartao_beneficio";
+      bancoNome: string;
+      limite: number;
+      matricula?: string;
+      ofertaId?: string;
+    }) =>
+      this.request<{
+        ok: true;
+        protocolo: string;
+        produto: "cartao_consignado" | "cartao_beneficio";
+        bancoNome: string;
+        limite: number;
+        mensagem: string;
+      }>("/v1/servidores/me/cartoes", { method: "POST", body: input }),
     /** Propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
      *  Filtra pela matrícula ativa quando informada — evita misturar histórico
      *  entre matrículas de servidor com acumulação de cargos. */

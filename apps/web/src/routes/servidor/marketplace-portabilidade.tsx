@@ -15,7 +15,13 @@ const pct = (n: number) => `${(n * 100).toFixed(2)}% a.m.`;
  *  roteamento pra manter o JSX enxuto e o comportamento consistente entre esta
  *  pagina e /servidor/marketplace. */
 function tipoLabelHref(
-  o: { tipo: "credito_novo" | "portabilidade" | "refinanciamento"; bancoNome: string; taxaAm: number },
+  o: {
+    id: string;
+    tipo: "credito_novo" | "portabilidade" | "refinanciamento" | "cartao_consignado" | "cartao_beneficio";
+    bancoNome: string;
+    taxaAm: number;
+    valorMax: number;
+  },
   valorSug: number,
   parcelasSug: number,
 ): { label: string; cor: string; cta: string; href: string } {
@@ -35,6 +41,17 @@ function tipoLabelHref(
       // Modo refin: mesma pagina de portabilidade, mas so lista contratos com
       // este banco (a origem = destino) e libera troco/prazo estendido.
       href: `/servidor/portabilidade?modo=refin&banco=${encodeURIComponent(o.bancoNome)}`,
+    };
+  }
+  if (o.tipo === "cartao_consignado" || o.tipo === "cartao_beneficio") {
+    const label = o.tipo === "cartao_consignado" ? "💳 Cartão consignado" : "🎫 Cartão benefício";
+    return {
+      label,
+      cor: "var(--gold-500)",
+      cta: "Solicitar cartão →",
+      // Fluxo proprio de cartao — mostra margem cartao correspondente + limite
+      // proposto e faz POST /me/cartoes ao confirmar.
+      href: `/servidor/solicitar-cartao?produto=${o.tipo}&banco=${encodeURIComponent(o.bancoNome)}&limite=${Math.round(o.valorMax)}&oferta=${encodeURIComponent(o.id)}`,
     };
   }
   return {

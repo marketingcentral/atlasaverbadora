@@ -5,7 +5,7 @@ import { authRequired, requireRole, type JwtClaims } from "../../middleware/auth
 import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, getServidorStatus } from "../admin/index.js";
+import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, getServidorStatus, pushEvent } from "../admin/index.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -275,12 +275,19 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
       : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
     const conv = entryAtivo ? CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio) : undefined;
+    const salarioBase = entryAtivo?.salarioLiquido ?? s.salarioLiquido ?? 0;
+    // Ofertas de cartao consig/beneficio so podem casar com quem AINDA tem espaco
+    // na margem correspondente (5% cada, regulado). Fatia C.
+    const margemCartaoConsig = salarioBase > 0 ? margemDisponivel(salarioBase, 0, "CARTAO_CONSIGNADO") : undefined;
+    const margemCartaoBenef = salarioBase > 0 ? margemDisponivel(salarioBase, 0, "CARTAO_BENEFICIOS") : undefined;
     const perfil = {
       idConvenio: entryAtivo?.idConvenio,
       vinculo: s.vinculo,
       situacaoFuncional: s.situacao_funcional,
       prefeituraId: conv?.prefeituraId ?? s.prefeitura_id,
-      salarioLiquido: entryAtivo?.salarioLiquido ?? s.salarioLiquido,
+      salarioLiquido: salarioBase,
+      margemCartaoConsig,
+      margemCartaoBenef,
     };
     const list = (await loadOfertas(c.env)).filter((o) => ofertaCasaComServidor(o, perfil));
     // enriquece com nome do banco pra UI
@@ -300,6 +307,52 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         icone: o.icone ?? null,
         tipo: o.tipo ?? "credito_novo",
       })),
+    });
+  })
+  // Solicitacao de cartao (consignado ou beneficio). Fatia C — nao cria contrato
+  // tradicional (o modelo de contrato ainda so aceita EMPRESTIMO/REFIN/ECONSIGNADO).
+  // Registra a solicitacao como evento pra averbadora + notifica o banco emissor
+  // via canal proprio. Em prod isso viraria um pipeline especifico de cartao.
+  .post("/v1/servidores/me/cartoes", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    await ensureBancosLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = z.object({
+      produto: z.enum(["cartao_consignado", "cartao_beneficio"]),
+      bancoNome: z.string().min(1),
+      limite: z.number().positive(),
+      matricula: z.string().optional(),
+      ofertaId: z.string().optional(),
+    }).parse(await c.req.json());
+    const entry = body.matricula
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === body.matricula)
+      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
+    if (!entry) throw Errors.notFound("matricula");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
+    // Valida que o servidor tem margem cartao correspondente > 0. Sem isso, a
+    // solicitacao nao faz sentido (a fatura minima nao caberia em folha).
+    const tipoMargem = body.produto === "cartao_consignado" ? "CARTAO_CONSIGNADO" : "CARTAO_BENEFICIOS";
+    const margemDisp = margemDisponivel(entry.salarioLiquido, 0, tipoMargem);
+    if (margemDisp <= 0) {
+      throw Errors.validation({ margem: `sem margem disponivel de ${tipoMargem} pra esta matricula` });
+    }
+    const nomeProduto = body.produto === "cartao_consignado" ? "Cartao Consignado" : "Cartao Beneficio";
+    // Notifica a averbadora (canal ja existente pushEvent -> perfil "averbadora").
+    pushEvent(
+      "info",
+      "averbadora.solicitacao_cartao",
+      `${entry.nome} (matricula ${entry.matricula}, ${conv?.prefeitura ?? "prefeitura"}) solicitou ${nomeProduto} com ${body.bancoNome} — limite proposto R$ ${body.limite.toFixed(2)}.`,
+    );
+    return c.json({
+      ok: true,
+      protocolo: `CART-${entry.matricula}-${Date.now().toString(36).toUpperCase()}`,
+      produto: body.produto,
+      bancoNome: body.bancoNome,
+      limite: body.limite,
+      mensagem: `Solicitacao enviada ao ${body.bancoNome}. Voce sera contatado pelo banco pra finalizar a emissao e ativacao do cartao.`,
     });
   })
   // Beneficios/descontos da prefeitura do servidor. Filtra pela prefeituraId do
