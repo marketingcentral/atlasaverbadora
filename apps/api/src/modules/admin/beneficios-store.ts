@@ -89,6 +89,10 @@ export interface Beneficio {
   comissaoPct?: number;
   notasInternas?: string;
   prefeituraIdsExtras?: number[];
+  /** Obrigatorio quando origem="banco": id do banco parceiro que oferece. */
+  bancoId?: number;
+  /** Obrigatorio quando origem="convenio": id do convenio da prefeitura. */
+  convenioId?: string;
 }
 
 const TABLE = "admin_beneficios";

@@ -149,6 +149,10 @@ export interface AdminBeneficio {
   comissaoPct?: number; // Comissao da averbadora sobre o valor consumido
   notasInternas?: string; // Apenas admin ve
   prefeituraIdsExtras?: number[]; // Multi-prefeitura — beneficio aparece em varias
+  /** Obrigatorio quando origem="banco": qual banco parceiro oferece o beneficio. */
+  bancoId?: number;
+  /** Obrigatorio quando origem="convenio": qual convenio da prefeitura. */
+  convenioId?: string;
 }
 export interface AdminBeneficioInput {
   id?: string;
@@ -178,6 +182,8 @@ export interface AdminBeneficioInput {
   comissaoPct?: number;
   notasInternas?: string;
   prefeituraIdsExtras?: number[];
+  bancoId?: number;
+  convenioId?: string;
 }
 export interface ServidorBeneficio {
   id: string;
@@ -192,6 +198,10 @@ export interface ServidorBeneficio {
   descricaoCurta?: string;
   contato?: ContatoBeneficio;
   destaque?: DestaqueBeneficio;
+  /** Nome do banco parceiro (quando origem=banco). Ex.: "DELTA GLOBAL". */
+  bancoNome?: string;
+  /** Nome do convenio (quando origem=convenio). Ex.: "PALHOCA / DELTA GLOBAL". */
+  convenioNome?: string;
 }
 
 export interface BancoOfertaFiltro {

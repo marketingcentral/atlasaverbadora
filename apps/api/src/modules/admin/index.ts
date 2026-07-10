@@ -2108,7 +2108,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       comissaoPct: z.number().nonnegative().max(100).optional(),
       notasInternas: z.string().max(2000).optional(),
       prefeituraIdsExtras: z.array(z.number().int()).optional(),
+      bancoId: z.number().int().optional(),
+      convenioId: z.string().optional(),
     }).parse(await c.req.json());
+    // Consistencia origem-vinculo: banco exige bancoId, convenio exige convenioId.
+    // Sem isso, o servidor recebe o beneficio sem saber QUAL banco/convenio ofereceu.
+    if (body.origem === "banco" && body.bancoId == null) {
+      throw Errors.validation({ bancoId: "Ao definir origem=banco, escolha qual banco parceiro oferece o beneficio." });
+    }
+    if (body.origem === "convenio" && !body.convenioId) {
+      throw Errors.validation({ convenioId: "Ao definir origem=convenio, escolha qual convenio da prefeitura." });
+    }
     if (body.id) {
       const existing = (await loadBeneficios(c.env)).find((b) => b.id === body.id);
       if (!existing) throw Errors.notFound("beneficio");
@@ -2143,6 +2153,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       comissaoPct: body.comissaoPct,
       notasInternas: body.notasInternas || undefined,
       prefeituraIdsExtras: body.prefeituraIdsExtras,
+      bancoId: body.bancoId,
+      convenioId: body.convenioId || undefined,
     };
     await persistBeneficio(c.env, b);
     return c.json({ beneficio: b });

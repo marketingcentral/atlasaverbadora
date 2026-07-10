@@ -367,12 +367,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await refreshBeneficios(c.env);
     const url = new URL(c.req.url);
     const categoria = url.searchParams.get("categoria");
+    // Filtro por prefeitura ATIVA + suporte a multi-prefeitura (prefeituraIdsExtras).
     const list = (await loadBeneficios(c.env)).filter((b) => {
       if (!b.ativo) return false;
-      if (b.prefeituraId !== s.prefeitura_id) return false;
+      const cobrePrefeitura = b.prefeituraId === s.prefeitura_id
+        || (b.prefeituraIdsExtras?.includes(s.prefeitura_id) ?? false);
+      if (!cobrePrefeitura) return false;
       if (categoria && !b.categorias.includes(categoria as "saude" | "alimentacao" | "educacao" | "lazer")) return false;
       return true;
     });
+    // Enriquece com nome do banco/convenio quando aplicavel — o servidor precisa
+    // ver "oferecido por DELTA GLOBAL" no card, senao nao sabe quem esta por tras.
+    const nomeBanco = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
     return c.json({
       beneficios: list.map((b) => ({
         id: b.id,
@@ -384,6 +390,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         descontoLabel: b.descontoLabel,
         descontoComplemento: b.descontoComplemento,
         origem: b.origem,
+        descricaoCurta: b.descricaoCurta,
+        contato: b.contato,
+        destaque: b.destaque,
+        bancoNome: b.bancoId != null ? nomeBanco(b.bancoId) : undefined,
+        convenioNome: b.convenioId ? (CONVENIOS_MOCK.find((cv) => cv.id === b.convenioId)?.nome) : undefined,
       })),
     });
   })

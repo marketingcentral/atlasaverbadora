@@ -108,9 +108,30 @@ export function AdminBeneficiosForm() {
     return cur.includes(item) ? cur.filter((x) => x !== item) : [...cur, item];
   }
 
+  const bancosQ = useQuery({ queryKey: ["admin", "bancos"], queryFn: () => atlas.admin.listBancos() });
+
   const prefeituras = prefeiturasQ.data?.prefeituras ?? [];
   const convenios = conveniosQ.data?.convenios ?? [];
+  const bancosLista = bancosQ.data?.bancos ?? [];
   const conveniosDaPref = convenios.filter((cv) => cv.prefeituraId === form.prefeituraId);
+  // Se origem=banco, restringe a lista de bancos aos que tem convenio nessa prefeitura
+  // (evita cadastrar beneficio de banco que nem opera na cidade).
+  const bancoIdsComConvenioNaPref = new Set(conveniosDaPref.map((cv) => cv.bancoId));
+  const bancosParaEscolher = bancosLista.filter((b) => bancoIdsComConvenioNaPref.has(b.id));
+
+  // Preview "onde vai aparecer pro servidor" — atualiza em tempo real com o form.
+  const telasQueMostram = useMemo(() => {
+    const telas: string[] = [];
+    if (form.categorias.includes("saude")) telas.push("/servidor/saude (aba Saúde)");
+    if (form.categorias.some((c) => c === "alimentacao" || c === "educacao" || c === "lazer")) {
+      telas.push("/servidor/beneficios (aba Descontos e Benefícios)");
+    }
+    return telas;
+  }, [form.categorias]);
+  const prefeiturasAlvo = useMemo(() => {
+    const ids = [form.prefeituraId, ...(form.prefeituraIdsExtras ?? [])];
+    return ids.map((id) => prefeituras.find((p) => p.id === id)).filter(Boolean) as { id: number; nome: string; uf: string }[];
+  }, [form.prefeituraId, form.prefeituraIdsExtras, prefeituras]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 900 }}>
@@ -137,6 +158,59 @@ export function AdminBeneficiosForm() {
           </p>
         </div>
       </header>
+
+      {/* Preview de "onde vai aparecer" — sempre visivel no topo, ajuda o admin
+          a saber exatamente o que a decisao dele faz aparecer pra o servidor. */}
+      <Card style={{ borderColor: "var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 6%, var(--surface))" }}>
+        <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase", marginBottom: 6 }}>
+          Onde este benefício vai aparecer
+        </div>
+        <ul style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: "var(--text-muted)", lineHeight: 1.7 }}>
+          <li>
+            <b style={{ color: "var(--text)" }}>Telas do servidor:</b>{" "}
+            {telasQueMostram.length ? telasQueMostram.join(" e ") : <span style={{ color: "var(--text-dim)" }}>escolha ao menos uma categoria</span>}
+          </li>
+          <li>
+            <b style={{ color: "var(--text)" }}>Prefeituras alvo:</b>{" "}
+            {prefeiturasAlvo.length ? prefeiturasAlvo.map((p) => `${p.nome}/${p.uf}`).join(", ") : "—"}
+            {" "}<span style={{ color: "var(--text-dim)" }}>(servidores dessas prefeituras verão o benefício)</span>
+          </li>
+          {form.origem === "banco" ? (
+            <li>
+              <b style={{ color: "var(--text)" }}>Banco parceiro:</b>{" "}
+              {form.bancoId
+                ? (bancosLista.find((b) => b.id === form.bancoId)?.nome ?? `#${form.bancoId}`)
+                : <span style={{ color: "var(--danger-500)" }}>escolha um banco na seção Identificação</span>}
+              {" "}<span style={{ color: "var(--text-dim)" }}>(aparece como "oferecido por..." no card do servidor)</span>
+            </li>
+          ) : null}
+          {form.origem === "convenio" ? (
+            <li>
+              <b style={{ color: "var(--text)" }}>Convênio:</b>{" "}
+              {form.convenioId
+                ? (conveniosDaPref.find((cv) => cv.id === form.convenioId)?.nome ?? form.convenioId)
+                : <span style={{ color: "var(--danger-500)" }}>escolha um convênio na seção Identificação</span>}
+            </li>
+          ) : null}
+          {form.origem === "prefeitura" ? (
+            <li>
+              <b style={{ color: "var(--text)" }}>Direto da prefeitura</b>{" "}
+              <span style={{ color: "var(--text-dim)" }}>(não vinculado a banco/convênio específico)</span>
+            </li>
+          ) : null}
+          {form.origem === "averbadora" ? (
+            <li>
+              <b style={{ color: "var(--text)" }}>Direto da averbadora</b>{" "}
+              <span style={{ color: "var(--text-dim)" }}>(parceria negociada com comércio local, sem vínculo a banco)</span>
+            </li>
+          ) : null}
+          {!(form.ativo ?? true) ? (
+            <li style={{ color: "var(--gold-500)" }}>
+              <b>Não vai aparecer ainda</b> — está como rascunho (checkbox "Publicar" no fim está desmarcado).
+            </li>
+          ) : null}
+        </ul>
+      </Card>
 
       {/* ============ 1. IDENTIFICACAO ============ */}
       <Secao titulo="Identificação" descricao="Nome, categoria e visual do card." icone="🏷️" defaultOpen>
@@ -165,10 +239,66 @@ export function AdminBeneficiosForm() {
               on={form.origem === o.id}
               titulo={o.label}
               descricao={o.descricao}
-              onClick={() => set("origem", o.id)}
+              onClick={() => {
+                // Ao trocar de origem, limpa vinculo que nao faz mais sentido.
+                setForm((f) => ({
+                  ...f,
+                  origem: o.id,
+                  bancoId: o.id === "banco" ? f.bancoId : undefined,
+                  convenioId: o.id === "convenio" ? f.convenioId : undefined,
+                }));
+              }}
             />
           ))}
         </FieldGroup>
+
+        {form.origem === "banco" ? (
+          <div>
+            <div style={fieldLabelStyle}>
+              Qual banco parceiro oferece? *
+              <span style={{ color: "var(--text-dim)", marginLeft: 6, fontWeight: 400 }}>
+                (aparece como "oferecido por..." no card do servidor)
+              </span>
+            </div>
+            <select
+              value={form.bancoId ?? ""}
+              onChange={(e) => set("bancoId", e.target.value ? Number(e.target.value) : undefined)}
+              style={selectStyle}
+            >
+              <option value="">— escolha um banco —</option>
+              {bancosParaEscolher.length === 0 ? (
+                <option disabled>Nenhum banco tem convênio nesta prefeitura</option>
+              ) : bancosParaEscolher.map((b) => (
+                <option key={b.id} value={b.id}>{b.nome}</option>
+              ))}
+            </select>
+            {bancosParaEscolher.length === 0 ? (
+              <div style={{ fontSize: 12, color: "var(--danger-500)", marginTop: 6 }}>
+                Nenhum banco tem convênio ativo na prefeitura selecionada. Cadastre o convênio antes.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {form.origem === "convenio" ? (
+          <div>
+            <div style={fieldLabelStyle}>
+              Qual convênio da prefeitura oferece? *
+            </div>
+            <select
+              value={form.convenioId ?? ""}
+              onChange={(e) => set("convenioId", e.target.value || undefined)}
+              style={selectStyle}
+            >
+              <option value="">— escolha um convênio —</option>
+              {conveniosDaPref.length === 0 ? (
+                <option disabled>Nenhum convênio nesta prefeitura</option>
+              ) : conveniosDaPref.map((cv) => (
+                <option key={cv.id} value={cv.id}>{cv.nome}</option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div>
@@ -453,7 +583,18 @@ export function AdminBeneficiosForm() {
           <div style={fieldLabelStyle}>Prefeitura principal *</div>
           <select
             value={form.prefeituraId}
-            onChange={(e) => set("prefeituraId", Number(e.target.value))}
+            onChange={(e) => {
+              const novoId = Number(e.target.value);
+              // Ao trocar de prefeitura, limpa bancoId/convenioId — os antigos
+              // podem nao existir na nova prefeitura.
+              setForm((f) => ({
+                ...f,
+                prefeituraId: novoId,
+                bancoId: undefined,
+                convenioId: undefined,
+                prefeituraIdsExtras: f.prefeituraIdsExtras?.filter((id) => id !== novoId),
+              }));
+            }}
             style={selectStyle}
           >
             {prefeituras.map((p) => (
@@ -527,7 +668,15 @@ export function AdminBeneficiosForm() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
           <Button variant="ghost" onClick={() => nav("/averbadora/beneficios")}>Cancelar</Button>
           <Button
-            disabled={save.isPending || !form.nome || !form.local || !form.descontoLabel || !form.descontoComplemento}
+            disabled={
+              save.isPending ||
+              !form.nome ||
+              !form.local ||
+              !form.descontoLabel ||
+              !form.descontoComplemento ||
+              (form.origem === "banco" && form.bancoId == null) ||
+              (form.origem === "convenio" && !form.convenioId)
+            }
             onClick={() => save.mutate()}
           >
             {save.isPending ? "Salvando..." : (initial ? "Salvar alterações" : "Criar benefício")}
