@@ -115,8 +115,9 @@ export function ServidorDashboard() {
 
       {/* Carrossel de comunicados/vitrine da averbadora — publico=servidor.
           Cliente pediu explicitamente o carrossel NO MEIO, entre os cards de
-          margem e os 2 blocos de atalho abaixo. */}
-      <ComunicadoCarrossel comunicados={comunicadosCarrossel} />
+          margem e os 2 blocos de atalho abaixo. Autoplay 3s (default do
+          componente e 6s) — cliente pediu mais rapido. */}
+      <ComunicadoCarrossel comunicados={comunicadosCarrossel} autoplayMs={3000} />
 
       {/* 2 blocos grandes lado a lado — Telemedicina (esquerda) e Portabilidade (direita).
           Cliente pediu essa ordem: "Telemedicina e a Portabilidade".
@@ -277,11 +278,13 @@ function AtalhoCard({
       <span style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--text)" }}>{titulo}</span>
       <span style={{ fontSize: ".88rem", color: "var(--text-muted)", lineHeight: 1.4 }}>{descricao}</span>
       {/* "Ver mais" com aparencia de botao (mesmo estando dentro de um <button> pai —
-          html-wise vira <span> visualmente estilizado, e o clique cai no pai). */}
+          html-wise vira <span> visualmente estilizado, e o clique cai no pai).
+          marginTop: auto empurra o Ver mais pro fim do card, garantindo que os 2
+          botoes fiquem alinhados na mesma baseline mesmo com descricoes de tamanhos diferentes. */}
       <span
         style={{
           alignSelf: "flex-start",
-          marginTop: 8,
+          marginTop: "auto",
           padding: "6px 14px",
           borderRadius: 999,
           background: `color-mix(in srgb, ${accentColor} 15%, transparent)`,
