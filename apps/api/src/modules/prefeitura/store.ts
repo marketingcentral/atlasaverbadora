@@ -124,11 +124,13 @@ export interface AdfEntry {
 
 const _adfs: AdfEntry[] = [];
 
-/** Averbado = o banco confirmou/averbou (situacao "Ativo"). Reservas ("Aguardando"),
- *  cancelados e quitados NÃO viram ADF pendente na folha. */
+/** Elegivel pra virar ADF na averbadora. Inclui:
+ *  - "Ativo"/averbado (fluxo antigo — banco confirmava direto).
+ *  - "Aprovado" (fluxo novo — banco so aprova, averbadora que faz a ADF).
+ *  Reservas ("Aguardando"), cancelados e quitados NAO viram ADF pendente. */
 function isAverbado(situacao: string): boolean {
   const s = situacao.toLowerCase();
-  return s === "ativo" || s.includes("averb");
+  return s === "ativo" || s.includes("averb") || s.includes("aprov");
 }
 
 /** Materializa ADFs a partir dos contratos AVERBADOS da prefeitura (1 ADF por contrato).

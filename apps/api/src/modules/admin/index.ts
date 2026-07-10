@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -2260,8 +2260,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
     await refreshContratos(c.env);
     const adfs = setAdfStatusGlobal(body.ids, "aplicada", undefined, new Date().toISOString());
-    for (const adf of adfs) await persistContrato(c.env, adf);
-    appendAudit({ categoria: "margem", acao: "adf_aplicada_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
+    // Promove pra "Ativo" contratos que estavam em "Aprovado" — o banco so
+    // aprovou; e' a averbadora que efetiva a averbacao ao aplicar em folha.
+    // No fluxo antigo (banco averbava direto) ja eram "Ativo": aqui e' no-op.
+    const ator = `averbadora:${c.get("jwt").sub}`;
+    for (const adf of adfs) {
+      setContratoSituacaoAtivo(adf, ator);
+      await persistContrato(c.env, adf);
+    }
+    appendAudit({ categoria: "margem", acao: "adf_aplicada_admin", userId: ator, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
     return c.json({ aplicadas: adfs.length });
   })
   .post("/v1/admin/adf/falha", async (c) => {

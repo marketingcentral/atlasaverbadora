@@ -415,17 +415,18 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
     if (!r) throw Errors.notFound("contrato");
     await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
-    // Notifica a averbadora quando o banco averba a proposta ("confirmar" → Ativo).
-    // A averbadora recebe pra fazer a ADF; a prefeitura ve read-only o lote de ADFs
-    // depois que a averbadora processar (cliente: "so aplica, nao autoriza nada").
-    if (acao === "confirmar") {
+    // Notifica a averbadora sempre que o banco APROVA (fluxo novo — averbadora
+    // que faz a ADF) ou CONFIRMA (fluxo antigo — averbadora so aplica em folha).
+    // Sem esse evento a averbadora ficaria de fora e a ADF nao entraria na fila.
+    if (acao === "aprovar" || acao === "confirmar") {
       const bancoNome = bancos.find((b) => b.id === r.bancoId)?.nome ?? `Banco ${r.bancoId}`;
       const conv = CONVENIOS_MOCK.find((cv) => cv.id === r.convenioId);
       const prefNome = conv?.prefeitura ?? "prefeitura";
+      const verbo = acao === "aprovar" ? "aprovou" : "averbou";
       pushEvent(
         "info",
         "averbadora.notif_averbacao",
-        `${bancoNome} averbou a proposta ${adf} (matricula ${r.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
+        `${bancoNome} ${verbo} a proposta ${adf} (matricula ${r.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
       );
     }
     // Notifica o servidor da movimentação (in-app + e-mail).

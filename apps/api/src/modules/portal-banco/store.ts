@@ -262,6 +262,30 @@ export function setContratoFolhaStatus(adf: string, status: "recebida" | "aplica
   return c;
 }
 
+/** Marca o contrato como averbado (situacao "Ativo") — usado pela averbadora
+ *  quando aplica a ADF em folha. So promove contratos que estao no estado
+ *  "Aprovado" (fluxo novo: banco aprova, averbadora averba); ignora os que
+ *  ja estao Ativo/Cancelado/Quitado (idempotente). */
+export function setContratoSituacaoAtivo(adf: string, ator: string): ContratoFull | undefined {
+  const c = _contratos.get(adf);
+  if (!c) return undefined;
+  const s = c.situacao.toLowerCase();
+  if (!s.includes("aprov")) return c; // idempotente — nao regride estado
+  const de = c.situacao;
+  c.situacao = "Ativo";
+  c.expiracao = null;
+  _eventos.push({
+    id: _eventoId++,
+    contratoId: adf,
+    evento: "averbar_averbadora",
+    deEstado: de,
+    paraEstado: c.situacao,
+    ator,
+    criadoEm: new Date().toISOString(),
+  });
+  return c;
+}
+
 /** Grava a R2 key do CCB anexado no contrato. Retorna o contrato atualizado
  *  (o chamador chama persistContrato pra write-through). */
 export function setContratoCcb(adf: string, ccbKey: string): ContratoFull | undefined {
