@@ -179,13 +179,6 @@ export function ServidorConta() {
 
       <GerenciarDoisFA />
 
-      <Card>
-        <h3 style={{ marginTop: 0 }}>Login biometrico</h3>
-        <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0 }}>
-          Face/Touch ID esta disponivel no app mobile. No portal web, use 2FA acima.
-        </p>
-      </Card>
-
       <div>
         <Button
           variant="ghost"
