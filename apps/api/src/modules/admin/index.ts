@@ -72,6 +72,19 @@ function requireAdmin(j: JwtClaims): void {
   if (j.role !== "averbadora") throw Errors.forbidden("Requer perfil averbadora");
 }
 
+/** Gating por SUBPERFIL da averbadora. Uso: primeiro requireAdmin, depois
+ *  requireAverbadoraPerfil(j, "supervisor", "operador"). Se o JWT nao tem o
+ *  claim averbadora_perfil (dev-user admin@atlas.test), passa como supervisor
+ *  de fato — retrocompat com o dev login antigo. */
+export function requireAverbadoraPerfil(j: JwtClaims, ...allowed: NonNullable<JwtClaims["averbadora_perfil"]>[]): void {
+  const p = j.averbadora_perfil;
+  if (!p) return; // dev-user sem claim — trata como supervisor
+  if (p === "supervisor") return;
+  if (!allowed.includes(p)) {
+    throw Errors.forbidden(`Este recurso exige um dos perfis: ${allowed.join(", ")}. Seu perfil: ${p}.`);
+  }
+}
+
 // Lightweight in-memory stores for the admin views.
 export interface BancoAdmin {
   id: number;
@@ -855,7 +868,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .post("/v1/admin/bancos", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requireAverbadoraPerfil(j); // CRUD de bancos: so supervisor
     const body = z
       .object({
         id: z.number().int().optional(),
@@ -917,7 +932,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ ok: b.ultimoTesteOk, banco: sanitizeBanco(b) });
   })
   .post("/v1/admin/bancos/:id/reset-password", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requireAverbadoraPerfil(j); // reset de senha de banco: so supervisor
     const b = bancos.find((x) => x.id === Number(c.req.param("id")));
     if (!b) throw Errors.notFound("banco");
     const body = z.object({ password: z.string().min(6) }).parse(await c.req.json());
@@ -946,6 +963,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .delete("/v1/admin/bancos/:id", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
+    requireAverbadoraPerfil(j); // desativar banco: so supervisor
     const id = Number(c.req.param("id"));
     const b = bancos.find((x) => x.id === id);
     if (!b) throw Errors.notFound("banco");
@@ -1480,7 +1498,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ tokens, scopesByAudience: SCOPES_BY_AUDIENCE });
   })
   .post("/v1/admin/api-tokens", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
     const body = z.object({
       name: z.string().min(2),
@@ -1503,7 +1521,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // revoga, e NÃO toca no perfil/parceria dono — ele continua ativo. Independe
   // do cascade do banco: reativar o banco não desfaz um pause manual.
   .patch("/v1/admin/api-tokens/:id/pause", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
     const body = z.object({ paused: z.boolean() }).parse(await c.req.json());
     const t = await setTokenPaused(kv, c.req.param("id"), body.paused);
@@ -1527,7 +1545,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ webhooks, events: WEBHOOK_EVENTS });
   })
   .post("/v1/admin/webhooks", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const body = z.object({
       audience: z.enum(["banco", "averbadora"]),
       partnerId: z.number().int().default(0),
@@ -1553,7 +1571,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ deliveries: listDeliveries(c.req.param("id")) });
   })
   .post("/v1/admin/webhooks/fire", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const body = z.object({
       event: z.enum(WEBHOOK_EVENTS),
       environment: z.enum(["production", "sandbox"]).default("sandbox"),
@@ -1565,7 +1583,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Test a webhook by delivering each event it is subscribed to (the exact ones
   // selected), so they all appear in the receiver.
   .post("/v1/admin/webhooks/:id/test", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const deliveries = await testWebhookEvents(c.req.param("id"));
     if (!deliveries) throw Errors.notFound("webhook");
     return c.json({
@@ -1578,7 +1596,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== CSV Import =====
   .post("/v1/admin/bancos/importar", authRequired, async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const text = await readCsvBody(c);
     const { rows } = parseCsv(text);
     const out: ImportOutcome<BancoAdmin> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
@@ -1947,7 +1965,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ usuarios: listAverbadoraUsers(), perfis: perfilOptions() });
   })
   .post("/v1/admin/perfis", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     await ensurePerfisLoaded(c.env);
     const body = z.object({
       id: z.number().int().optional(),
@@ -1964,7 +1982,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ usuario: u });
   })
   .post("/v1/admin/perfis/:id/2fa/rotate", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const id = Number(c.req.param("id"));
     const r = rotateTotpSecret(id);
     if (!r) throw Errors.notFound("usuario");
@@ -1973,7 +1991,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(r);
   })
   .post("/v1/admin/perfis/:id/2fa/disable", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const id = Number(c.req.param("id"));
     if (!disable2FA(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
@@ -1981,7 +1999,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ ok: true });
   })
   .delete("/v1/admin/perfis/:id", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const id = Number(c.req.param("id"));
     if (!deleteAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
@@ -1989,7 +2007,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.body(null, 204);
   })
   .post("/v1/admin/perfis/:id/reativar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const id = Number(c.req.param("id"));
     if (!reactivateAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);

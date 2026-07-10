@@ -1,7 +1,9 @@
+import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { AppShellAdmin, Button, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { AtlasBrand } from "../../components/AtlasBrand";
+import { podeAcessar, readAverbadoraPerfilFromJwt, type AverbadoraPerfil } from "../../lib/averbadora-perms";
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: "/averbadora/dashboard", icon: "◉" },
@@ -48,13 +50,43 @@ export function AverbadoraLayout() {
   const location = useLocation();
   const { resolved, setMode } = useThemeMode();
   const parts = location.pathname.split("/").filter(Boolean);
-  // /averbadora/api/docs → activeKey = "api-docs"
-  // Segmento parts[1] = secao (api, comunicados, ...), parts[2] = filho quando ha submenu.
-  // "api/docs" -> "api-docs"; "comunicados/banco" -> "comunicados-banco".
   const activeKey =
     (parts[1] === "api" || parts[1] === "comunicados") && parts[2]
       ? `${parts[1]}-${parts[2]}`
       : (parts[1] ?? "dashboard");
+
+  // Le o subperfil do JWT (Carla operador, Sandra financeiro, etc). Se null
+  // (dev-user admin@atlas.test) cai como supervisor de fato — permite tudo.
+  const [perfil, setPerfil] = useState<AverbadoraPerfil | null>(null);
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("atlas:tokens");
+      const token = stored ? JSON.parse(stored)?.access_token : null;
+      setPerfil(readAverbadoraPerfilFromJwt(token));
+    } catch { setPerfil(null); }
+  }, [location.pathname]); // reavalia ao trocar de tela (novo token via refresh)
+
+  // Redireciona quem tenta abrir uma URL fora do escopo do subperfil.
+  useEffect(() => {
+    if (!perfil || perfil === "supervisor") return;
+    if (!podeAcessar(perfil, activeKey)) {
+      nav("/averbadora/dashboard", { replace: true });
+    }
+  }, [perfil, activeKey, nav]);
+
+  // Filtra o menu conforme o perfil — remove itens que o usuario nao pode ver.
+  const filteredNav = useMemo(() => {
+    return NAV
+      .map((item) => {
+        if (!("children" in item) || !item.children) {
+          return podeAcessar(perfil, item.key) ? item : null;
+        }
+        const kids = item.children.filter((c) => podeAcessar(perfil, c.key));
+        if (kids.length === 0) return null;
+        return { ...item, children: kids };
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  }, [perfil]);
 
   return (
     <AppShellAdmin
@@ -81,7 +113,7 @@ export function AverbadoraLayout() {
           </div>
         </>
       }
-      nav={NAV}
+      nav={filteredNav}
       activeKey={activeKey}
       onNavigate={(item) => {
         if (item.href) nav(item.href);
