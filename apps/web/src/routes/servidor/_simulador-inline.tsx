@@ -10,6 +10,7 @@ import {
   setLock,
   clearLock,
   SIMULATION_LOCK_KEY,
+  type LockProduto,
 } from "../../lib/simulation-lock";
 
 const PARCELAS = [12, 24, 36, 48, 60, 72, 96];
@@ -24,6 +25,14 @@ const fmtBRL = (n: number) =>
  *  A prop `compact` esconde o card "Sua margem para emprestimo" (que ja aparece
  *  em outra parte da tela onde o simulador esta embutido). */
 type ModalidadeSim = "emprestimo" | "cartao_consignado" | "cartao_beneficio";
+
+/** Mapeia o produto interno da UI pro produto do lock. Sao margens independentes,
+ *  entao uma trava em EMPRESTIMO nao bloqueia CARTAO_CONSIGNADO nem vice-versa. */
+function lockProdutoDe(p: ModalidadeSim): LockProduto {
+  if (p === "cartao_consignado") return "CARTAO_CONSIGNADO";
+  if (p === "cartao_beneficio") return "CARTAO_BENEFICIOS";
+  return "EMPRESTIMO";
+}
 
 export function SimuladorInline({
   info,
@@ -43,26 +52,27 @@ export function SimuladorInline({
   produto?: ModalidadeSim;
 }) {
   const nav = useNavigate();
+  const lockProduto = lockProdutoDe(produto);
   const [valor, setValor] = useState<number>(valorDefault);
   const [parcelas, setParcelas] = useState<number>(parcelasDefault);
   const taxaAm = taxaAmDefault;
 
   const [lockExpiresAt, setLockExpiresAt] = useState<number | null>(() =>
-    getActiveLock(info?.idMatricula ?? null),
+    getActiveLock(info?.idMatricula ?? null, lockProduto),
   );
   const [now, setNow] = useState<number>(() => Date.now());
 
-  // Re-le lock quando a matricula (ou o lock em outra aba) mudar.
+  // Re-le lock quando a matricula, o produto ou o lock em outra aba mudar.
   useEffect(() => {
-    setLockExpiresAt(getActiveLock(info?.idMatricula ?? null));
+    setLockExpiresAt(getActiveLock(info?.idMatricula ?? null, lockProduto));
     const onStorage = (e: StorageEvent) => {
       if (e.key === SIMULATION_LOCK_KEY) {
-        setLockExpiresAt(getActiveLock(info?.idMatricula ?? null));
+        setLockExpiresAt(getActiveLock(info?.idMatricula ?? null, lockProduto));
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [info?.idMatricula]);
+  }, [info?.idMatricula, lockProduto]);
 
   // Tick 1s enquanto ha lock ativo (pra atualizar o contador).
   useEffect(() => {
@@ -90,10 +100,10 @@ export function SimuladorInline({
     if (!lockExpiresAt || !propostasQ.data) return;
     if (!temPendente) {
       const id = info?.idMatricula;
-      if (id) clearLock(id);
+      if (id) clearLock(id, lockProduto);
       setLockExpiresAt(null);
     }
-  }, [propostasQ.data, temPendente, lockExpiresAt, info?.idMatricula]);
+  }, [propostasQ.data, temPendente, lockExpiresAt, info?.idMatricula, lockProduto]);
 
   const margemEmprestimo = useMemo(() => {
     if (!info) return 0;
@@ -132,7 +142,7 @@ export function SimuladorInline({
 
   function solicitar() {
     if (!podeSolicitar || !info) return;
-    setLock(info.idMatricula);
+    setLock(info.idMatricula, lockProduto);
     setLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
     const params = new URLSearchParams({
       tipo: "novo",

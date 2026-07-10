@@ -1,13 +1,24 @@
-// Lock de simulacao por matricula. Quando o usuario solicita uma simulacao,
-// a margem da matricula fica travada por 48h. Em prod isso seria gerenciado
-// pelo backend (DB + worker cron); no mockup, persistimos o timestamp de
-// expiracao em localStorage.
+// Lock de simulacao por (matricula, produto). Quando o usuario solicita uma
+// simulacao, a margem daquele produto especifico fica travada por 48h — os
+// outros produtos (emprestimo, cartao consignado, cartao beneficio) tem
+// margens independentes e nao devem se contaminar (bug relatado pelo cliente).
+// Em prod isso seria gerenciado pelo backend (DB + worker cron); no mockup,
+// persistimos o timestamp de expiracao em localStorage.
 
 const KEY = "atlas:simulationLock";
 const LOCK_DURATION_MS = 48 * 60 * 60 * 1000;
 
+/** Produtos com margem independente — cada um trava sua propria margem. */
+export type LockProduto = "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS";
+
 interface LockMap {
-  [idMatricula: string]: number; // timestamp em ms quando o lock expira
+  // Chave = `${idMatricula}:${produto}`. Valor = timestamp em ms quando o lock expira.
+  [key: string]: number;
+}
+
+/** Compoe a chave do localStorage a partir de matricula + produto. */
+function lockKey(idMatricula: string, produto: LockProduto): string {
+  return `${idMatricula}:${produto}`;
 }
 
 function read(): LockMap {
@@ -28,34 +39,36 @@ function write(map: LockMap): void {
   }
 }
 
-/** Cria/renova o lock de 48h para a matricula. */
-export function setLock(idMatricula: string): number {
+/** Cria/renova o lock de 48h para o par (matricula, produto). */
+export function setLock(idMatricula: string, produto: LockProduto = "EMPRESTIMO"): number {
   const map = read();
   const expiresAt = Date.now() + LOCK_DURATION_MS;
-  map[idMatricula] = expiresAt;
+  map[lockKey(idMatricula, produto)] = expiresAt;
   write(map);
   return expiresAt;
 }
 
-/** Retorna o timestamp de expiracao se existe lock ativo, ou null. */
-export function getActiveLock(idMatricula: string | null): number | null {
+/** Retorna o timestamp de expiracao se existe lock ativo para (matricula, produto),
+ *  ou null. Um lock de EMPRESTIMO NAO bloqueia CARTAO_CONSIGNADO nem vice-versa. */
+export function getActiveLock(idMatricula: string | null, produto: LockProduto = "EMPRESTIMO"): number | null {
   if (!idMatricula) return null;
   const map = read();
-  const ts = map[idMatricula];
+  const k = lockKey(idMatricula, produto);
+  const ts = map[k];
   if (!ts) return null;
   if (ts <= Date.now()) {
-    // Expirado — limpa.
-    delete map[idMatricula];
+    // Expirado — limpa a entrada especifica.
+    delete map[k];
     write(map);
     return null;
   }
   return ts;
 }
 
-/** Limpa o lock (para uso em logout ou caso especial). */
-export function clearLock(idMatricula: string): void {
+/** Limpa o lock de (matricula, produto). Para uso em logout ou caso especial. */
+export function clearLock(idMatricula: string, produto: LockProduto = "EMPRESTIMO"): void {
   const map = read();
-  delete map[idMatricula];
+  delete map[lockKey(idMatricula, produto)];
   write(map);
 }
 
