@@ -117,7 +117,7 @@ export function ServidorDashboard() {
           Cliente pediu explicitamente o carrossel NO MEIO, entre os cards de
           margem e os 2 blocos de atalho abaixo. Autoplay 3s (default do
           componente e 6s) — cliente pediu mais rapido. */}
-      <ComunicadoCarrossel comunicados={comunicadosCarrossel} autoplayMs={3000} />
+      <ComunicadoCarrossel comunicados={comunicadosCarrossel} autoplayMs={5000} />
 
       {/* 2 blocos grandes lado a lado — Telemedicina (esquerda) e Portabilidade (direita).
           Cliente pediu essa ordem: "Telemedicina e a Portabilidade".
