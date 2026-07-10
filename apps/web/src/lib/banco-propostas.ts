@@ -54,7 +54,7 @@ export function setBancoPerfil(id: string): void {
 // Modelo da proposta (Passos 3-7).
 // ---------------------------------------------------------------------------
 
-export type BancoProduto = "novo" | "portabilidade";
+export type BancoProduto = "emprestimo" | "cartao" | "portabilidade";
 
 export type BancoPropostaStatus =
   | "recebida" // acabou de cair na fila (origem: app do servidor)
@@ -152,7 +152,8 @@ export function statusPill(s: BancoPropostaStatus): "pendente" | "aceita" | "ave
 }
 
 export const PRODUTO_LABEL: Record<BancoProduto, string> = {
-  novo: "Novo empréstimo",
+  emprestimo: "Empréstimo",
+  cartao: "Cartão",
   portabilidade: "Portabilidade",
 };
 
@@ -372,7 +373,15 @@ export function contratoToProposta(ct: BancoContratoApi): BancoPropostaFromApi {
     nome: ct.nome,
     convenio: ct.convenio,
     matricula: ct.matricula,
-    produto: ct.tipoContrato === "REFIN" ? "portabilidade" : "novo",
+    // tipoContrato do backend -> BancoProduto:
+    //   REFIN        -> portabilidade
+    //   ECONSIGNADO  -> cartao (consignado / benefício)
+    //   *default*    -> emprestimo (EMPRESTIMO)
+    produto: ct.tipoContrato === "REFIN"
+      ? "portabilidade"
+      : ct.tipoContrato === "ECONSIGNADO"
+        ? "cartao"
+        : "emprestimo",
     valor: ct.valorFinanciado,
     parcelas: ct.totalParcelas,
     parcela: ct.valorParcela,

@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, SelectField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import {
-  getBancoConvenios,
   PRODUTO_LABEL,
   STATUS_LABEL,
   contratoToProposta,
@@ -24,6 +23,10 @@ const STATUS_OPTS: BancoPropostaStatus[] = [
 ];
 
 type TabKey = "todas" | "aguardando" | "aprovadas" | "recusadas";
+// Tabs primarias por PRODUTO (cliente pediu essas 3 categorias na tela).
+// Convenio e produto sumiram como dropdown — convenio ja vem do topo (ativo)
+// e produto virou aba primaria. Status virou dropdown dentro da aba.
+const PRODUTO_TABS: readonly BancoProduto[] = ["emprestimo", "cartao", "portabilidade"] as const;
 
 function statusPertenceTab(s: BancoPropostaStatus, tab: TabKey): boolean {
   if (tab === "todas") return true;
@@ -34,9 +37,8 @@ function statusPertenceTab(s: BancoPropostaStatus, tab: TabKey): boolean {
 
 export function BancoPropostas() {
   const nav = useNavigate();
+  const [produtoTab, setProdutoTab] = useState<BancoProduto>("emprestimo");
   const [tab, setTab] = useState<TabKey>("todas");
-  const [convenio, setConvenio] = useState("");
-  const [produto, setProduto] = useState<"" | BancoProduto>("");
   const [status, setStatus] = useState<"" | BancoPropostaStatus>("");
   const [expirando, setExpirando] = useState(false);
   const [perfilId, setPerfilId] = useState(() => getBancoPerfil().id);
@@ -60,13 +62,27 @@ export function BancoPropostas() {
     [apiQ.data],
   );
 
-  // Contadores por status pra header e tabs.
+  // Recorte por produto ativo (aba primaria). Todos os contadores/tabs de status
+  // e a listagem operam SOMENTE dentro deste recorte.
+  const doProduto = useMemo(
+    () => todas.filter((p) => p.produto === produtoTab),
+    [todas, produtoTab],
+  );
+
+  // Contagem por produto pra badge das abas primarias.
+  const totaisPorProduto = useMemo(() => {
+    const m: Record<BancoProduto, number> = { emprestimo: 0, cartao: 0, portabilidade: 0 };
+    for (const p of todas) m[p.produto]++;
+    return m;
+  }, [todas]);
+
+  // Contadores por status dentro do produto ativo — header + tabs de status.
   const contadores = useMemo(() => {
     let aguardando = 0, aprovadas = 0, recusadas = 0, aprovadasNoMes = 0;
     const agora = new Date();
     const mesAtual = agora.getMonth();
     const anoAtual = agora.getFullYear();
-    for (const p of todas) {
+    for (const p of doProduto) {
       if (statusPertenceTab(p.status, "aguardando")) aguardando++;
       else if (statusPertenceTab(p.status, "aprovadas")) {
         aprovadas++;
@@ -74,17 +90,15 @@ export function BancoPropostas() {
         if (d.getMonth() === mesAtual && d.getFullYear() === anoAtual) aprovadasNoMes++;
       } else if (statusPertenceTab(p.status, "recusadas")) recusadas++;
     }
-    return { total: todas.length, aguardando, aprovadas, aprovadasNoMes, recusadas };
-  }, [todas]);
+    return { total: doProduto.length, aguardando, aprovadas, aprovadasNoMes, recusadas };
+  }, [doProduto]);
 
   const filtradas = useMemo(() => {
     const isPendente = (s: BancoPropostaStatus) => statusPertenceTab(s, "aguardando");
     const atividade = (p: PropostaRow) => new Date(p.criadaEm).getTime() || 0;
-    return todas
+    return doProduto
       .filter((p) => {
         if (!statusPertenceTab(p.status, tab)) return false;
-        if (convenio && p.convenio !== convenio) return false;
-        if (produto && p.produto !== produto) return false;
         if (status && p.status !== status) return false;
         if (expirando) {
           const t = travaInfo(p);
@@ -98,7 +112,7 @@ export function BancoPropostas() {
         if (pa !== pb) return pa - pb;
         return atividade(b) - atividade(a);
       });
-  }, [todas, tab, convenio, produto, status, expirando]);
+  }, [doProduto, tab, status, expirando]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -119,7 +133,32 @@ export function BancoPropostas() {
         <PerfilSwitcher value={perfilId} onChange={(id) => { setBancoPerfil(id); setPerfilId(id); }} />
       </header>
 
-      {/* Tabs de status */}
+      {/* Tabs PRIMARIAS por produto — cliente separou "Minhas propostas" em
+          3 categorias pra melhor administracao. */}
+      <div
+        role="tablist"
+        style={{
+          display: "grid",
+          gridTemplateColumns: `repeat(${PRODUTO_TABS.length}, 1fr)`,
+          gap: 4,
+          padding: 4,
+          background: "var(--bg-elev)",
+          border: "1px solid var(--border)",
+          borderRadius: 12,
+        }}
+      >
+        {PRODUTO_TABS.map((p) => (
+          <ProdutoTab
+            key={p}
+            active={produtoTab === p}
+            label={PRODUTO_LABEL[p]}
+            count={totaisPorProduto[p]}
+            onClick={() => setProdutoTab(p)}
+          />
+        ))}
+      </div>
+
+      {/* Tabs de status (dentro do produto ativo) */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Tab active={tab === "todas"} onClick={() => setTab("todas")} label={`Todas (${contadores.total})`} tone="neutro" />
         <Tab active={tab === "aguardando"} onClick={() => setTab("aguardando")} label={`Aguardando (${contadores.aguardando})`} tone="gold" />
@@ -127,24 +166,9 @@ export function BancoPropostas() {
         <Tab active={tab === "recusadas"} onClick={() => setTab("recusadas")} label={`Recusadas (${contadores.recusadas})`} tone="danger" />
       </div>
 
-      {/* Filtros preservados (convenio/produto/status/expirando) */}
+      {/* Filtros restantes — status (fino) + trava expirando.
+          Convenio saiu (ja e' o ativo no topo) e Produto virou aba primaria. */}
       <div style={{ display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap" }}>
-        <SelectField
-          label="Convênio"
-          value={convenio}
-          onChange={(e) => setConvenio(e.target.value)}
-          options={[{ value: "", label: "Todos" }, ...getBancoConvenios().map((c) => ({ value: c, label: c }))]}
-        />
-        <SelectField
-          label="Produto"
-          value={produto}
-          onChange={(e) => setProduto(e.target.value as "" | BancoProduto)}
-          options={[
-            { value: "", label: "Todos" },
-            { value: "novo", label: PRODUTO_LABEL.novo },
-            { value: "portabilidade", label: PRODUTO_LABEL.portabilidade },
-          ]}
-        />
         <SelectField
           label="Status"
           value={status}
@@ -161,7 +185,7 @@ export function BancoPropostas() {
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
         {filtradas.length === 0 ? (
           <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
-            Nenhuma proposta neste filtro.
+            Nenhuma proposta de <b>{PRODUTO_LABEL[produtoTab]}</b> neste filtro.
           </div>
         ) : (
           filtradas.map((p) => (
@@ -408,6 +432,51 @@ function SubCard({ label, banco, detalhe, tone }: { label: string; banco: string
       <div style={{ fontSize: 15, fontWeight: 700, color: "var(--text)", marginTop: 4 }}>{banco}</div>
       <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{detalhe}</div>
     </div>
+  );
+}
+
+/** Tab primaria por produto (aba grande no topo com contador). Segmentada
+ *  como pill dentro de um "trilho" — diferente do estilo das tabs de status
+ *  (pill flutuante) pra deixar visualmente claro que sao 2 dimensoes. */
+function ProdutoTab({ active, label, count, onClick }: { active: boolean; label: string; count: number; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      style={{
+        padding: "10px 12px",
+        borderRadius: 8,
+        border: "none",
+        background: active ? "var(--surface-solid, var(--surface))" : "transparent",
+        color: active ? "var(--text)" : "var(--text-muted)",
+        fontSize: 14,
+        fontWeight: 700,
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        boxShadow: active ? "0 1px 2px rgba(0,0,0,.08)" : "none",
+        transition: "background .12s ease, color .12s ease",
+      }}
+    >
+      <span>{label}</span>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          padding: "2px 8px",
+          borderRadius: 999,
+          background: active ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "var(--bg-elev-2, transparent)",
+          color: active ? "var(--accent)" : "var(--text-dim)",
+          border: active ? "1px solid color-mix(in srgb, var(--accent) 40%, transparent)" : "1px solid var(--border)",
+        }}
+      >
+        {count}
+      </span>
+    </button>
   );
 }
 

@@ -86,7 +86,11 @@ export function BancoCarteira() {
         const s = mapSituacaoBackend(ct.situacao);
         if (!s) return null;
         const tipo = ct.tipoContrato?.toLowerCase() ?? "";
-        const produtoUi: BancoProduto = tipo.includes("portab") ? "portabilidade" : "novo";
+        const produtoUi: BancoProduto = tipo.includes("portab") || tipo.includes("refin")
+          ? "portabilidade"
+          : tipo.includes("econsig") || tipo.includes("cartao")
+            ? "cartao"
+            : "emprestimo";
         return {
           idUnico: ct.adf,
           cpfMasked: ct.cpfMasked,
@@ -245,7 +249,8 @@ export function BancoCarteira() {
           onChange={(e) => setProduto(e.target.value as "" | BancoProduto)}
           options={[
             { value: "", label: "Todos" },
-            { value: "novo", label: PRODUTO_LABEL.novo },
+            { value: "emprestimo", label: PRODUTO_LABEL.emprestimo },
+            { value: "cartao", label: PRODUTO_LABEL.cartao },
             { value: "portabilidade", label: PRODUTO_LABEL.portabilidade },
           ]}
         />
