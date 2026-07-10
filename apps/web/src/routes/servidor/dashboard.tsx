@@ -257,16 +257,16 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
       background: "linear-gradient(160deg, var(--navy-700), var(--navy-900))",
       border: "1px solid var(--navy-700)",
       borderRadius: 16,
-      padding: 20,
+      padding: 24,
       color: "#EAF0FA",
       boxShadow: "var(--shadow-md)",
     }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#9BAAC2", marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#9BAAC2", marginBottom: 18 }}>
         Minha margem por modalidade
       </div>
       {/* 3 quadrados lado a lado — cada modalidade em seu proprio card.
           auto-fit + minmax garante quebra pra 2 e depois 1 coluna em telas menores. */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18 }}>
         {linhas.map((m) => (
           <MargemCard key={m.tipo} data={m} />
         ))}
@@ -275,32 +275,42 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
   );
 }
 
+/** Configuracao do botao de acao por modalidade — Emprestimo/Cartao credito abrem
+ *  simulador; Cartao Beneficio manda direto para ofertas (nao simula). */
+const ACAO_POR_TIPO: Record<string, { label: string; href: string } | undefined> = {
+  EMPRESTIMO: { label: "Simular →", href: "/servidor/simular" },
+  CARTAO_CONSIGNADO: { label: "Simular →", href: "/servidor/simular" },
+  CARTAO_BENEFICIOS: { label: "Ver ofertas →", href: "/servidor/marketplace" },
+};
+
 function MargemCard({ data }: { data: { tipo: string; total: number; disponivel: number } }) {
+  const nav = useNavigate();
   const utilizado = Math.max(0, data.total - data.disponivel);
   const pctUtilizado = data.total > 0 ? (utilizado / data.total) * 100 : 0;
   const pctLivre = 100 - pctUtilizado;
   const barra = utilizado === 0 ? "#10B981" : pctUtilizado > 80 ? "#EF4444" : "#C9A961";
   const label = PRODUTO_LABEL[data.tipo] ?? data.tipo;
+  const acao = ACAO_POR_TIPO[data.tipo];
 
   return (
     <div style={{
       background: "rgba(255,255,255,.04)",
       border: "1px solid rgba(255,255,255,.08)",
-      borderRadius: 12,
-      padding: 16,
+      borderRadius: 14,
+      padding: 22,
       display: "flex",
       flexDirection: "column",
-      gap: 12,
+      gap: 16,
     }}>
       {/* nome da modalidade */}
-      <div style={{ fontSize: 13, fontWeight: 700, color: "#EAF0FA" }}>{label}</div>
+      <div style={{ fontSize: 15, fontWeight: 700, color: "#EAF0FA" }}>{label}</div>
 
       {/* barra de progresso + percentuais */}
       <div>
-        <div style={{ height: 4, background: "rgba(255,255,255,.08)", borderRadius: 4, overflow: "hidden" }}>
+        <div style={{ height: 5, background: "rgba(255,255,255,.08)", borderRadius: 4, overflow: "hidden" }}>
           <div style={{ width: `${pctUtilizado}%`, height: "100%", background: barra, transition: "width .4s ease" }} />
         </div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 11 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 12 }}>
           <span style={{ color: utilizado > 0 ? "#C9A961" : "#7A8CA8" }}>
             {utilizado === 0 ? "0%" : `${pctUtilizado.toFixed(1)}% utilizado`}
           </span>
@@ -309,11 +319,33 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
       </div>
 
       {/* Total / Utilizado / Disponivel — empilhados dentro do card */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <ValorLinha label="Total" value={fmtBRL(data.total)} color="#EAF0FA" />
         <ValorLinha label="Utilizado" value={fmtBRL(utilizado)} color={utilizado > 0 ? "#C9A961" : "#7A8CA8"} />
         <ValorLinha label="Disponível" value={fmtBRL(data.disponivel)} color="#10B981" bold />
       </div>
+
+      {/* Botao de acao — Simular (emprestimo/cartao credito) ou Ver ofertas (cartao beneficio). */}
+      {acao ? (
+        <button
+          type="button"
+          onClick={() => nav(acao.href)}
+          style={{
+            marginTop: 4,
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "none",
+            background: "var(--emerald-500)",
+            color: "white",
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: "pointer",
+            width: "100%",
+          }}
+        >
+          {acao.label}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -321,8 +353,8 @@ function MargemCard({ data }: { data: { tipo: string; total: number; disponivel:
 function ValorLinha({ label, value, color, bold }: { label: string; value: string; color: string; bold?: boolean }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-      <span style={{ fontSize: 10, letterSpacing: ".06em", textTransform: "uppercase", color: "#7A8CA8", fontWeight: 700 }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: bold ? 800 : 700, color, textAlign: "right" }}>{value}</span>
+      <span style={{ fontSize: 11, letterSpacing: ".06em", textTransform: "uppercase", color: "#7A8CA8", fontWeight: 700 }}>{label}</span>
+      <span style={{ fontSize: 15, fontWeight: bold ? 800 : 700, color, textAlign: "right" }}>{value}</span>
     </div>
   );
 }
