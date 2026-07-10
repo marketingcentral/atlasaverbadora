@@ -99,6 +99,10 @@ export interface BancoAdmin {
   mtlsHabilitado: boolean;
   ultimoTeste?: string;
   ultimoTesteOk?: boolean;
+  /** 2FA opcional pro operador do banco. Self-service via /banco/conta. */
+  twoFactorEnabled?: boolean;
+  /** RFC 6238 TOTP secret (base32). */
+  twoFactorSecret?: string;
 }
 
 // Strip secrets before returning over the wire.
@@ -136,6 +140,10 @@ export interface PrefeituraAdmin {
    *  1,5% a.m. exclusivo para servidores da Câmara Municipal." Aparece destacado na
    *  aba Cartão Consignado do servidor. Vazio = sem exclusividades. */
   exclusividadesCartaoConsig?: string;
+  /** 2FA opcional pro operador da prefeitura. Self-service via /prefeitura/conta. */
+  twoFactorEnabled?: boolean;
+  /** RFC 6238 TOTP secret (base32). */
+  twoFactorSecret?: string;
 }
 
 export function sanitizePrefeitura(p: PrefeituraAdmin) {
@@ -800,11 +808,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/bancos", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j); // read banco: supervisor
     return c.json({ bancos: bancos.map(sanitizeBanco) });
   })
   .get("/v1/admin/bancos/:id", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const b = bancos.find((x) => x.id === Number(c.req.param("id")));
     if (!b) throw Errors.notFound("banco");
     return c.json({ banco: sanitizeBanco(b) });
@@ -977,7 +985,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/prefeituras", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador"); // supervisor+operador
     return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
   })
   .post("/v1/admin/prefeituras", async (c) => {
@@ -1153,7 +1161,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ ok: true });
   })
   .get("/v1/admin/convenios", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
     await refreshConvenios(c.env);
     // Retorna TODOS (ativos e inativos) — a UI mostra a situacao e permite reativar.
     const detalhado = CONVENIOS_MOCK.map((cv) => ({
@@ -1166,7 +1174,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/servidores", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
     await ensureServidorStatusLoaded(c.env);
     const url = new URL(c.req.url);
     const prefeituraId = url.searchParams.get("prefeitura_id");
@@ -1267,7 +1275,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/folhas", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "financeiro"); // supervisor+financeiro
     return c.json({ folhas });
   })
   .post("/v1/admin/folhas", async (c) => {
@@ -1338,12 +1346,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/comunicados", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "comercial"); // supervisor+comercial
     await refreshComunicados(c.env);
     return c.json({ comunicados: COMUNICADOS_MOCK });
   })
   .post("/v1/admin/comunicados", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "comercial");
     await refreshComunicados(c.env);
     const body = z
       .object({
@@ -1409,7 +1417,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/logs", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "auditoria"); // supervisor+auditoria
     const url = new URL(c.req.url);
     const level = url.searchParams.get("level");
     const source = url.searchParams.get("source");
@@ -1441,7 +1449,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/vitrine", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "comercial");
     await ensureVitrineLoaded(c.env);
     return c.json({ banners: vitrine });
   })
@@ -1481,7 +1489,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== API Tokens =====
   .get("/v1/admin/api-tokens", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
     const env = c.req.query("environment") as ApiEnvironment | undefined;
     const aud = c.req.query("audience") as ApiAudience | undefined;
@@ -1533,7 +1541,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Webhooks (admin) =====
   .get("/v1/admin/webhooks", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     const env = c.req.query("environment") as ApiEnvironment | undefined;
     // Overlay do pause: webhook de banco pausado aparece inativo, seguindo o
     // status do banco (fonte de verdade), independente do estado em memória
@@ -1873,7 +1881,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Tombamento de contratos (passo 9) =====
   .get("/v1/admin/tombamento/lotes", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
     const url = new URL(c.req.url);
     const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
     const competencia = url.searchParams.get("competencia") ?? undefined;
@@ -1884,7 +1892,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ lotes });
   })
   .get("/v1/admin/tombamento/lotes/:id/linhas", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
     const linhas = listLinhas(c.req.param("id"));
     return c.json({ linhas });
   })
@@ -1946,7 +1954,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Auditoria (passo 12) =====
   .get("/v1/admin/auditoria", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "auditoria");
     const url = new URL(c.req.url);
     const categoria = url.searchParams.get("categoria") as AuditCategoria | null;
     const cpf = url.searchParams.get("cpf") ?? undefined;
@@ -1961,7 +1969,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Perfis admin (passo 1: perfis + 2FA) =====
   .get("/v1/admin/perfis", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
     await ensurePerfisLoaded(c.env);
     return c.json({ usuarios: listAverbadoraUsers(), perfis: perfilOptions() });
   })
@@ -2020,7 +2028,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Servidor consulta em /v1/servidores/me/beneficios (filtrado pela pref dele).
   // ============================================================
   .get("/v1/admin/beneficios", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
     await refreshBeneficios(c.env);
     const list = await loadBeneficios(c.env);
     return c.json({ beneficios: list });

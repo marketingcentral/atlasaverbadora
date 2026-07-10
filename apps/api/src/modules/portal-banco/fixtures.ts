@@ -87,6 +87,11 @@ export interface ServidorBuscaMock {
   codigoIbge?: number;
   /** SHA-256 hex da senha. Nunca retornar plaintext. Login do servidor é o próprio CPF. */
   passwordHash?: string;
+  /** 2FA opcional pro servidor. Ativado via self-service em /servidor/conta.
+   *  Se twoFactorEnabled=true e secret setado, login pede TOTP como averbadora. */
+  twoFactorEnabled?: boolean;
+  /** RFC 6238 TOTP secret (base32). */
+  twoFactorSecret?: string;
   /** RG (opcional, informativo). */
   rg?: string;
 }

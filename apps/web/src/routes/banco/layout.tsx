@@ -31,6 +31,7 @@ const NAV = [
       { key: "faturamento", label: "Faturamento", href: "/banco/relatorios/faturamento" },
     ],
   },
+  { key: "conta", label: "Minha conta", href: "/banco/conta", icon: "👤" },
 ];
 
 export function BancoLayout() {

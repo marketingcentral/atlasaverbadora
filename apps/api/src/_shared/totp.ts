@@ -63,3 +63,39 @@ export async function verifyTotp(secret: string, code: string, windowSteps: numb
   }
   return false;
 }
+
+/** Gera um secret TOTP novo em base32 (20 bytes = 160 bits, recomendado pela RFC 4226). */
+export function generateTotpSecret(): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  // 20 bytes -> 32 chars base32 (sem padding).
+  let out = "";
+  let buf = 0;
+  let bits = 0;
+  for (const b of bytes) {
+    buf = (buf << 8) | b;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      out += alphabet[(buf >> bits) & 31];
+    }
+  }
+  if (bits > 0) out += alphabet[(buf << (5 - bits)) & 31];
+  return out;
+}
+
+/** Monta a URL otpauth:// que o Google Authenticator / 1Password / Authy leem
+ *  via QR. Formato: otpauth://totp/{issuer}:{account}?secret=X&issuer={issuer}. */
+export function buildOtpauthUrl(opts: { secret: string; account: string; issuer?: string }): string {
+  const issuer = opts.issuer ?? "Atlas Averbadora";
+  const label = `${encodeURIComponent(issuer)}:${encodeURIComponent(opts.account)}`;
+  const params = new URLSearchParams({
+    secret: opts.secret,
+    issuer,
+    algorithm: "SHA1",
+    digits: "6",
+    period: "30",
+  });
+  return `otpauth://totp/${label}?${params.toString()}`;
+}

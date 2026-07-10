@@ -9,9 +9,12 @@
 
 export type AverbadoraPerfil = "operador" | "supervisor" | "comercial" | "financeiro" | "auditoria";
 
+/** Todos os perfis existentes — util pra iterar em UIs (tela de matriz). */
+export const TODOS_PERFIS: AverbadoraPerfil[] = ["supervisor", "operador", "comercial", "financeiro", "auditoria"];
+
 /** Perfil por key do menu — quem ve o item.
  *  Convencao: se a key nao esta aqui, so supervisor ve. */
-const MATRIX: Record<string, AverbadoraPerfil[]> = {
+export const MATRIX: Record<string, AverbadoraPerfil[]> = {
   // Todos veem — visao geral
   dashboard: ["supervisor", "operador", "comercial", "financeiro", "auditoria"],
   health: ["supervisor", "operador", "comercial", "financeiro", "auditoria"],
@@ -50,6 +53,8 @@ const MATRIX: Record<string, AverbadoraPerfil[]> = {
   "api-tokens": ["supervisor"],
   "api-webhooks": ["supervisor"],
   configuracoes: ["supervisor"],
+  permissoes: ["supervisor"], // matriz de acesso — so supervisor audita
+  conta: ["supervisor", "operador", "comercial", "financeiro", "auditoria"], // self-service pra todos
 };
 
 /** True se o perfil pode ver/acessar aquela chave do menu. Chaves nao mapeadas

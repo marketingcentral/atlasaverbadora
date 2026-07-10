@@ -239,31 +239,49 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
 
     if (!resolved) throw Errors.unauthorized("Credenciais invalidas");
 
-    // 2FA: se o usuario averbadora resolvido tem twoFactorEnabled=true e
-    // twoFactorSecret configurado, NAO emite JWT de sessao ainda. Emite um
-    // mfa_token curto (KV_SESSIONS, TTL 5min) que o frontend precisa trocar
-    // por um code TOTP valido via /v1/auth/verify-2fa.
-    if (resolved.role === "averbadora" && averbadoraPerfil) {
+    // 2FA: se o usuario resolvido tem twoFactorEnabled=true e twoFactorSecret
+    // configurado, NAO emite JWT de sessao ainda. Emite um mfa_token curto
+    // (KV_SESSIONS, TTL 5min) que o frontend precisa trocar por um code TOTP
+    // valido via /v1/auth/verify-2fa. Aplica pra QUALQUER perfil que tenha
+    // ativado 2FA via self-service (/v1/me/2fa).
+    let needs2fa = false;
+    if (resolved.role === "averbadora") {
       const u = exportAverbadoraUsers().find((x) => x.id === resolved.id);
-      if (u?.twoFactorEnabled && u.twoFactorSecret && c.env.KV_SESSIONS) {
-        const mfaToken = generateRefreshToken();
-        await c.env.KV_SESSIONS.put(
-          `mfa:${mfaToken}`,
-          JSON.stringify({
-            user_id: resolved.id,
-            role: resolved.role,
-            nome: resolved.nome,
-            averbadora_perfil: averbadoraPerfil,
-            device_id: body.device_id,
-          }),
-          { expirationTtl: 300 },
-        );
-        return c.json({
-          requires_2fa: true,
-          mfa_token: mfaToken,
-          hint: "Informe o codigo de 6 digitos do seu aplicativo autenticador (Google Authenticator, Authy, 1Password).",
-        });
-      }
+      needs2fa = !!(u?.twoFactorEnabled && u.twoFactorSecret);
+    } else if (resolved.role === "banco" && resolved.banco_id != null) {
+      const b = bancosStore.find((x) => x.id === resolved.banco_id);
+      needs2fa = !!(b?.twoFactorEnabled && b.twoFactorSecret);
+    } else if (resolved.role === "prefeitura" && resolved.prefeitura_id != null) {
+      const p = prefeiturasStore.find((x) => x.id === resolved.prefeitura_id);
+      needs2fa = !!(p?.twoFactorEnabled && p.twoFactorSecret);
+    } else if (resolved.role === "servidor" && resolved.servidor_id != null) {
+      const s = SERVIDORES_BUSCA_MOCK.find((x) => {
+        const id = Number(x.idMatricula.replace(/\D/g, "").slice(-5)) || -1;
+        return id === resolved.servidor_id;
+      });
+      needs2fa = !!(s?.twoFactorEnabled && s.twoFactorSecret);
+    }
+    if (needs2fa && c.env.KV_SESSIONS) {
+      const mfaToken = generateRefreshToken();
+      await c.env.KV_SESSIONS.put(
+        `mfa:${mfaToken}`,
+        JSON.stringify({
+          user_id: resolved.id,
+          role: resolved.role,
+          nome: resolved.nome,
+          servidor_id: resolved.servidor_id,
+          banco_id: resolved.banco_id,
+          prefeitura_id: resolved.prefeitura_id,
+          averbadora_perfil: averbadoraPerfil,
+          device_id: body.device_id,
+        }),
+        { expirationTtl: 300 },
+      );
+      return c.json({
+        requires_2fa: true,
+        mfa_token: mfaToken,
+        hint: "Informe o codigo de 6 digitos do seu aplicativo autenticador (Google Authenticator, Authy, 1Password).",
+      });
     }
 
     const accessToken = await signAccessToken(c.env, {
@@ -309,17 +327,33 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       user_id: z.number(),
       role: z.enum(["servidor", "banco", "averbadora", "prefeitura"]),
       nome: z.string(),
+      servidor_id: z.number().optional(),
+      banco_id: z.number().optional(),
+      prefeitura_id: z.number().optional(),
       averbadora_perfil: z.enum(["operador", "supervisor", "comercial", "financeiro", "auditoria"]).optional(),
       device_id: z.string().optional(),
     }).parse(JSON.parse(raw));
 
-    // Resolve o secret. Hoje so averbadora tem 2FA — se estender pra outros
-    // perfis no futuro, adicionar aqui o lookup do secret pelo role.
+    // Resolve o secret conforme o role. Todos os 4 perfis podem ter 2FA
+    // via self-service (/v1/me/2fa/*).
     let secret: string | undefined;
     if (parsed.role === "averbadora") {
       await ensurePerfisLoaded(c.env);
       const u = exportAverbadoraUsers().find((x) => x.id === parsed.user_id);
       secret = u?.twoFactorSecret;
+    } else if (parsed.role === "banco" && parsed.banco_id != null) {
+      const b = bancosStore.find((x) => x.id === parsed.banco_id);
+      secret = b?.twoFactorSecret;
+    } else if (parsed.role === "prefeitura" && parsed.prefeitura_id != null) {
+      const p = prefeiturasStore.find((x) => x.id === parsed.prefeitura_id);
+      secret = p?.twoFactorSecret;
+    } else if (parsed.role === "servidor" && parsed.servidor_id != null) {
+      await ensureServidoresLoaded(c.env);
+      const s = SERVIDORES_BUSCA_MOCK.find((x) => {
+        const id = Number(x.idMatricula.replace(/\D/g, "").slice(-5)) || -1;
+        return id === parsed.servidor_id;
+      });
+      secret = s?.twoFactorSecret;
     }
     if (!secret) throw Errors.unauthorized("2FA nao configurado para este usuario");
 
@@ -331,6 +365,9 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     const accessToken = await signAccessToken(c.env, {
       sub: String(parsed.user_id),
       role: parsed.role,
+      servidor_id: parsed.servidor_id,
+      banco_id: parsed.banco_id,
+      prefeitura_id: parsed.prefeitura_id,
       averbadora_perfil: parsed.averbadora_perfil,
       device_id: parsed.device_id,
     });
@@ -340,6 +377,9 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       JSON.stringify({
         user_id: parsed.user_id,
         role: parsed.role,
+        servidor_id: parsed.servidor_id,
+        banco_id: parsed.banco_id,
+        prefeitura_id: parsed.prefeitura_id,
         nome: parsed.nome,
         device_id: parsed.device_id,
       }),

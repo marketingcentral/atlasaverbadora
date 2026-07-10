@@ -43,6 +43,8 @@ const NAV = [
     ],
   },
   { key: "configuracoes", label: "Configurações", href: "/averbadora/configuracoes", icon: "⚙" },
+  { key: "permissoes", label: "Permissões", href: "/averbadora/permissoes", icon: "⚿" },
+  { key: "conta", label: "Minha conta", href: "/averbadora/conta", icon: "👤" },
 ];
 
 export function AverbadoraLayout() {

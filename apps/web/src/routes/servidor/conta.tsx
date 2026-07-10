@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button, Card, Input, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { clearAtlasState } from "../../lib/session";
+import { GerenciarDoisFA } from "../../components/GerenciarDoisFA";
 import {
   MatriculaInfo,
   readActiveMatricula,
@@ -176,11 +177,12 @@ export function ServidorConta() {
         </div>
       </Card>
 
+      <GerenciarDoisFA />
+
       <Card>
-        <h3 style={{ marginTop: 0 }}>Seguranca</h3>
+        <h3 style={{ marginTop: 0 }}>Login biometrico</h3>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0 }}>
-          Login biometrico (Face/Touch ID) esta disponivel no app mobile. No portal web, recomendamos ativar 2FA por
-          e-mail.
+          Face/Touch ID esta disponivel no app mobile. No portal web, use 2FA acima.
         </p>
       </Card>
 

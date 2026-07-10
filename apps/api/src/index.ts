@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { authRoutes } from "./modules/auth/index.js";
+import { meRoutes } from "./modules/me/index.js";
 import { healthRoutes } from "./modules/health/index.js";
 import { servidoresRoutes } from "./modules/servidores/index.js";
 import { portalBancoRoutes } from "./modules/portal-banco/index.js";
@@ -55,6 +56,7 @@ app.use("/v1/*", async (c, next) => {
   await next();
 });
 app.route("/", authRoutes);
+app.route("/", meRoutes);
 app.route("/", servidoresRoutes);
 app.route("/", portalBancoRoutes);
 app.route("/", adminRoutes);

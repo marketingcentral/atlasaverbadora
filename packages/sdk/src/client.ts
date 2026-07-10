@@ -769,6 +769,26 @@ export class AtlasClient {
     return res;
   }
 
+  /** Self-service do usuario autenticado. Cobre 2FA hoje. */
+  readonly me = {
+    twoFactor: {
+      /** Status atual — { enabled, account }. */
+      status: () => this.request<{ enabled: boolean; account: string }>("/v1/me/2fa"),
+      /** Comeca setup — gera secret novo (nao persiste) + otpauth pro QR. */
+      setup: () =>
+        this.request<{ secret: string; otpauth: string; account: string; issuer: string; instrucoes: string[] }>(
+          "/v1/me/2fa/setup",
+          { method: "POST" },
+        ),
+      /** Confirma o setup com o codigo TOTP — so aqui persiste. */
+      confirm: (code: string) =>
+        this.request<{ ok: true; enabled: true }>("/v1/me/2fa/confirm", { method: "POST", body: { code } }),
+      /** Desativa 2FA (precisa do codigo atual). */
+      disable: (code: string) =>
+        this.request<{ ok: true; enabled: false }>("/v1/me/2fa/disable", { method: "POST", body: { code } }),
+    },
+  };
+
   // ===== Recuperar senha do servidor (fluxo antigo, CPF-only — mantido pra retrocompat) =====
   readonly esqueciSenha = {
     solicitar: (cpf: string) =>

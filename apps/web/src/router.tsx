@@ -40,6 +40,8 @@ import { AdminBateCarteira } from "./routes/averbadora/bate-carteira";
 import { AdminAdf } from "./routes/averbadora/adf";
 import { AdminAuditoria } from "./routes/averbadora/auditoria";
 import { AdminPerfis } from "./routes/averbadora/perfis";
+import { AverbadoraConta } from "./routes/averbadora/conta";
+import { AverbadoraPermissoes } from "./routes/averbadora/permissoes";
 import { PrefeituraLayout } from "./routes/prefeitura/layout";
 import { PrefeituraDashboard } from "./routes/prefeitura/dashboard";
 import { PrefeituraServidores } from "./routes/prefeitura/servidores";
@@ -54,6 +56,8 @@ import { PrefeituraPerfis } from "./routes/prefeitura/perfis";
 import { PrefeituraComunicados } from "./routes/prefeitura/comunicados";
 import { PrefeituraMateriais } from "./routes/prefeitura/materiais";
 import { BancoLayout } from "./routes/banco/layout";
+import { BancoConta } from "./routes/banco/conta";
+import { PrefeituraConta } from "./routes/prefeitura/conta";
 import { BancoVisaoGeral } from "./routes/banco/visao-geral";
 import { BancoPropostas } from "./routes/banco/propostas/index";
 import { BancoPropostaDetalhe } from "./routes/banco/propostas/detalhe";
@@ -161,6 +165,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "relatorios/consignacoes", element: <BancoRelatorioConsignacoes /> },
           { path: "relatorios/gerador", element: <BancoRelatorioGerador /> },
           { path: "relatorios/faturamento", element: <BancoRelatorioFaturamento /> },
+          { path: "conta", element: <BancoConta /> },
         ],
       },
     ],
@@ -200,6 +205,8 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "api/docs", element: <AverbadoraApiDocs /> },
           { path: "api/tokens", element: <AverbadoraApiTokens /> },
           { path: "api/webhooks", element: <AverbadoraApiWebhooks /> },
+          { path: "conta", element: <AverbadoraConta /> },
+          { path: "permissoes", element: <AverbadoraPermissoes /> },
         ],
       },
     ],
@@ -226,6 +233,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "perfis", element: <PrefeituraPerfis /> },
           { path: "comunicados", element: <PrefeituraComunicados /> },
           { path: "materiais", element: <PrefeituraMateriais /> },
+          { path: "conta", element: <PrefeituraConta /> },
         ],
       },
     ],
