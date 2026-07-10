@@ -118,21 +118,21 @@ export function ServidorDashboard() {
           margem e os 2 blocos de atalho abaixo. */}
       <ComunicadoCarrossel comunicados={comunicadosCarrossel} />
 
-      {/* 2 blocos grandes lado a lado — Portabilidade e Telemedicina. */}
+      {/* 2 blocos grandes lado a lado — Portabilidade e Beneficios. */}
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, 1fr)" }}>
         <AtalhoCard
           titulo="Portabilidade"
           descricao="Consolide em outro banco com taxa menor e reduza sua parcela mensal."
           icon="🔁"
           accent="gold"
-          onClick={() => nav("/servidor/marketplace/portabilidade")}
+          onClick={() => nav("/servidor/portabilidade")}
         />
         <AtalhoCard
-          titulo="Telemedicina"
-          descricao="Consulta médica online sem custo, para você e sua família."
-          icon="🏥"
+          titulo="Benefícios"
+          descricao="Descontos em farmácias, mercado, saúde, educação e mais."
+          icon="🎁"
           accent="emerald"
-          onClick={() => nav("/servidor/saude")}
+          onClick={() => nav("/servidor/beneficios")}
         />
       </div>
     </div>

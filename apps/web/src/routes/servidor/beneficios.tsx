@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card } from "@atlas/ui/web";
 import { useQuery } from "@tanstack/react-query";
 import { atlas } from "../../lib/sdk";
@@ -19,6 +20,7 @@ const CATEGORIAS: { id: Categoria; label: string }[] = [
 ];
 
 export function ServidorBeneficios() {
+  const nav = useNavigate();
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
   const [tab, setTab] = useState<Categoria>("todos");
 
@@ -58,6 +60,29 @@ export function ServidorBeneficios() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 1080, width: "100%", margin: "0 auto" }}>
+      <button
+        type="button"
+        onClick={() => nav("/servidor/dashboard")}
+        style={{
+          alignSelf: "flex-start",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 12px",
+          borderRadius: 999,
+          border: "1px solid var(--border)",
+          background: "transparent",
+          color: "var(--text-muted)",
+          fontSize: 13,
+          fontWeight: 600,
+          cursor: "pointer",
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+      >
+        ← Voltar ao início
+      </button>
+
       <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>
           <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
