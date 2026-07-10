@@ -9,6 +9,7 @@ import io.atlas.servidor.core.ApiException
 import io.atlas.servidor.core.ServiceLocator
 import io.atlas.servidor.core.UiState
 import io.atlas.servidor.core.isReservaPendente
+import io.atlas.servidor.core.produtoDaProposta
 import io.atlas.servidor.data.remote.dto.PropostaDto
 import kotlinx.coroutines.launch
 
@@ -31,9 +32,15 @@ class EmAnaliseViewModel : ViewModel() {
             state = UiState.Loading
             try {
                 val r = repo.getPropostas(prefs.selectedMatricula)
-                // Banco aprovou / proposta encerrou → sem reserva pendente → libera a margem.
-                if (r.propostas.none { isReservaPendente(it.situacao) }) {
-                    prefs.selectedMatricula?.let { prefs.clearSimLock(it) }
+                // Libera a trava dos produtos que não têm mais proposta pendente (por produto).
+                val pendentes = r.propostas
+                    .filter { isReservaPendente(it.situacao) }
+                    .map { produtoDaProposta(it.tipoContrato) }
+                    .toSet()
+                prefs.selectedMatricula?.let { mat ->
+                    listOf("EMPRESTIMO", "CARTAO_CONSIGNADO").forEach { p ->
+                        if (p !in pendentes) prefs.clearSimLock(mat, p)
+                    }
                 }
                 state = UiState.Success(r.propostas)
             } catch (e: ApiException) {
@@ -51,7 +58,10 @@ class EmAnaliseViewModel : ViewModel() {
             } catch (_: ApiException) {
                 // Mesmo se a remoção server-side falhar, libera a trava local pra não travar o teste.
             }
-            prefs.selectedMatricula?.let { prefs.clearSimLock(it) }
+            // Removeu tudo que estava em análise → libera a trava de todos os produtos.
+            prefs.selectedMatricula?.let { mat ->
+                listOf("EMPRESTIMO", "CARTAO_CONSIGNADO").forEach { prefs.clearSimLock(mat, it) }
+            }
             load()
             onDone()
         }

@@ -110,8 +110,9 @@ fun InicioScreen(
         is UiState.Error -> ErrorBox(s.message, onRetry = { vm.load() }, modifier = Modifier.background(Fundo))
         is UiState.Success -> {
             val info = vm.current()
-            val expiry = vm.lockExpiry()
-            val locked = expiry != null && expiry > now
+            // Trava por produto: empréstimo em análise não bloqueia o cartão, e vice-versa.
+            val lockEmprestimo = vm.lockExpiry(Produtos.EMPRESTIMO).let { it != null && it > now }
+            val lockCartao = vm.lockExpiry(Produtos.CARTAO_CONSIGNADO).let { it != null && it > now }
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -132,7 +133,8 @@ fun InicioScreen(
                     Spacer(Modifier.height(12.dp))
                     ProdutosSection(
                         info = info,
-                        locked = locked,
+                        lockEmprestimo = lockEmprestimo,
+                        lockCartao = lockCartao,
                         onSimularProduto = onSimularProduto,
                         onOpenMarketplace = onOpenMarketplace,
                         onOpenAnalise = onOpenAnalise,
@@ -294,7 +296,8 @@ private fun firstName(name: String): String {
 @Composable
 private fun ProdutosSection(
     info: MatriculaInfoDto,
-    locked: Boolean,
+    lockEmprestimo: Boolean,
+    lockCartao: Boolean,
     onSimularProduto: (String) -> Unit,
     onOpenMarketplace: () -> Unit,
     onOpenAnalise: () -> Unit,
@@ -307,14 +310,15 @@ private fun ProdutosSection(
     val cartaoCredito = porTipo[Produtos.CARTAO_CONSIGNADO] ?: MargemTipoDto(Produtos.CARTAO_CONSIGNADO, 0.0, 0.0)
     val cartaoBeneficio = porTipo[Produtos.CARTAO_BENEFICIOS] ?: MargemTipoDto(Produtos.CARTAO_BENEFICIOS, 0.0, 0.0)
 
+    val avisoAnalise = "Você tem uma solicitação em análise. Sua margem está bloqueada."
     ProdutoCard(
         emoji = "💵",
         titulo = "Empréstimo Consignado",
         descricao = "Dinheiro na sua conta, descontado direto da folha.",
         margem = emprestimo,
-        aviso = if (locked) "Você tem uma solicitação em análise. Sua margem está bloqueada." else null,
-        textoBotao = if (locked) "Acompanhar análise" else "Simular",
-        onClick = if (locked) onOpenAnalise else ({ onSimularProduto(Produtos.EMPRESTIMO) }),
+        aviso = if (lockEmprestimo) avisoAnalise else null,
+        textoBotao = if (lockEmprestimo) "Acompanhar análise" else "Simular",
+        onClick = if (lockEmprestimo) onOpenAnalise else ({ onSimularProduto(Produtos.EMPRESTIMO) }),
     )
     Spacer(Modifier.height(14.dp))
     ProdutoCard(
@@ -322,9 +326,9 @@ private fun ProdutosSection(
         titulo = "Cartão de Crédito Consignado",
         descricao = "Cartão com limite próprio e fatura descontada em folha.",
         margem = cartaoCredito,
-        aviso = null,
-        textoBotao = "Simular",
-        onClick = { onSimularProduto(Produtos.CARTAO_CONSIGNADO) },
+        aviso = if (lockCartao) avisoAnalise else null,
+        textoBotao = if (lockCartao) "Acompanhar análise" else "Simular",
+        onClick = if (lockCartao) onOpenAnalise else ({ onSimularProduto(Produtos.CARTAO_CONSIGNADO) }),
     )
     Spacer(Modifier.height(14.dp))
     ProdutoCard(

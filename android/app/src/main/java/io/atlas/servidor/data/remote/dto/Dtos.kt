@@ -93,6 +93,7 @@ data class CriarPropostaRequest(
     val taxaAm: Double,
     val matricula: String? = null,
     val bancoNome: String? = null,
+    val produto: String? = null,
 )
 
 data class PropostaResponse(
@@ -114,6 +115,7 @@ data class PropostaDto(
     val parcela: Double = 0.0,
     val taxaAm: Double = 0.0, // já em % (ex.: 1.79)
     val situacao: String? = null,
+    val tipoContrato: String? = null,
     val folhaStatus: String? = null,
     val folhaMotivo: String? = null,
     val data: String? = null,

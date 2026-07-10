@@ -60,8 +60,9 @@ class PortabilidadeViewModel : ViewModel() {
         submitting = true
         viewModelScope.launch {
             try {
-                repo.criarProposta(e.saldoDevedor, e.parcelasRestantes, taxaAtlas, mat, "Banco Atlas (portabilidade)")
-                prefs.setSimLock(mat)
+                // Portabilidade é um refinanciamento de empréstimo → trava o produto EMPRESTIMO.
+                repo.criarProposta(e.saldoDevedor, e.parcelasRestantes, taxaAtlas, mat, "Banco Atlas (portabilidade)", "EMPRESTIMO")
+                prefs.setSimLock(mat, "EMPRESTIMO")
             } catch (ex: ApiException) {
                 // best-effort
             }

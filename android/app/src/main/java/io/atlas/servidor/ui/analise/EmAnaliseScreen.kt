@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -62,23 +63,15 @@ fun emAnaliseAtivas(propostas: List<PropostaDto>): List<PropostaDto> = propostas
  *  `onMudou` avisa o pai (HomeViewModel) para revalidar contagens/margem após liberar. */
 @Composable
 fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel(), onMudou: () -> Unit = {}) {
+    // Recarrega ao aparecer — reflete a decisão do banco sem botão manual.
+    LaunchedEffect(Unit) { vm.load() }
     Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Text(
-                "Solicitações enviadas ao banco. O status atualiza conforme a análise " +
-                    "(banco) e a aplicação em folha (prefeitura).",
-                color = InkMuted,
-                fontSize = 13.sp,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = { vm.load() }) {
-                Text("Atualizar", color = Verde, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-        }
+        Text(
+            "Solicitações enviadas ao banco. O status atualiza conforme a análise " +
+                "(banco) e a aplicação em folha (prefeitura).",
+            color = InkMuted,
+            fontSize = 13.sp,
+        )
         Spacer(Modifier.height(12.dp))
 
         when (val s = vm.state) {

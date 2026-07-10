@@ -38,10 +38,10 @@ class ServidorRepository(
     suspend fun removerPropostasEmAnalise(matricula: String?) = safeApi(gson) { api.removerPropostasEmAnalise(matricula) }
 
     /** Envia a proposta ao ecossistema — cria a pré-reserva que o banco recebe. */
-    suspend fun criarProposta(valor: Double, parcelas: Int, taxaAm: Double, matricula: String, bancoNome: String) =
+    suspend fun criarProposta(valor: Double, parcelas: Int, taxaAm: Double, matricula: String, bancoNome: String, produto: String) =
         safeApi(gson) {
             api.criarProposta(
-                io.atlas.servidor.data.remote.dto.CriarPropostaRequest(valor, parcelas, taxaAm, matricula, bancoNome),
+                io.atlas.servidor.data.remote.dto.CriarPropostaRequest(valor, parcelas, taxaAm, matricula, bancoNome, produto),
             )
         }
 

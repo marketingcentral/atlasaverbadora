@@ -68,7 +68,12 @@ import io.atlas.servidor.ui.theme.Verde
 fun ContratosScreen(vm: HomeViewModel) {
     // Abas: 0 Ativos · 1 Em análise · 2 Histórico. Quem solicita uma proposta cai na 1.
     var tab by remember { mutableIntStateOf(0) }
-    LaunchedEffect(Unit) { vm.consumirAbaContratos()?.let { tab = it } }
+    // Recarrega do servidor ao abrir Contratos — reflete a decisão do banco (aprovou/recusou)
+    // sem precisar de botão manual.
+    LaunchedEffect(Unit) {
+        vm.consumirAbaContratos()?.let { tab = it }
+        vm.load(force = true)
+    }
 
     when (val s = vm.matriculasState) {
         is UiState.Loading -> LoadingBox(Modifier.background(Fundo))

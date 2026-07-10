@@ -170,7 +170,7 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     exclusividadesCartaoConsig: pref?.exclusividadesCartaoConsig ?? "",
     margem: {
       servidor_id: servidorId, matricula: e.matricula, prefeitura_id: prefId,
-      margem: { salario_base: e.salarioLiquido, comprometido: round2(comprometido), disponivel: emp.disponivel, percentual_uso: percentualUso(e.salarioLiquido, comprometido, "EMPRESTIMO") },
+      margem: { salario_base: e.salarioLiquido, comprometido: round2(comprometidoPorMargem("EMPRESTIMO")), disponivel: emp.disponivel, percentual_uso: percentualUso(e.salarioLiquido, comprometidoPorMargem("EMPRESTIMO"), "EMPRESTIMO") },
       margens_por_tipo: margens,
       fonte: { tipo: "folha_prefeitura" as const, sincronizado_em: new Date().toISOString(), cache_status: "MISS" as const },
     },
@@ -677,8 +677,13 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         taxaAm: z.number().positive(),
         matricula: z.string().optional(),
         bancoNome: z.string().optional(),
+        // Produto solicitado — a logica de credito e a mesma, muda so a margem/rotulo.
+        // Cartao de credito consignado -> ECONSIGNADO; qualquer outro -> EMPRESTIMO.
+        produto: z.enum(["EMPRESTIMO", "CARTAO_CONSIGNADO"]).optional(),
       })
       .parse(await c.req.json());
+    const tipoContrato = body.produto === "CARTAO_CONSIGNADO" ? "ECONSIGNADO" : "EMPRESTIMO";
+    const produtoLabel = body.produto === "CARTAO_CONSIGNADO" ? "cartão de crédito consignado" : "empréstimo consignado";
     // A matricula ATIVA no app do servidor eh a fonte de verdade — e vem no
     // body.matricula. Antes o backend priorizava a matricula do JWT (fixada
     // no login) e o body era so fallback, entao servidor com acumulacao de
@@ -697,12 +702,13 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // SEGURANÇA (server-side): a parcela nunca pode exceder a margem consignável
     // disponível da matrícula. O cliente já limita o valor, mas o backend é a fonte
     // de verdade — sem isto, uma chamada adulterada criaria empréstimo acima da margem.
-    // Compromete apenas o bucket EMPRESTIMO — cartao consig/beneficio nao
-    // afetam a margem de emprestimo (buckets independentes).
+    // Valida contra a margem DO PRODUTO: cada bucket tem limite proprio — cartao de
+    // credito consignado nao consome a margem de emprestimo, e vice-versa.
+    const margemTipo = body.produto === "CARTAO_CONSIGNADO" ? "CARTAO_CONSIGNADO" : "EMPRESTIMO";
     const comprometidoAtual = listContratos({ matricula: entry.matricula })
-      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
+      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === margemTipo)
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
-    const margemDisp = margemDisponivel(entry.salarioLiquido, comprometidoAtual, "EMPRESTIMO");
+    const margemDisp = margemDisponivel(entry.salarioLiquido, comprometidoAtual, margemTipo);
     if (round2(cet.parcela) > round2(margemDisp) + 0.01) {
       const brl = (n: number) => `R$ ${round2(n).toFixed(2).replace(".", ",")}`;
       throw new HttpError(
@@ -720,7 +726,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       cpfMasked: entry.cpfMasked,
       convenioId: conv?.id ?? entry.idConvenio,
       convenio: conv?.nome ?? "Banco Atlas",
-      tipoContrato: "EMPRESTIMO",
+      tipoContrato,
       valorFinanciado: body.valor,
       parcelas: body.parcelas,
       taxaAm: body.taxaAm,

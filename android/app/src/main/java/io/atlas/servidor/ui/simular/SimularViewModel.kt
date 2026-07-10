@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import io.atlas.servidor.core.ApiException
 import io.atlas.servidor.core.ServiceLocator
 import io.atlas.servidor.core.isReservaPendente
+import io.atlas.servidor.core.produtoDaProposta
 import io.atlas.servidor.data.local.ProposalRequestEntity
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
 import io.atlas.servidor.data.remote.dto.OfertaDto
@@ -71,11 +72,14 @@ class SimularViewModel : ViewModel() {
                     ?: mres.data.matriculas.firstOrNull()
                 ofertas = try { repo.ofertas().data.ofertas } catch (e: ApiException) { emptyList() }
                 ofertas.firstOrNull()?.let { selectOferta(it) }
-                // Banco aprovou / proposta encerrou → sem reserva pendente → libera a trava.
+                // Banco aprovou / proposta encerrou → sem reserva pendente DESTE produto → libera a trava.
                 try {
                     val props = repo.getPropostas(prefs.selectedMatricula).propostas
-                    if (props.none { isReservaPendente(it.situacao) }) {
-                        (matricula?.matricula ?: prefs.selectedMatricula)?.let { prefs.clearSimLock(it) }
+                    val pendenteDoProduto = props.any {
+                        isReservaPendente(it.situacao) && produtoDaProposta(it.tipoContrato) == produto
+                    }
+                    if (!pendenteDoProduto) {
+                        (matricula?.matricula ?: prefs.selectedMatricula)?.let { prefs.clearSimLock(it, produto) }
                     }
                 } catch (_: ApiException) { /* sem rede: mantém a trava */ }
                 // Start at ~60% of the maximum that fits the margin.
@@ -103,7 +107,7 @@ class SimularViewModel : ViewModel() {
      *  Usa a matrícula do VM ou, se ainda não carregou, a selecionada nas prefs. */
     fun lockExpiry(): Long? {
         val mat = matricula?.matricula ?: prefs.selectedMatricula ?: return null
-        return prefs.simLockExpiry(mat)
+        return prefs.simLockExpiry(mat, produto)
     }
 
     fun result(): Simulation.Result = Simulation.simular(valor, parcelas, taxaAm, margemDisponivel)
@@ -135,9 +139,10 @@ class SimularViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 // Envia ao ecossistema: cria a proposta que PERSISTE no Postgres e o BANCO recebe.
-                repo.criarProposta(r.valor, r.parcelas, taxaAm, m.matricula, "Banco Atlas")
+                repo.criarProposta(r.valor, r.parcelas, taxaAm, m.matricula, "Banco Atlas", produto)
                 // SÓ trava a margem e avança se a proposta REALMENTE foi criada no servidor.
-                prefs.setSimLock(m.matricula)
+                // Trava só ESTE produto — outros produtos seguem liberados.
+                prefs.setSimLock(m.matricula, produto)
                 submitting = false
                 onDone()
             } catch (e: ApiException) {

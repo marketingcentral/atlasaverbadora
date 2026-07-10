@@ -12,6 +12,11 @@ import java.util.UUID
 fun isReservaPendente(situacao: String?): Boolean =
     situacao?.contains("aguard", ignoreCase = true) == true
 
+/** Produto (para a trava) de uma proposta pelo seu tipoContrato.
+ *  ECONSIGNADO = cartão de crédito consignado; demais = empréstimo. */
+fun produtoDaProposta(tipoContrato: String?): String =
+    if (tipoContrato?.equals("ECONSIGNADO", ignoreCase = true) == true) "CARTAO_CONSIGNADO" else "EMPRESTIMO"
+
 /** Non-secret device/app preferences (stable device id, last selected matrícula). */
 class AppPrefs(context: Context) {
     private val prefs = context.getSharedPreferences("atlas_prefs", Context.MODE_PRIVATE)
@@ -49,24 +54,27 @@ class AppPrefs(context: Context) {
         prefs.edit().putStringSet("notif_dismissed", set).apply()
     }
 
-    // ---- Trava de simulação (48h por idMatricula) — espelha o simulation-lock.ts do web ----
+    // ---- Trava de simulação (48h por matrícula E POR PRODUTO) ----
+    // A trava vale só para o MESMO produto: ter um empréstimo em análise não impede
+    // solicitar um cartão de crédito consignado (cada um tem sua própria trava).
 
-    /** Cria a trava de 48h para a matrícula e retorna o timestamp de expiração (ms). */
-    fun setSimLock(idMatricula: String): Long {
+    /** Cria a trava de 48h para a matrícula+produto e retorna o timestamp de expiração (ms). */
+    fun setSimLock(idMatricula: String, produto: String): Long {
         val expiry = System.currentTimeMillis() + LOCK_DURATION_MS
-        prefs.edit().putLong(lockKey(idMatricula), expiry).apply()
+        prefs.edit().putLong(lockKey(idMatricula, produto), expiry).apply()
         return expiry
     }
 
-    fun clearSimLock(idMatricula: String) = prefs.edit().remove(lockKey(idMatricula)).apply()
+    fun clearSimLock(idMatricula: String, produto: String) =
+        prefs.edit().remove(lockKey(idMatricula, produto)).apply()
 
     /** Expiração da trava se ainda ativa (> agora); null se não há trava ou já expirou. */
-    fun simLockExpiry(idMatricula: String): Long? {
-        val e = prefs.getLong(lockKey(idMatricula), 0L)
+    fun simLockExpiry(idMatricula: String, produto: String): Long? {
+        val e = prefs.getLong(lockKey(idMatricula, produto), 0L)
         return if (e > System.currentTimeMillis()) e else null
     }
 
-    private fun lockKey(idMatricula: String) = "sim_lock:$idMatricula"
+    private fun lockKey(idMatricula: String, produto: String) = "sim_lock:$idMatricula:$produto"
 
     private companion object {
         const val LOCK_DURATION_MS = 48L * 60L * 60L * 1000L
