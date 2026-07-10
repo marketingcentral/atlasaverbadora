@@ -113,8 +113,9 @@ export function ServidorConta() {
       <Card>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
           <h3 style={{ margin: 0 }}>Contato</h3>
-          {/* Botao Editar so aparece se a prefeitura permite (flag do backend). */}
-          {podeEditarContato && !editing ? (
+          {/* Botao Editar aparece sempre — cliente pediu que o servidor possa
+              editar e-mail/telefone direto da tela, independente da flag da prefeitura. */}
+          {!editing ? (
             <Button size="sm" variant="ghost" onClick={comecarEdicao}>
               Editar
             </Button>
@@ -139,17 +140,10 @@ export function ServidorConta() {
             </p>
           </div>
         ) : (
-          <>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
-              <ReadField label="E-mail" value={savedEmail} />
-              <ReadField label="Telefone" value={savedTel} />
-            </div>
-            {!podeEditarContato ? (
-              <p style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 12, marginBottom: 0 }}>
-                A sua prefeitura não permite alterar o contato pelo app. Para corrigir e-mail ou telefone, procure o setor de RH.
-              </p>
-            ) : null}
-          </>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
+            <ReadField label="E-mail" value={savedEmail} />
+            <ReadField label="Telefone" value={savedTel} />
+          </div>
         )}
 
         {savedAt ? (

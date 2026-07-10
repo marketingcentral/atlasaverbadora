@@ -168,6 +168,10 @@ export function ServidorContratos() {
                 <KV label="Parcelas" v={`${p.parcelas}x de ${fmtBRL(p.parcela)}`} />
                 <KV label="Taxa a.m." v={`${p.taxaAm.toFixed(2)}%`} />
               </div>
+
+              {/* Linha de progresso — em que etapa a proposta esta agora. */}
+              <ProgressoProposta estado={p.estado} />
+
               {p.estado === "aprovada" || p.estado === "aguardando_formalizacao" ? (
                 <div style={{
                   marginTop: 12, padding: "10px 12px", borderRadius: 8,
@@ -280,6 +284,74 @@ function KV({ label, v, accent }: { label: string; v: string; accent?: boolean }
       </div>
       <div style={{ marginTop: 4, color: accent ? "var(--accent)" : "var(--text)", fontWeight: accent ? 700 : 500 }}>
         {v}
+      </div>
+    </div>
+  );
+}
+
+/** Etapas do ciclo de vida da proposta pro servidor acompanhar. */
+const ETAPAS = ["Solicitada", "Em análise", "Aprovada", "Averbada"] as const;
+
+/** Mapeia o estado interno pro indice da etapa atual (0..3).
+ *  em_analise -> 1 (Em analise)
+ *  aprovada / aguardando_formalizacao -> 2 (Aprovada)
+ *  liberada -> 3 (Averbada, ja virou contrato — nao aparece em "em andamento", mas cobre defensivamente)
+ *  qualquer outro (recusada/expirada/cancelada) -> 0 (ficou na Solicitada) */
+function etapaAtual(estado: EstadoProposta): number {
+  if (estado === "em_analise") return 1;
+  if (estado === "aprovada" || estado === "aguardando_formalizacao") return 2;
+  if (estado === "liberada") return 3;
+  return 0;
+}
+
+function ProgressoProposta({ estado }: { estado: EstadoProposta }) {
+  const atual = etapaAtual(estado);
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+        {ETAPAS.map((nome, i) => {
+          const feita = i < atual;
+          const ativa = i === atual;
+          const cor = feita || ativa ? "var(--emerald-500)" : "var(--border-strong)";
+          const corTexto = feita || ativa ? "var(--emerald-500)" : "var(--text-dim)";
+          return (
+            <div key={nome} style={{ display: "flex", alignItems: "center", flex: i < ETAPAS.length - 1 ? 1 : "0 0 auto", gap: 6, minWidth: 0 }}>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, gap: 4 }}>
+                <div
+                  style={{
+                    width: ativa ? 14 : 10,
+                    height: ativa ? 14 : 10,
+                    borderRadius: "50%",
+                    background: feita || ativa ? cor : "transparent",
+                    border: `2px solid ${cor}`,
+                    boxShadow: ativa ? `0 0 0 4px color-mix(in srgb, ${cor} 20%, transparent)` : "none",
+                    transition: "all .2s ease",
+                  }}
+                  aria-hidden="true"
+                />
+                <span
+                  style={{
+                    fontSize: 10,
+                    fontWeight: ativa ? 700 : 600,
+                    color: corTexto,
+                    textAlign: "center",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {nome}
+                </span>
+              </div>
+              {i < ETAPAS.length - 1 ? (
+                <div style={{
+                  flex: 1,
+                  height: 2,
+                  background: i < atual ? "var(--emerald-500)" : "var(--border-strong)",
+                  marginBottom: 16, // alinha com o meio do circulo (o label vem abaixo)
+                }} />
+              ) : null}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
