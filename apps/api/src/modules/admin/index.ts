@@ -81,7 +81,8 @@ export function requireAverbadoraPerfil(j: JwtClaims, ...allowed: NonNullable<Jw
   if (!p) return; // dev-user sem claim — trata como supervisor
   if (p === "supervisor") return;
   if (!allowed.includes(p)) {
-    throw Errors.forbidden(`Este recurso exige um dos perfis: ${allowed.join(", ")}. Seu perfil: ${p}.`);
+    const perfisOk = allowed.length ? ["supervisor", ...allowed].join(", ") : "supervisor";
+    throw Errors.forbidden(`Este recurso exige um dos perfis: ${perfisOk}. Seu perfil: ${p}.`);
   }
 }
 
