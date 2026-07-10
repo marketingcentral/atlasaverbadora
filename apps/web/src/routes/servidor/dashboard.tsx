@@ -110,11 +110,15 @@ export function ServidorDashboard() {
         </div>
       </header>
 
-      {/* 3 cards de margem lado a lado — botao de acao em cada (herdado do colega, cliente aprovou). */}
+      {/* 3 cards de margem lado a lado — botao de acao em cada. */}
       <MinhaMargemPorModalidade info={info} />
 
-      {/* 2 blocos grandes lado a lado logo abaixo — Portabilidade e Beneficios.
-          Cliente pediu explicitamente esses dois "abaixo dos tipos de emprestimos". */}
+      {/* Carrossel de comunicados/vitrine da averbadora — publico=servidor.
+          Cliente pediu explicitamente o carrossel NO MEIO, entre os cards de
+          margem e os 2 blocos de atalho abaixo. */}
+      <ComunicadoCarrossel comunicados={comunicadosCarrossel} />
+
+      {/* 2 blocos grandes lado a lado — Portabilidade e Telemedicina. */}
       <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(2, 1fr)" }}>
         <AtalhoCard
           titulo="Portabilidade"
@@ -131,9 +135,6 @@ export function ServidorDashboard() {
           onClick={() => nav("/servidor/saude")}
         />
       </div>
-
-      {/* Carrossel de comunicados/vitrine da averbadora — publico=servidor. */}
-      <ComunicadoCarrossel comunicados={comunicadosCarrossel} />
     </div>
   );
 }
