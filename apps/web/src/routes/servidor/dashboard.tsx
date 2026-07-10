@@ -124,11 +124,11 @@ export function ServidorDashboard() {
           onClick={() => nav("/servidor/marketplace/portabilidade")}
         />
         <AtalhoCard
-          titulo="Benefícios"
-          descricao="Descontos em farmácias, mercado, saúde, educação e mais."
-          icon="🎁"
+          titulo="Telemedicina"
+          descricao="Consulta médica online sem custo, para você e sua família."
+          icon="🏥"
           accent="emerald"
-          onClick={() => nav("/servidor/beneficios")}
+          onClick={() => nav("/servidor/saude")}
         />
       </div>
 
@@ -272,7 +272,21 @@ function AtalhoCard({
       <span style={{ fontSize: 28 }}>{icon}</span>
       <span style={{ fontWeight: 700, fontSize: "1.05rem", color: "var(--text)" }}>{titulo}</span>
       <span style={{ fontSize: ".88rem", color: "var(--text-muted)", lineHeight: 1.4 }}>{descricao}</span>
-      <span style={{ marginTop: 6, fontSize: ".88rem", fontWeight: 700, color: accentColor }}>
+      {/* "Ver mais" com aparencia de botao (mesmo estando dentro de um <button> pai —
+          html-wise vira <span> visualmente estilizado, e o clique cai no pai). */}
+      <span
+        style={{
+          alignSelf: "flex-start",
+          marginTop: 8,
+          padding: "6px 14px",
+          borderRadius: 999,
+          background: `color-mix(in srgb, ${accentColor} 15%, transparent)`,
+          border: `1px solid ${accentColor}`,
+          color: accentColor,
+          fontWeight: 700,
+          fontSize: ".85rem",
+        }}
+      >
         Ver mais →
       </span>
     </button>
