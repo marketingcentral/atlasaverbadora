@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, FormActions, Pill, TextareaField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
@@ -11,7 +11,6 @@ import {
   fmtDateTime,
   getBancoPerfil,
   getProposta,
-  patchProposta,
   statusPill,
   travaInfo,
   type BancoProposta,
@@ -25,14 +24,19 @@ export function BancoPropostaDetalhe() {
   // hoje vazio) ou (b) contratos do backend (fluxo real). Primeiro tenta o
   // local; se nao achar, procura no atlas.banco.contratos() pelo ADF.
   const local = getProposta(id);
+  // Sempre busca a lista do backend — mesmo com "local", o status da proposta
+  // pode mudar por acao do proprio banco (aprovar/recusar) e queremos ver o
+  // reflexo imediatamente. O invalidate depois da mutation dispara o refetch.
   const apiQ = useQuery({
     queryKey: ["banco", "propostas-api"],
     queryFn: () => atlas.banco.contratos(),
     refetchInterval: 10_000,
-    enabled: !local,
   });
-  const fromApi = !local ? apiQ.data?.contratos.find((c) => c.adf === id) : undefined;
-  const proposta: BancoProposta | undefined = local ?? (fromApi ? contratoToProposta(fromApi) : undefined);
+  const fromApi = apiQ.data?.contratos.find((c) => c.adf === id);
+  // fromApi tem PRIORIDADE — reflete a decisao ja persistida (aprovada/recusada
+  // pelo backend). O seed local so entra como fallback pra propostas de
+  // demonstracao que nunca subiram pra API.
+  const proposta: BancoProposta | undefined = fromApi ? contratoToProposta(fromApi) : local;
   // Enquanto a query da API ainda esta carregando, nao mostra "nao encontrada".
   const carregandoApi = !local && apiQ.isLoading;
   const perfil = getBancoPerfil();
@@ -61,24 +65,27 @@ export function BancoPropostaDetalhe() {
 
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Wrapper generico que valida transicao legal + protege contra falha de
-  // persistencia. Cada acao passa o status esperado atual (`from`) e o novo.
-  const transicionar = (from: BancoProposta["status"][], to: BancoProposta["status"], extra?: Partial<BancoProposta>): boolean => {
-    if (!from.includes(proposta.status)) {
-      setSaveError(`Transicao invalida: nao e possivel mudar de "${STATUS_LABEL[proposta.status]}" para "${STATUS_LABEL[to]}".`);
-      return false;
-    }
-    const ok = patchProposta(proposta.idUnico, { status: to, ...(extra ?? {}) });
-    if (!ok) {
-      setSaveError("Falha ao salvar. Verifique o armazenamento do navegador.");
-      return false;
-    }
-    setSaveError(null);
-    return true;
-  };
+  const qc = useQueryClient();
+  // Aprovar/recusar agora batem no BACKEND (atlas.banco.acao) — a decisao
+  // persiste e o servidor ve a mudanca. Antes era so patchProposta em
+  // localStorage do banco, e o servidor nunca ficava sabendo.
+  const decidir = useMutation({
+    mutationFn: (v: { acao: "aprovar" | "cancelar"; motivo?: string }) =>
+      atlas.banco.acao(proposta.idUnico, v.acao, v.motivo ? { motivo: v.motivo } : undefined),
+    onSuccess: () => {
+      setSaveError(null);
+      qc.invalidateQueries({ queryKey: ["banco", "propostas-api"] });
+      qc.invalidateQueries({ queryKey: ["servidor", "propostas"] });
+      refresh();
+    },
+    onError: (err) => {
+      setSaveError((err as Error).message || "Falha ao salvar a decisão no servidor.");
+    },
+  });
 
   const aprovar = () => {
-    if (transicionar(["recebida", "em_analise", "mais_info"], "aprovada")) refresh();
+    if (decidir.isPending) return;
+    decidir.mutate({ acao: "aprovar" });
   };
 
   return (
@@ -191,6 +198,7 @@ export function BancoPropostaDetalhe() {
           proposta={proposta}
           podeAgir={perfil.perms.aprovacao}
           perfilNome={perfil.nome}
+          submitting={decidir.isPending}
           onAprovar={aprovar}
           onBaixarContrato={() => baixarContratoModelo(proposta)}
           onRecusar={() => setModal("recusar")}
@@ -207,10 +215,13 @@ export function BancoPropostaDetalhe() {
       {modal === "recusar" ? (
         <DecisaoModal
           proposta={proposta}
+          submitting={decidir.isPending}
           onClose={() => setModal(null)}
-          onDone={() => {
-            setModal(null);
-            refresh();
+          onConfirm={(motivo) => {
+            decidir.mutate(
+              { acao: "cancelar", motivo },
+              { onSuccess: () => setModal(null) },
+            );
           }}
         />
       ) : null}
@@ -222,6 +233,7 @@ function NextStep({
   proposta,
   podeAgir,
   perfilNome,
+  submitting,
   onAprovar,
   onBaixarContrato,
   onRecusar,
@@ -229,6 +241,7 @@ function NextStep({
   proposta: BancoProposta;
   podeAgir: boolean;
   perfilNome: string;
+  submitting: boolean;
   onAprovar: () => void;
   onBaixarContrato: () => void;
   onRecusar: () => void;
@@ -254,9 +267,11 @@ function NextStep({
           voce anexa o contrato modelo e entra em contato com o servidor pra formalizar offline.
         </div>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <Button variant="primary" onClick={onAprovar}>Aprovar proposta →</Button>
+          <Button variant="primary" onClick={onAprovar} disabled={submitting}>
+            {submitting ? "Aprovando..." : "Aprovar proposta →"}
+          </Button>
           <div style={{ marginLeft: "auto" }}>
-            <Button variant="ghost" onClick={onRecusar}>Recusar</Button>
+            <Button variant="ghost" onClick={onRecusar} disabled={submitting}>Recusar</Button>
           </div>
         </div>
       </div>
@@ -332,25 +347,18 @@ function Metric({ label, value, warn }: { label: string; value: string; warn?: b
 
 function DecisaoModal({
   proposta,
+  submitting,
   onClose,
-  onDone,
+  onConfirm,
 }: {
   proposta: BancoProposta;
+  submitting: boolean;
   onClose: () => void;
-  onDone: () => void;
+  onConfirm: (motivo: string | undefined) => void;
 }) {
   const [texto, setTexto] = useState("");
-  const confirmar = () => {
-    // Motivo opcional: se em branco, recusa sem justificativa (o banco pode
-    // preferir nao expor motivos internos — eh o padrao do mercado).
-    patchProposta(proposta.idUnico, {
-      status: "recusada",
-      motivoRecusa: texto.trim() || undefined,
-    });
-    onDone();
-  };
   return (
-    <div onClick={onClose} style={modalBackdrop}>
+    <div onClick={submitting ? undefined : onClose} style={modalBackdrop}>
       <div onClick={(e) => e.stopPropagation()} style={modalCard}>
         <h3 style={{ margin: 0 }}>Recusar proposta</h3>
         <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
@@ -365,9 +373,9 @@ function DecisaoModal({
           maxLength={300}
         />
         <FormActions>
-          <Button variant="ghost" type="button" onClick={onClose}>Voltar</Button>
-          <Button type="button" onClick={confirmar}>
-            Confirmar recusa
+          <Button variant="ghost" type="button" onClick={onClose} disabled={submitting}>Voltar</Button>
+          <Button type="button" onClick={() => onConfirm(texto.trim() || undefined)} disabled={submitting}>
+            {submitting ? "Recusando..." : "Confirmar recusa"}
           </Button>
         </FormActions>
       </div>

@@ -30,13 +30,17 @@ function notifyMovimentacao(
   const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
   if (!srv?.email) return;
   const mapa: Record<string, { titulo: string; mensagem: string }> = {
-    confirmar: {
+    aprovar: {
       titulo: `Proposta ${ct.adf} aprovada`,
-      mensagem: "Boa notícia! O banco aprovou seu empréstimo. Aguarde a confirmação do desconto em folha pela prefeitura.",
+      mensagem: "Boa notícia! O banco aprovou sua proposta. Em breve entrarão em contato pra fechar o contrato — a assinatura acontece presencialmente com o banco.",
+    },
+    confirmar: {
+      titulo: `Proposta ${ct.adf} averbada`,
+      mensagem: "Sua proposta foi averbada. Aguarde a confirmação do desconto em folha pela prefeitura.",
     },
     cancelar: {
-      titulo: `Proposta ${ct.adf} cancelada`,
-      mensagem: motivo ? `Sua proposta foi cancelada. Motivo: ${motivo}.` : "Sua proposta foi cancelada e a margem voltou a ficar disponível.",
+      titulo: `Proposta ${ct.adf} recusada`,
+      mensagem: motivo ? `Sua proposta foi recusada pelo banco. Motivo: ${motivo}.` : "Sua proposta foi recusada pelo banco e a margem voltou a ficar disponível.",
     },
     suspender: { titulo: `Contrato ${ct.adf} suspenso`, mensagem: motivo ? `Seu contrato foi suspenso. Motivo: ${motivo}.` : "Seu contrato foi suspenso pelo banco." },
     quitar: { titulo: `Contrato ${ct.adf} quitado`, mensagem: "Seu contrato foi quitado. A margem correspondente foi liberada." },
@@ -396,7 +400,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const j = c.get("jwt");
     requireBancoRole(j);
     const adf = c.req.param("adf");
-    const acao = z.enum(["quitar", "suspender", "cancelar", "alongar", "alterar", "confirmar"]).parse(c.req.param("acao"));
+    const acao = z.enum(["quitar", "suspender", "cancelar", "alongar", "alterar", "confirmar", "aprovar"]).parse(c.req.param("acao"));
     const raw = c.req.header("content-type")?.includes("json") ? await c.req.json().catch(() => ({})) : {};
     const body = z
       .object({ motivo: z.string().optional(), parcelasExtras: z.number().int().optional(), observacoes: z.string().optional(), codigoVerba: z.string().optional() })

@@ -346,13 +346,18 @@ function parseBrDate(s: string): string {
 
 export function contratoToProposta(ct: BancoContratoApi): BancoPropostaFromApi {
   const t = ct.situacao.toLowerCase();
-  const status: BancoPropostaStatus = t.includes("aguard")
-    ? "recebida"
-    : t.includes("cancel") || t.includes("suspens") || t.includes("recus")
-      ? "recusada"
-      : t.includes("ativo") || t.includes("averb") || t.includes("quitad")
-        ? "averbada"
-        : "recebida";
+  // Ordem importa: "aprov" antes de "ativo"/"averb" pra o novo estado
+  // intermediario "Aprovado" (banco aprovou a proposta mas ainda nao averbou —
+  // vai fechar o contrato offline).
+  const status: BancoPropostaStatus = t.includes("aprov")
+    ? "aprovada"
+    : t.includes("aguard")
+      ? "recebida"
+      : t.includes("cancel") || t.includes("suspens") || t.includes("recus")
+        ? "recusada"
+        : t.includes("ativo") || t.includes("averb") || t.includes("quitad")
+          ? "averbada"
+          : "recebida";
   const overlay = readOverlay();
   const patch = overlay[ct.adf];
   const base: BancoPropostaFromApi = {

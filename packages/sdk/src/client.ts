@@ -1186,7 +1186,7 @@ export class AtlasClient {
       this.request<BancoContratoFull>(`/v1/portal/banco/contratos/reservar/${tipo}`, { method: "POST", body }),
     acao: (
       adf: string,
-      acao: "quitar" | "suspender" | "cancelar" | "alongar" | "alterar" | "confirmar",
+      acao: "quitar" | "suspender" | "cancelar" | "alongar" | "alterar" | "confirmar" | "aprovar",
       body?: { motivo?: string; parcelasExtras?: number; observacoes?: string; codigoVerba?: string },
     ) =>
       this.request<{ contrato: BancoContratoFull }>(`/v1/portal/banco/contratos/${adf}/${acao}`, { method: "POST", body: body ?? {} }),

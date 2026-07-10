@@ -352,7 +352,7 @@ export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
 
 export function aplicarAcao(
   adf: string,
-  acao: "quitar" | "suspender" | "cancelar" | "alongar" | "alterar" | "confirmar",
+  acao: "quitar" | "suspender" | "cancelar" | "alongar" | "alterar" | "confirmar" | "aprovar",
   ator: string,
   motivo?: string,
   extra?: Record<string, unknown>,
@@ -384,6 +384,12 @@ export function aplicarAcao(
         if (typeof extra.observacoes === "string") c.observacoes = extra.observacoes;
         if (typeof extra.codigoVerba === "string") c.codigoVerba = extra.codigoVerba;
       }
+      break;
+    case "aprovar":
+      // Aprovar SEM averbar — o banco vai baixar o contrato modelo e fechar a
+      // formalizacao offline (ligacao/e-mail). Situacao intermediaria entre
+      // "Aguardando" e "Ativo": nem esta averbada, nem pendente de decisao.
+      para = "Aprovado";
       break;
     case "confirmar":
       para = "Ativo";
