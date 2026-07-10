@@ -104,7 +104,7 @@ export interface BancoOfertaFiltro {
   idadeMax?: number;
 }
 /** Produto ofertado pelo banco. */
-export type BancoOfertaTipo = "credito_novo" | "portabilidade";
+export type BancoOfertaTipo = "credito_novo" | "portabilidade" | "refinanciamento";
 
 export interface BancoOferta {
   id: string;

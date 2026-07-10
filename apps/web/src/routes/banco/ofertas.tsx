@@ -89,7 +89,12 @@ export function BancoOfertas() {
             <span>{o.titulo}</span>
           </span>
           <span style={{ fontSize: 10, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-dim)" }}>
-            {(o.tipo ?? "credito_novo") === "portabilidade" ? "🔁 Portabilidade" : "💰 Crédito novo"}
+            {(() => {
+              const t = o.tipo ?? "credito_novo";
+              if (t === "portabilidade") return "🔁 Portabilidade";
+              if (t === "refinanciamento") return "🔄 Refinanciamento";
+              return "💰 Crédito novo";
+            })()}
           </span>
         </div>
       ),
@@ -240,7 +245,7 @@ function OfertaModal({
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6 }}>
               Tipo de produto
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 }}>
               <TipoOptionCard
                 on={form.tipo === "credito_novo" || !form.tipo}
                 icone="💰"
@@ -254,6 +259,13 @@ function OfertaModal({
                 titulo="Portabilidade"
                 descricao="Trazer contrato de outro banco. CTA leva pro fluxo de portabilidade com este banco pré-selecionado."
                 onClick={() => setForm({ ...form, tipo: "portabilidade" })}
+              />
+              <TipoOptionCard
+                on={form.tipo === "refinanciamento"}
+                icone="🔄"
+                titulo="Refinanciamento"
+                descricao="Renegociar contrato existente com este banco. Só aparece pra servidores que já têm contrato ativo com você."
+                onClick={() => setForm({ ...form, tipo: "refinanciamento" })}
               />
             </div>
           </div>

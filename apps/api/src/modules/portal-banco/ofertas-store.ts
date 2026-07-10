@@ -22,12 +22,15 @@ export interface OfertaFiltro {
   idadeMax?: number;
 }
 
-/** Produto ofertado. "credito_novo" = emprestimo consignado tradicional (fluxo
- *  padrao termo/aceite). "portabilidade" = campanha "traga seu contrato do
- *  outro banco" — CTA leva pro /servidor/portabilidade com o banco desta oferta
- *  pre-selecionado como destino. Refin/cartao consignado/cartao beneficio ficam
- *  pra fatias B e C. Default (retrocompat): credito_novo. */
-export type OfertaTipo = "credito_novo" | "portabilidade";
+/** Produto ofertado.
+ *  - "credito_novo": emprestimo consignado tradicional (fluxo padrao termo/aceite).
+ *  - "portabilidade": campanha "traga seu contrato do outro banco" — CTA leva pro
+ *    /servidor/portabilidade com o banco desta oferta pre-selecionado como destino.
+ *  - "refinanciamento": renegociar contrato JA EXISTENTE com este mesmo banco
+ *    (aumenta prazo/reduz parcela/libera troco). CTA leva pro fluxo de refin
+ *    filtrado pelos contratos do banco desta oferta.
+ *  Cartao consignado/cartao beneficio ficam pra fatia C. Default (retrocompat): credito_novo. */
+export type OfertaTipo = "credito_novo" | "portabilidade" | "refinanciamento";
 
 export interface Oferta {
   id: string;

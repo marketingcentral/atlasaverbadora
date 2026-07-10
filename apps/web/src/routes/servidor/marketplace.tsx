@@ -76,19 +76,27 @@ export function ServidorMarketplace() {
           {ofertas.map((o) => {
             const valorSug = Math.min(o.valorMax, 10000);
             const parcelasSug = Math.min(o.parcelasMax, 60);
-            const ehPortab = o.tipo === "portabilidade";
-            const tipoLabel = ehPortab ? "🔁 Portabilidade" : "💰 Crédito novo";
-            const ctaLabel = ehPortab ? "Consolidar contratos →" : "Aceitar oferta →";
-            const href = ehPortab
-              ? `/servidor/portabilidade?banco=${encodeURIComponent(o.bancoNome)}`
-              : `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`;
+            let tipoLabel: string, tipoCor: string, ctaLabel: string, href: string;
+            if (o.tipo === "portabilidade") {
+              tipoLabel = "🔁 Portabilidade"; tipoCor = "var(--gold-500)";
+              ctaLabel = "Consolidar contratos →";
+              href = `/servidor/portabilidade?banco=${encodeURIComponent(o.bancoNome)}`;
+            } else if (o.tipo === "refinanciamento") {
+              tipoLabel = "🔄 Refinanciamento"; tipoCor = "var(--accent)";
+              ctaLabel = "Refinanciar contrato →";
+              href = `/servidor/portabilidade?modo=refin&banco=${encodeURIComponent(o.bancoNome)}`;
+            } else {
+              tipoLabel = "💰 Crédito novo"; tipoCor = "var(--emerald-500)";
+              ctaLabel = "Aceitar oferta →";
+              href = `/servidor/termo?tipo=novo&valor=${valorSug}&parcelas=${parcelasSug}&taxaAm=${(o.taxaAm * 100).toFixed(2)}&banco=${encodeURIComponent(o.bancoNome)}`;
+            }
             return (
               <Card key={o.id}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--accent)", textTransform: "uppercase" }}>
                     {o.bancoNome}
                   </div>
-                  <span style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: ehPortab ? "var(--gold-500)" : "var(--emerald-500)" }}>
+                  <span style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: tipoCor }}>
                     {tipoLabel}
                   </span>
                 </div>
