@@ -13,7 +13,9 @@ import { ServidorMarketplacePortabilidade } from "./routes/servidor/marketplace-
 import { ServidorMinhaMargem } from "./routes/servidor/minha-margem";
 import { ServidorSaude } from "./routes/servidor/saude";
 import { ServidorSimular } from "./routes/servidor/simular";
-import { ServidorPropostas } from "./routes/servidor/propostas";
+// Rota /servidor/propostas foi removida — propostas agora aparecem embutidas
+// em /servidor/contratos (secao "Em andamento" + Historico).
+// import { ServidorPropostas } from "./routes/servidor/propostas";
 import { ServidorContratos } from "./routes/servidor/contratos";
 import { ServidorConta } from "./routes/servidor/conta";
 import { ServidorBeneficios } from "./routes/servidor/beneficios";
@@ -123,7 +125,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "portabilidade", element: <ServidorPortabilidade /> },
           { path: "solicitar-cartao", element: <ServidorSolicitarCartao /> },
           { path: "termo", element: <ServidorTermo /> },
-          { path: "propostas", element: <ServidorPropostas /> },
+          // Rota /servidor/propostas removida — foi fundida em /servidor/contratos.
           { path: "contratos", element: <ServidorContratos /> },
           { path: "beneficios", element: <ServidorBeneficios /> },
           { path: "saude", element: <ServidorSaude /> },

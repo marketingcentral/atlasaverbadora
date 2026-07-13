@@ -12,7 +12,7 @@ import { STORAGE_KEY_ID, STORAGE_KEY_META, readActiveMatricula } from "../lib/ma
 import { atlas } from "../lib/sdk";
 import type { EstadoProposta, Proposta } from "../lib/propostas-data";
 
-/** Mesmo mapeamento do /servidor/propostas — situacao backend -> estado UI. */
+/** Mesmo mapeamento de /servidor/contratos — situacao backend -> estado UI. */
 function mapSituacao(situacao: string): EstadoProposta {
   const t = situacao.toLowerCase();
   if (t.includes("aguard")) return "em_analise";
@@ -56,7 +56,7 @@ export function NotificationBell() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Fonte unica com /servidor/propostas: mesma query, mesmo cache.
+  // Fonte unica com /servidor/contratos: mesma query, mesmo cache.
   // Poll rapido (5s) pra sensacao de tempo real — qualquer transicao de
   // estado (banco aceita, altera, recusa) aparece no sino em ate 5s.
   const q = useQuery({

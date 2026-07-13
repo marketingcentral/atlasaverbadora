@@ -21,7 +21,7 @@ export interface Notification {
   titulo: string;
   mensagem: string;
   quando: string;
-  /** Link interno (ex.: /servidor/propostas#PRO-9803). */
+  /** Link interno (ex.: /servidor/contratos#PRO-9803). */
   href: string;
   /** Link externo opcional (ex.: link do banco pra formalizar). Quando presente, abre em nova aba. */
   externalLink?: string;
@@ -76,8 +76,8 @@ function tempoRelativo(criadaEm: string): string {
 }
 
 function notifFromProposta(p: Proposta): Notification | null {
-  // Hash leva direto pro card na pagina de propostas (scroll + destaque).
-  const internalHref = `/servidor/propostas#${p.id}`;
+  // Hash leva direto pro card na pagina de contratos (secao "Em andamento"/Historico).
+  const internalHref = `/servidor/contratos#${p.id}`;
   switch (p.estado) {
     case "em_analise":
       return {
@@ -163,7 +163,7 @@ export function buildNotifications(): Notification[] {
 
 /**
  * Versao que aceita propostas ja carregadas (idealmente do backend via
- * useQuery). Isso mantem sino e /servidor/propostas na MESMA fonte de
+ * useQuery). Isso mantem sino e /servidor/contratos na MESMA fonte de
  * verdade, evitando notificar sobre proposta que ja nao existe no DB.
  * Opcionalmente inclui ofertas de credito criadas pelos bancos.
  */

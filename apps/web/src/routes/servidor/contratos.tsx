@@ -49,6 +49,15 @@ const ESTADO_LABEL: Record<EstadoProposta, string> = {
   liberada: "Averbada — virou contrato",
 };
 
+/** Rotulo do produto no card do contrato. ContratoMock nao tem tipoContrato
+ *  explicito; deduz por substring no nome do banco (compat com codigo antigo:
+ *  banco com "refin" no nome ⇒ Portabilidade). Quando o backend passar a mandar
+ *  tipoContrato no contrato, so trocar por mapProduto(c.tipoContrato). */
+function produtoContratoLabel(banco: string): string {
+  if (banco.toLowerCase().includes("refin")) return "Portabilidade";
+  return "Empréstimo consignado";
+}
+
 function estadoPillVariant(e: EstadoProposta): "aceita" | "pendente" | "expirado" | "averbado" {
   if (e === "liberada") return "averbado";
   if (e === "recusada" || e === "expirada" || e === "cancelada") return "expirado";
@@ -109,6 +118,8 @@ export function ServidorContratos() {
       parcela: p.parcela,
       taxaAm: p.taxaAm,
       data: p.data,
+      // Vem do backend quando existir — usado pra rotular o produto no card.
+      tipoContrato: p.tipoContrato,
     }));
   }, [propostasQ.data]);
 
@@ -179,7 +190,8 @@ export function ServidorContratos() {
           <p style={{ fontSize: 12, color: "var(--text-muted)", margin: 0 }}>
             Propostas que você criou e ainda estão sendo analisadas pelo banco. Quando forem averbadas, aparecem abaixo como contrato.
           </p>
-          {emAndamento.map((p) => (
+          {emAndamento.map((p) => {
+            return (
             <Card key={p.id} style={{ borderColor: "var(--gold-500)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                 <div>
@@ -218,7 +230,8 @@ export function ServidorContratos() {
                 </div>
               ) : null}
             </Card>
-          ))}
+            );
+          })}
         </section>
       ) : null}
 
@@ -243,7 +256,8 @@ export function ServidorContratos() {
             depois os contratos quitados. */}
         {tab === "historico" && propostasHistorico.length > 0 ? (
           <div style={{ display: "grid", gap: 12 }}>
-            {propostasHistorico.map((p) => (
+            {propostasHistorico.map((p) => {
+              return (
               <Card key={p.id} style={{ opacity: 0.85 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                   <div>
@@ -270,7 +284,8 @@ export function ServidorContratos() {
                 {/* Mesma linha de progresso — pinta em vermelho onde parou. */}
                 <ProgressoProposta estado={p.estado} />
               </Card>
-            ))}
+              );
+            })}
           </div>
         ) : null}
 
@@ -293,12 +308,19 @@ export function ServidorContratos() {
             {filtered.map((c) => {
               const pct = (c.parcelasPagas / c.total) * 100;
               const quitado = c.status === "Quitado";
+              const produto = produtoContratoLabel(c.banco);
               return (
                 <Card key={c.id}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                     <div>
-                      <div style={{ fontWeight: 700 }}>{c.banco}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontWeight: 700 }}>{c.banco}</span>
+                        {/* Rotulo do produto — mesmo estilo dos cards de proposta. */}
+                        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: "var(--accent)", padding: "2px 8px", borderRadius: 999, border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)", background: "color-mix(in srgb, var(--accent) 10%, transparent)" }}>
+                          {produto}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-mono)", marginTop: 4 }}>
                         Contrato #{c.id}
                       </div>
                     </div>
