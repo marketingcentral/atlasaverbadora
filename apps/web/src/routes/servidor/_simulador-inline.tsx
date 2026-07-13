@@ -312,6 +312,10 @@ export function SimuladorInline({
             Libera em {expiraEmFormatado}
           </div>
         </div>
+        {/* Igual ao app: leva pra tela de Contratos, onde faz o acompanhamento. */}
+        <div style={{ marginTop: 20 }}>
+          <Button onClick={() => nav("/servidor/contratos")}>Acompanhar análise →</Button>
+        </div>
       </Card>
     );
   }
@@ -606,6 +610,10 @@ function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produt
           <div style={{ marginTop: 4, fontSize: ".78rem", color: "var(--text-dim)" }}>
             Libera em {expiraEmFormatado}
           </div>
+        </div>
+        {/* Igual ao app: leva pra tela de Contratos, onde faz o acompanhamento. */}
+        <div style={{ marginTop: 20 }}>
+          <Button onClick={() => nav("/servidor/contratos")}>Acompanhar análise →</Button>
         </div>
       </Card>
     );
