@@ -699,6 +699,28 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
   })
 
+  // Apaga TODAS as propostas/contratos de uma ou mais matriculas — memoria +
+  // Postgres. Nao mexe em dados do servidor (nome/senha/email). Usado pra
+  // resetar cenarios de teste: "quero simular do zero, sem contratos travando
+  // margem". Se a matricula era so uma reserva, some. Se ja era um contrato
+  // averbado, tambem some — cuidado: nao existe "undo".
+  .post("/v1/admin/manutencao/purge-contratos-matricula", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({
+      matriculas: z.array(z.string().min(1)).min(1),
+    }).parse(await c.req.json());
+    let contratosPg = 0;
+    const erros: Record<string, string> = {};
+    try { contratosPg = await deleteContratosByMatriculas(c.env, body.matriculas); } catch (e) { erros.postgres = (e as Error).message; }
+    const contratosMem = removeContratosByMatricula(body.matriculas);
+    pushEvent("info", "admin.purge_matricula", `Purga de propostas: matriculas ${body.matriculas.join(", ")} → ${contratosPg} apagadas no Postgres, ${contratosMem} na memoria.`);
+    return c.json({
+      matriculas: body.matriculas,
+      contratosApagados: { postgres: contratosPg, memoria: contratosMem },
+      ...(Object.keys(erros).length ? { erros } : {}),
+    });
+  })
+
   // ===== IA (OpenAI) =====
   .get("/v1/admin/ai/config", async (c) => {
     requireAdmin(c.get("jwt"));
