@@ -230,7 +230,7 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     email: "marketingcentral.mkt2@gmail.com", // e-mail de teste p/ receber notificações reais
     telefone: "48991073451",
     codigoIbge: 4211900,
-    passwordHash: "289160db0d9f39f9ae1754c4ec9c16f90b50e32e09c5fb5481ae642b3d3d1a36", // sha256("teste123")
+    passwordHash: "7da852ae47737c9c8ed2d7f89f2b8cc113d586da226ef31a2642d213ea2db707", // sha256("@44515899")
   },
   {
     // Servidor de teste SEM senha — usar para testar o fluxo de PRIMEIRO ACESSO.

@@ -654,9 +654,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   // ===== Manutenção de contas de TESTE =====
-  // Zera os CPFs de teste (remove senha/e-mail/telefone + empréstimos) e mantém
-  // APENAS 01844730808 cadastrado com smlgordo@gmail.com (senha "teste123"). O roster
-  // é FIXO — o endpoint nunca toca um servidor real.
+  // Zera TODOS os 10 CPFs de teste (remove senha/e-mail/telefone + empréstimos) deixando-os
+  // como novos usuários que ainda NÃO fizeram o primeiro acesso. Também apaga os
+  // contratos/propostas do Diego (993410027) — a conta/login do Diego NÃO é tocada.
+  // O roster é FIXO — o endpoint nunca toca um servidor real.
   .post("/v1/admin/manutencao/reset-servidores-teste", async (c) => {
     requireAdmin(c.get("jwt"));
     await ensureServidoresLoaded(c.env);
@@ -672,45 +673,33 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       { cpf: "45668163890", matricula: "700100009" },
       { cpf: "44334721826", matricula: "700100010" },
     ];
-    // sha256("teste123")
-    const KEEPER = { cpf: "01844730808", email: "smlgordo@gmail.com", passwordHash: "289160db0d9f39f9ae1754c4ec9c16f90b50e32e09c5fb5481ae642b3d3d1a36" };
-    const limpar = TESTE.filter((t) => t.cpf !== KEEPER.cpf);
     const passos: Record<string, string> = {};
 
-    // 1) Zera os demais CPFs no Postgres.
+    // 1) Zera os 10 CPFs no Postgres (remove passwordHash/email/telefone) — ficam como
+    //    primeiro-acesso pendente.
     let contasZeradas = 0;
     try {
-      for (const t of limpar) if ((await clearServidorConta(c.env, t.cpf)) > 0) contasZeradas++;
+      for (const t of TESTE) if ((await clearServidorConta(c.env, t.cpf)) > 0) contasZeradas++;
     } catch (e) { passos.clearServidorConta = (e as Error).message; }
 
-    // 2) Apaga os empréstimos de TODAS as matrículas de teste + do Diego (993410027),
-    //    servidor principal de teste que deve ficar zerado. A conta do Diego (login/senha)
-    //    NÃO é tocada — só os contratos/propostas dele.
+    // 2) Apaga os empréstimos de TODAS as matrículas de teste + do Diego (993410027).
     const matriculas = [...TESTE.map((t) => t.matricula), "993410027"];
     let contratosPg = 0;
     try { contratosPg = await deleteContratosByMatriculas(c.env, matriculas); } catch (e) { passos.deleteContratos = (e as Error).message; }
     const contratosMem = removeContratosByMatricula(matriculas);
 
-    // 3) Mantém o KEEPER cadastrado com o e-mail fixo + senha "teste123".
-    try {
-      await setServidorContato(c.env, KEEPER.cpf, { email: KEEPER.email });
-      await setServidorPassword(c.env, KEEPER.cpf, KEEPER.passwordHash);
-    } catch (e) { passos.keeper = (e as Error).message; }
-
-    // 4) Reflete na cópia em memória deste isolate.
-    const limparSet = new Set(limpar.map((t) => t.cpf));
+    // 3) Reflete na cópia em memória deste isolate.
+    const cpfSet = new Set(TESTE.map((t) => t.cpf));
     for (const x of SERVIDORES_BUSCA_MOCK) {
-      if (limparSet.has(x.cpf)) { x.passwordHash = undefined; x.email = undefined; x.telefone = undefined; }
-      if (x.cpf === KEEPER.cpf) { x.email = KEEPER.email; x.passwordHash = KEEPER.passwordHash; }
+      if (cpfSet.has(x.cpf)) { x.passwordHash = undefined; x.email = undefined; x.telefone = undefined; }
     }
 
-    // 5) Libera pendências de primeiro-acesso desses CPFs (KV).
-    if (c.env.KV_SESSIONS) for (const t of limpar) await c.env.KV_SESSIONS.delete(`pa:${t.cpf}`);
+    // 4) Libera pendências de primeiro-acesso desses CPFs (KV).
+    if (c.env.KV_SESSIONS) for (const t of TESTE) await c.env.KV_SESSIONS.delete(`pa:${t.cpf}`);
 
-    pushEvent("info", "admin.reset_servidores_teste", `Reset de teste: ${contasZeradas} zeradas, ${contratosPg} empréstimos apagados. Mantido ${KEEPER.cpf}/${KEEPER.email}.`);
+    pushEvent("info", "admin.reset_servidores_teste", `Reset de teste: ${contasZeradas} contas zeradas (primeiro-acesso), ${contratosPg} empréstimos apagados.`);
     return c.json({
-      zeradas: limpar.map((t) => t.cpf),
-      mantido: { cpf: KEEPER.cpf, email: KEEPER.email, senha: "teste123" },
+      zeradas: TESTE.map((t) => t.cpf),
       contasZeradas,
       contratosApagados: { postgres: contratosPg, memoria: contratosMem },
       ...(Object.keys(passos).length ? { erros: passos } : {}),
