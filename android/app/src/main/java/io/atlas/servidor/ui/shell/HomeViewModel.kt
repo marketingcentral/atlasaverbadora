@@ -145,14 +145,15 @@ class HomeViewModel : ViewModel() {
         }
     }
 
-    /** Expiração da trava de um PRODUTO na matrícula ativa (null se liberado). Enquanto há
-     *  proposta desse produto em análise vale a trava de 48h; após a decisão do banco ela cai. */
-    fun lockExpiry(produto: String): Long? {
-        val mat = current()?.matricula ?: selectedMatricula ?: return null
-        val exp = prefs.simLockExpiry(mat, produto) ?: return null
+    /** Produto bloqueado para nova solicitação? Fonte da verdade = servidor: se há proposta
+     *  desse produto EM ANÁLISE (mesmo criada no OUTRO acesso — web), está bloqueado. A trava
+     *  local de 48h é só um atalho de UX enquanto o reconcile não rodou. */
+    fun produtoBloqueado(produto: String): Boolean {
         val pend = produtosPendentes
-        // Já sabemos que não há proposta pendente desse produto → não mostra travado.
-        return if (pend != null && produto !in pend) null else exp
+        if (pend != null) return produto in pend
+        // Ainda não consultou o servidor → usa a trava local como fallback.
+        val mat = current()?.matricula ?: selectedMatricula ?: return false
+        return prefs.simLockExpiry(mat, produto) != null
     }
 
     fun logout(onDone: () -> Unit) {

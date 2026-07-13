@@ -110,9 +110,10 @@ fun InicioScreen(
         is UiState.Error -> ErrorBox(s.message, onRetry = { vm.load() }, modifier = Modifier.background(Fundo))
         is UiState.Success -> {
             val info = vm.current()
-            // Trava por produto: empréstimo em análise não bloqueia o cartão, e vice-versa.
-            val lockEmprestimo = vm.lockExpiry(Produtos.EMPRESTIMO).let { it != null && it > now }
-            val lockCartao = vm.lockExpiry(Produtos.CARTAO_CONSIGNADO).let { it != null && it > now }
+            // Trava por produto (fonte = servidor): proposta em análise desse produto — mesmo
+            // criada na web — bloqueia. Empréstimo em análise não bloqueia o cartão, e vice-versa.
+            val lockEmprestimo = vm.produtoBloqueado(Produtos.EMPRESTIMO)
+            val lockCartao = vm.produtoBloqueado(Produtos.CARTAO_CONSIGNADO)
             Column(
                 modifier = Modifier
                     .fillMaxSize()

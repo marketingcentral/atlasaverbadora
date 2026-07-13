@@ -298,6 +298,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
+    await refreshContratos(c.env); // ve propostas/contratos criados em OUTRO isolate (app/web) — margem fresca
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     // Filtra matriculas arquivadas (soft-delete) — a averbadora pode arquivar
@@ -393,6 +394,13 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // a margem total. Assim o servidor nao consegue solicitar 2 cartoes
     // sobrepondo a mesma margem (fluxo espelho do emprestimo).
     const tipoMargem = body.produto === "cartao_consignado" ? "CARTAO_CONSIGNADO" : "CARTAO_BENEFICIOS";
+    // REGRA 48h / uma solicitacao por produto (autoritativa no servidor — app E web):
+    // ja ha solicitacao deste cartao em analise -> bloqueia nova ate o banco decidir / 48h.
+    const jaPendenteCartao = listContratos({ matricula: entry.matricula })
+      .some((ct) => /aguard/i.test(ct.situacao) && deriveTipoMargem(ct) === tipoMargem);
+    if (jaPendenteCartao) {
+      throw new HttpError(409, "proposta_pendente", "Voce ja tem uma solicitacao deste cartao em analise. Aguarde a decisao do banco ou a liberacao (48h).");
+    }
     const comprometidoBucket = listContratos({ matricula: entry.matricula })
       .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === tipoMargem)
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
@@ -705,6 +713,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // Valida contra a margem DO PRODUTO: cada bucket tem limite proprio — cartao de
     // credito consignado nao consome a margem de emprestimo, e vice-versa.
     const margemTipo = body.produto === "CARTAO_CONSIGNADO" ? "CARTAO_CONSIGNADO" : "EMPRESTIMO";
+    // REGRA 48h / uma solicitacao por produto (AUTORITATIVA no servidor — vale pra app E web):
+    // se ja ha uma proposta EM ANALISE deste produto, bloqueia nova. A reserva expira em 48h
+    // (normalizeContrato) ou some quando o banco decide — ai libera. Sem isto, cada cliente
+    // tinha so a trava local (localStorage), que nao cruzava entre app e web.
+    const jaPendente = listContratos({ matricula: entry.matricula })
+      .some((ct) => /aguard/i.test(ct.situacao) && deriveTipoMargem(ct) === margemTipo);
+    if (jaPendente) {
+      throw new HttpError(409, "proposta_pendente", "Voce ja tem uma solicitacao deste produto em analise. Aguarde a decisao do banco ou a liberacao (48h).");
+    }
     const comprometidoAtual = listContratos({ matricula: entry.matricula })
       .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === margemTipo)
       .reduce((acc, ct) => acc + ct.valorParcela, 0);

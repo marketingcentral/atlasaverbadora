@@ -83,9 +83,11 @@ fun SimularScreen(
         vm.error != null -> ErrorBox(vm.error!!, onRetry = { vm.load() }, modifier = Modifier.background(Fundo))
         else -> {
             val expiry = vm.lockExpiry()
-            val locked = expiry != null && expiry > now
-            if (locked) {
-                MargemTravadaLock(remainingMs = expiry!! - now, onVerAnalise = onSolicitado)
+            val localLock = expiry != null && expiry > now
+            // Bloqueia se: trava local de 48h OU o servidor já tem proposta deste produto em
+            // análise (inclusive criada na web). Assim a regra vale para os dois acessos.
+            if (localLock || vm.pendenteDoProduto) {
+                MargemTravadaLock(remainingMs = if (localLock) expiry!! - now else 0L, onVerAnalise = onSolicitado)
             } else if (produto == Produtos.CARTAO_CONSIGNADO) {
                 // Cartão tem fluxo próprio (limite/fatura), igual à web — não é simulador de parcelas.
                 CartaoConsignadoView(vm, onSolicitado, onVoltar)
@@ -114,27 +116,29 @@ private fun MargemTravadaLock(remainingMs: Long, onVerAnalise: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Sua margem está bloqueada por 48h após a última simulação. " +
-                "Aguarde a liberação para iniciar uma nova.",
+            "Você já tem uma solicitação deste produto em análise. A margem fica bloqueada até " +
+                "o banco decidir ou a liberação automática em 48h.",
             color = InkMuted,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
         )
-        Spacer(Modifier.height(24.dp))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            color = Ink,
-        ) {
-            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Liberação da margem em", color = Superficie.copy(alpha = 0.7f), fontSize = 13.sp)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    formatRemaining(remainingMs),
-                    color = Ambar,
-                    fontSize = 34.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                )
+        if (remainingMs > 0) {
+            Spacer(Modifier.height(24.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = Ink,
+            ) {
+                Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Liberação da margem em", color = Superficie.copy(alpha = 0.7f), fontSize = 13.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        formatRemaining(remainingMs),
+                        color = Ambar,
+                        fontSize = 34.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(24.dp))

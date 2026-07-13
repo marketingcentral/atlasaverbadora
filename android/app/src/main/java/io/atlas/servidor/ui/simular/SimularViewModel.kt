@@ -50,6 +50,10 @@ class SimularViewModel : ViewModel() {
     var produto by mutableStateOf(Produtos.EMPRESTIMO)
         private set
 
+    /** Há proposta DESTE produto em análise no servidor (bloqueia nova, mesmo vinda da web). */
+    var pendenteDoProduto by mutableStateOf(false)
+        private set
+
     val produtoLabel: String
         get() = if (produto == Produtos.CARTAO_CONSIGNADO) "Cartão de Crédito Consignado" else "Empréstimo Consignado"
 
@@ -72,10 +76,11 @@ class SimularViewModel : ViewModel() {
                     ?: mres.data.matriculas.firstOrNull()
                 ofertas = try { repo.ofertas().data.ofertas } catch (e: ApiException) { emptyList() }
                 ofertas.firstOrNull()?.let { selectOferta(it) }
-                // Banco aprovou / proposta encerrou → sem reserva pendente DESTE produto → libera a trava.
+                // Fonte da verdade = servidor: há proposta DESTE produto em análise (mesmo criada
+                // no outro acesso)? Bloqueia. Se não houver, libera a trava local.
                 try {
                     val props = repo.getPropostas(prefs.selectedMatricula).propostas
-                    val pendenteDoProduto = props.any {
+                    pendenteDoProduto = props.any {
                         isReservaPendente(it.situacao) && produtoDaProposta(it.tipoContrato) == produto
                     }
                     if (!pendenteDoProduto) {
