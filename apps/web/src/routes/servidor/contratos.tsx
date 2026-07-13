@@ -225,17 +225,6 @@ export function ServidorContratos() {
 
               {/* Linha de progresso — em que etapa a proposta esta agora. */}
               <ProgressoProposta estado={p.estado} />
-
-              {p.estado === "aprovada" || p.estado === "aguardando_formalizacao" ? (
-                <div style={{
-                  marginTop: 12, padding: "10px 12px", borderRadius: 8,
-                  background: "color-mix(in srgb, var(--gold-500) 10%, transparent)",
-                  border: "1px dashed var(--gold-500)",
-                  fontSize: 12.5, color: "var(--text-muted)",
-                }}>
-                  <b style={{ color: "var(--text)" }}>Próximo passo:</b> o {p.banco} entrará em contato para assinar o contrato — a formalização é feita direto com ele.
-                </div>
-              ) : null}
             </Card>
             );
           })}
