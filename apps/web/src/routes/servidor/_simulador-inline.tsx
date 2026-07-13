@@ -336,6 +336,7 @@ function Metric({ label, valor, accent, danger }: { label: string; valor: string
  */
 function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produto: "cartao_consignado" | "cartao_beneficio" }) {
   const nav = useNavigate();
+  const lockProduto: LockProduto = produto === "cartao_beneficio" ? "CARTAO_BENEFICIOS" : "CARTAO_CONSIGNADO";
   const meta = produto === "cartao_consignado"
     ? {
         titulo: "Cartão consignado",
@@ -372,7 +373,11 @@ function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produt
   const bancoDefault = "Banco Atlas"; // consistente com solicitar-cartao.tsx
 
   function solicitar() {
-    if (semMargem || excedeMargem) return;
+    if (semMargem || excedeMargem || !info) return;
+    // Trava de 48h por produto — mesma logica do emprestimo (SimuladorInline).
+    // Antes dessa linha, cartao ficava sem trava e o servidor podia refazer
+    // simulacao indefinidamente. Trava e SEPARADA da do emprestimo.
+    setLock(info.idMatricula, lockProduto);
     nav(`/servidor/solicitar-cartao?produto=${produto}&banco=${encodeURIComponent(bancoDefault)}&limite=${Math.round(limite)}`);
   }
 
