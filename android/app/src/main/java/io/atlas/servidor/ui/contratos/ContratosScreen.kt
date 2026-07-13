@@ -1,7 +1,5 @@
 package io.atlas.servidor.ui.contratos
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.animation.animateContentSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
@@ -23,12 +21,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -42,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import io.atlas.servidor.core.ContratoDownloader
 import io.atlas.servidor.core.UiState
 import io.atlas.servidor.data.remote.dto.ContratoDto
 import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
@@ -101,7 +98,6 @@ private fun ContratosContent(
     onTab: (Int) -> Unit,
     onMudou: () -> Unit,
 ) {
-    var lerContrato by remember { mutableStateOf<ContratoDto?>(null) }
     val saldoById = info.elegiveisPortabilidade.associate { it.id to it.saldoDevedor }
     // Uma proposta recusada/cancelada/expirada NÃO é contrato ativo — mesmo que o backend
     // ainda a devolva em `contratos`. Ela vive só no Histórico (via lista de propostas).
@@ -109,10 +105,6 @@ private fun ContratosContent(
     val ativos = info.contratos.filter { !it.status.equals("Quitado", ignoreCase = true) && it.id !in recusadasIds }
     val quitados = info.contratos.filter { it.status.equals("Quitado", ignoreCase = true) && it.id !in recusadasIds }
     val histCount = quitados.size + recusadas.size
-
-    lerContrato?.let { c ->
-        ContratoDialog(c = c, nome = info.nome, orgao = info.prefeitura, onVoltar = { lerContrato = null })
-    }
 
     Column(
         modifier = Modifier
@@ -142,7 +134,7 @@ private fun ContratosContent(
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     ativos.forEach { c ->
-                        ContratoCard(c, saldoById[c.id], onLer = { lerContrato = c })
+                        ContratoCard(c, saldoById[c.id])
                         Spacer(Modifier.height(12.dp))
                     }
                     Spacer(Modifier.height(24.dp))
@@ -159,7 +151,7 @@ private fun ContratosContent(
                         Spacer(Modifier.height(12.dp))
                     }
                     quitados.forEach { c ->
-                        ContratoCard(c, saldoById[c.id], onLer = { lerContrato = c })
+                        ContratoCard(c, saldoById[c.id])
                         Spacer(Modifier.height(12.dp))
                     }
                     Spacer(Modifier.height(24.dp))
@@ -269,7 +261,8 @@ private fun SegButton(label: String, count: Int, selected: Boolean, modifier: Mo
 }
 
 @Composable
-private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?, onLer: () -> Unit) {
+private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?) {
+    val context = LocalContext.current
     val tone = when {
         c.status.equals("Quitado", ignoreCase = true) -> ChipTone.Neutro
         c.status.equals("Averbado", ignoreCase = true) -> ChipTone.Ambar
@@ -323,77 +316,7 @@ private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?, onLer: () -> Uni
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(12.dp))
-        AtlasSecondaryButton(text = "Ver contrato", onClick = onLer)
+        // Baixa o CCB REAL anexado pelo banco na aprovação — igual à web.
+        AtlasSecondaryButton(text = "📄 Baixar Contrato", onClick = { ContratoDownloader.baixar(context, c.id) })
     }
-}
-
-@Composable
-private fun ContratoDialog(c: ContratoDto, nome: String, orgao: String, onVoltar: () -> Unit) {
-    val context = LocalContext.current
-    val temAnexo = !c.anexoUrl.isNullOrBlank()
-    val quitado = c.status.equals("Quitado", ignoreCase = true)
-    val atual = if (quitado) c.total else (c.parcelasPagas + 1).coerceAtMost(c.total)
-    fun abrirAnexo() {
-        // Documento do contrato anexado pelo banco — abre no visualizador do dispositivo.
-        c.anexoUrl?.let { url ->
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
-        }
-    }
-    AlertDialog(
-        onDismissRequest = onVoltar,
-        containerColor = Superficie,
-        title = { Text("Contrato ${c.id}", fontWeight = FontWeight.ExtraBold, color = Ink) },
-        text = {
-            Column(Modifier.verticalScroll(rememberScrollState())) {
-                InfoRow("Banco credor", c.banco)
-                InfoRow("Situação", c.status)
-                InfoRow("Servidor", nome)
-                InfoRow("Órgão", orgao)
-                Spacer(Modifier.height(6.dp))
-                Divider(color = io.atlas.servidor.ui.theme.Divider)
-                Spacer(Modifier.height(6.dp))
-                InfoRow("Valor financiado", Format.money(c.valorFinanciado))
-                InfoRow("Taxa", Format.rateAm(c.taxaAm))
-                InfoRow("Parcela", Format.money(c.parcela))
-                InfoRow("Parcela atual", "$atual/${c.total}", valueColor = Verde)
-                InfoRow("Próxima parcela", c.proximaParcela ?: "—")
-                Spacer(Modifier.height(12.dp))
-                if (temAnexo) {
-                    Text(
-                        "Documento oficial do contrato disponibilizado pelo banco.",
-                        color = InkMuted,
-                        fontSize = 12.sp,
-                    )
-                } else {
-                    Surface(
-                        color = io.atlas.servidor.ui.theme.AmbarSoft,
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            "O documento oficial assinado será anexado pelo banco e aparecerá " +
-                                "aqui para você visualizar. Por enquanto, mostramos os dados da operação.",
-                            color = Ink,
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(12.dp),
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (temAnexo) {
-                TextButton(onClick = { abrirAnexo() }) {
-                    Text("Abrir documento", color = Verde, fontWeight = FontWeight.Bold)
-                }
-            } else {
-                TextButton(onClick = onVoltar) {
-                    Text("Fechar", color = Verde, fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = if (temAnexo) {
-            { TextButton(onClick = onVoltar) { Text("Voltar", color = InkMuted, fontWeight = FontWeight.SemiBold) } }
-        } else null,
-    )
 }
