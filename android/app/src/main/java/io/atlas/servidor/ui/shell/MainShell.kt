@@ -50,6 +50,7 @@ import io.atlas.servidor.ui.embreve.EmBreveScreen
 import io.atlas.servidor.ui.inicio.InicioScreen
 import io.atlas.servidor.ui.navigation.Produtos
 import io.atlas.servidor.ui.navigation.Routes
+import io.atlas.servidor.ui.telemedicina.TelemedicinaScreen
 import io.atlas.servidor.ui.simular.SimularScreen
 import io.atlas.servidor.ui.theme.Divider
 import io.atlas.servidor.ui.theme.Fundo
@@ -145,12 +146,7 @@ fun MainShell(
                 )
             }
             composable(Routes.TAB_TELEMEDICINA) {
-                EmBreveScreen(
-                    titulo = "Telemedicina",
-                    emoji = "🩺",
-                    descricao = "Consultas médicas online para você e sua família, direto pelo aplicativo. " +
-                        "Estamos preparando tudo para você.",
-                )
+                TelemedicinaScreen(home = vm)
             }
             composable(Routes.TAB_CONTA) {
                 ContaScreen(

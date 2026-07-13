@@ -37,6 +37,10 @@ class ServidorRepository(
     /** Comunicados da averbadora (público servidor) — alimentam os slides do início. */
     suspend fun getComunicados() = safeApi(gson) { api.comunicados() }
 
+    /** Benefícios/parceiros por categoria (ex.: "saude" para a Telemedicina). */
+    suspend fun getBeneficios(categoria: String?, matricula: String?) =
+        safeApi(gson) { api.beneficios(categoria, matricula) }
+
     /** Solicita cartão consignado/benefício — cria reserva ECONSIGNADO no bucket do cartão. */
     suspend fun solicitarCartao(produto: String, bancoNome: String, limite: Double, matricula: String) =
         safeApi(gson) {

@@ -35,6 +35,13 @@ interface ApiService {
     @POST("v1/servidores/me/cartoes")
     suspend fun solicitarCartao(@Body body: io.atlas.servidor.data.remote.dto.SolicitarCartaoRequest): io.atlas.servidor.data.remote.dto.SolicitarCartaoResponse
 
+    /** Benefícios/parceiros por categoria (ex.: "saude" para a Telemedicina). */
+    @GET("v1/servidores/me/beneficios")
+    suspend fun beneficios(
+        @retrofit2.http.Query("categoria") categoria: String?,
+        @retrofit2.http.Query("matricula") matricula: String?,
+    ): io.atlas.servidor.data.remote.dto.BeneficiosResponse
+
     /** Solicita portabilidade — o banco recebe o pedido e avalia os contratos do servidor. */
     @POST("v1/servidores/me/portabilidade")
     suspend fun solicitarPortabilidade(@Body body: io.atlas.servidor.data.remote.dto.SolicitarPortabilidadeRequest): io.atlas.servidor.data.remote.dto.PortabilidadeSolicitadaResponse

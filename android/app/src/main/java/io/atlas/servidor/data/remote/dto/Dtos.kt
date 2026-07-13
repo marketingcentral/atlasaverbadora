@@ -155,6 +155,23 @@ data class ComunicadoDto(
 
 data class ComunicadosResponse(val comunicados: List<ComunicadoDto> = emptyList())
 
+/** Benefício/parceiro (saúde, alimentação, etc.) oferecido via Cartão Benefício. */
+data class LinkAcessoDto(val url: String, val textoBotao: String? = null)
+data class BeneficioDto(
+    val id: String,
+    val nome: String,
+    val categorias: List<String> = emptyList(),
+    val local: String? = null,
+    val icone: String? = null,
+    val cor: String? = null,
+    val descontoLabel: String? = null,
+    val descontoComplemento: String? = null,
+    val descricaoCurta: String? = null,
+    val bancoNome: String? = null,
+    val linkAcesso: LinkAcessoDto? = null,
+)
+data class BeneficiosResponse(val beneficios: List<BeneficioDto> = emptyList())
+
 data class SolicitarPortabilidadeRequest(val matricula: String? = null)
 data class PortabilidadeSolicitadaResponse(val id: String? = null, val situacao: String? = null)
 
