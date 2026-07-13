@@ -112,23 +112,34 @@ export function SimuladorInline({
     refetchInterval: 10_000,
     enabled: !!lockExpiresAt,
   });
-  // Filtra propostas pelo produto atual — a trava e por produto, entao so faz
-  // sentido checar pendencias do MESMO produto. Antes, uma proposta antiga de
-  // cartao ainda "Aguardando" mantinha a trava de emprestimo travada mesmo
-  // depois do emprestimo ja ter sido aprovado/averbado.
-  const temPendente = useMemo(() => {
-    return (propostasQ.data?.propostas ?? [])
-      .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto))
-      .some((p) => p.situacao.toLowerCase().includes("aguard"));
+  // REGRA DE NEGOCIO: a trava de 48h so pode ser liberada em DOIS casos:
+  //   (a) 48h naturalmente expiraram (handled pelo tick de setInterval acima), ou
+  //   (b) o banco EXPLICITAMENTE decidiu (aceitou ou recusou) alguma proposta
+  //       do mesmo produto travado.
+  // NAO liberar por: proposta simplesmente "sumiu", query sem dados, proposta
+  // expirada sem decisao, ou pendencias de OUTROS produtos — tudo isso podia
+  // causar a trava soltar cedo demais em versoes anteriores.
+  const bancoDecidiu = useMemo(() => {
+    const relevantes = (propostasQ.data?.propostas ?? [])
+      .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto));
+    if (relevantes.length === 0) return false; // sem propostas do produto ⇒ nao decidiu
+    return relevantes.some((p) => {
+      const s = p.situacao.toLowerCase();
+      // ACEITE explicito do banco
+      if (s.includes("ativo") || s.includes("aprov") || s.includes("averb") || s.includes("formaliz") || s.includes("quitad")) return true;
+      // RECUSA explicita do banco
+      if (s.includes("cancel") || s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) return true;
+      return false;
+    });
   }, [propostasQ.data, lockProduto]);
   useEffect(() => {
     if (!lockExpiresAt || !propostasQ.data) return;
-    if (!temPendente) {
+    if (bancoDecidiu) {
       const id = info?.idMatricula;
       if (id) clearLock(id, lockProduto);
       setLockExpiresAt(null);
     }
-  }, [propostasQ.data, temPendente, lockExpiresAt, info?.idMatricula, lockProduto]);
+  }, [propostasQ.data, bancoDecidiu, lockExpiresAt, info?.idMatricula, lockProduto]);
 
   const margemEmprestimo = useMemo(() => {
     if (!info) return 0;
