@@ -54,13 +54,13 @@ export function ServidorConta() {
           <ReadField label="Nome" value={nome} />
           <ReadField label="CPF" value={cpfMasked} />
           <ReadField label="Cargo" value={cargo} />
-          <ReadField label="Vinculo" value={vinculo} />
+          <ReadField label="Vínculo" value={vinculo} />
           <ReadField label="Matricula" value={matricula} />
           <ReadField label="Prefeitura" value={prefeitura} />
-          <ReadField label="Endereco" value={endereco} full />
+          <ReadField label="Endereço" value={endereco} full />
         </div>
         <p style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 16, marginBottom: 0 }}>
-          Esses dados sao mantidos pela sua prefeitura. Para corrigir, procure o setor de RH.
+          Esses dados são mantidos pela sua prefeitura. Para corrigir, procure o setor de RH.
         </p>
       </Card>
 
@@ -69,7 +69,7 @@ export function ServidorConta() {
       <RedefinirSenhaCard />
 
       <Card>
-        <h3 style={{ marginTop: 0 }}>Aparencia</h3>
+        <h3 style={{ marginTop: 0 }}>Aparência</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {(["system", "light", "dark"] as const).map((m) => (
             <Button key={m} variant={mode === m ? "primary" : "ghost"} size="sm" onClick={() => setMode(m)}>
@@ -141,7 +141,7 @@ function ContatoCard({ info }: { info: MatriculaInfo | null }) {
       setErro(null);
       setPasso("codigo");
     },
-    onError: (e) => setErro((e as Error).message || "Nao foi possivel enviar o codigo."),
+    onError: (e) => setErro((e as Error).message || "Não foi possível enviar o código."),
   });
 
   const confirmar = useMutation({
@@ -157,7 +157,7 @@ function ContatoCard({ info }: { info: MatriculaInfo | null }) {
       setCodigo(""); setDestinoMasked(null); setCodigoTeste(null); setErro(null);
       setPasso("fechado");
     },
-    onError: (e) => setErro((e as Error).message || "Nao foi possivel confirmar a alteracao."),
+    onError: (e) => setErro((e as Error).message || "Não foi possível confirmar a alteração."),
   });
 
   const cancelarMut = useMutation({
@@ -178,7 +178,7 @@ function ContatoCard({ info }: { info: MatriculaInfo | null }) {
     if (emailMudou) {
       // Validacao basica de e-mail (bate com o schema Zod do backend).
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draftEmail)) {
-        setErro("E-mail invalido."); return;
+        setErro("E-mail inválido."); return;
       }
     }
     enviarCodigo.mutate();
@@ -186,7 +186,7 @@ function ContatoCard({ info }: { info: MatriculaInfo | null }) {
 
   function submeterCodigo() {
     setErro(null);
-    if (!codigo.trim() || codigo.trim().length < 4) { setErro("Digite o codigo recebido no e-mail."); return; }
+    if (!codigo.trim() || codigo.trim().length < 4) { setErro("Digite o código recebido no e-mail."); return; }
     confirmar.mutate();
   }
 
@@ -215,27 +215,27 @@ function ContatoCard({ info }: { info: MatriculaInfo | null }) {
               onClick={submeterEdicao}
               disabled={enviarCodigo.isPending || (draftEmail === savedEmail && draftTel === savedTel)}
             >
-              {enviarCodigo.isPending ? "Enviando codigo..." : "Salvar alteracoes"}
+              {enviarCodigo.isPending ? "Enviando código..." : "Salvar alterações"}
             </Button>
             <Button variant="ghost" onClick={cancelar} disabled={enviarCodigo.isPending}>Cancelar</Button>
           </div>
           <p style={{ fontSize: ".82rem", color: "var(--text-muted)", margin: 0 }}>
-            Por seguranca, vamos enviar um codigo de verificacao para o seu e-mail cadastrado antes de salvar.
+            Por segurança, vamos enviar um código de verificação para o seu e-mail cadastrado antes de salvar.
           </p>
         </div>
       ) : passo === "codigo" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elev-2)", fontSize: ".88rem" }}>
-            Enviamos um codigo de 6 digitos para <b>{destinoMasked ?? "seu e-mail"}</b>. Ele expira em 10 minutos.
+            Enviamos um código de 6 dígitos para <b>{destinoMasked ?? "seu e-mail"}</b>. Ele expira em 10 minutos.
             {codigoTeste ? (
               <>
                 <br />
-                <span style={{ color: "var(--gold-500)" }}>Modo teste — codigo: <b style={{ fontFamily: "var(--font-mono)" }}>{codigoTeste}</b></span>
+                <span style={{ color: "var(--gold-500)" }}>Modo teste — código: <b style={{ fontFamily: "var(--font-mono)" }}>{codigoTeste}</b></span>
               </>
             ) : null}
           </div>
           <Input
-            label="Codigo de verificacao"
+            label="Código de verificação"
             value={codigo}
             onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
             inputMode="numeric"
@@ -252,7 +252,7 @@ function ContatoCard({ info }: { info: MatriculaInfo | null }) {
               {confirmar.isPending ? "Confirmando..." : "Confirmar e salvar"}
             </Button>
             <Button variant="ghost" onClick={() => enviarCodigo.mutate()} disabled={enviarCodigo.isPending || confirmar.isPending}>
-              {enviarCodigo.isPending ? "Reenviando..." : "Reenviar codigo"}
+              {enviarCodigo.isPending ? "Reenviando..." : "Reenviar código"}
             </Button>
             <Button variant="ghost" onClick={cancelar} disabled={confirmar.isPending}>Cancelar</Button>
           </div>
@@ -266,7 +266,7 @@ function ContatoCard({ info }: { info: MatriculaInfo | null }) {
 
       {okAt && passo === "fechado" ? (
         <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 10, border: "1px solid var(--emerald-500)", background: "color-mix(in srgb, var(--emerald-500) 12%, transparent)", fontSize: ".88rem" }}>
-          ✓ Alteracoes salvas em {okAt.toLocaleTimeString("pt-BR")}
+          ✓ Alterações salvas em {okAt.toLocaleTimeString("pt-BR")}
         </div>
       ) : null}
     </Card>
@@ -307,7 +307,7 @@ function RedefinirSenhaCard() {
       setErro(null);
       setPasso("codigo");
     },
-    onError: (e) => setErro((e as Error).message || "Nao foi possivel enviar o codigo."),
+    onError: (e) => setErro((e as Error).message || "Não foi possível enviar o código."),
   });
 
   const confirmar2 = useMutation({
@@ -317,7 +317,7 @@ function RedefinirSenhaCard() {
       limparCampos();
       setPasso("fechado");
     },
-    onError: (e) => setErro((e as Error).message || "Nao foi possivel confirmar a nova senha."),
+    onError: (e) => setErro((e as Error).message || "Não foi possível confirmar a nova senha."),
   });
 
   // Invalida codigo no backend (se foi gerado) e fecha. Chamado tanto no
@@ -336,14 +336,14 @@ function RedefinirSenhaCard() {
     setErro(null);
     if (!senhaAtual) { setErro("Informe a senha atual."); return; }
     if (novaSenha.length < 8) { setErro("A nova senha precisa ter pelo menos 8 caracteres."); return; }
-    if (novaSenha === senhaAtual) { setErro("A nova senha nao pode ser igual a senha atual."); return; }
-    if (novaSenha !== confirmar) { setErro("Nova senha e confirmacao nao conferem."); return; }
+    if (novaSenha === senhaAtual) { setErro("A nova senha não pode ser igual à senha atual."); return; }
+    if (novaSenha !== confirmar) { setErro("Nova senha e confirmação não conferem."); return; }
     enviarCodigo.mutate();
   }
 
   function submeterCodigo() {
     setErro(null);
-    if (!codigo.trim() || codigo.trim().length < 4) { setErro("Digite o codigo recebido no e-mail."); return; }
+    if (!codigo.trim() || codigo.trim().length < 4) { setErro("Digite o código recebido no e-mail."); return; }
     confirmar2.mutate();
   }
 
@@ -372,12 +372,12 @@ function RedefinirSenhaCard() {
           ) : null}
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <Button onClick={submeterCredenciais} disabled={enviarCodigo.isPending}>
-              {enviarCodigo.isPending ? "Enviando codigo..." : "Continuar"}
+              {enviarCodigo.isPending ? "Enviando código..." : "Continuar"}
             </Button>
             <Button variant="ghost" onClick={cancelar} disabled={enviarCodigo.isPending}>Cancelar</Button>
           </div>
           <p style={{ fontSize: ".82rem", color: "var(--text-muted)", margin: 0 }}>
-            Por seguranca, vamos enviar um codigo de verificacao para o seu e-mail cadastrado antes de trocar a senha.
+            Por segurança, vamos enviar um código de verificação para o seu e-mail cadastrado antes de trocar a senha.
           </p>
         </div>
       ) : null}
@@ -385,16 +385,16 @@ function RedefinirSenhaCard() {
       {passo === "codigo" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elev-2)", fontSize: ".88rem" }}>
-            Enviamos um codigo de 6 digitos para <b>{destinoMasked ?? "seu e-mail"}</b>. Ele expira em 10 minutos.
+            Enviamos um código de 6 dígitos para <b>{destinoMasked ?? "seu e-mail"}</b>. Ele expira em 10 minutos.
             {codigoTeste ? (
               <>
                 <br />
-                <span style={{ color: "var(--gold-500)" }}>Modo teste — codigo: <b style={{ fontFamily: "var(--font-mono)" }}>{codigoTeste}</b></span>
+                <span style={{ color: "var(--gold-500)" }}>Modo teste — código: <b style={{ fontFamily: "var(--font-mono)" }}>{codigoTeste}</b></span>
               </>
             ) : null}
           </div>
           <Input
-            label="Codigo de verificacao"
+            label="Código de verificação"
             value={codigo}
             onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
             inputMode="numeric"
@@ -411,7 +411,7 @@ function RedefinirSenhaCard() {
               {confirmar2.isPending ? "Confirmando..." : "Confirmar e alterar senha"}
             </Button>
             <Button variant="ghost" onClick={() => enviarCodigo.mutate()} disabled={enviarCodigo.isPending || confirmar2.isPending}>
-              {enviarCodigo.isPending ? "Reenviando..." : "Reenviar codigo"}
+              {enviarCodigo.isPending ? "Reenviando..." : "Reenviar código"}
             </Button>
             <Button variant="ghost" onClick={cancelar} disabled={confirmar2.isPending}>Cancelar</Button>
           </div>
