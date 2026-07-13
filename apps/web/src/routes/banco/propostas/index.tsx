@@ -133,29 +133,18 @@ export function BancoPropostas() {
         <PerfilSwitcher value={perfilId} onChange={(id) => { setBancoPerfil(id); setPerfilId(id); }} />
       </header>
 
-      {/* Tabs PRIMARIAS por produto — cliente separou "Minhas propostas" em
-          3 categorias pra melhor administracao. */}
-      <div
-        role="tablist"
-        style={{
-          display: "grid",
-          gridTemplateColumns: `repeat(${PRODUTO_TABS.length}, 1fr)`,
-          gap: 4,
-          padding: 4,
-          background: "var(--bg-elev)",
-          border: "1px solid var(--border)",
-          borderRadius: 12,
-        }}
-      >
-        {PRODUTO_TABS.map((p) => (
-          <ProdutoTab
-            key={p}
-            active={produtoTab === p}
-            label={PRODUTO_LABEL[p]}
-            count={totaisPorProduto[p]}
-            onClick={() => setProdutoTab(p)}
-          />
-        ))}
+      {/* Menu suspenso PRIMARIO por produto — cliente pediu dropdown no lugar
+          das 3 tabs grandes. Rotulo inclui contador entre parenteses. */}
+      <div style={{ maxWidth: 360 }}>
+        <SelectField
+          label="Produto"
+          value={produtoTab}
+          onChange={(e) => setProdutoTab(e.target.value as BancoProduto)}
+          options={PRODUTO_TABS.map((p) => ({
+            value: p,
+            label: `${PRODUTO_LABEL[p]} (${totaisPorProduto[p]})`,
+          }))}
+        />
       </div>
 
       {/* Tabs de status (dentro do produto ativo) */}
