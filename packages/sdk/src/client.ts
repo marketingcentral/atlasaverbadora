@@ -1137,15 +1137,34 @@ export class AtlasClient {
         "/v1/servidores/me/propostas",
         { query: matricula ? { matricula } : undefined },
       ),
-    /** Redefinicao direta de senha (fluxo simples, sem codigo por e-mail). O
-     *  backend valida senha_atual, aceita nova_senha >= 8 chars e recusa se
-     *  a nova for igual a atual. Confirmacao (nova == confirmar) e feita no
-     *  cliente antes do envio. */
+    /** Redefinicao direta (sem codigo por e-mail) — DEPRECIADA em favor de
+     *  pedirCodigoSenha + confirmarNovaSenha. Mantida no SDK pra outros
+     *  clientes (ex.: mobile) que ainda usem. */
     redefinirSenha: (input: { senhaAtual: string; novaSenha: string }) =>
       this.request<{ ok: true }>("/v1/servidores/me/senha/redefinir", {
         method: "POST",
         body: { senha_atual: input.senhaAtual, nova_senha: input.novaSenha },
       }),
+    /** Passo 1 do fluxo com verificacao por e-mail: pede o backend gerar um
+     *  codigo de 6 digitos e enviar pro e-mail cadastrado. Modo teste (SMTP
+     *  nao configurado) devolve o codigo direto no campo `codigo_teste`. */
+    pedirCodigoSenha: () =>
+      this.request<{ enviado: boolean; destino: string; codigo_teste?: string; aviso?: string }>(
+        "/v1/servidores/me/codigo",
+        { method: "POST" },
+      ),
+    /** Passo 2: valida senha atual + codigo do e-mail e persiste a nova senha.
+     *  Backend recusa se codigo estiver invalido/expirado (401) ou senha atual
+     *  errada (401). Depois de sucesso o codigo e removido do KV. */
+    confirmarNovaSenha: (input: { senhaAtual: string; novaSenha: string; codigo: string }) =>
+      this.request<{ ok: true }>("/v1/servidores/me/senha", {
+        method: "POST",
+        body: { senha_atual: input.senhaAtual, nova_senha: input.novaSenha, codigo: input.codigo },
+      }),
+    /** Cancela um codigo pendente (deleta do KV). Chamado quando o usuario
+     *  clica "Cancelar" apos ja ter pedido o codigo — evita reuso posterior. */
+    cancelarCodigoSenha: () =>
+      this.request<{ ok: true }>("/v1/servidores/me/codigo", { method: "DELETE" }),
   };
 
   // ============ Portal Banco ============

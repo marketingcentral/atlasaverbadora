@@ -754,6 +754,20 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       }));
     return c.json({ propostas });
   })
+  // Cancela um codigo de verificacao pendente (deleta do KV). Chamado quando
+  // o usuario clica "Cancelar" em fluxos que ja tinham enviado codigo (redefinir
+  // senha, atualizar contato). Sem isso o codigo ficaria valido pelos 10min de
+  // TTL, permitindo o proprio usuario "reabrir" o modal e reusar. Idempotente:
+  // deleta se existe; retorna ok mesmo se KV nao tem nada.
+  .delete("/v1/servidores/me/codigo", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
+    return c.json({ ok: true });
+  })
   // Envia um código de verificação (test-mode: retorna no corpo) pro e-mail do servidor.
   .post("/v1/servidores/me/codigo", async (c) => {
     const j = c.get("jwt");

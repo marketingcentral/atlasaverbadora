@@ -194,55 +194,94 @@ export function ServidorConta() {
   );
 }
 
-/** Card de redefinicao de senha — 3 campos (senha atual / nova / confirmar).
- *  Client-side valida: nova == confirmar, nova >= 8 chars, nova != atual.
- *  Backend valida hash da senha atual e persiste. */
+/** Card de redefinicao de senha em 2 passos:
+ *  1) Usuario preenche senha atual + nova + confirmar → clica Continuar.
+ *     Client-side valida (nova >= 8 chars, nova != atual, nova == confirmar)
+ *     e pede o backend gerar+enviar codigo por e-mail.
+ *  2) Codigo chega no e-mail; usuario digita e clica Confirmar. Backend
+ *     valida senha atual + codigo + persiste nova senha.
+ *
+ *  Cancelar em qualquer etapa limpa o form; se ja tinha pedido codigo,
+ *  chama DELETE /me/codigo pra invalidar no KV (evita reuso posterior). */
 function RedefinirSenhaCard() {
-  const [aberto, setAberto] = useState(false);
+  type Passo = "fechado" | "credenciais" | "codigo";
+  const [passo, setPasso] = useState<Passo>("fechado");
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmar, setConfirmar] = useState("");
+  const [codigo, setCodigo] = useState("");
+  const [destinoMasked, setDestinoMasked] = useState<string | null>(null);
+  const [codigoTeste, setCodigoTeste] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [okAt, setOkAt] = useState<Date | null>(null);
 
-  const mut = useMutation({
-    mutationFn: () => atlas.servidor.redefinirSenha({ senhaAtual, novaSenha }),
-    onSuccess: () => {
-      setOkAt(new Date());
+  function limparCampos() {
+    setSenhaAtual(""); setNovaSenha(""); setConfirmar(""); setCodigo("");
+    setDestinoMasked(null); setCodigoTeste(null); setErro(null);
+  }
+
+  const enviarCodigo = useMutation({
+    mutationFn: () => atlas.servidor.pedirCodigoSenha(),
+    onSuccess: (r) => {
+      setDestinoMasked(r.destino ?? null);
+      setCodigoTeste(r.codigo_teste ?? null);
       setErro(null);
-      setSenhaAtual(""); setNovaSenha(""); setConfirmar("");
-      setAberto(false);
+      setPasso("codigo");
     },
-    onError: (e) => setErro((e as Error).message || "Nao foi possivel redefinir a senha."),
+    onError: (e) => setErro((e as Error).message || "Nao foi possivel enviar o codigo."),
   });
 
-  function submeter() {
+  const confirmar2 = useMutation({
+    mutationFn: () => atlas.servidor.confirmarNovaSenha({ senhaAtual, novaSenha, codigo }),
+    onSuccess: () => {
+      setOkAt(new Date());
+      limparCampos();
+      setPasso("fechado");
+    },
+    onError: (e) => setErro((e as Error).message || "Nao foi possivel confirmar a nova senha."),
+  });
+
+  // Invalida codigo no backend (se foi gerado) e fecha. Chamado tanto no
+  // "Cancelar" quanto no botao X — cliente pediu que MESMO quando cancelar,
+  // o codigo pendente deixa de valer.
+  const cancelarMut = useMutation({
+    mutationFn: () => atlas.servidor.cancelarCodigoSenha(),
+  });
+  function cancelar() {
+    if (passo === "codigo") cancelarMut.mutate(); // fire-and-forget
+    limparCampos();
+    setPasso("fechado");
+  }
+
+  function submeterCredenciais() {
     setErro(null);
     if (!senhaAtual) { setErro("Informe a senha atual."); return; }
     if (novaSenha.length < 8) { setErro("A nova senha precisa ter pelo menos 8 caracteres."); return; }
     if (novaSenha === senhaAtual) { setErro("A nova senha nao pode ser igual a senha atual."); return; }
     if (novaSenha !== confirmar) { setErro("Nova senha e confirmacao nao conferem."); return; }
-    mut.mutate();
+    enviarCodigo.mutate();
   }
 
-  function cancelar() {
-    setSenhaAtual(""); setNovaSenha(""); setConfirmar("");
+  function submeterCodigo() {
     setErro(null);
-    setAberto(false);
+    if (!codigo.trim() || codigo.trim().length < 4) { setErro("Digite o codigo recebido no e-mail."); return; }
+    confirmar2.mutate();
   }
+
+  const aberto = passo !== "fechado";
 
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: aberto ? 12 : 0 }}>
         <h3 style={{ margin: 0 }}>Senha</h3>
         {!aberto ? (
-          <Button size="sm" variant="ghost" onClick={() => { setAberto(true); setOkAt(null); }}>
+          <Button size="sm" variant="ghost" onClick={() => { limparCampos(); setOkAt(null); setPasso("credenciais"); }}>
             Redefinir senha
           </Button>
         ) : null}
       </div>
 
-      {aberto ? (
+      {passo === "credenciais" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Input label="Senha atual" type="password" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} autoComplete="current-password" />
           <Input label="Nova senha" type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} autoComplete="new-password" />
@@ -253,14 +292,50 @@ function RedefinirSenhaCard() {
             </div>
           ) : null}
           <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-            <Button onClick={submeter} disabled={mut.isPending}>
-              {mut.isPending ? "Salvando..." : "Salvar nova senha"}
+            <Button onClick={submeterCredenciais} disabled={enviarCodigo.isPending}>
+              {enviarCodigo.isPending ? "Enviando codigo..." : "Continuar"}
             </Button>
-            <Button variant="ghost" onClick={cancelar} disabled={mut.isPending}>Cancelar</Button>
+            <Button variant="ghost" onClick={cancelar} disabled={enviarCodigo.isPending}>Cancelar</Button>
           </div>
           <p style={{ fontSize: ".82rem", color: "var(--text-muted)", margin: 0 }}>
-            A nova senha precisa ter pelo menos 8 caracteres.
+            Por seguranca, vamos enviar um codigo de verificacao para o seu e-mail cadastrado antes de trocar a senha.
           </p>
+        </div>
+      ) : null}
+
+      {passo === "codigo" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elev-2)", fontSize: ".88rem" }}>
+            Enviamos um codigo de 6 digitos para <b>{destinoMasked ?? "seu e-mail"}</b>. Ele expira em 10 minutos.
+            {codigoTeste ? (
+              <>
+                <br />
+                <span style={{ color: "var(--gold-500)" }}>Modo teste — codigo: <b style={{ fontFamily: "var(--font-mono)" }}>{codigoTeste}</b></span>
+              </>
+            ) : null}
+          </div>
+          <Input
+            label="Codigo de verificacao"
+            value={codigo}
+            onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="000000"
+          />
+          {erro ? (
+            <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--danger-500)", background: "color-mix(in srgb, var(--danger-500) 12%, transparent)", fontSize: ".88rem" }}>
+              {erro}
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+            <Button onClick={submeterCodigo} disabled={confirmar2.isPending}>
+              {confirmar2.isPending ? "Confirmando..." : "Confirmar e alterar senha"}
+            </Button>
+            <Button variant="ghost" onClick={() => enviarCodigo.mutate()} disabled={enviarCodigo.isPending || confirmar2.isPending}>
+              {enviarCodigo.isPending ? "Reenviando..." : "Reenviar codigo"}
+            </Button>
+            <Button variant="ghost" onClick={cancelar} disabled={confirmar2.isPending}>Cancelar</Button>
+          </div>
         </div>
       ) : null}
 
