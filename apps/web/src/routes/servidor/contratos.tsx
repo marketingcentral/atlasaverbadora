@@ -9,7 +9,8 @@ import {
   STORAGE_KEY_ID,
   STORAGE_KEY_META,
 } from "../../lib/matricula-data";
-import { buildSimplePdf, downloadPdf } from "../../lib/pdf";
+// buildSimplePdf/downloadPdf saíram — antes gerava um PDF fake; agora baixa
+// o CCB real anexado pelo banco via atlas.servidor.baixarContratoCcb().
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
@@ -162,31 +163,30 @@ export function ServidorContratos() {
 
   async function baixarPdf(c: Contrato) {
     setDownloading(c.id);
-    await new Promise((r) => setTimeout(r, 700));
-    const valorTotal = c.parcela * c.total;
-    const pdf = buildSimplePdf("COMPROVANTE DE CONTRATO CONSIGNADO", [
-      { text: `Contrato: ${c.id}`, bold: true },
-      `Banco credor: ${c.banco}`,
-      `Situacao: ${c.status}`,
-      "",
-      { text: "SERVIDOR", bold: true },
-      `Nome: ${info?.nome ?? "—"}`,
-      `Matricula: ${info?.matricula ?? "—"}`,
-      `Orgao: ${info?.prefeitura ?? "—"}`,
-      "",
-      { text: "OPERACAO", bold: true },
-      `Valor financiado: ${fmtBRL(c.valorFinanciado)}`,
-      `Taxa a.m.: ${(c.taxaAm * 100).toFixed(2)}%`,
-      `Parcela: ${fmtBRL(c.parcela)}`,
-      `Parcelas pagas: ${c.parcelasPagas} de ${c.total}`,
-      `Valor total contratado: ${fmtBRL(valorTotal).replace(/\s/g, " ")}`,
-      `Proxima parcela: ${c.proximaParcela}`,
-      "",
-      "Este comprovante e uma copia do contrato para conferencia.",
-      "Para quitacao antecipada ou renegociacao, contate diretamente o banco credor.",
-    ]);
-    downloadPdf(`contrato-${c.id}.pdf`, pdf);
-    setDownloading(null);
+    // Baixa o CCB REAL que o banco anexou (armazenado em R2). Antes o front
+    // gerava um PDF fake via buildSimplePdf — cliente reclamou que nao era o
+    // que o banco enviou. 404 = banco ainda nao anexou; qualquer outro erro
+    // e' de rede/servidor.
+    try {
+      const blob = await atlas.servidor.baixarContratoCcb(c.id);
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.download = `contrato-${c.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (e) {
+      const err = e as Error & { status?: number };
+      if (err.status === 404) {
+        alert("O banco ainda não anexou o contrato assinado. Assim que ele enviar, o download fica disponível aqui.");
+      } else {
+        alert("Não foi possível baixar o contrato agora. Tente novamente em alguns instantes.");
+      }
+    } finally {
+      setDownloading(null);
+    }
   }
 
   return (
@@ -359,7 +359,7 @@ export function ServidorContratos() {
 
                   <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <Button size="sm" variant="ghost" onClick={() => baixarPdf(c)} disabled={downloading === c.id}>
-                      {downloading === c.id ? "Gerando link…" : "📄 Baixar PDF"}
+                      {downloading === c.id ? "Baixando…" : "📄 Baixar Contrato"}
                     </Button>
                     {!quitado ? (
                       <span style={{ fontSize: ".82rem", color: "var(--text-muted)", alignSelf: "center" }}>

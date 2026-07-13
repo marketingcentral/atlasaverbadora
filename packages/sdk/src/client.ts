@@ -1095,6 +1095,20 @@ export class AtlasClient {
      *  entre matrículas de servidor com acumulação de cargos. */
     /** Comunicados publicados pela averbadora com publico=servidor (usados no carrossel do dashboard). */
     comunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/servidores/me/comunicados"),
+    /** Baixa o CCB (contrato assinado que o banco anexou) como Blob. Envia
+     *  Authorization Bearer. Lanca erro com status HTTP se falhar — o front
+     *  distingue 404 (banco nao anexou ainda) de erro real. */
+    baixarContratoCcb: async (adf: string): Promise<Blob> => {
+      const token = await this.storage.getAccess();
+      const url = new URL(`/v1/servidores/me/contratos/${adf}/ccb.pdf`, this.opts.baseUrl).toString();
+      const res = await this.fetchImpl(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) {
+        const err = new Error(`Falha ao baixar contrato (${res.status})`) as Error & { status?: number };
+        err.status = res.status;
+        throw err;
+      }
+      return await res.blob();
+    },
     propostas: (matricula?: string) =>
       this.request<{ propostas: {
         id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number;

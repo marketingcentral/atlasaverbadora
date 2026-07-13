@@ -6,7 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
-import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
@@ -804,6 +804,39 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["servidor"]);
     await refreshComunicados(c.env);
     return c.json({ comunicados: COMUNICADOS_MOCK.filter((x) => x.publico === "servidor") });
+  })
+  // Baixa o CCB (contrato assinado que o banco anexou) de um contrato do proprio
+  // servidor. Antes o front gerava um PDF fake com buildSimplePdf — cliente
+  // reclamou que "não era o que o banco enviou". Agora serve o R2 direto.
+  //
+  // Isolamento: servidor so pode baixar contrato cuja matricula bata com uma das
+  // matriculas do proprio CPF (acumulacao de cargos e' possivel — mesmo CPF em
+  // varias prefeituras). 404 se nao for dele; 404 tambem se banco ainda nao
+  // anexou (o front trata como "banco nao enviou ainda").
+  .get("/v1/servidores/me/contratos/:adf/ccb.pdf", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    await refreshContratos(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const mats = new Set(
+      SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((e) => e.matricula),
+    );
+    const adf = c.req.param("adf");
+    const contrato = getContrato(adf);
+    if (!contrato || !mats.has(contrato.matricula)) throw Errors.notFound("contrato");
+    if (!contrato.ccbKey) throw Errors.notFound("contrato_sem_ccb");
+    if (!c.env.R2_FILES) throw Errors.notFound("r2");
+    const obj = await c.env.R2_FILES.get(contrato.ccbKey);
+    if (!obj) throw Errors.notFound("ccb");
+    return new Response(obj.body, {
+      headers: {
+        "Content-Type": obj.httpMetadata?.contentType ?? "application/pdf",
+        "Content-Disposition": `attachment; filename="contrato-${adf}.pdf"`,
+        "Cache-Control": "private, max-age=60",
+      },
+    });
   })
   .get("/v1/servidores/:id", async (c) => {
     const j = c.get("jwt");
