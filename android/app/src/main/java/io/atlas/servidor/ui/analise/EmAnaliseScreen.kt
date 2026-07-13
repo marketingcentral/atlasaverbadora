@@ -18,7 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -41,7 +40,6 @@ import io.atlas.servidor.ui.components.StatusChip
 import io.atlas.servidor.ui.components.faseChain
 import io.atlas.servidor.ui.components.terminalHistorico
 import io.atlas.servidor.ui.theme.Ambar
-import io.atlas.servidor.ui.theme.DangerRed
 import io.atlas.servidor.ui.theme.Divider
 import io.atlas.servidor.ui.theme.Fundo
 import io.atlas.servidor.ui.theme.Ink
@@ -86,7 +84,7 @@ fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel(), onMudou: () -> Unit =
                 } else {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
                         emAnalise.forEach { p ->
-                            PropostaCard(p, onLiberar = { vm.liberarSimulacao(onDone = onMudou) })
+                            PropostaCard(p)
                             Spacer(Modifier.height(12.dp))
                         }
                         Spacer(Modifier.height(20.dp))
@@ -98,7 +96,7 @@ fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel(), onMudou: () -> Unit =
 }
 
 @Composable
-private fun PropostaCard(p: PropostaDto, onLiberar: () -> Unit) {
+private fun PropostaCard(p: PropostaDto) {
     val situacao = p.situacao ?: "—"
     val fase = faseChain(situacao, p.folhaStatus, p.folhaMotivo)
     AtlasCard {
@@ -136,13 +134,6 @@ private fun PropostaCard(p: PropostaDto, onLiberar: () -> Unit) {
         p.expiraEm?.takeIf { !fase.concluido && fase.falhaPasso == null }?.let {
             Spacer(Modifier.height(8.dp))
             Text("Reserva expira em $it", color = InkMuted, fontSize = 12.sp)
-        }
-
-        Spacer(Modifier.height(4.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onLiberar) {
-                Text("Liberar simulação (teste)", color = DangerRed, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            }
         }
     }
 }
