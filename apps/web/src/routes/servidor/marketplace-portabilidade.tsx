@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
+import type { ServidorBeneficio } from "@atlas/sdk";
 import { atlas } from "../../lib/sdk";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID, type MatriculaInfo } from "../../lib/matricula-data";
 import { SimuladorInline } from "./_simulador-inline";
@@ -257,29 +258,7 @@ export function ServidorMarketplacePortabilidade() {
           </span>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
             {beneficiosSaude.map((b) => (
-              <Card key={b.id}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{
-                    width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-                    background: `color-mix(in srgb, ${b.cor} 20%, transparent)`,
-                    display: "grid", placeItems: "center", fontSize: 22,
-                  }}>
-                    {b.icone}
-                  </div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, color: "var(--text)" }}>{b.nome}</div>
-                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-                      {b.local}
-                    </div>
-                  </div>
-                </div>
-                {b.descontoLabel ? (
-                  <div style={{ marginTop: 12, fontSize: 14 }}>
-                    <b style={{ color: "var(--emerald-500)" }}>{b.descontoLabel}</b>
-                    {b.descontoComplemento ? <span style={{ color: "var(--text-muted)" }}> {b.descontoComplemento}</span> : null}
-                  </div>
-                ) : null}
-              </Card>
+              <BeneficioCard key={b.id} b={b} />
             ))}
           </div>
         </section>
@@ -549,6 +528,101 @@ function pillStyle(tone: "gold" | "emerald" | "danger" | "neutro"): React.CSSPro
     padding: "3px 10px",
     textTransform: "uppercase",
   };
+}
+
+/** Card de beneficio de saude no MarketPlace. Renderiza a imagem (unica ou
+ *  carrossel com autoplay 5s) quando o admin subiu imagens; senao mostra o
+ *  bloco de icone + nome no formato compacto tradicional. */
+function BeneficioCard({ b }: { b: ServidorBeneficio }) {
+  const imagens = b.imagens ?? [];
+  const modo = b.modoImagens ?? "nenhum";
+  const temImagem = modo !== "nenhum" && imagens.length > 0;
+  const [idx, setIdx] = useState(0);
+
+  // Autoplay do carrossel (5s) — so ativa se modo="carrossel" e >= 2 imagens.
+  useEffect(() => {
+    if (modo !== "carrossel" || imagens.length < 2) return;
+    const t = setInterval(() => setIdx((i) => (i + 1) % imagens.length), 5_000);
+    return () => clearInterval(t);
+  }, [modo, imagens.length]);
+
+  return (
+    <Card style={{ padding: 0, overflow: "hidden" }}>
+      {temImagem ? (
+        <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9", background: "var(--bg-elev-2)" }}>
+          <img
+            src={imagens[idx] ?? imagens[0]}
+            alt=""
+            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+          />
+          {modo === "carrossel" && imagens.length > 1 ? (
+            <div style={{
+              position: "absolute", bottom: 8, left: 0, right: 0,
+              display: "flex", justifyContent: "center", gap: 6,
+            }}>
+              {imagens.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setIdx(i)}
+                  aria-label={`Imagem ${i + 1}`}
+                  style={{
+                    width: i === idx ? 16 : 6, height: 6, borderRadius: 3,
+                    border: "none", cursor: "pointer",
+                    background: i === idx ? "var(--gold-500)" : "rgba(255,255,255,.55)",
+                    transition: "width .25s",
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <div style={{ padding: 16 }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+            background: `color-mix(in srgb, ${b.cor} 20%, transparent)`,
+            display: "grid", placeItems: "center", fontSize: 22,
+          }}>
+            {b.icone}
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontWeight: 700, color: "var(--text)" }}>{b.nome}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+              {b.local}
+            </div>
+          </div>
+        </div>
+        {b.descontoLabel ? (
+          <div style={{ marginTop: 12, fontSize: 14 }}>
+            <b style={{ color: "var(--emerald-500)" }}>{b.descontoLabel}</b>
+            {b.descontoComplemento ? <span style={{ color: "var(--text-muted)" }}> {b.descontoComplemento}</span> : null}
+          </div>
+        ) : null}
+        {b.linkAcesso?.url ? (
+          <div style={{ marginTop: 12 }}>
+            <a
+              href={b.linkAcesso.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-block",
+                fontSize: 12, fontWeight: 700,
+                padding: "6px 14px", borderRadius: 999,
+                background: `color-mix(in srgb, ${b.cor} 20%, transparent)`,
+                border: `1px solid ${b.cor}`,
+                color: b.cor,
+                textDecoration: "none",
+              }}
+            >
+              {b.linkAcesso.textoBotao ?? "Acessar →"}
+            </a>
+          </div>
+        ) : null}
+      </div>
+    </Card>
+  );
 }
 
 /** Card grande de acao — usado agora so pra "Solicitar portabilidade". */
