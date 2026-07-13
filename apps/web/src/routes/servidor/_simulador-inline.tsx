@@ -95,17 +95,29 @@ export function SimuladorInline({
     queryKey: ["servidor", "ofertas", info?.matricula],
     queryFn: () => atlas.servidor.ofertas(info?.matricula),
     enabled: !!info?.matricula,
-    refetchInterval: 5_000,
+    refetchInterval: 3_000,
     refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
     refetchOnMount: "always",
+    staleTime: 0, // forca sempre buscar dado fresco quando invalidado
   });
-  const PARCELAS = useMemo(() => {
+  // prazoMax = MENOR entre as tabelas ativas do convenio (nao mais o maior).
+  // Assim se o banco reduzir uma tabela para 60, o servidor ve so ate 60 —
+  // sem se importar se outra tabela do mesmo convenio ainda tem 120. Essa
+  // e a leitura literal do pedido do cliente: "quando eu deixar parcela
+  // maxima = 96 ou 72, so apareça até a maxima que selecionei". Se houver
+  // uma unica tabela ativa (caso comum), min == max == essa tabela.
+  const prazoMaxVigente = useMemo(() => {
     const of = ofertasQ.data?.ofertas ?? [];
-    if (of.length === 0) return PARCELAS_TODAS; // fallback quando nao carregou
-    const prazoMax = Math.max(...of.map((o) => o.prazoMaxMeses));
-    return PARCELAS_TODAS.filter((p) => p <= prazoMax);
+    if (of.length === 0) return null;
+    return Math.min(...of.map((o) => o.prazoMaxMeses));
   }, [ofertasQ.data]);
+  const PARCELAS = useMemo(() => {
+    // Enquanto a query nao trouxe dado (loading), fallback pra opcoes basicas
+    // — evita "flash" de dropdown vazio no primeiro render.
+    if (prazoMaxVigente == null) return PARCELAS_TODAS;
+    return PARCELAS_TODAS.filter((p) => p <= prazoMaxVigente);
+  }, [prazoMaxVigente]);
   // Se o prazo escolhido nao esta mais disponivel, cai pro maior permitido.
   useEffect(() => {
     if (PARCELAS.length > 0 && !PARCELAS.includes(parcelas)) {
