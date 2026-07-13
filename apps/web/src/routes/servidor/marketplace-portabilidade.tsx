@@ -546,10 +546,9 @@ function BeneficioCard({ b }: { b: ServidorBeneficio }) {
     return () => clearInterval(t);
   }, [modo, imagens.length]);
 
-  // Hero fixo em 140px pra TODOS os cards ficarem da mesma altura visual
-  // no grid — antes o card sem imagem esticava com espaco vazio embaixo do
-  // com imagem. Sem imagem: gradiente com a cor do beneficio + icone gigante.
-  const HERO_H = 140;
+  // Hero fixo em 80px pra TODOS os cards ficarem da mesma altura visual
+  // no grid — cliente reclamou que 140px estava grande demais.
+  const HERO_H = 80;
   return (
     <Card style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}>
       {temImagem ? (
@@ -587,7 +586,7 @@ function BeneficioCard({ b }: { b: ServidorBeneficio }) {
         <div style={{
           width: "100%", height: HERO_H, flexShrink: 0,
           background: `linear-gradient(135deg, color-mix(in srgb, ${b.cor} 25%, var(--bg-elev-2)), color-mix(in srgb, ${b.cor} 10%, var(--bg-elev)))`,
-          display: "grid", placeItems: "center", fontSize: 56, lineHeight: 1,
+          display: "grid", placeItems: "center", fontSize: 36, lineHeight: 1,
         }}>
           <span aria-hidden>{b.icone}</span>
         </div>
