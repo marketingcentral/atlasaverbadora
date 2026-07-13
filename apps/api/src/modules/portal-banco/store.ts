@@ -230,20 +230,32 @@ export function normalizeContrato(c: ContratoFull): ContratoFull {
 }
 
 /**
- * A margem do servidor é bloqueada JÁ NA PROPOSTA — assim que o servidor
- * aceita o termo e envia a solicitação, aquela parcela sai da margem
- * disponível (pra evitar solicitar 2 operações sobrepondo a mesma margem).
+ * A margem do servidor SÓ É COMPROMETIDA quando o banco aceita a proposta —
+ * pedido explicito do cliente. Enquanto a proposta esta "Aguardando…" (em analise),
+ * a margem SEGUE DISPONIVEL. A UI (fatura minima, "% do limite") ja diz isso
+ * ao servidor; o backend agora bate com esse contrato.
  *
- * Estados que COMPROMETEM: "Aguardando…" (em análise no banco), "Aprovado"
- * (banco aprovou, averbadora ainda não fez ADF), "Ativo"/averbado/suspenso
- * (operação vigente).
- * Estados que NÃO comprometem: "Expirado", "Cancelado", "Quitado" (a margem
- * volta a ficar disponível).
+ * Estados que COMPROMETEM (banco decidiu positivo):
+ *   - "Aprovado" (banco aprovou, averbadora ainda nao fez ADF)
+ *   - "Ativo" / "Averbado" (operacao vigente ja averbada)
+ *   - "Suspenso" (contrato vigente que foi suspenso — margem segue reservada)
+ *
+ * Estados que NAO COMPROMETEM:
+ *   - "Aguardando…" (em analise no banco — nao bloqueia mais, cliente pediu)
+ *   - "Expirado", "Cancelado", "Recusado" (banco decidiu negativo)
+ *   - "Quitado" (contrato ja fechado)
+ *
+ * Trava de 48h no /servidor/simular continua existindo pra evitar duplas
+ * simulacoes no mesmo produto — ela e separada dessa margem.
  */
 export function comprometeMargem(situacao: string): boolean {
   const s = situacao.toLowerCase();
-  if (s === "expirado" || s === "cancelado" || s === "quitado") return false;
-  return true; // proposta em análise, aprovada, ativa ou suspensa → bloqueia margem
+  // Positivos: aprovado / ativo / averbado / suspenso
+  if (s.includes("aprov") || s.includes("ativo") || s.includes("averb") || s.includes("suspens") || s.includes("formaliz")) {
+    return true;
+  }
+  // Todo o resto (aguard, expir, cancel, recus, quitad, etc.) — nao bloqueia.
+  return false;
 }
 
 export function listContratos(filters: { convenioId?: string; matricula?: string; situacao?: string[] } = {}): ContratoFull[] {
