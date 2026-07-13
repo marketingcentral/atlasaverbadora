@@ -199,16 +199,31 @@ export async function persistContrato(env: Env, adf: string): Promise<void> {
 }
 
 /**
- * Read-through: re-carrega os contratos do Postgres e faz merge no Map deste
- * isolate. O hydrate de boot roda só uma vez, então sem isto uma reserva criada
- * por OUTRO isolate não apareceria aqui. Chamado no início dos endpoints de
- * leitura (e antes de criar, pra sincronizar o contador de adf entre isolates).
- * Best-effort: falha de DB mantém o estado em memória.
+ * Read-through: re-sincroniza o Map em memoria com o estado do Postgres. Chamado
+ * no inicio dos endpoints de leitura (e antes de criar, pra sincronizar o
+ * contador de adf entre isolates).
+ *
+ * IMPORTANTE: sincroniza NOS DOIS SENTIDOS — insere/atualiza o que existe em PG
+ * E REMOVE do Map o que nao existe mais em PG. Se so fizesse "set", uma delecao
+ * feita por OUTRO isolate (ex.: purge admin) nao vazaria pra este; requests
+ * caindo em isolates "antigos" continuariam vendo contratos ja apagados.
+ *
+ * Best-effort: falha de DB mantem o estado em memoria.
  */
 export async function refreshContratos(env: Env): Promise<void> {
   try {
     await ensureContratosLoaded(env); // garante schema + seed inicial
     const rows = await loadContratos(env);
+    // Detecta contratos que sumiram do PG (deletados por outro isolate) e
+    // apaga da memoria. Sem isso, um purge/delete nao propaga entre isolates.
+    // So aplica se PG retornou ALGO — se veio vazio (falha transitoria de conexao?)
+    // preserva o Map em memoria pra nao perder tudo por erro pontual.
+    if (rows.length > 0) {
+      const pgAdfs = new Set(rows.map((r) => r.adf));
+      for (const adf of [..._contratos.keys()]) {
+        if (!pgAdfs.has(adf)) _contratos.delete(adf);
+      }
+    }
     for (const r of rows) _contratos.set(r.adf, r as unknown as ContratoFull);
     // Normaliza a IDENTIDADE DO CONVÊNIO (nome único vindo de CONVENIOS_MOCK, mesmo
     // pra contratos persistidos com o nome antigo) e EXPIRA reservas vencidas
