@@ -1171,6 +1171,8 @@ export class AtlasClient {
           ccbKey?: string;
           /** ISO — quando o CCB foi anexado. */
           ccbAnexadoEm?: string;
+          /** Versoes anteriores do CCB (nunca hard-delete — soft-archive). */
+          ccbHistorico?: { key: string; anexadoEm: string; ator: string }[];
         }[];
         total: number;
       }>("/v1/portal/banco/contratos", {

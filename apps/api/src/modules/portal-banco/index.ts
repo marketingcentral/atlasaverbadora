@@ -346,6 +346,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         telefoneServidor: srv?.telefone,
         ccbKey: ct.ccbKey,
         ccbAnexadoEm: ct.ccbAnexadoEm,
+        ccbHistorico: ct.ccbHistorico,
       };
     });
     return c.json({ contratos, total: contratos.length });
@@ -412,6 +413,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // podia cancelar/aprovar/suspender contrato de outro adivinhando o ADF.
     const owner = getContrato(adf);
     if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
+    // Fluxo novo (pedido do cliente): banco so aprova DEPOIS de anexar o
+    // contrato assinado. Sem CCB, aprovar retorna 422.
+    if (acao === "aprovar" && !owner.ccbKey) {
+      throw Errors.validation({
+        contrato: "anexe o contrato assinado antes de aprovar a proposta.",
+      });
+    }
     const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
     if (!r) throw Errors.notFound("contrato");
     await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
@@ -550,7 +558,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     await refreshContratos(c.env);
     const owner = getContrato(adf);
     if (owner && owner.bancoId === (j.banco_id ?? -1)) {
-      setContratoCcb(adf, key);
+      setContratoCcb(adf, key, `user:${j.sub}`);
       await persistContrato(c.env, adf);
     }
     return c.json({ key, size: file.size, contentType: "application/pdf" });

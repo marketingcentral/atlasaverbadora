@@ -108,6 +108,9 @@ export interface BancoProposta {
   ccbKey?: string;
   /** ISO — quando o CCB foi anexado. */
   ccbAnexadoEm?: string;
+  /** Versoes anteriores do contrato (mais recente por ultimo). Cada
+   *  "atualizar contrato" arquiva a atual aqui sem excluir. */
+  ccbHistorico?: { key: string; anexadoEm: string; ator: string }[];
   // Analise de risco interna (batch 2):
   risco?: {
     scoreInterno: number; // 0-1000
@@ -335,6 +338,7 @@ export interface BancoContratoApi {
   telefoneServidor?: string;
   ccbKey?: string;
   ccbAnexadoEm?: string;
+  ccbHistorico?: { key: string; anexadoEm: string; ator: string }[];
 }
 
 export interface BancoPropostaFromApi extends BancoProposta {
@@ -403,6 +407,7 @@ export function contratoToProposta(ct: BancoContratoApi): BancoPropostaFromApi {
     telefoneServidor: ct.telefoneServidor,
     ccbKey: ct.ccbKey,
     ccbAnexadoEm: ct.ccbAnexadoEm,
+    ccbHistorico: ct.ccbHistorico,
   };
   return patch ? { ...base, ...patch } : base;
 }

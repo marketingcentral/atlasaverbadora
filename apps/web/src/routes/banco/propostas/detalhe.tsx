@@ -265,19 +265,30 @@ function NextStep({
     );
   }
 
-  // Passo 4 — decisao inicial: aprovar ou recusar. Aprovando, o proximo passo
-  // ("Anexar contrato" — baixa um modelo em PDF) aparece automaticamente.
+  // Fluxo pedido pelo cliente:
+  //   1. Proposta em analise: banco ANEXA o contrato assinado primeiro.
+  //   2. Depois de anexar, libera o botao "Aprovar proposta".
+  //   3. Depois de aprovada, so tem "Atualizar contrato" — nunca excluir.
+  //      Cada atualizacao arquiva a versao antiga no historico (nao apaga).
   if (s === "recebida" || s === "em_analise" || s === "mais_info") {
+    const jaAnexado = !!proposta.ccbKey;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Analise os dados do servidor e a margem. Se estiver tudo certo, aprove — depois disso,
-          voce anexa o contrato modelo e entra em contato com o servidor pra formalizar offline.
+          {jaAnexado
+            ? "Contrato anexado. Voce pode aprovar a proposta ou atualizar o arquivo antes."
+            : "Analise os dados do servidor e a margem. Para aprovar, anexe primeiro o contrato assinado — sem ele o botao 'Aprovar' fica bloqueado."}
         </div>
+        {jaAnexado ? <CcbAnexadoView proposta={proposta} onAtualizar={onAnexarContrato} /> : null}
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <Button variant="primary" onClick={onAprovar} disabled={submitting}>
-            {submitting ? "Aprovando..." : "Aprovar proposta →"}
+          <Button variant="primary" onClick={onAnexarContrato} disabled={submitting}>
+            {jaAnexado ? "Atualizar contrato →" : "Anexar contrato →"}
           </Button>
+          {jaAnexado ? (
+            <Button variant="success" onClick={onAprovar} disabled={submitting}>
+              {submitting ? "Aprovando..." : "Aprovar proposta →"}
+            </Button>
+          ) : null}
           <div style={{ marginLeft: "auto" }}>
             <Button variant="ghost" onClick={onRecusar} disabled={submitting}>Recusar</Button>
           </div>
@@ -286,26 +297,17 @@ function NextStep({
     );
   }
 
-  // Passo 5 (unico caminho depois de aprovar): "Anexar contrato" abre um menu
-  // com 2 opcoes — baixar modelo (client-side pdf) OU enviar arquivo assinado
-  // (upload pro R2). Nao ha averbacao pelo site — assinatura offline.
+  // Aprovada: contrato ja anexado, agora so pode ATUALIZAR (nunca excluir).
+  // O historico das versoes anteriores fica visivel no card.
   if (s === "aprovada" || s === "aguardando_formalizacao" || s === "formalizada") {
-    const jaAnexado = !!proposta.ccbKey;
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ fontSize: 14, color: "var(--text-muted)" }}>
-          Proposta <strong>aprovada</strong>. Baixe o modelo, colete a assinatura
-          <strong> presencialmente</strong> e depois anexe o PDF assinado — o arquivo
-          fica salvo aqui pra o operador reabrir a qualquer momento.
+          Proposta <strong>aprovada</strong>. O contrato ja esta salvo aqui. Se precisar corrigir,
+          voce pode atualizar por uma nova versao — a antiga fica arquivada no historico
+          e nunca e apagada.
         </div>
-        {jaAnexado ? (
-          <CcbAnexadoView proposta={proposta} onSubstituir={onAnexarContrato} />
-        ) : null}
-        <div>
-          <Button variant="primary" onClick={onAnexarContrato}>
-            {jaAnexado ? "Substituir contrato →" : "Anexar contrato →"}
-          </Button>
-        </div>
+        <CcbAnexadoView proposta={proposta} onAtualizar={onAnexarContrato} />
       </div>
     );
   }
@@ -313,9 +315,12 @@ function NextStep({
   // averbada / recusada / expirada — sem botoes.
   if (s === "averbada") {
     return (
-      <span style={{ fontSize: 14, color: "var(--success)" }}>
-        ✓ Contrato anexado. Prossiga com o servidor por telefone/e-mail pra fechar a formalizacao.
-      </span>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <span style={{ fontSize: 14, color: "var(--success)" }}>
+          ✓ Contrato anexado. Prossiga com o servidor por telefone/e-mail pra fechar a formalizacao.
+        </span>
+        {proposta.ccbKey ? <CcbAnexadoView proposta={proposta} onAtualizar={onAnexarContrato} /> : null}
+      </div>
     );
   }
   return (
@@ -501,64 +506,107 @@ function Row({ label, value, mono }: { label: string; value: string; mono?: bool
 /** Card mostrando o contrato ja anexado — o operador pode reabrir a qualquer
  *  momento. Faz fetch autenticado (fetchCcbBlob) e abre em blob URL, senao
  *  daria 401 no endpoint (mesmo motivo do bug do comprovante). */
-function CcbAnexadoView({ proposta, onSubstituir }: { proposta: BancoProposta; onSubstituir: () => void }) {
-  const [abrindo, setAbrindo] = useState(false);
+function CcbAnexadoView({ proposta, onAtualizar }: { proposta: BancoProposta; onAtualizar: () => void }) {
+  const [abrindoKey, setAbrindoKey] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const abrir = async () => {
-    if (!proposta.ccbKey) return;
+  const abrir = async (key: string) => {
     setErro(null);
-    setAbrindo(true);
+    setAbrindoKey(key);
     try {
-      const blob = await atlas.banco.fetchCcbBlob(proposta.ccbKey);
+      const blob = await atlas.banco.fetchCcbBlob(key);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.target = "_blank";
       a.rel = "noopener";
-      // Sem `download` — abre pra visualizar. Ao clicar em "Baixar", browser
-      // permite salvar do proprio viewer.
       document.body.appendChild(a);
       a.click();
       a.remove();
-      // Revoga logo — a aba nova ja carregou pra memoria.
       setTimeout(() => URL.revokeObjectURL(url), 30_000);
     } catch (e) {
       setErro((e as Error).message || "Falha ao abrir o arquivo.");
     } finally {
-      setAbrindo(false);
+      setAbrindoKey(null);
     }
   };
   const anexadoEm = proposta.ccbAnexadoEm
     ? new Date(proposta.ccbAnexadoEm).toLocaleString("pt-BR")
     : null;
   const nomeArq = proposta.ccbKey?.split("/").pop() ?? "contrato.pdf";
+  const historico = (proposta.ccbHistorico ?? []).slice().reverse(); // mais recente primeiro
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-      background: "color-mix(in srgb, var(--emerald-500) 8%, transparent)",
-      border: "1px solid var(--emerald-500)", borderRadius: 10, flexWrap: "wrap",
-    }}>
-      <span style={{ fontSize: 20 }}>📄</span>
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>Contrato anexado</div>
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, wordBreak: "break-all" }}>
-          {nomeArq}{anexadoEm ? ` · ${anexadoEm}` : ""}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {/* Versao atual */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+        background: "color-mix(in srgb, var(--emerald-500) 8%, transparent)",
+        border: "1px solid var(--emerald-500)", borderRadius: 10, flexWrap: "wrap",
+      }}>
+        <span style={{ fontSize: 20 }}>📄</span>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>
+            Contrato atual{historico.length > 0 ? ` · versão ${historico.length + 1}` : ""}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2, wordBreak: "break-all" }}>
+            {nomeArq}{anexadoEm ? ` · ${anexadoEm}` : ""}
+          </div>
+          {erro ? <div style={{ fontSize: 11, color: "var(--danger-500)", marginTop: 4 }}>{erro}</div> : null}
         </div>
-        {erro ? <div style={{ fontSize: 11, color: "var(--danger-500)", marginTop: 4 }}>{erro}</div> : null}
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => proposta.ccbKey && abrir(proposta.ccbKey)}
+          disabled={abrindoKey === proposta.ccbKey}
+        >
+          {abrindoKey === proposta.ccbKey ? "Abrindo..." : "Abrir PDF"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onAtualizar}>Atualizar contrato</Button>
       </div>
-      <Button size="sm" variant="ghost" onClick={abrir} disabled={abrindo}>
-        {abrindo ? "Abrindo..." : "Abrir PDF"}
-      </Button>
-      <Button size="sm" variant="ghost" onClick={onSubstituir}>Substituir</Button>
+
+      {/* Historico de versoes anteriores — NUNCA excluidas, so arquivadas. */}
+      {historico.length > 0 ? (
+        <details style={{
+          padding: "8px 12px", borderRadius: 8, background: "var(--bg-elev-2)",
+          border: "1px solid var(--border)", fontSize: 12,
+        }}>
+          <summary style={{ cursor: "pointer", color: "var(--text-muted)", userSelect: "none" }}>
+            Versoes anteriores ({historico.length})
+          </summary>
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+            {historico.map((h, i) => {
+              const nome = h.key.split("/").pop() ?? "contrato.pdf";
+              const data = new Date(h.anexadoEm).toLocaleString("pt-BR");
+              const versao = historico.length - i; // mais recente = versao maior
+              return (
+                <div key={h.key} style={{
+                  display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                  padding: "6px 8px", background: "var(--bg-elev)", borderRadius: 6,
+                }}>
+                  <span style={{ fontSize: 13 }}>📎</span>
+                  <div style={{ flex: 1, minWidth: 160 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)" }}>
+                      Versão {versao} <span style={{ color: "var(--text-dim)", fontWeight: 400 }}>· arquivada em {data}</span>
+                    </div>
+                    <div style={{ fontSize: 10, color: "var(--text-dim)", wordBreak: "break-all" }}>{nome}</div>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => abrir(h.key)} disabled={abrindoKey === h.key}>
+                    {abrindoKey === h.key ? "Abrindo..." : "Abrir"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }
 
-/** Modal do fluxo "Anexar contrato" — oferece 2 caminhos:
- *  (1) Baixar modelo em PDF (client-side, sem auth) pra o banco imprimir e
- *      coletar assinatura presencial.
- *  (2) Enviar um PDF do contrato ja assinado — sobe pro R2 e fica salvo na
- *      proposta pra o operador reabrir depois. */
+/** Modal do fluxo "Anexar contrato" — simplesmente escolhe um arquivo PDF
+ *  e sobe pro R2. Fluxo pedido pelo cliente: banco anexa antes de aprovar
+ *  a proposta; quando ja tem contrato, o mesmo modal serve pra ATUALIZAR
+ *  (versao antiga vai automaticamente pro ccbHistorico do backend, nunca
+ *  e apagada). Sem opcao de "baixar modelo" — o banco tem o proprio modelo. */
 function AnexarContratoModal({
   proposta,
   onClose,
@@ -601,34 +649,22 @@ function AnexarContratoModal({
     setArquivo(f);
   };
 
+  const jaTemContrato = !!proposta.ccbKey;
   return (
     <div onClick={enviando ? undefined : onClose} style={modalBackdrop}>
       <div onClick={(e) => e.stopPropagation()} style={modalCard}>
-        <h3 style={{ margin: 0 }}>Anexar contrato</h3>
+        <h3 style={{ margin: 0 }}>{jaTemContrato ? "Atualizar contrato" : "Anexar contrato"}</h3>
         <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
           {proposta.nome} · <code>{proposta.idUnico}</code>
         </div>
-
-        {/* Opcao 1: baixar modelo */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: 12, padding: 12,
-          border: "1px solid var(--border-strong)", borderRadius: 10, background: "var(--bg-elev-2)",
-        }}>
-          <span style={{ fontSize: 22 }}>📥</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700 }}>Baixar contrato modelo</div>
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>
-              PDF pronto pra imprimir e coletar a assinatura presencialmente.
-            </div>
-          </div>
-          <Button size="sm" variant="ghost" onClick={() => baixarContratoModelo(proposta)} disabled={enviando}>
-            Baixar
-          </Button>
+        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {jaTemContrato
+            ? "Enviar uma nova versao arquiva a atual no historico — nada e excluido."
+            : "Escolha o PDF do contrato assinado. Depois de anexar voce pode aprovar a proposta."}
         </div>
 
-        {/* Opcao 2: upload */}
+        {/* Upload */}
         <div>
-          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Enviar contrato assinado</div>
           <label style={{
             display: "flex", flexDirection: "column", gap: 8, padding: 20,
             border: "2px dashed var(--border-strong)", borderRadius: 12,

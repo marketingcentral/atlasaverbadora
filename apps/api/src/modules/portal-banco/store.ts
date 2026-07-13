@@ -34,12 +34,17 @@ export interface ContratoFull extends ContratoMock {
    *  pra ser fonte única (prefeitura confirma, banco vê). */
   folhaStatus?: "recebida" | "aplicada" | "falha";
   folhaMotivo?: string;
-  /** R2 key do arquivo de contrato (CCB) anexado pelo banco. Presente quando
-   *  o banco fez upload do PDF assinado. Serve pra reabrir a qualquer momento
-   *  via GET /v1/portal/banco/ccb/<key>. */
+  /** R2 key do arquivo de contrato (CCB) atual anexado pelo banco. Serve pra
+   *  reabrir via GET /v1/portal/banco/ccb/<key>. Requerido antes do banco poder
+   *  aprovar a proposta (fluxo: anexar contrato -> aprovar). */
   ccbKey?: string;
-  /** ISO — quando o CCB foi anexado (pra exibir "anexado em..."). */
+  /** ISO — quando o CCB atual foi anexado. */
   ccbAnexadoEm?: string;
+  /** Historico completo de contratos anexados (mais recente por ultimo).
+   *  Cada "atualizar contrato" NAO deleta a versao anterior — ela vai pra
+   *  ca com o timestamp e o ator. NUNCA hard-delete: rastreabilidade
+   *  obrigatoria (LGPD/BACEN). */
+  ccbHistorico?: { key: string; anexadoEm: string; ator: string }[];
   /** Bucket de margem que este contrato compromete: EMPRESTIMO (35%),
    *  CARTAO_CONSIGNADO (5%) ou CARTAO_BENEFICIOS (5%). Necessario pra
    *  cartao consignado nao descontar da margem de emprestimo (e vice-versa).
@@ -302,11 +307,19 @@ export function setContratoSituacaoAtivo(adf: string, ator: string): ContratoFul
   return c;
 }
 
-/** Grava a R2 key do CCB anexado no contrato. Retorna o contrato atualizado
- *  (o chamador chama persistContrato pra write-through). */
-export function setContratoCcb(adf: string, ccbKey: string): ContratoFull | undefined {
+/** Grava a R2 key do CCB anexado no contrato. Se ja tinha um CCB atual, ele
+ *  vai pra ccbHistorico junto com o timestamp e o ator (NUNCA hard-delete —
+ *  cliente pediu: contrato substituido nao pode ser excluido, so arquivado).
+ *  Chamador chama persistContrato pra write-through. */
+export function setContratoCcb(adf: string, ccbKey: string, ator: string): ContratoFull | undefined {
   const c = _contratos.get(adf);
   if (!c) return undefined;
+  if (c.ccbKey && c.ccbAnexadoEm) {
+    c.ccbHistorico = [
+      ...(c.ccbHistorico ?? []),
+      { key: c.ccbKey, anexadoEm: c.ccbAnexadoEm, ator },
+    ];
+  }
   c.ccbKey = ccbKey;
   c.ccbAnexadoEm = new Date().toISOString();
   return c;
