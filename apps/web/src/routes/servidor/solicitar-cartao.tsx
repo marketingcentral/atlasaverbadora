@@ -153,8 +153,8 @@ export function ServidorSolicitarCartao() {
                 Protocolo: <b style={{ color: "var(--text)" }}>{protocolo}</b>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                <Button variant="ghost" onClick={() => nav("/servidor/marketplace/portabilidade")}>
-                  Voltar ao MarketPlace
+                <Button onClick={() => nav("/servidor/contratos")}>
+                  Ir para Contratos
                 </Button>
               </div>
             </Card>
