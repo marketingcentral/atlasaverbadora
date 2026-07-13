@@ -640,8 +640,10 @@ export interface AdminServidorUpdate {
   status?: "ativo" | "bloqueado" | "arquivado";
   email?: string;
   telefone?: string;
-  /** Nova senha; se omitido ou vazio, a senha atual é mantida. */
-  password?: string;
+  // A averbadora NAO pode editar a senha do servidor. A senha e' alterada
+  // exclusivamente pelo proprio servidor via /v1/servidores/me/senha
+  // (com verificacao por email). Campo removido do tipo — se algum caller
+  // antigo enviar `password`, o zod do handler rejeita.
 }
 
 export interface AdminFolha {

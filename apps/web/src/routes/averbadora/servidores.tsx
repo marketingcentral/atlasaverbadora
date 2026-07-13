@@ -144,12 +144,14 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServidor; on
   const [email, setEmail] = useState(servidor.email);
   const [telefone, setTelefone] = useState(servidor.telefone);
   const [cpf, setCpf] = useState(servidor.cpf);
-  const [password, setPassword] = useState("");
 
   const cpfDigits = cpf.replace(/\D/g, "");
   const cpfValido = cpfDigits.length === 11;
   const cpfMudou = cpfDigits !== servidor.cpf;
 
+  // Regra do cliente: a averbadora NAO pode editar a senha do servidor.
+  // A alteracao de senha e' exclusiva do proprio servidor (via
+  // /servidor/conta -> Redefinir senha, com verificacao por e-mail).
   const save = useMutation({
     mutationFn: () => {
       const body: AdminServidorUpdate = {
@@ -157,10 +159,9 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServidor; on
         idConvenio, status, email, telefone,
       };
       if (cpfMudou && cpfValido) body.cpf = cpfDigits;
-      if (password.trim()) body.password = password;
       return atlas.admin.updateServidor(servidor.matricula, body);
     },
-    onSuccess: () => { setPassword(""); onSaved(); },
+    onSuccess: () => { onSaved(); },
   });
 
   return (
@@ -206,15 +207,10 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServidor; on
           <FormGrid>
             <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="servidor@exemplo.com" />
             <TextField label="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(48) 99999-0000" />
-            <TextField
-              label={servidor.hasPassword ? "Nova senha (deixe em branco para manter)" : "Definir senha"}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={servidor.hasPassword ? "••••••••" : "mínimo 6 caracteres"}
-              autoComplete="new-password"
-            />
           </FormGrid>
+          <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-dim)" }}>
+            A senha do servidor não é editável por aqui — apenas o próprio servidor pode alterar, em <b>Conta → Redefinir senha</b>, com verificação por e-mail.
+          </div>
         </div>
 
         {save.isError ? <p style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 12 }}>{(save.error as Error).message}</p> : null}

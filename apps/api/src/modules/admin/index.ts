@@ -1239,6 +1239,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const matricula = c.req.param("matricula");
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === matricula);
     if (!s) throw Errors.notFound("servidor");
+    // Averbadora NAO pode editar a senha do servidor (regra do cliente).
+    // Senha e alterada exclusivamente pelo proprio servidor via
+    // /v1/servidores/me/senha com verificacao por email.
     const body = z
       .object({
         nome: z.string().min(2).optional(),
@@ -1250,7 +1253,6 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         status: z.enum(["ativo", "bloqueado", "arquivado"]).optional(),
         email: z.string().email().optional().or(z.literal("")),
         telefone: z.string().optional(),
-        password: z.string().min(6).optional(),
       })
       .parse(await c.req.json());
     if (body.cpf !== undefined && body.cpf !== s.cpf) {
@@ -1268,7 +1270,6 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (body.status !== undefined) { servidorStatusOverride.set(matricula, body.status); await persistServidorStatus(c.env, matricula, body.status); }
     if (body.email !== undefined) s.email = body.email || undefined;
     if (body.telefone !== undefined) s.telefone = body.telefone || undefined;
-    if (body.password) s.passwordHash = await sha256Hex(body.password);
     const changed: string[] = [];
     if (body.cpf !== undefined) changed.push("cpf");
     if (body.nome !== undefined) changed.push("nome");
@@ -1279,7 +1280,6 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (body.status !== undefined) changed.push("status");
     if (body.email !== undefined) changed.push("email");
     if (body.telefone !== undefined) changed.push("telefone");
-    if (body.password) changed.push("senha");
     pushEvent("info", "admin.servidores.update", `Servidor matricula=${matricula} atualizado (${changed.join(",")}) por user:${c.get("jwt").sub}`);
     await persistServidor(c.env, s);
     return c.json({
