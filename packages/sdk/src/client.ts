@@ -1124,6 +1124,10 @@ export class AtlasClient {
         bancoOrigem?: string; contratoOrigem?: string; saldoDevedorOrigem?: number;
         folhaStatus?: "recebida" | "aplicada" | "falha"; folhaMotivo?: string;
         data: string; expira_em: string | null;
+        /** Timestamps ISO 8601 exatos (com hora/min/seg). Null pra propostas antigas
+         *  criadas antes da mudanca — nesse caso o cliente cai no parse de `data`
+         *  e `expira_em` (que so tem DD/MM/YYYY). */
+        criado_em_iso?: string | null; expira_em_iso?: string | null;
       }[] }>(
         "/v1/servidores/me/propostas",
         { query: matricula ? { matricula } : undefined },

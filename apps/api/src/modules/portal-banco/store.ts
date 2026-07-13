@@ -51,6 +51,14 @@ export interface ContratoFull extends ContratoMock {
    *  Se ausente (dado antigo), infere de tipoContrato: ECONSIGNADO ->
    *  CARTAO_CONSIGNADO, restante -> EMPRESTIMO. */
   tipoMargem?: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS";
+  /** ISO 8601 — timestamp exato de criacao. Diferente de lancamento (so DD/MM/YYYY,
+   *  perde a hora) — usado pelo frontend pra calcular a trava de 48h com precisao
+   *  de segundos. */
+  criadoEmIso?: string;
+  /** ISO 8601 — timestamp exato de expiracao da reserva (criadoEmIso + 48h). Null
+   *  quando nao e reserva. Substitui `expiracao` (DD/MM/YYYY) pra o timer nao mais
+   *  arredondar pra fim-de-dia. */
+  expiracaoIso?: string | null;
 }
 
 /** Deriva o bucket de margem que um contrato ocupa. Explicito no campo
@@ -382,13 +390,22 @@ export interface NovoContratoInput {
 
 export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
   const adf = nextAdf();
+  const nowMs = Date.now();
   const expiracao = input.isReserva ? addDaysISO(2) : null;
+  // Timestamps ISO exatos (com hora/minuto/segundo). O frontend usa criadoEmIso
+  // + 48h pra calcular a trava com precisao — usar so lancamento (DD/MM/YYYY)
+  // e "expiracao" (DD/MM/YYYY) inflava a contagem em ate ~24h porque parse cai
+  // em fim-de-dia (23:59:59).
+  const criadoEmIso = new Date(nowMs).toISOString();
+  const expiracaoIso = input.isReserva ? new Date(nowMs + 2 * 86400_000).toISOString() : null;
   const valorLiquido = input.valorFinanciado - input.iof;
   const c: ContratoFull = {
     adf,
     situacao: input.isReserva ? "Aguardando Confirmação do Deferimento" : "Ativo",
     lancamento: new Date().toLocaleDateString("pt-BR"),
     expiracao,
+    criadoEmIso,
+    expiracaoIso,
     cpfMasked: input.cpfMasked,
     matricula: input.matricula,
     nome: input.nome,

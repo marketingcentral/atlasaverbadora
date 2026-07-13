@@ -181,6 +181,13 @@ export function SimuladorInline({
   // computado no backend) ou fallback pra `data` + 48h.
   const serverLockExpiresAt = useMemo(() => {
     if (!propostaPendente) return null;
+    // Prefer ISO exatos (com hora/min/seg) — parse de DD/MM/YYYY perdia precisao
+    // e caia em fim-de-dia (23:59:59), inflando a contagem em ate ~24h.
+    const isoExp = propostaPendente.expira_em_iso ? Date.parse(propostaPendente.expira_em_iso) : NaN;
+    if (Number.isFinite(isoExp)) return isoExp;
+    const isoCreated = propostaPendente.criado_em_iso ? Date.parse(propostaPendente.criado_em_iso) : NaN;
+    if (Number.isFinite(isoCreated)) return isoCreated + 48 * 60 * 60 * 1000;
+    // Fallback pra propostas antigas sem ISO (dado persistido antes desta mudanca).
     const exp = parseBRDate(propostaPendente.expira_em);
     if (exp) return exp;
     const created = parseBRDate(propostaPendente.data);
@@ -519,6 +526,13 @@ function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produt
 
   const serverLockExpiresAt = useMemo(() => {
     if (!propostaPendente) return null;
+    // Prefer ISO exatos (com hora/min/seg) — parse de DD/MM/YYYY perdia precisao
+    // e caia em fim-de-dia (23:59:59), inflando a contagem em ate ~24h.
+    const isoExp = propostaPendente.expira_em_iso ? Date.parse(propostaPendente.expira_em_iso) : NaN;
+    if (Number.isFinite(isoExp)) return isoExp;
+    const isoCreated = propostaPendente.criado_em_iso ? Date.parse(propostaPendente.criado_em_iso) : NaN;
+    if (Number.isFinite(isoCreated)) return isoCreated + 48 * 60 * 60 * 1000;
+    // Fallback pra propostas antigas sem ISO (dado persistido antes desta mudanca).
     const exp = parseBRDate(propostaPendente.expira_em);
     if (exp) return exp;
     const created = parseBRDate(propostaPendente.data);

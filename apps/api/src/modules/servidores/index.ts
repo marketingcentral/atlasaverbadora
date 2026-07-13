@@ -740,6 +740,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         folhaMotivo: ct.folhaMotivo, // motivo quando a prefeitura nega a ADF
         data: ct.lancamento,
         expira_em: ct.expiracao,
+        // Timestamps ISO exatos — o frontend usa pra timer da trava de 48h ficar
+        // preciso (sem arredondar pra fim-de-dia). Sao null pra contratos antigos
+        // que nao gravaram esses campos.
+        criado_em_iso: ct.criadoEmIso ?? null,
+        expira_em_iso: ct.expiracaoIso ?? null,
       }));
     return c.json({ propostas });
   })
