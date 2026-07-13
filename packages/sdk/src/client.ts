@@ -1096,15 +1096,22 @@ export class AtlasClient {
     /** Comunicados publicados pela averbadora com publico=servidor (usados no carrossel do dashboard). */
     comunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/servidores/me/comunicados"),
     /** Baixa o CCB (contrato assinado que o banco anexou) como Blob. Envia
-     *  Authorization Bearer. Lanca erro com status HTTP se falhar — o front
-     *  distingue 404 (banco nao anexou ainda) de erro real. */
+     *  Authorization Bearer. Lanca erro com status HTTP e reason (extraido do
+     *  body JSON quando o backend explica a causa) — o front distingue os
+     *  varios 404 (banco nao anexou vs contrato nao achado vs arquivo sumiu). */
     baixarContratoCcb: async (adf: string): Promise<Blob> => {
       const token = await this.storage.getAccess();
       const url = new URL(`/v1/servidores/me/contratos/${adf}/ccb.pdf`, this.opts.baseUrl).toString();
       const res = await this.fetchImpl(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
       if (!res.ok) {
-        const err = new Error(`Falha ao baixar contrato (${res.status})`) as Error & { status?: number };
+        let reason: string | undefined;
+        try {
+          const body = await res.json() as { reason?: string };
+          reason = body?.reason;
+        } catch { /* body nao era JSON — sem reason */ }
+        const err = new Error(`Falha ao baixar contrato (${res.status}${reason ? ` — ${reason}` : ""})`) as Error & { status?: number; reason?: string };
         err.status = res.status;
+        if (reason) err.reason = reason;
         throw err;
       }
       return await res.blob();

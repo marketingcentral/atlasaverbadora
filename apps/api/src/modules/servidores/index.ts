@@ -107,11 +107,21 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     }
     return true; // ativo / averbado / vigente / quitado
   };
-  const contratosMock = contratos.filter((ct) => isContratoReal(ct.situacao)).map((ct) => ({
-    id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
-    total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: ct.folhaUltimoDesconto || "—",
-    taxaAm: ct.taxaAm, valorFinanciado: round2(ct.valorFinanciado), pdfUrl: `/v1/portal/banco/contratos/${ct.adf}/comprovante.pdf`,
-  }));
+  // Recentes primeiro — cliente pediu contratos averbados em ordem cronologica
+  // decrescente (o de hoje aparece no topo, historico mais antigo desce).
+  // ct.lancamento vem "DD/MM/YYYY" — inverte pra "YYYY-MM-DD" que compara direto.
+  const parseLanc = (s: string): string => {
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
+  };
+  const contratosMock = contratos
+    .filter((ct) => isContratoReal(ct.situacao))
+    .sort((a, b) => parseLanc(b.lancamento).localeCompare(parseLanc(a.lancamento)))
+    .map((ct) => ({
+      id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
+      total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: ct.folhaUltimoDesconto || "—",
+      taxaAm: ct.taxaAm, valorFinanciado: round2(ct.valorFinanciado), pdfUrl: `/v1/portal/banco/contratos/${ct.adf}/comprovante.pdf`,
+    }));
   const elegiveis = ativos.map((ct) => ({
     id: ct.adf, banco: bancoNome(ct.bancoId), saldoDevedor: round2(ct.saldoDevedor), parcela: round2(ct.valorParcela),
     parcelasRestantes: ct.totalParcelas - ct.parcelasPagas, totalParcelas: ct.totalParcelas, taxaAm: ct.taxaAm,
@@ -819,17 +829,35 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await ensureServidoresLoaded(c.env);
     await refreshContratos(c.env);
     const s = resolveServidor(j);
-    if (!s) throw Errors.notFound("servidor");
+    if (!s) return c.json({ reason: "servidor_nao_identificado" }, 404);
     const mats = new Set(
       SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((e) => e.matricula),
     );
     const adf = c.req.param("adf");
     const contrato = getContrato(adf);
-    if (!contrato || !mats.has(contrato.matricula)) throw Errors.notFound("contrato");
-    if (!contrato.ccbKey) throw Errors.notFound("contrato_sem_ccb");
-    if (!c.env.R2_FILES) throw Errors.notFound("r2");
+    // Retorna reason especifico em cada 404 pra debug — antes tudo caia
+    // no mesmo alert "banco nao anexou" (falso positivo quando na verdade
+    // o contrato nao foi achado ou a matricula nao bate).
+    if (!contrato) {
+      return c.json({ reason: "contrato_nao_encontrado", adf }, 404);
+    }
+    if (!mats.has(contrato.matricula)) {
+      return c.json({
+        reason: "contrato_nao_e_seu",
+        contratoMatricula: contrato.matricula,
+        minhasMatriculas: [...mats],
+      }, 404);
+    }
+    if (!contrato.ccbKey) {
+      return c.json({ reason: "ccb_nao_anexado", adf }, 404);
+    }
+    if (!c.env.R2_FILES) {
+      return c.json({ reason: "r2_indisponivel" }, 503);
+    }
     const obj = await c.env.R2_FILES.get(contrato.ccbKey);
-    if (!obj) throw Errors.notFound("ccb");
+    if (!obj) {
+      return c.json({ reason: "arquivo_nao_encontrado_no_r2", key: contrato.ccbKey }, 404);
+    }
     return new Response(obj.body, {
       headers: {
         "Content-Type": obj.httpMetadata?.contentType ?? "application/pdf",

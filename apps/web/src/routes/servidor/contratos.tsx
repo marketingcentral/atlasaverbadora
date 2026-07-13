@@ -178,12 +178,21 @@ export function ServidorContratos() {
       a.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (e) {
-      const err = e as Error & { status?: number };
-      if (err.status === 404) {
-        alert("O banco ainda não anexou o contrato assinado. Assim que ele enviar, o download fica disponível aqui.");
-      } else {
-        alert("Não foi possível baixar o contrato agora. Tente novamente em alguns instantes.");
-      }
+      const err = e as Error & { status?: number; reason?: string };
+      // Mensagem por reason concreto que o backend retorna. Se nao vier reason,
+      // cai no default — evita o falso positivo antigo de "banco nao anexou"
+      // quando na verdade era outro problema (contrato nao encontrado no
+      // isolate, arquivo sumiu do R2, etc).
+      const alertMsg = (() => {
+        if (err.status !== 404) return "Não foi possível baixar o contrato agora. Tente novamente em alguns instantes.";
+        if (err.reason === "ccb_nao_anexado") return "O banco ainda não anexou o contrato assinado. Assim que ele enviar, o download fica disponível aqui.";
+        if (err.reason === "contrato_nao_encontrado") return "Contrato não encontrado — pode estar sincronizando ainda. Aguarde alguns segundos e tente novamente.";
+        if (err.reason === "arquivo_nao_encontrado_no_r2") return "O contrato foi anexado, mas o arquivo não está mais disponível. Peça ao banco pra reenviar.";
+        if (err.reason === "contrato_nao_e_seu") return "Este contrato não pertence à sua matrícula.";
+        // Fallback: mostra o reason cru pra ajudar no debug se aparecer alguma coisa nova.
+        return err.reason ? `Não foi possível baixar o contrato (${err.reason}).` : "Não foi possível baixar o contrato. Tente novamente.";
+      })();
+      alert(alertMsg);
     } finally {
       setDownloading(null);
     }
