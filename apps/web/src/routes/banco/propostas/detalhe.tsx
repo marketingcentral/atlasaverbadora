@@ -41,8 +41,29 @@ export function BancoPropostaDetalhe() {
   // Enquanto a query da API ainda esta carregando, nao mostra "nao encontrada".
   const carregandoApi = !local && apiQ.isLoading;
   const perfil = getBancoPerfil();
-  // Modais: "recusar" (motivo) e "anexar" (menu com baixar modelo + upload).
+  // Modais: "recusar" (motivo) e "anexar" (upload de contrato).
   const [modal, setModal] = useState<null | "recusar" | "anexar">(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const qc = useQueryClient();
+  // Hooks TEM QUE ficar antes de qualquer early return (regras dos hooks) —
+  // caso contrario, quando a proposta troca de "undefined" (loading) pra
+  // definida, o React ve um numero diferente de hooks e lanca #310.
+  const propostaId = proposta?.idUnico ?? "";
+  const refresh = () => setVersion((v) => v + 1);
+  // Aprovar/recusar batem no BACKEND — persiste e o servidor ve a mudanca.
+  const decidir = useMutation({
+    mutationFn: (v: { acao: "aprovar" | "cancelar"; motivo?: string }) =>
+      atlas.banco.acao(propostaId, v.acao, v.motivo ? { motivo: v.motivo } : undefined),
+    onSuccess: () => {
+      setSaveError(null);
+      qc.invalidateQueries({ queryKey: ["banco", "propostas-api"] });
+      qc.invalidateQueries({ queryKey: ["servidor", "propostas"] });
+      refresh();
+    },
+    onError: (err) => {
+      setSaveError((err as Error).message || "Falha ao salvar a decisão no servidor.");
+    },
+  });
 
   if (!proposta) {
     return (
@@ -59,28 +80,7 @@ export function BancoPropostaDetalhe() {
     );
   }
 
-  const refresh = () => setVersion((v) => v + 1);
   const trava = travaInfo(proposta);
-
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const qc = useQueryClient();
-  // Aprovar/recusar agora batem no BACKEND (atlas.banco.acao) — a decisao
-  // persiste e o servidor ve a mudanca. Antes era so patchProposta em
-  // localStorage do banco, e o servidor nunca ficava sabendo.
-  const decidir = useMutation({
-    mutationFn: (v: { acao: "aprovar" | "cancelar"; motivo?: string }) =>
-      atlas.banco.acao(proposta.idUnico, v.acao, v.motivo ? { motivo: v.motivo } : undefined),
-    onSuccess: () => {
-      setSaveError(null);
-      qc.invalidateQueries({ queryKey: ["banco", "propostas-api"] });
-      qc.invalidateQueries({ queryKey: ["servidor", "propostas"] });
-      refresh();
-    },
-    onError: (err) => {
-      setSaveError((err as Error).message || "Falha ao salvar a decisão no servidor.");
-    },
-  });
 
   const aprovar = () => {
     if (decidir.isPending) return;
