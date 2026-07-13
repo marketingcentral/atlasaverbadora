@@ -34,6 +34,10 @@ export function AdminAdf() {
   const comps = useQuery({ queryKey: ["admin", "adf-comps"], queryFn: () => atlas.admin.adfCompetencias() });
   const [competencia, setCompetencia] = useState<string>("");
   const [prefeituraFiltro, setPrefeituraFiltro] = useState<string>("");
+  // Filtro livre por matricula OU CPF. Comparacao por SUBSTRING dos digitos —
+  // funciona pra CPF mascarado (***.***.***-33 casa com "33"), matricula
+  // parcial e nome (o `busca` como digitado, sem mascarar, tenta match no nome).
+  const [busca, setBusca] = useState<string>("");
   useEffect(() => {
     if (!competencia && comps.data?.competenciaAtual) setCompetencia(comps.data.competenciaAtual);
   }, [comps.data, competencia]);
@@ -52,7 +56,24 @@ export function AdminAdf() {
     [rows],
   );
   const filtradas = useMemo(() => {
-    const base = prefeituraFiltro ? rows.filter((r) => r.prefeituraNome === prefeituraFiltro) : rows;
+    let base = prefeituraFiltro ? rows.filter((r) => r.prefeituraNome === prefeituraFiltro) : rows;
+    const q = busca.trim();
+    if (q) {
+      const qDigits = q.replace(/\D/g, "");
+      const qLower = q.toLowerCase();
+      base = base.filter((r) => {
+        // Digitos da busca casam com matricula OU com os digitos do CPF
+        // mascarado (permite achar por final "33" mesmo mascarado ***.***.***-33).
+        if (qDigits) {
+          const matDigits = r.matricula.replace(/\D/g, "");
+          const cpfDigits = r.cpfMasked.replace(/\D/g, "");
+          if (matDigits.includes(qDigits) || cpfDigits.includes(qDigits)) return true;
+        }
+        // Fallback: substring no nome (case-insensitive) pra buscar por texto.
+        if (r.nome.toLowerCase().includes(qLower)) return true;
+        return false;
+      });
+    }
     // Recentes no topo — a API preenche `atualizadoEm` na criação e em toda troca de status.
     // Fallback pelo `id` (ADF-YYYYMM-<num>) mantém ordem estavel se o campo faltar.
     return [...base].sort((a, b) => {
@@ -61,10 +82,10 @@ export function AdminAdf() {
       if (ta !== tb) return tb.localeCompare(ta);
       return b.id.localeCompare(a.id);
     });
-  }, [rows, prefeituraFiltro]);
+  }, [rows, prefeituraFiltro, busca]);
 
   const [sel, setSel] = useState<Set<string>>(new Set());
-  useEffect(() => { setSel(new Set()); }, [competencia, prefeituraFiltro]);
+  useEffect(() => { setSel(new Set()); }, [competencia, prefeituraFiltro, busca]);
 
   const confirmar = useMutation({
     mutationFn: (ids: string[]) => atlas.admin.confirmarAdfAdmin(ids),
@@ -210,6 +231,38 @@ export function AdminAdf() {
               <option value="">Todas</option>
               {prefsUnicas.map((p) => <option key={p} value={p}>{p}</option>)}
             </select>
+          </label>
+          <label style={{ fontSize: 13, color: "var(--text-muted)", display: "flex", gap: 6, alignItems: "center", flex: "1 1 240px", minWidth: 200 }}>
+            Buscar:
+            <div style={{ position: "relative", flex: 1 }}>
+              <input
+                type="search"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Matrícula, CPF ou nome"
+                style={{
+                  width: "100%", padding: "6px 30px 6px 10px", borderRadius: 8,
+                  border: "1px solid var(--border-strong)",
+                  background: "var(--bg-elev)", color: "var(--text)", fontSize: 13,
+                  boxSizing: "border-box",
+                }}
+              />
+              {busca ? (
+                <button
+                  type="button"
+                  onClick={() => setBusca("")}
+                  aria-label="Limpar busca"
+                  title="Limpar"
+                  style={{
+                    position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                    background: "transparent", border: "none", cursor: "pointer",
+                    color: "var(--text-dim)", fontSize: 16, lineHeight: 1, padding: "2px 4px",
+                  }}
+                >
+                  ×
+                </button>
+              ) : null}
+            </div>
           </label>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
