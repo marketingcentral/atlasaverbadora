@@ -31,6 +31,10 @@ interface ApiService {
     @GET("v1/servidores/me/comunicados")
     suspend fun comunicados(): io.atlas.servidor.data.remote.dto.ComunicadosResponse
 
+    /** Solicita um cartão (consignado/benefício) — mesmo fluxo da web. */
+    @POST("v1/servidores/me/cartoes")
+    suspend fun solicitarCartao(@Body body: io.atlas.servidor.data.remote.dto.SolicitarCartaoRequest): io.atlas.servidor.data.remote.dto.SolicitarCartaoResponse
+
     /** Solicita portabilidade — o banco recebe o pedido e avalia os contratos do servidor. */
     @POST("v1/servidores/me/portabilidade")
     suspend fun solicitarPortabilidade(@Body body: io.atlas.servidor.data.remote.dto.SolicitarPortabilidadeRequest): io.atlas.servidor.data.remote.dto.PortabilidadeSolicitadaResponse

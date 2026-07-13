@@ -737,7 +737,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       codigoVerba: conv?.codigoVerba ?? "",
       observacoes: `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
       isReserva: true,
-      tipoMargem: "EMPRESTIMO", // explicit bucket — nao confunde com margem de cartao
+      // Bucket explicito por produto: cartao de credito consignado consome a margem
+      // de cartao (nao a de emprestimo). Sem isto, a solicitacao de cartao "ia como
+      // emprestimo" — descontava a margem de emprestimo do servidor.
+      tipoMargem: margemTipo,
       ator: `servidor:${s.id}`,
     });
     await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh

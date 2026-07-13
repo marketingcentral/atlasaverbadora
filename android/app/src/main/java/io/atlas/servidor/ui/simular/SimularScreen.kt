@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import io.atlas.servidor.domain.Format
+import io.atlas.servidor.ui.navigation.Produtos
 import io.atlas.servidor.ui.components.AtlasCard
 import io.atlas.servidor.ui.components.AtlasPrimaryButton
 import io.atlas.servidor.ui.components.AtlasSecondaryButton
@@ -85,6 +86,9 @@ fun SimularScreen(
             val locked = expiry != null && expiry > now
             if (locked) {
                 MargemTravadaLock(remainingMs = expiry!! - now, onVerAnalise = onSolicitado)
+            } else if (produto == Produtos.CARTAO_CONSIGNADO) {
+                // Cartão tem fluxo próprio (limite/fatura), igual à web — não é simulador de parcelas.
+                CartaoConsignadoView(vm, onSolicitado, onVoltar)
             } else {
                 Simulador(vm, onSolicitado, onVoltar)
             }
@@ -283,6 +287,105 @@ private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit, onVoltar: 
         vm.submitError?.let {
             Spacer(Modifier.height(10.dp))
             Text(it, color = io.atlas.servidor.ui.theme.DangerRed, fontSize = 13.sp)
+        }
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+/** Solicitação de Cartão de Crédito Consignado — fluxo próprio (limite/fatura mínima),
+ *  igual à web (`solicitar-cartao.tsx`). Não é simulador de parcelas. */
+@Composable
+private fun CartaoConsignadoView(vm: SimularViewModel, onSolicitado: () -> Unit, onVoltar: () -> Unit) {
+    val margem = vm.margemCartaoConsignado
+    Column(
+        modifier = Modifier.fillMaxSize().background(Fundo).verticalScroll(rememberScrollState()).padding(20.dp),
+    ) {
+        VoltarLink(onVoltar)
+        Spacer(Modifier.height(8.dp))
+        Text("Solicitar cartão", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+        Text("Cartão de Crédito Consignado", color = InkMuted, fontSize = 14.sp)
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Cartão de crédito com fatura mínima descontada em folha. Você usa como um cartão " +
+                "normal — a fatura mínima sai automaticamente do seu contracheque.",
+            color = InkMuted,
+            fontSize = 13.sp,
+            lineHeight = 18.sp,
+        )
+
+        Spacer(Modifier.height(20.dp))
+        // Margem cartão consignado
+        AtlasCard {
+            Text("SUA MARGEM CARTÃO CONSIGNADO", color = InkMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                Format.money(margem),
+                color = if (margem <= 0) io.atlas.servidor.ui.theme.DangerRed else Verde,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Margem mensal para a fatura mínima. Fixada por regulação em 5% do salário líquido.",
+                color = InkMuted,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+        }
+
+        if (margem <= 0) {
+            Spacer(Modifier.height(16.dp))
+            AtlasCard {
+                Text("Sem margem disponível", color = io.atlas.servidor.ui.theme.DangerRed, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "Sua margem de cartão consignado está zerada nesta matrícula. Não é possível " +
+                        "solicitar agora — você já tem uma solicitação em análise ou um cartão ativo.",
+                    color = InkMuted,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+        } else {
+            Spacer(Modifier.height(16.dp))
+            // Limite proposto
+            AtlasCard {
+                Text("LIMITE PROPOSTO", color = InkMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(4.dp))
+                Text(Format.money(vm.limiteCartao), color = Ink, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Estimado a partir da sua margem disponível. O Banco Atlas pode ajustar o limite " +
+                        "após análise interna de crédito.",
+                    color = InkMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                )
+            }
+
+            Spacer(Modifier.height(16.dp))
+            AtlasCard {
+                Text(
+                    "Ao solicitar, o Banco Atlas recebe seu pedido e entra em contato para emitir e " +
+                        "ativar o cartão. A margem só é comprometida quando o banco confirma — nada é " +
+                        "descontado agora.",
+                    color = InkMuted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+
+            vm.submitError?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(it, color = io.atlas.servidor.ui.theme.DangerRed, fontSize = 13.sp)
+            }
+
+            Spacer(Modifier.height(20.dp))
+            AtlasPrimaryButton(
+                text = "Solicitar Cartão Consignado",
+                onClick = { vm.solicitarCartao(onSolicitado) },
+                loading = vm.submitting,
+            )
         }
         Spacer(Modifier.height(24.dp))
     }

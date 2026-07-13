@@ -103,6 +103,34 @@ class SimularViewModel : ViewModel() {
 
     val valorMaximo: Double get() = Simulation.valorMaximo(margemDisponivel, parcelas, taxaAm)
 
+    // ---- Cartão de crédito consignado (fluxo próprio, igual à web) ----
+    /** Margem mensal disponível do cartão consignado (5% do salário). */
+    val margemCartaoConsignado: Double
+        get() = matricula?.margem?.margensPorTipo?.firstOrNull { it.tipo == Produtos.CARTAO_CONSIGNADO }?.disponivel ?: 0.0
+
+    /** Limite proposto do cartão: 30× a margem mensal (mesma regra da web). */
+    val limiteCartao: Double get() = kotlin.math.floor(margemCartaoConsignado * 30.0)
+
+    /** Solicita o cartão de crédito consignado no MESMO endpoint da web (/me/cartoes):
+     *  cria reserva ECONSIGNADO no bucket do cartão — o banco recebe como cartão. */
+    fun solicitarCartao(onDone: () -> Unit) {
+        val m = matricula ?: return
+        if (lockExpiry() != null) return // já há uma solicitação de cartão em análise (trava 48h)
+        submitting = true
+        submitError = null
+        viewModelScope.launch {
+            try {
+                repo.solicitarCartao("cartao_consignado", "Banco Atlas", limiteCartao, m.matricula)
+                prefs.setSimLock(m.matricula, Produtos.CARTAO_CONSIGNADO)
+                submitting = false
+                onDone()
+            } catch (e: ApiException) {
+                submitting = false
+                submitError = "Não foi possível enviar sua solicitação ao banco: ${e.userMessage}"
+            }
+        }
+    }
+
     /** Expiração da trava de 48h da matrícula atual (null se liberada). Chave = matrícula.
      *  Usa a matrícula do VM ou, se ainda não carregou, a selecionada nas prefs. */
     fun lockExpiry(): Long? {

@@ -126,6 +126,24 @@ data class PropostasResponse(val propostas: List<PropostaDto> = emptyList())
 
 data class RemoverPropostasResponse(val removidas: Int = 0, val ids: List<String> = emptyList())
 
+/** Solicitação de cartão (consignado/benefício) — mesmo endpoint da web (/me/cartoes).
+ *  Cria uma reserva ECONSIGNADO no bucket de margem do cartão; o banco recebe como cartão. */
+data class SolicitarCartaoRequest(
+    val produto: String, // "cartao_consignado" | "cartao_beneficio"
+    val bancoNome: String,
+    val limite: Double,
+    val matricula: String? = null,
+)
+
+data class SolicitarCartaoResponse(
+    val ok: Boolean = false,
+    val protocolo: String? = null,
+    val produto: String? = null,
+    val bancoNome: String? = null,
+    val limite: Double = 0.0,
+    val mensagem: String? = null,
+)
+
 /** Comunicado publicado pela averbadora com público-alvo "servidor" (aparece nos slides). */
 data class ComunicadoDto(
     val id: String,

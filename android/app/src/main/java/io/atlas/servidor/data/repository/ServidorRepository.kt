@@ -37,6 +37,14 @@ class ServidorRepository(
     /** Comunicados da averbadora (público servidor) — alimentam os slides do início. */
     suspend fun getComunicados() = safeApi(gson) { api.comunicados() }
 
+    /** Solicita cartão consignado/benefício — cria reserva ECONSIGNADO no bucket do cartão. */
+    suspend fun solicitarCartao(produto: String, bancoNome: String, limite: Double, matricula: String) =
+        safeApi(gson) {
+            api.solicitarCartao(
+                io.atlas.servidor.data.remote.dto.SolicitarCartaoRequest(produto, bancoNome, limite, matricula),
+            )
+        }
+
     /** Solicita portabilidade (pedido geral) — o banco recebe e avalia os contratos do servidor. */
     suspend fun solicitarPortabilidade(matricula: String?) =
         safeApi(gson) { api.solicitarPortabilidade(io.atlas.servidor.data.remote.dto.SolicitarPortabilidadeRequest(matricula)) }
