@@ -148,13 +148,12 @@ class HomeViewModel : ViewModel() {
     /** Produto bloqueado para nova solicitação? Fonte da verdade = servidor: se há proposta
      *  desse produto EM ANÁLISE (mesmo criada no OUTRO acesso — web), está bloqueado. A trava
      *  local de 48h é só um atalho de UX enquanto o reconcile não rodou. */
-    fun produtoBloqueado(produto: String): Boolean {
-        val pend = produtosPendentes
-        if (pend != null) return produto in pend
-        // Ainda não consultou o servidor → usa a trava local como fallback.
-        val mat = current()?.matricula ?: selectedMatricula ?: return false
-        return prefs.simLockExpiry(mat, produto) != null
-    }
+    // O bloqueio de um produto vem SÓ do servidor: existe uma proposta EM ANÁLISE
+    // daquele produto (fonte única, idêntica à web e ao emulador). Nunca usamos a
+    // trava local persistida — ela ficava "presa" no aparelho mesmo depois que a
+    // proposta era limpa no servidor, travando o início por engano. Enquanto o
+    // servidor ainda não respondeu (produtosPendentes == null), NÃO bloqueia.
+    fun produtoBloqueado(produto: String): Boolean = produtosPendentes?.contains(produto) == true
 
     fun logout(onDone: () -> Unit) {
         viewModelScope.launch {

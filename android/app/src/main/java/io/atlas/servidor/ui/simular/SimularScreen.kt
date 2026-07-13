@@ -69,25 +69,15 @@ fun SimularScreen(
     // Fixa o produto (empréstimo ou cartão de crédito) antes de simular.
     LaunchedEffect(produto) { vm.selecionarProduto(produto) }
 
-    // Relógio de 1s para o countdown / liberação automática da trava.
-    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) {
-        while (true) {
-            now = System.currentTimeMillis()
-            delay(1000)
-        }
-    }
-
     when {
         vm.loading -> LoadingBox(Modifier.background(Fundo))
         vm.error != null -> ErrorBox(vm.error!!, onRetry = { vm.load() }, modifier = Modifier.background(Fundo))
         else -> {
-            val expiry = vm.lockExpiry()
-            val localLock = expiry != null && expiry > now
-            // Bloqueia se: trava local de 48h OU o servidor já tem proposta deste produto em
-            // análise (inclusive criada na web). Assim a regra vale para os dois acessos.
-            if (localLock || vm.pendenteDoProduto) {
-                MargemTravadaLock(remainingMs = if (localLock) expiry!! - now else 0L, onVerAnalise = onSolicitado)
+            // Bloqueia SÓ se o servidor tem uma proposta deste produto em análise (fonte única,
+            // inclusive criada na web). Não usamos trava local — ela ficava presa no aparelho e
+            // travava o produto mesmo depois de a proposta ser limpa no servidor.
+            if (vm.pendenteDoProduto) {
+                MargemTravadaLock(remainingMs = 0L, onVerAnalise = onSolicitado)
             } else if (produto == Produtos.CARTAO_CONSIGNADO) {
                 // Cartão tem fluxo próprio (limite/fatura), igual à web — não é simulador de parcelas.
                 CartaoConsignadoView(vm, onSolicitado, onVoltar)
