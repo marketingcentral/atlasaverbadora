@@ -235,27 +235,23 @@ export function normalizeContrato(c: ContratoFull): ContratoFull {
  * a margem SEGUE DISPONIVEL. A UI (fatura minima, "% do limite") ja diz isso
  * ao servidor; o backend agora bate com esse contrato.
  *
- * Estados que COMPROMETEM (banco decidiu positivo):
+ * Estados que COMPROMETEM (bloqueiam margem):
+ *   - "Aguardando…" (proposta em analise — bloqueia JA aqui, cliente pediu
+ *     explicitamente: evita servidor solicitar 2 propostas sobrepondo margem)
  *   - "Aprovado" (banco aprovou, averbadora ainda nao fez ADF)
  *   - "Ativo" / "Averbado" (operacao vigente ja averbada)
  *   - "Suspenso" (contrato vigente que foi suspenso — margem segue reservada)
+ *   - "Formalizado"
  *
- * Estados que NAO COMPROMETEM:
- *   - "Aguardando…" (em analise no banco — nao bloqueia mais, cliente pediu)
- *   - "Expirado", "Cancelado", "Recusado" (banco decidiu negativo)
- *   - "Quitado" (contrato ja fechado)
- *
- * Trava de 48h no /servidor/simular continua existindo pra evitar duplas
- * simulacoes no mesmo produto — ela e separada dessa margem.
+ * Estados que NAO COMPROMETEM (banco decidiu negativo OU contrato ja fechado):
+ *   - "Expirado", "Cancelado", "Recusado"
+ *   - "Quitado"
  */
 export function comprometeMargem(situacao: string): boolean {
   const s = situacao.toLowerCase();
-  // Positivos: aprovado / ativo / averbado / suspenso
-  if (s.includes("aprov") || s.includes("ativo") || s.includes("averb") || s.includes("suspens") || s.includes("formaliz")) {
-    return true;
-  }
-  // Todo o resto (aguard, expir, cancel, recus, quitad, etc.) — nao bloqueia.
-  return false;
+  if (s === "expirado" || s === "cancelado" || s === "quitado") return false;
+  if (s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) return false;
+  return true; // aguard / aprov / ativo / averb / suspens / formaliz -> bloqueia
 }
 
 export function listContratos(filters: { convenioId?: string; matricula?: string; situacao?: string[] } = {}): ContratoFull[] {
