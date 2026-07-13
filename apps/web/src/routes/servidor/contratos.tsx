@@ -82,6 +82,15 @@ function ehHistoricoProposta(estado: EstadoProposta): boolean {
   return estado === "recusada" || estado === "expirada" || estado === "cancelada";
 }
 
+/** Converte "DD/MM/YYYY" (formato do backend) em "YYYY-MM-DD" pra comparar
+ *  como string diretamente. Se o formato nao bate, devolve a string original
+ *  (fallback: ordem indeterminada mas nao quebra). */
+function sortKeyProposta(data: string): string {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(data);
+  if (!m) return data;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
 export function ServidorContratos() {
   // Aba "Todos" foi removida a pedido do cliente. Ficou so Ativos (default)
   // e Historico. Historico inclui contratos quitados + propostas recusadas/
@@ -135,7 +144,12 @@ export function ServidorContratos() {
     [propostasMapeadas],
   );
   const propostasHistorico = useMemo(
-    () => propostasMapeadas.filter((p) => ehHistoricoProposta(p.estado)),
+    () => propostasMapeadas
+      .filter((p) => ehHistoricoProposta(p.estado))
+      // Recentes no topo (cancelamento recente aparece primeiro).
+      // Backend manda `p.data` como DD/MM/YYYY — inverte pra YYYY-MM-DD que
+      // eh comparavel diretamente como string.
+      .sort((a, b) => sortKeyProposta(b.data).localeCompare(sortKeyProposta(a.data))),
     [propostasMapeadas],
   );
 
