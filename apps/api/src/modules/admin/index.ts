@@ -2042,17 +2042,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .post("/v1/admin/beneficios", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
     await refreshBeneficios(c.env);
+    // Cliente pediu pra afrouxar TUDO pra testar rapido — so prefeituraId
+    // continua obrigatorio (senao o beneficio fica orfao). Demais campos
+    // aceitam vazio e o backend preenche placeholders sensatos.
     const body = z.object({
       id: z.string().optional(),
       prefeituraId: z.number().int(),
-      nome: z.string().min(2).max(100),
-      categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer", "telemedicina"])).min(1),
-      local: z.string().min(1).max(80),
-      icone: z.string().min(1).max(500), // emoji (ate 8 chars com ZWJ) OU url de imagem (max 500)
-      cor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-      descontoLabel: z.string().min(1).max(80),
-      descontoComplemento: z.string().min(1).max(120),
-      origem: z.enum(["banco", "averbadora", "prefeitura", "convenio"]),
+      nome: z.string().max(100).default("Beneficio sem nome"),
+      categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer", "telemedicina"])).default([]),
+      local: z.string().max(80).default(""),
+      icone: z.string().max(500).default("🎁"),
+      cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#C9A961"),
+      descontoLabel: z.string().max(80).default(""),
+      descontoComplemento: z.string().max(120).default(""),
+      origem: z.enum(["banco", "averbadora", "prefeitura", "convenio"]).default("averbadora"),
       ativo: z.boolean().default(true),
       // ===== Campos estendidos =====
       cnpj: z.string().max(20).optional(),

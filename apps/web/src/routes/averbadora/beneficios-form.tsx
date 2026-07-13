@@ -242,7 +242,7 @@ export function AdminBeneficiosForm() {
       {/* ============ 1. IDENTIFICACAO ============ */}
       <Secao titulo="Identificação" descricao="Nome, categoria e visual do card." icone="🏷️" defaultOpen>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <TextField label="Nome do parceiro *" value={form.nome} onChange={(e) => set("nome", e.target.value)} placeholder="Ex.: Farmácia São João" required />
+          <TextField label="Nome do parceiro" value={form.nome} onChange={(e) => set("nome", e.target.value)} placeholder="Ex.: Farmácia São João" />
           <TextField label="CNPJ (opcional)" value={form.cnpj ?? ""} onChange={(e) => set("cnpj", e.target.value)} placeholder="00.000.000/0000-00" />
         </div>
 
@@ -460,8 +460,8 @@ export function AdminBeneficiosForm() {
       {/* ============ 2. DESCONTO ============ */}
       <Secao titulo="Desconto e vantagem" descricao="O que o servidor ganha usando o benefício." icone="💰" defaultOpen>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <TextField label="Título do desconto (aparece no card) *" value={form.descontoLabel} onChange={(e) => set("descontoLabel", e.target.value)} placeholder="Ex.: 10% desconto" required />
-          <TextField label="Complemento *" value={form.descontoComplemento} onChange={(e) => set("descontoComplemento", e.target.value)} placeholder="Ex.: em medicamentos" required />
+          <TextField label="Título do desconto (aparece no card)" value={form.descontoLabel} onChange={(e) => set("descontoLabel", e.target.value)} placeholder="Ex.: 10% desconto" />
+          <TextField label="Complemento" value={form.descontoComplemento} onChange={(e) => set("descontoComplemento", e.target.value)} placeholder="Ex.: em medicamentos" />
         </div>
 
         <FieldGroup label="Tipo de desconto">
@@ -548,7 +548,7 @@ export function AdminBeneficiosForm() {
           </div>
         </div>
 
-        <TextField label="Local (bairro/cidade que aparece no card) *" value={form.local} onChange={(e) => set("local", e.target.value)} placeholder="Ex.: Palhoça Centro" required />
+        <TextField label="Local (bairro/cidade que aparece no card)" value={form.local} onChange={(e) => set("local", e.target.value)} placeholder="Ex.: Palhoça Centro" />
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <TextField label="Telefone" value={form.contato?.telefone ?? ""} onChange={(e) => set("contato", { ...form.contato, telefone: e.target.value })} placeholder="(48) 3000-0000" />
@@ -807,15 +807,9 @@ export function AdminBeneficiosForm() {
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
           <Button variant="ghost" onClick={() => nav("/averbadora/beneficios")}>Cancelar</Button>
           <Button
-            disabled={
-              save.isPending ||
-              !form.nome ||
-              !form.local ||
-              !form.descontoLabel ||
-              !form.descontoComplemento ||
-              (form.origem === "banco" && form.bancoId == null) ||
-              (form.origem === "convenio" && !form.convenioId)
-            }
+            // Modo teste — todos os campos sao opcionais. So bloqueia enquanto
+            // a mutation esta em voo pra evitar double-submit.
+            disabled={save.isPending}
             onClick={() => save.mutate()}
           >
             {save.isPending ? "Salvando..." : (initial ? "Salvar alterações" : "Criar benefício")}
