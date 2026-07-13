@@ -27,7 +27,7 @@ import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
-import { sendMail } from "./mailer.js";
+import { sendMail, enviarNotificacao } from "./mailer.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -2274,6 +2274,29 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await persistContrato(c.env, adf);
     }
     appendAudit({ categoria: "margem", acao: "adf_aplicada_admin", userId: ator, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
+    // Notifica cada servidor por email (best-effort — nunca quebra a request).
+    // Fecha o loop end-to-end: banco aprovou -> averbadora aplicou em folha ->
+    // servidor recebe "seu contrato foi averbado, recurso liberado".
+    for (const adf of adfs) {
+      const ct = getContrato(adf);
+      if (!ct) continue;
+      const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
+      if (!srv?.email) continue;
+      const brl = (n: number) => `R$ ${(Math.round(n * 100) / 100).toFixed(2).replace(".", ",")}`;
+      const bancoNome = bancos.find((b) => b.id === ct.bancoId)?.nome ?? `Banco ${ct.bancoId}`;
+      const p = enviarNotificacao(c.env, {
+        destinoPadrao: srv.email,
+        titulo: `Contrato ${adf} averbado`,
+        mensagem: "Sua averbacao foi confirmada em folha pela prefeitura. O recurso ja pode ser liberado pelo banco conforme o combinado.",
+        detalhes: [
+          { label: "Banco", valor: bancoNome },
+          { label: "Valor financiado", valor: brl(ct.valorFinanciado) },
+          { label: "Parcela", valor: `${ct.totalParcelas}x de ${brl(ct.valorParcela)}` },
+          { label: "Situacao", valor: "Averbada / Liberada" },
+        ],
+      });
+      try { c.executionCtx.waitUntil(p); } catch { void p; }
+    }
     return c.json({ aplicadas: adfs.length });
   })
   .post("/v1/admin/adf/falha", async (c) => {
@@ -2283,6 +2306,24 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const adfs = setAdfStatusGlobal(body.ids, "falha", body.motivo, new Date().toISOString());
     for (const adf of adfs) await persistContrato(c.env, adf);
     appendAudit({ categoria: "margem", acao: "adf_falha_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
+    // Notifica cada servidor por email (best-effort).
+    for (const adf of adfs) {
+      const ct = getContrato(adf);
+      if (!ct) continue;
+      const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
+      if (!srv?.email) continue;
+      const bancoNome = bancos.find((b) => b.id === ct.bancoId)?.nome ?? `Banco ${ct.bancoId}`;
+      const p = enviarNotificacao(c.env, {
+        destinoPadrao: srv.email,
+        titulo: `Averbacao ${adf} nao aplicada em folha`,
+        mensagem: `A averbacao nao pode ser aplicada em folha. Motivo: ${body.motivo}. O banco vai retomar o contato pra tratar.`,
+        detalhes: [
+          { label: "Banco", valor: bancoNome },
+          { label: "Situacao", valor: "Falha em folha" },
+        ],
+      });
+      try { c.executionCtx.waitUntil(p); } catch { void p; }
+    }
     return c.json({ falhas: adfs.length });
   })
 
