@@ -8,6 +8,7 @@ import {
   STORAGE_KEY_META,
   STORAGE_KEY_LIST,
 } from "../lib/matricula-data";
+import { LoadingOverlay, useTrocaOverlay } from "./LoadingOverlay";
 
 // Seletor de matricula no canto do header — aparece SO quando o servidor tem mais
 // de uma matricula (acumulacao legal de cargos). Troca inline (sem sair da tela):
@@ -17,11 +18,10 @@ export function MatriculaSwitcher() {
   const [open, setOpen] = useState(false);
   const [, force] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
-  // Feedback de troca: overlay de ~2s nomeando a matricula de destino, para que
-  // um servidor desatento perceba que a matricula (e os dados) mudaram.
-  const [trocandoPara, setTrocandoPara] = useState<{ matricula: string; prefeitura: string } | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  // Overlay reativo: fica visivel enquanto queries do servidor estao em voo
+  // depois da troca (piso 800ms, teto 5s). Antes era setTimeout fixo de 1200ms
+  // que podia tanto ficar tempo demais quanto fechar antes das queries carregarem.
+  const { troca, iniciar } = useTrocaOverlay();
 
   // Re-renderiza quando as matriculas hidratam do backend ou a ativa muda.
   useEffect(() => {
@@ -59,17 +59,12 @@ export function MatriculaSwitcher() {
     setOpen(false);
     if (idMatricula === activeId) return;
     const alvo = MATRICULAS.find((m) => m.idMatricula === idMatricula);
-    // Mostra o overlay de troca por ~2s; só então aplica a troca — assim o usuario
-    // ve a transicao e a tela revela ja os dados da nova matricula.
-    setTrocandoPara({ matricula: alvo?.matricula ?? "", prefeitura: alvo?.prefeitura ?? "" });
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      setActiveMatricula(idMatricula);
-      // setActiveMatricula nao dispara 'storage' na propria aba — emitimos manualmente
-      // para que dashboard/margem/contratos/etc. releiam a matricula ativa na hora.
-      window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY_META }));
-      setTrocandoPara(null);
-    }, 1200);
+    // Aplica a troca IMEDIATAMENTE — as queries do servidor tem matricula no
+    // queryKey, entao mudar a ativa dispara refetch. Overlay fica ate as
+    // queries terminarem de carregar (via useIsFetching).
+    setActiveMatricula(idMatricula);
+    window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY_META }));
+    iniciar(`${alvo?.prefeitura ?? ""} · Matrícula ${alvo?.matricula ?? ""}`, ["servidor"]);
   }
 
   return (
@@ -186,37 +181,9 @@ export function MatriculaSwitcher() {
         </div>
       ) : null}
 
-      {trocandoPara
+      {troca
         ? createPortal(
-            <div
-              role="status"
-              aria-live="polite"
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 9999,
-                background: "color-mix(in srgb, var(--navy-900) 82%, transparent)",
-                backdropFilter: "blur(4px)",
-                display: "grid",
-                placeItems: "center",
-              }}
-            >
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center", padding: 24 }}>
-                <div
-                  className="atlas-mat-spin"
-                  style={{ width: 46, height: 46, borderRadius: "50%", border: "3px solid var(--border-strong)", borderTopColor: "var(--gold-500)" }}
-                />
-                <div>
-                  <div style={{ fontSize: 12, color: "var(--gold-500)", fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" }}>
-                    Trocando de matrícula
-                  </div>
-                  <div style={{ fontSize: "1.15rem", fontWeight: 700, marginTop: 6, color: "var(--text)" }}>{trocandoPara.prefeitura}</div>
-                  <div style={{ fontFamily: "var(--font-mono)", color: "var(--text-muted)", marginTop: 2 }}>Matrícula {trocandoPara.matricula}</div>
-                  <div style={{ fontSize: 12.5, color: "var(--text-dim)", marginTop: 10 }}>Atualizando margem, contratos e dados…</div>
-                </div>
-              </div>
-              <style>{`@keyframes atlasMatSpin{to{transform:rotate(360deg)}}.atlas-mat-spin{animation:atlasMatSpin .8s linear infinite}`}</style>
-            </div>,
+            <LoadingOverlay eyebrow="Trocando de matrícula" subtitulo={troca.subtitulo} />,
             document.body,
           )
         : null}
