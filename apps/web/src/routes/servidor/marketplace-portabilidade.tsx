@@ -546,10 +546,14 @@ function BeneficioCard({ b }: { b: ServidorBeneficio }) {
     return () => clearInterval(t);
   }, [modo, imagens.length]);
 
+  // Hero fixo em 140px pra TODOS os cards ficarem da mesma altura visual
+  // no grid — antes o card sem imagem esticava com espaco vazio embaixo do
+  // com imagem. Sem imagem: gradiente com a cor do beneficio + icone gigante.
+  const HERO_H = 140;
   return (
-    <Card style={{ padding: 0, overflow: "hidden" }}>
+    <Card style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}>
       {temImagem ? (
-        <div style={{ position: "relative", width: "100%", aspectRatio: "16 / 9", background: "var(--bg-elev-2)" }}>
+        <div style={{ position: "relative", width: "100%", height: HERO_H, background: "var(--bg-elev-2)", flexShrink: 0 }}>
           <img
             src={imagens[idx] ?? imagens[0]}
             alt=""
@@ -577,31 +581,30 @@ function BeneficioCard({ b }: { b: ServidorBeneficio }) {
             </div>
           ) : null}
         </div>
-      ) : null}
-      <div style={{ padding: 16 }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-          <div style={{
-            width: 44, height: 44, borderRadius: 10, flexShrink: 0,
-            background: `color-mix(in srgb, ${b.cor} 20%, transparent)`,
-            display: "grid", placeItems: "center", fontSize: 22,
-          }}>
-            {b.icone}
-          </div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 700, color: "var(--text)" }}>{b.nome}</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-              {b.local}
-            </div>
-          </div>
+      ) : (
+        // Placeholder pros cards sem imagem — gradiente com a cor do beneficio
+        // e emoji gigante centralizado. Mantem altura do hero uniforme.
+        <div style={{
+          width: "100%", height: HERO_H, flexShrink: 0,
+          background: `linear-gradient(135deg, color-mix(in srgb, ${b.cor} 25%, var(--bg-elev-2)), color-mix(in srgb, ${b.cor} 10%, var(--bg-elev)))`,
+          display: "grid", placeItems: "center", fontSize: 56, lineHeight: 1,
+        }}>
+          <span aria-hidden>{b.icone}</span>
+        </div>
+      )}
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
+        <div>
+          <div style={{ fontWeight: 700, color: "var(--text)" }}>{b.nome}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{b.local}</div>
         </div>
         {b.descontoLabel ? (
-          <div style={{ marginTop: 12, fontSize: 14 }}>
+          <div style={{ fontSize: 14 }}>
             <b style={{ color: "var(--emerald-500)" }}>{b.descontoLabel}</b>
             {b.descontoComplemento ? <span style={{ color: "var(--text-muted)" }}> {b.descontoComplemento}</span> : null}
           </div>
         ) : null}
         {b.linkAcesso?.url ? (
-          <div style={{ marginTop: 12 }}>
+          <div style={{ marginTop: "auto" }}>
             <a
               href={b.linkAcesso.url}
               target="_blank"
