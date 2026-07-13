@@ -135,22 +135,36 @@ export function ServidorContratos() {
       parcela: p.parcela,
       taxaAm: p.taxaAm,
       data: p.data,
+      // Timestamp ISO exato pro sort (com hora/min/seg). Se ausente (dado
+      // antigo), cai no `data` (DD/MM/YYYY) — nesse caso propostas do mesmo
+      // dia empatam mas ao menos dias diferentes ficam ordenados.
+      criadoEmIso: p.criado_em_iso ?? null,
       // Vem do backend quando existir — usado pra rotular o produto no card.
       tipoContrato: p.tipoContrato,
     }));
   }, [propostasQ.data]);
 
+  // Chave de sort: prefer ISO exato; fallback pra data DD/MM/YYYY invertido
+  // pra YYYY-MM-DD. Usado tanto em "Em andamento" quanto no "Historico".
+  const sortKey = (p: { criadoEmIso: string | null; data: string }): string => {
+    if (p.criadoEmIso) return p.criadoEmIso;
+    return sortKeyProposta(p.data);
+  };
+
   const emAndamento = useMemo(
-    () => propostasMapeadas.filter((p) => ehEmAndamento(p.estado)),
+    () => propostasMapeadas
+      .filter((p) => ehEmAndamento(p.estado))
+      // Recentes no topo — cliente pediu explicitamente: quando uma proposta
+      // nova chega, todas as outras descem 1 posicao; a que estava no topo
+      // NAO vai pro fim, so desce uma linha.
+      .sort((a, b) => sortKey(b).localeCompare(sortKey(a))),
     [propostasMapeadas],
   );
   const propostasHistorico = useMemo(
     () => propostasMapeadas
       .filter((p) => ehHistoricoProposta(p.estado))
-      // Recentes no topo (cancelamento recente aparece primeiro).
-      // Backend manda `p.data` como DD/MM/YYYY — inverte pra YYYY-MM-DD que
-      // eh comparavel diretamente como string.
-      .sort((a, b) => sortKeyProposta(b.data).localeCompare(sortKeyProposta(a.data))),
+      // Mesma regra do "Em andamento": recentes no topo.
+      .sort((a, b) => sortKey(b).localeCompare(sortKey(a))),
     [propostasMapeadas],
   );
 

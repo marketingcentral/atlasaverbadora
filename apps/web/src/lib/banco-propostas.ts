@@ -339,6 +339,10 @@ export interface BancoContratoApi {
   ccbKey?: string;
   ccbAnexadoEm?: string;
   ccbHistorico?: { key: string; anexadoEm: string; ator: string }[];
+  /** Timestamp ISO 8601 exato de criacao (com hora/min/seg). Contratos antigos
+   *  criados antes da migracao nao tem esse campo — cai no parse de `lancamento`
+   *  (DD/MM/YYYY, so dia). Prefer sempre este quando disponivel pra sort exato. */
+  criadoEmIso?: string | null;
 }
 
 export interface BancoPropostaFromApi extends BancoProposta {
@@ -396,7 +400,10 @@ export function contratoToProposta(ct: BancoContratoApi): BancoPropostaFromApi {
     vinculo: "",
     situacaoFuncional: "",
     status,
-    criadaEm: parseBrDate(ct.lancamento),
+    // Prefer o ISO exato (com hora/min/seg) — parseBrDate cai em 00:00 e faz
+    // propostas do mesmo dia empatarem no sort. Sem isso, a ordem de exibicao
+    // fica indeterminada e a mais recente pode nao ir pro topo.
+    criadaEm: ct.criadoEmIso ?? parseBrDate(ct.lancamento),
     travaHoras: 48,
     contratosAtivos: [],
     _api: true,
