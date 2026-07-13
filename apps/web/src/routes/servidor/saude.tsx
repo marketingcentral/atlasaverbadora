@@ -22,10 +22,13 @@ export function ServidorSaude() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Beneficios de saude da prefeitura da matricula ATIVA (respeita switcher).
+  // Nesta tela so aparecem beneficios de TELEMEDICINA (categoria exclusiva).
+  // Farmacia/clinica/laboratorio (categoria "saude" generica) aparecem na
+  // aba Beneficios do MarketPlace, nao aqui. Cliente separou explicitamente
+  // as duas coisas.
   const beneficiosQ = useQuery({
-    queryKey: ["servidor", "beneficios", "saude", info?.matricula],
-    queryFn: () => atlas.servidor.getMyBeneficios("saude", info?.matricula),
+    queryKey: ["servidor", "beneficios", "telemedicina", info?.matricula],
+    queryFn: () => atlas.servidor.getMyBeneficios("telemedicina", info?.matricula),
     refetchOnWindowFocus: true,
     enabled: !!info?.matricula,
   });
