@@ -490,7 +490,12 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         convenio: z.string(),
         taxaMinAm: z.number().min(0).max(1),
         taxaMaxAm: z.number().min(0).max(1),
-        prazoMaxMeses: z.number().int().min(1).max(240),
+        // Cliente pediu prazo max fechado — so aceita 12/24/36/48/60/72/96/120.
+        // Bloqueio server-side alem do dropdown fechado no form.
+        prazoMaxMeses: z.union([
+          z.literal(12), z.literal(24), z.literal(36), z.literal(48),
+          z.literal(60), z.literal(72), z.literal(96), z.literal(120),
+        ]),
         vigenciaInicio: z.string(),
         vigenciaFim: z.string().optional(),
         ativo: z.boolean().default(true),

@@ -13,7 +13,11 @@ import {
   type LockProduto,
 } from "../../lib/simulation-lock";
 
-const PARCELAS = [12, 24, 36, 48, 60, 72, 96];
+// Opcoes fixas — sao filtradas em tempo real pelo prazo max das tabelas
+// vigentes dos bancos parceiros (via useQuery atlas.servidor.ofertas). Se
+// o banco reduzir o prazo max de 96 pra 60, o servidor deixa de ver 72/96
+// no dropdown no proximo poll (5s).
+const PARCELAS_TODAS = [12, 24, 36, 48, 60, 72, 96, 120];
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -76,6 +80,31 @@ export function SimuladorInline({
   const [valor, setValor] = useState<number>(valorDefault);
   const [parcelas, setParcelas] = useState<number>(parcelasDefault);
   const taxaAm = taxaAmDefault;
+
+  // Ofertas ativas do convenio dessa matricula — traz o prazoMaxMeses de cada
+  // tabela publicada pelo(s) banco(s). Poll 5s = "tempo real": quando o banco
+  // altera o prazo max no /banco/cadastros/tabela-emprestimos, o servidor ve
+  // as parcelas disponiveis mudarem sem refresh. Contratos ja vigentes nao
+  // sao afetados — a tabela e' consultada so pra NOVAS simulacoes.
+  const ofertasQ = useQuery({
+    queryKey: ["servidor", "ofertas-tabelas", info?.matricula],
+    queryFn: () => atlas.servidor.ofertas(info?.matricula),
+    enabled: !!info?.matricula,
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
+  });
+  const PARCELAS = useMemo(() => {
+    const of = ofertasQ.data?.ofertas ?? [];
+    if (of.length === 0) return PARCELAS_TODAS; // fallback quando nao carregou
+    const prazoMax = Math.max(...of.map((o) => o.prazoMaxMeses));
+    return PARCELAS_TODAS.filter((p) => p <= prazoMax);
+  }, [ofertasQ.data]);
+  // Se o prazo escolhido nao esta mais disponivel, cai pro maior permitido.
+  useEffect(() => {
+    if (PARCELAS.length > 0 && !PARCELAS.includes(parcelas)) {
+      setParcelas(PARCELAS[PARCELAS.length - 1] ?? parcelasDefault);
+    }
+  }, [PARCELAS, parcelas, parcelasDefault]);
 
   const [lockExpiresAt, setLockExpiresAt] = useState<number | null>(() =>
     getActiveLock(info?.idMatricula ?? null, lockProduto),

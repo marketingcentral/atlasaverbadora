@@ -132,7 +132,17 @@ export function BancoTabelaEmprestimosForm() {
           />
           <NumberField label="Taxa min (% a.m.)" step={0.01} value={taxaMinPct} onChange={(e) => setTaxaMinPct(Number(e.target.value))} required />
           <NumberField label="Taxa max (% a.m.)" step={0.01} value={taxaMaxPct} onChange={(e) => setTaxaMaxPct(Number(e.target.value))} required />
-          <NumberField label="Prazo max (meses)" min={1} max={240} value={prazoMaxMeses} onChange={(e) => setPrazoMaxMeses(Number(e.target.value))} required />
+          {/* Prazo max fechado em opcoes fixas (12/24/36/48/60/72/96/120) —
+              cliente pediu pra remover a edicao livre em numeros. Servidor
+              simulando so ve prazos ate esse teto (bate em tempo real via
+              atlas.servidor.tabelas). */}
+          <SelectField
+            label="Prazo max (meses)"
+            value={String(prazoMaxMeses)}
+            onChange={(e) => setPrazoMaxMeses(Number(e.target.value))}
+            options={[12, 24, 36, 48, 60, 72, 96, 120].map((n) => ({ value: String(n), label: `${n} meses` }))}
+            required
+          />
           <TextField label="Vigência início" type="date" value={vigenciaInicio} onChange={(e) => setVigenciaInicio(e.target.value)} required />
           <TextField label="Vigência fim" type="date" value={vigenciaFim} onChange={(e) => setVigenciaFim(e.target.value)} hint="Opcional. Vazio = aberta" />
         </FormGrid>
