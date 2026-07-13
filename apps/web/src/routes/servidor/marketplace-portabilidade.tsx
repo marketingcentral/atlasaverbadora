@@ -192,33 +192,19 @@ export function ServidorMarketplacePortabilidade() {
         </p>
       </header>
 
-      {/* 1. OFERTAS DOS BANCOS PARCEIROS (primeira secao — cards com tabelas) */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <span style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Ofertas para você
-        </span>
-        {ofertasQ.isLoading ? (
-          <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Carregando ofertas…</div>
-        ) : ofertasQ.error ? (
-          <div style={{ color: "var(--danger-500)", fontSize: 14 }}>Falha ao carregar ofertas.</div>
-        ) : ofertas.length === 0 ? (
-          <div
-            style={{
-              padding: 32,
-              textAlign: "center",
-              border: "1px dashed var(--border-strong)",
-              borderRadius: 12,
-              color: "var(--text-muted)",
-            }}
-          >
-            <div style={{ fontSize: 24, marginBottom: 6 }}>📭</div>
-            <div style={{ fontWeight: 600 }}>Nenhuma oferta ativa no momento</div>
-            <p style={{ fontSize: 13, margin: "6px auto 0", maxWidth: 480 }}>
-              Este espaço mostra apenas ofertas que os bancos parceiros criam e publicam pra você.
-              Assim que uma cair, aparece aqui.
-            </p>
-          </div>
-        ) : (
+      {/* 1. OFERTAS DOS BANCOS PARCEIROS (primeira secao — cards com tabelas).
+          Se nao ha oferta, a secao inteira some (nao mostra mais o placeholder
+          "Nenhuma oferta ativa"). Cliente pediu — as demais secoes (Rede de
+          saude, Solicitar portabilidade) preenchem a tela mesmo sem ofertas. */}
+      {ofertasQ.isLoading ? (
+        <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Carregando ofertas…</div>
+      ) : ofertasQ.error ? (
+        <div style={{ color: "var(--danger-500)", fontSize: 14 }}>Falha ao carregar ofertas.</div>
+      ) : ofertas.length === 0 ? null : (
+        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <span style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+            Ofertas para você
+          </span>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
             {ofertas.map((o) => {
               const valorSug = Math.min(o.valorMax, 10000);
@@ -259,8 +245,8 @@ export function ServidorMarketplacePortabilidade() {
               );
             })}
           </div>
-        )}
-      </section>
+        </section>
+      )}
 
       {/* 2. REDE DE SAUDE — beneficios de categoria "saude" (farmacia, clinica,
           laboratorio, etc.). Telemedicina exclusiva vive em /servidor/saude. */}
