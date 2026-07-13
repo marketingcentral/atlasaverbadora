@@ -108,15 +108,21 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     return true; // ativo / averbado / vigente / quitado
   };
   // Recentes primeiro — cliente pediu contratos averbados em ordem cronologica
-  // decrescente (o de hoje aparece no topo, historico mais antigo desce).
-  // ct.lancamento vem "DD/MM/YYYY" — inverte pra "YYYY-MM-DD" que compara direto.
+  // decrescente (o de hoje aparece no topo, quando chegar outro recente ele
+  // desce UMA linha, sem ir pro final da tabela).
+  //
+  // Prefere criadoEmIso (com hora/min/seg) — se ausente, cai em lancamento
+  // (DD/MM/YYYY invertido pra YYYY-MM-DD). Sem esse fallback, contratos criados
+  // no MESMO dia empatam no sort e a ordem fica indeterminada — aleatoria.
   const parseLanc = (s: string): string => {
     const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s);
     return m ? `${m[3]}-${m[2]}-${m[1]}` : s;
   };
+  const sortKeyCt = (ct: { criadoEmIso?: string; lancamento: string }): string =>
+    ct.criadoEmIso ?? parseLanc(ct.lancamento);
   const contratosMock = contratos
     .filter((ct) => isContratoReal(ct.situacao))
-    .sort((a, b) => parseLanc(b.lancamento).localeCompare(parseLanc(a.lancamento)))
+    .sort((a, b) => sortKeyCt(b).localeCompare(sortKeyCt(a)))
     .map((ct) => ({
       id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
       total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: ct.folhaUltimoDesconto || "—",
