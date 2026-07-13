@@ -125,69 +125,93 @@ export function SimuladorInline({
     }
   }, [PARCELAS, parcelas, parcelasDefault]);
 
-  const [lockExpiresAt, setLockExpiresAt] = useState<number | null>(() =>
+  const [clientLockExpiresAt, setClientLockExpiresAt] = useState<number | null>(() =>
     getActiveLock(info?.idMatricula ?? null, lockProduto),
   );
   const [now, setNow] = useState<number>(() => Date.now());
 
   // Re-le lock quando a matricula, o produto ou o lock em outra aba mudar.
   useEffect(() => {
-    setLockExpiresAt(getActiveLock(info?.idMatricula ?? null, lockProduto));
+    setClientLockExpiresAt(getActiveLock(info?.idMatricula ?? null, lockProduto));
     const onStorage = (e: StorageEvent) => {
       if (e.key === SIMULATION_LOCK_KEY) {
-        setLockExpiresAt(getActiveLock(info?.idMatricula ?? null, lockProduto));
+        setClientLockExpiresAt(getActiveLock(info?.idMatricula ?? null, lockProduto));
       }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, [info?.idMatricula, lockProduto]);
 
-  // Tick 1s enquanto ha lock ativo (pra atualizar o contador).
-  useEffect(() => {
-    if (!lockExpiresAt) return;
-    const i = setInterval(() => {
-      const t = Date.now();
-      setNow(t);
-      if (t >= lockExpiresAt) setLockExpiresAt(null);
-    }, 1000);
-    return () => clearInterval(i);
-  }, [lockExpiresAt]);
-
-  // Poll de propostas: se o banco ja respondeu tudo, libera a margem.
+  // Poll de propostas SEMPRE (nao so quando ja ha lock local) — a trava tem
+  // que ser derivada da fonte da verdade (backend), nao so do localStorage.
+  // Se o usuario limpou cache / trocou navegador, o localStorage nao tem lock,
+  // mas o backend TEM a proposta pendente e ela precisa continuar travando.
   const propostasQ = useQuery({
     queryKey: ["servidor", "propostas", info?.matricula ?? null],
     queryFn: () => atlas.servidor.propostas(info?.matricula),
     refetchInterval: 10_000,
-    enabled: !!lockExpiresAt,
+    enabled: !!info,
   });
-  // REGRA DE NEGOCIO: a trava de 48h so pode ser liberada em DOIS casos:
-  //   (a) 48h naturalmente expiraram (handled pelo tick de setInterval acima), ou
-  //   (b) o banco EXPLICITAMENTE decidiu (aceitou ou recusou) alguma proposta
-  //       do mesmo produto travado.
-  // NAO liberar por: proposta simplesmente "sumiu", query sem dados, proposta
-  // expirada sem decisao, ou pendencias de OUTROS produtos — tudo isso podia
-  // causar a trava soltar cedo demais em versoes anteriores.
-  const bancoDecidiu = useMemo(() => {
+
+  // "DD/MM/YYYY" -> timestamp (fim do dia local, 23:59:59). Retorna null se
+  // string for invalida.
+  const parseBRDate = (s: string | undefined | null): number | null => {
+    if (!s) return null;
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+    if (!m) return null;
+    const t = new Date(`${m[3]}-${m[2]}-${m[1]}T23:59:59`).getTime();
+    return Number.isFinite(t) ? t : null;
+  };
+
+  // Proposta ainda pendente de decisao do banco (Aguardando/Analise/qualquer
+  // situacao que NAO seja aceite/recusa explicita).
+  const propostaPendente = useMemo(() => {
     const relevantes = (propostasQ.data?.propostas ?? [])
       .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto));
-    if (relevantes.length === 0) return false; // sem propostas do produto ⇒ nao decidiu
-    return relevantes.some((p) => {
+    return relevantes.find((p) => {
       const s = p.situacao.toLowerCase();
-      // ACEITE explicito do banco
-      if (s.includes("ativo") || s.includes("aprov") || s.includes("averb") || s.includes("formaliz") || s.includes("quitad")) return true;
-      // RECUSA explicita do banco
-      if (s.includes("cancel") || s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) return true;
-      return false;
+      const decidiu =
+        s.includes("ativo") || s.includes("aprov") || s.includes("averb") || s.includes("formaliz") || s.includes("quitad") ||
+        s.includes("cancel") || s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn");
+      return !decidiu;
     });
   }, [propostasQ.data, lockProduto]);
+
+  // Lock derivado do backend: expira em `expira_em` (48h da criacao, ja
+  // computado no backend) ou fallback pra `data` + 48h.
+  const serverLockExpiresAt = useMemo(() => {
+    if (!propostaPendente) return null;
+    const exp = parseBRDate(propostaPendente.expira_em);
+    if (exp) return exp;
+    const created = parseBRDate(propostaPendente.data);
+    return created ? created + 48 * 60 * 60 * 1000 : null;
+  }, [propostaPendente]);
+
+  // Lock efetivo: pega o MAIOR entre localStorage e backend (mais conservador).
+  // Se so um dos dois tiver valor, usa aquele.
+  const lockExpiresAt = useMemo(() => {
+    if (clientLockExpiresAt && serverLockExpiresAt) return Math.max(clientLockExpiresAt, serverLockExpiresAt);
+    return clientLockExpiresAt ?? serverLockExpiresAt;
+  }, [clientLockExpiresAt, serverLockExpiresAt]);
+
+  // Tick 1s enquanto ha lock ativo (pra atualizar o contador).
   useEffect(() => {
-    if (!lockExpiresAt || !propostasQ.data) return;
-    if (bancoDecidiu) {
+    if (!lockExpiresAt) return;
+    const i = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(i);
+  }, [lockExpiresAt]);
+
+  // Se o banco decidiu (aceite/recusa), limpa localStorage tambem — nao vai
+  // ter mais propostaPendente entao serverLockExpiresAt ja e null. Efeito
+  // so pra sujar o localStorage tambem.
+  useEffect(() => {
+    if (!propostasQ.data || !clientLockExpiresAt) return;
+    if (!propostaPendente) {
       const id = info?.idMatricula;
       if (id) clearLock(id, lockProduto);
-      setLockExpiresAt(null);
+      setClientLockExpiresAt(null);
     }
-  }, [propostasQ.data, bancoDecidiu, lockExpiresAt, info?.idMatricula, lockProduto]);
+  }, [propostasQ.data, propostaPendente, clientLockExpiresAt, info?.idMatricula, lockProduto]);
 
   const margemEmprestimo = useMemo(() => {
     if (!info) return 0;
@@ -227,7 +251,7 @@ export function SimuladorInline({
   function solicitar() {
     if (!podeSolicitar || !info) return;
     setLock(info.idMatricula, lockProduto);
-    setLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
+    setClientLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
     const params = new URLSearchParams({
       tipo: "novo",
       banco: "SCred Financeira",
@@ -447,12 +471,130 @@ function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produt
   const limiteProposto = Math.max(0, Math.floor((margemDisp * 30) / 100) * 100);
   const bancoDefault = "Banco Atlas";
 
+  // Lock derivado do backend + localStorage — mesma logica do SimuladorInline
+  // (emprestimo). Trava fica ativa enquanto existir proposta pendente do
+  // mesmo produto OU enquanto 48h nao expirar.
+  const [clientLockExpiresAt, setClientLockExpiresAt] = useState<number | null>(() =>
+    getActiveLock(info?.idMatricula ?? null, lockProduto),
+  );
+  const [now, setNow] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    setClientLockExpiresAt(getActiveLock(info?.idMatricula ?? null, lockProduto));
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === SIMULATION_LOCK_KEY) {
+        setClientLockExpiresAt(getActiveLock(info?.idMatricula ?? null, lockProduto));
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [info?.idMatricula, lockProduto]);
+
+  const propostasQ = useQuery({
+    queryKey: ["servidor", "propostas", info?.matricula ?? null],
+    queryFn: () => atlas.servidor.propostas(info?.matricula),
+    refetchInterval: 10_000,
+    enabled: !!info,
+  });
+
+  const parseBRDate = (s: string | undefined | null): number | null => {
+    if (!s) return null;
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+    if (!m) return null;
+    const t = new Date(`${m[3]}-${m[2]}-${m[1]}T23:59:59`).getTime();
+    return Number.isFinite(t) ? t : null;
+  };
+
+  const propostaPendente = useMemo(() => {
+    const relevantes = (propostasQ.data?.propostas ?? [])
+      .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto));
+    return relevantes.find((p) => {
+      const s = p.situacao.toLowerCase();
+      const decidiu =
+        s.includes("ativo") || s.includes("aprov") || s.includes("averb") || s.includes("formaliz") || s.includes("quitad") ||
+        s.includes("cancel") || s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn");
+      return !decidiu;
+    });
+  }, [propostasQ.data, lockProduto]);
+
+  const serverLockExpiresAt = useMemo(() => {
+    if (!propostaPendente) return null;
+    const exp = parseBRDate(propostaPendente.expira_em);
+    if (exp) return exp;
+    const created = parseBRDate(propostaPendente.data);
+    return created ? created + 48 * 60 * 60 * 1000 : null;
+  }, [propostaPendente]);
+
+  const lockExpiresAt = useMemo(() => {
+    if (clientLockExpiresAt && serverLockExpiresAt) return Math.max(clientLockExpiresAt, serverLockExpiresAt);
+    return clientLockExpiresAt ?? serverLockExpiresAt;
+  }, [clientLockExpiresAt, serverLockExpiresAt]);
+
+  useEffect(() => {
+    if (!lockExpiresAt) return;
+    const i = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(i);
+  }, [lockExpiresAt]);
+
+  useEffect(() => {
+    if (!propostasQ.data || !clientLockExpiresAt) return;
+    if (!propostaPendente) {
+      const id = info?.idMatricula;
+      if (id) clearLock(id, lockProduto);
+      setClientLockExpiresAt(null);
+    }
+  }, [propostasQ.data, propostaPendente, clientLockExpiresAt, info?.idMatricula, lockProduto]);
+
+  const locked = !!lockExpiresAt && lockExpiresAt > now;
+
   function solicitar() {
-    if (semMargem || !info) return;
+    if (semMargem || locked || !info) return;
     // Trava de 48h por produto — mesma logica do emprestimo (SimuladorInline).
     // Trava e SEPARADA da do emprestimo (margens/produtos independentes).
     setLock(info.idMatricula, lockProduto);
+    setClientLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
     nav(`/servidor/solicitar-cartao?produto=${produto}&banco=${encodeURIComponent(bancoDefault)}&limite=${Math.round(limiteProposto)}`);
+  }
+
+  if (locked && lockExpiresAt) {
+    const restante = formatRemaining(lockExpiresAt - now);
+    const expiraEmFormatado = new Date(lockExpiresAt).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+    return (
+      <Card style={{ padding: 28, textAlign: "center" }}>
+        <div
+          style={{
+            width: 56, height: 56, borderRadius: "50%",
+            background: "color-mix(in srgb, var(--gold-500) 20%, transparent)",
+            color: "var(--gold-500)",
+            display: "grid", placeItems: "center",
+            fontSize: 28, margin: "0 auto 10px",
+          }}
+        >
+          ⏳
+        </div>
+        <h3 style={{ margin: "0 0 6px" }}>{meta.titulo} em análise</h3>
+        <p style={{ color: "var(--text-muted)", margin: 0, fontSize: ".9rem", maxWidth: 460, marginInline: "auto" }}>
+          Você já tem uma solicitação de {meta.titulo.toLowerCase()} aguardando resposta do banco. A margem fica travada até o banco decidir ou até expirar em 48h.
+        </p>
+        <div
+          style={{
+            marginTop: 20, padding: "16px 20px", borderRadius: 12,
+            background: "var(--bg-elev-2)", border: "1px solid var(--border-strong)",
+            display: "inline-block", minWidth: 240,
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-muted)", textTransform: "uppercase" }}>
+            Tempo restante
+          </div>
+          <div style={{ marginTop: 4, fontSize: "2rem", fontWeight: 800, fontFamily: "var(--font-mono)", color: "var(--accent)", letterSpacing: "0.02em" }}>
+            {restante}
+          </div>
+          <div style={{ marginTop: 4, fontSize: ".78rem", color: "var(--text-dim)" }}>
+            Libera em {expiraEmFormatado}
+          </div>
+        </div>
+      </Card>
+    );
   }
 
   return (
