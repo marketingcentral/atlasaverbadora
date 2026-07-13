@@ -777,6 +777,11 @@ export interface PrefeituraAdf {
   bancoNome: string;
   valorParcela: number;
   totalParcelas: number;
+  /** Valor total financiado (parcela x total parcelas). */
+  valorFinanciado?: number;
+  /** EMPRESTIMO | REFIN | ECONSIGNADO — a averbadora rotula como
+   *  Empréstimo / Portabilidade / Cartão respectivamente. */
+  tipoContrato?: string;
   status: "recebida" | "aplicada" | "falha";
   motivo?: string;
 }
@@ -1404,6 +1409,11 @@ export class AtlasClient {
         id: string; adf: string; idUnico: string; cpfMasked: string; matricula: string; nome: string;
         bancoNome: string; prefeituraId: number; prefeituraNome: string; competencia: string;
         valorParcela: number; totalParcelas: number;
+        /** Valor total financiado (parcela x total parcelas). */
+        valorFinanciado?: number;
+        /** EMPRESTIMO | REFIN | ECONSIGNADO — rotulado como Emprestimo /
+         *  Portabilidade / Cartao no card. */
+        tipoContrato?: string;
         status: "recebida" | "aplicada" | "falha"; motivo?: string;
       }[] }>("/v1/admin/adf", { query: q ?? {} }),
     confirmarAdfAdmin: (ids: string[]) =>

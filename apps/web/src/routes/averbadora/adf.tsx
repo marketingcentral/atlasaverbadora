@@ -13,10 +13,21 @@ type AdfRow = {
   id: string; adf: string; idUnico: string; cpfMasked: string; matricula: string; nome: string;
   bancoNome: string; prefeituraId: number; prefeituraNome: string; competencia: string;
   valorParcela: number; totalParcelas: number;
+  valorFinanciado?: number;
+  tipoContrato?: string;
   status: "recebida" | "aplicada" | "falha"; motivo?: string;
   /** ISO timestamp em que o ADF entrou/mudou de status na averbadora — usado para ordenar recentes no topo. */
   atualizadoEm?: string;
 };
+
+/** Rotulo do produto derivado de tipoContrato do backend. Mesma logica
+ *  usada no card do servidor pra manter consistencia entre telas. */
+function produtoLabel(tipoContrato: string | undefined): string {
+  const t = (tipoContrato ?? "").toUpperCase();
+  if (t === "REFIN") return "Portabilidade";
+  if (t === "ECONSIGNADO") return "Cartão";
+  return "Empréstimo";
+}
 
 export function AdminAdf() {
   const qc = useQueryClient();
@@ -73,6 +84,10 @@ export function AdminAdf() {
   });
 
   const totalParcelas = useMemo(() => filtradas.reduce((s, a) => s + a.valorParcela, 0), [filtradas]);
+  const totalFinanciado = useMemo(
+    () => filtradas.reduce((s, a) => s + (a.valorFinanciado ?? a.valorParcela * a.totalParcelas), 0),
+    [filtradas],
+  );
   const resumo = useMemo(() => {
     let r = 0, a = 0, f = 0;
     for (const x of filtradas) {
@@ -107,7 +122,31 @@ export function AdminAdf() {
     { key: "banco", header: "Banco", render: (a) => a.bancoNome },
     { key: "cpfMasked", header: "CPF", mono: true },
     { key: "nome", header: "Servidor" },
+    {
+      key: "categoria",
+      header: "Categoria",
+      render: (a) => (
+        <span style={{
+          fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase",
+          color: "var(--accent)", padding: "2px 8px", borderRadius: 999,
+          border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)",
+          background: "color-mix(in srgb, var(--accent) 10%, transparent)",
+        }}>
+          {produtoLabel(a.tipoContrato)}
+        </span>
+      ),
+    },
     { key: "valorParcela", header: "Parcela", align: "right", render: (a) => fmtBRL(a.valorParcela) },
+    {
+      key: "valorFinanciado",
+      header: "Valor total",
+      align: "right",
+      render: (a) => (
+        <span style={{ color: "var(--emerald-500)", fontWeight: 700 }}>
+          {fmtBRL(a.valorFinanciado ?? a.valorParcela * a.totalParcelas)}
+        </span>
+      ),
+    },
     {
       key: "status",
       header: "Status",
@@ -174,7 +213,7 @@ export function AdminAdf() {
           </label>
           <span style={{ flex: 1 }} />
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
-            {filtradas.length} ADFs · total parcelas <b style={{ color: "var(--text)" }}>{fmtBRL(totalParcelas)}</b>
+            {filtradas.length} ADFs · total parcelas <b style={{ color: "var(--text)" }}>{fmtBRL(totalParcelas)}</b> · valor total <b style={{ color: "var(--emerald-500)" }}>{fmtBRL(totalFinanciado)}</b>
             {" · "}
             <span style={{ color: "var(--gold-500)" }}>{resumo.r} recebidas</span>
             {" / "}

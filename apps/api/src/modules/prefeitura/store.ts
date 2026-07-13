@@ -117,6 +117,12 @@ export interface AdfEntry {
   bancoNome: string;
   valorParcela: number;
   totalParcelas: number;
+  /** Valor total financiado do contrato (parcela x total) — separado de
+   *  valorParcela pra averbadora ver "R$ 231 x 12 = R$ 2.772,00" no lote. */
+  valorFinanciado: number;
+  /** Tipo do contrato do banco — EMPRESTIMO | REFIN | ECONSIGNADO. Serve
+   *  pra averbadora rotular no lote como Emprestimo / Portabilidade / Cartao. */
+  tipoContrato: string;
   status: AdfStatus;
   motivo?: string;
   atualizadoEm: string;
@@ -154,6 +160,7 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
       competencia, prefeituraId, adf: ct.adf, idUnico: issueIdUnico(prefeituraId),
       cpfMasked: ct.cpfMasked, matricula: ct.matricula, nome: ct.nome,
       bancoNome: bancoNomeById(ct.bancoId), valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
+      valorFinanciado: ct.valorFinanciado, tipoContrato: ct.tipoContrato,
       status, motivo: ct.folhaMotivo, atualizadoEm: now,
     });
   }
