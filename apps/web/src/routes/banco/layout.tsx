@@ -7,7 +7,16 @@ import { AtlasBrand } from "../../components/AtlasBrand";
 
 const NAV = [
   { key: "visao-geral", label: "Visão Geral", href: "/banco/visao-geral", icon: "◉" },
-  { key: "propostas", label: "Minhas Propostas", href: "/banco/propostas", icon: "◈" },
+  {
+    key: "propostas",
+    label: "Minhas Propostas",
+    icon: "◈",
+    children: [
+      { key: "emprestimo", label: "Empréstimo", href: "/banco/propostas?produto=emprestimo" },
+      { key: "cartao", label: "Cartão", href: "/banco/propostas?produto=cartao" },
+      { key: "portabilidade", label: "Portabilidade", href: "/banco/propostas?produto=portabilidade" },
+    ],
+  },
   { key: "ofertas", label: "Ofertas", href: "/banco/ofertas", icon: "◇" },
   {
     key: "cadastros",
@@ -63,7 +72,19 @@ export function BancoLayout() {
     window.setTimeout(() => setTrocandoConvenio(null), 3_000);
   };
 
-  const activeKey = location.pathname.split("/").pop() ?? "visao-geral";
+  // activeKey ordinariamente e' o ultimo segmento do path. Excecao:
+  // /banco/propostas tem submenu por produto controlado por query param
+  // (?produto=emprestimo|cartao|portabilidade) — usa o valor pra destacar
+  // o filho certo no sidebar.
+  const activeKey = ((): string => {
+    const last = location.pathname.split("/").pop() ?? "visao-geral";
+    if (last === "propostas") {
+      const p = new URLSearchParams(location.search).get("produto");
+      if (p === "emprestimo" || p === "cartao" || p === "portabilidade") return p;
+      return "emprestimo"; // default
+    }
+    return last;
+  })();
 
   return (
     <AppShellAdmin

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, SelectField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
@@ -23,10 +23,8 @@ const STATUS_OPTS: BancoPropostaStatus[] = [
 ];
 
 type TabKey = "todas" | "aguardando" | "aprovadas" | "recusadas";
-// Tabs primarias por PRODUTO (cliente pediu essas 3 categorias na tela).
-// Convenio e produto sumiram como dropdown — convenio ja vem do topo (ativo)
-// e produto virou aba primaria. Status virou dropdown dentro da aba.
-const PRODUTO_TABS: readonly BancoProduto[] = ["emprestimo", "cartao", "portabilidade"] as const;
+// Produto virou submenu do sidebar (padrao Cadastros) — nao aparece mais como
+// tab/dropdown na pagina. Vem do query param ?produto=emprestimo|cartao|portabilidade.
 
 function statusPertenceTab(s: BancoPropostaStatus, tab: TabKey): boolean {
   if (tab === "todas") return true;
@@ -37,7 +35,15 @@ function statusPertenceTab(s: BancoPropostaStatus, tab: TabKey): boolean {
 
 export function BancoPropostas() {
   const nav = useNavigate();
-  const [produtoTab, setProdutoTab] = useState<BancoProduto>("emprestimo");
+  // Produto agora vem do QUERY PARAM (?produto=emprestimo|cartao|portabilidade) —
+  // controlado pelo submenu do sidebar do banco (mesmo padrao de Cadastros).
+  // Se nao vier, cai no default "emprestimo".
+  const [sp] = useSearchParams();
+  const produtoTab: BancoProduto = (() => {
+    const p = sp.get("produto");
+    if (p === "cartao" || p === "portabilidade" || p === "emprestimo") return p;
+    return "emprestimo";
+  })();
   const [tab, setTab] = useState<TabKey>("todas");
   const [status, setStatus] = useState<"" | BancoPropostaStatus>("");
   const [expirando, setExpirando] = useState(false);
@@ -133,18 +139,11 @@ export function BancoPropostas() {
         <PerfilSwitcher value={perfilId} onChange={(id) => { setBancoPerfil(id); setPerfilId(id); }} />
       </header>
 
-      {/* Menu suspenso PRIMARIO por produto — cliente pediu dropdown no lugar
-          das 3 tabs grandes. Rotulo inclui contador entre parenteses. */}
-      <div style={{ maxWidth: 360 }}>
-        <SelectField
-          label="Produto"
-          value={produtoTab}
-          onChange={(e) => setProdutoTab(e.target.value as BancoProduto)}
-          options={PRODUTO_TABS.map((p) => ({
-            value: p,
-            label: `${PRODUTO_LABEL[p]} (${totaisPorProduto[p]})`,
-          }))}
-        />
+      {/* Produto agora e' escolhido no submenu do sidebar (padrao Cadastros).
+          Os contadores por produto seguem disponiveis via totaisPorProduto pra
+          futuras extensoes; por ora, so mostramos o nome do produto ativo. */}
+      <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        Produto ativo: <b style={{ color: "var(--text)" }}>{PRODUTO_LABEL[produtoTab]}</b> ({totaisPorProduto[produtoTab]})
       </div>
 
       {/* Tabs de status (dentro do produto ativo) */}
