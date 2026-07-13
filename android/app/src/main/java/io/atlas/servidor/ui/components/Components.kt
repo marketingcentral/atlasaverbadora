@@ -40,6 +40,22 @@ import io.atlas.servidor.ui.theme.Superficie
 import io.atlas.servidor.ui.theme.Verde
 import io.atlas.servidor.ui.theme.VerdeSoft
 
+/** Envolve um onClick para ignorar toques repetidos por [windowMs] — evita que cliques
+ *  rápidos (o usuário batendo várias vezes no botão) disparem a ação mais de uma vez e
+ *  criem propostas/simulações duplicadas ou travem a UI. */
+@Composable
+fun rememberDebouncedClick(windowMs: Long = 800L, onClick: () -> Unit): () -> Unit {
+    val last = androidx.compose.runtime.remember { androidx.compose.runtime.mutableLongStateOf(0L) }
+    val current = androidx.compose.runtime.rememberUpdatedState(onClick)
+    return {
+        val now = System.currentTimeMillis()
+        if (now - last.longValue >= windowMs) {
+            last.longValue = now
+            current.value()
+        }
+    }
+}
+
 @Composable
 fun AtlasPrimaryButton(
     text: String,
@@ -48,8 +64,9 @@ fun AtlasPrimaryButton(
     enabled: Boolean = true,
     loading: Boolean = false,
 ) {
+    val onClickDebounced = rememberDebouncedClick(onClick = onClick)
     Button(
-        onClick = onClick,
+        onClick = onClickDebounced,
         enabled = enabled && !loading,
         modifier = modifier.fillMaxWidth().height(54.dp),
         shape = RoundedCornerShape(14.dp),
@@ -74,8 +91,9 @@ fun AtlasSecondaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
+    val onClickDebounced = rememberDebouncedClick(onClick = onClick)
     OutlinedButton(
-        onClick = onClick,
+        onClick = onClickDebounced,
         enabled = enabled,
         modifier = modifier.fillMaxWidth().height(54.dp),
         shape = RoundedCornerShape(14.dp),

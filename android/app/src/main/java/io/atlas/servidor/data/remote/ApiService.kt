@@ -89,6 +89,9 @@ interface AuthApi {
     @POST("v1/auth/esqueci-senha/solicitar-email")
     suspend fun esqueciSolicitarEmail(@Body body: io.atlas.servidor.data.remote.dto.EsqueciEmailRequest): io.atlas.servidor.data.remote.dto.EsqueciSolicitarResponse
 
+    @POST("v1/auth/esqueci-senha/solicitar")
+    suspend fun esqueciSolicitar(@Body body: io.atlas.servidor.data.remote.dto.EsqueciCpfRequest): io.atlas.servidor.data.remote.dto.EsqueciSolicitarResponse
+
     @POST("v1/auth/esqueci-senha/redefinir")
     suspend fun esqueciRedefinir(@Body body: io.atlas.servidor.data.remote.dto.RedefinirSenhaRequest): OkResponse
 }

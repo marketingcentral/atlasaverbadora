@@ -51,6 +51,8 @@ data class PaConfirmarRequest(val cpf: String, val codigo: String)
 
 /** Esqueci minha senha (por e-mail): valida o e-mail e envia o código pra ele. */
 data class EsqueciEmailRequest(val email: String)
+/** Esqueci minha senha (por CPF): envia o código pro e-mail cadastrado; retorna o e-mail mascarado. */
+data class EsqueciCpfRequest(val cpf: String)
 data class EsqueciSolicitarResponse(val enviado: Boolean = false, val cpf: String? = null, val destino: String? = null)
 
 /** Redefinir senha: valida o código e grava a nova senha. */

@@ -36,7 +36,7 @@ class ContaViewModel : ViewModel() {
     }
 
     fun abrirEmail(atual: String) { mode = ContaEdit.EMAIL; campo = atual; reset() }
-    fun abrirTelefone(atual: String) { mode = ContaEdit.TELEFONE; campo = atual; reset() }
+    fun abrirTelefone(atual: String) { mode = ContaEdit.TELEFONE; campo = atual.filter { it.isDigit() }.take(11); reset() }
     fun abrirSenha() { mode = ContaEdit.SENHA; reset() }
     fun fechar() { mode = ContaEdit.NONE }
 

@@ -9,25 +9,24 @@ import io.atlas.servidor.core.ApiException
 import io.atlas.servidor.core.ServiceLocator
 import kotlinx.coroutines.launch
 
-enum class EsStep { EMAIL, REDEFINIR, CONCLUIDO }
+enum class EsStep { CPF, CODIGO, SENHA, CONCLUIDO }
 
-/** Esqueci minha senha por E-MAIL: informa o e-mail do cadastro → recebe o código →
- *  digita código + nova senha. Se o e-mail não for o do cadastro, mostra erro. */
+/** Esqueci minha senha por CPF: informa o CPF → recebe o código no e-mail cadastrado
+ *  (mostrado mascarado) → digita o código → define a nova senha (2x) → volta ao login. */
 class EsqueciSenhaViewModel : ViewModel() {
     private val auth = ServiceLocator.authRepository
 
-    var step by mutableStateOf(EsStep.EMAIL)
+    var step by mutableStateOf(EsStep.CPF)
         private set
     var loading by mutableStateOf(false)
         private set
     var error by mutableStateOf<String?>(null)
         private set
 
-    var email by mutableStateOf("")
+    var cpf by mutableStateOf("")
         private set
     var destinoMasked by mutableStateOf("")
         private set
-    private var cpf: String = ""
     var codigo by mutableStateOf("")
         private set
     var senha by mutableStateOf("")
@@ -35,33 +34,36 @@ class EsqueciSenhaViewModel : ViewModel() {
     var senhaConfirm by mutableStateOf("")
         private set
 
-    fun onEmailChange(v: String) { email = v.trim(); error = null }
+    fun onCpfChange(v: String) { cpf = v.filter { it.isDigit() }.take(11); error = null }
     fun onCodigoChange(v: String) { codigo = v.filter { it.isDigit() }.take(6); error = null }
     fun onSenhaChange(v: String) { senha = v; error = null }
     fun onSenhaConfirmChange(v: String) { senhaConfirm = v; error = null }
 
-    /** Valida o e-mail contra a conta cadastrada e envia o código pra ele. */
+    /** Passo 1: valida o CPF e envia o código pro e-mail cadastrado. */
     fun solicitar() {
-        val emailOk = email.contains("@") && email.substringAfterLast("@").contains(".") && email.length >= 6
-        if (!emailOk) { error = "Informe um e-mail válido."; return }
+        if (cpf.length != 11) { error = "Digite os 11 dígitos do seu CPF."; return }
         loading = true; error = null
         viewModelScope.launch {
             try {
-                val r = auth.esqueciSolicitarEmail(email)
-                cpf = r.cpf ?: ""
-                destinoMasked = r.destino ?: email
-                step = EsStep.REDEFINIR
+                val r = auth.esqueciSolicitar(cpf)
+                destinoMasked = r.destino ?: "seu e-mail"
+                step = EsStep.CODIGO
             } catch (e: ApiException) {
-                // O backend retorna "E-mail errado ou inexistente" quando não bate.
                 error = e.userMessage
             } finally { loading = false }
         }
     }
 
-    /** Confirma o código e grava a nova senha. */
-    fun redefinir(onConcluido: () -> Unit) {
+    /** Passo 2: apenas avança pra tela de nova senha — o código é validado no redefinir. */
+    fun avancarCodigo() {
+        if (codigo.length != 6) { error = "Digite os 6 dígitos do código."; return }
+        error = null
+        step = EsStep.SENHA
+    }
+
+    /** Passo 3: valida a nova senha, confirma o código e grava. */
+    fun redefinir() {
         when {
-            codigo.length != 6 -> { error = "Digite os 6 dígitos do código."; return }
             senha.length < 8 -> { error = "A nova senha deve ter ao menos 8 caracteres."; return }
             senha != senhaConfirm -> { error = "As senhas não coincidem."; return }
         }
@@ -76,5 +78,7 @@ class EsqueciSenhaViewModel : ViewModel() {
         }
     }
 
-    fun voltarParaEmail() { step = EsStep.EMAIL; error = null }
+    /** Volta um passo (usado pelos links "‹ Voltar" das telas de código/senha). */
+    fun voltarCodigo() { step = EsStep.CODIGO; error = null }
+    fun voltarCpf() { step = EsStep.CPF; error = null }
 }

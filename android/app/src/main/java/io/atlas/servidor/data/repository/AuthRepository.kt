@@ -52,9 +52,13 @@ class AuthRepository(
             authApi.primeiroAcessoSenha(io.atlas.servidor.data.remote.dto.PaConfirmarRequest(cpf, codigo))
         }
 
-    // ---- Esqueci minha senha (por e-mail) ----
+    // ---- Esqueci minha senha ----
     suspend fun esqueciSolicitarEmail(email: String) =
         safeApi(gson) { authApi.esqueciSolicitarEmail(io.atlas.servidor.data.remote.dto.EsqueciEmailRequest(email)) }
+
+    /** Por CPF: envia o código pro e-mail cadastrado; retorna o e-mail mascarado. */
+    suspend fun esqueciSolicitar(cpf: String) =
+        safeApi(gson) { authApi.esqueciSolicitar(io.atlas.servidor.data.remote.dto.EsqueciCpfRequest(cpf)) }
 
     suspend fun esqueciRedefinir(cpf: String, codigo: String, senha: String) =
         safeApi(gson) { authApi.esqueciRedefinir(io.atlas.servidor.data.remote.dto.RedefinirSenhaRequest(cpf, codigo, senha)) }

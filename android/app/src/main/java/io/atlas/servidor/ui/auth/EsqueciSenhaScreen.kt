@@ -28,6 +28,7 @@ import io.atlas.servidor.ui.theme.DangerRed
 import io.atlas.servidor.ui.theme.Fundo
 import io.atlas.servidor.ui.theme.Ink
 import io.atlas.servidor.ui.theme.InkMuted
+import io.atlas.servidor.ui.util.CpfVisualTransformation
 
 @Composable
 fun EsqueciSenhaScreen(
@@ -45,8 +46,9 @@ fun EsqueciSenhaScreen(
         Spacer(Modifier.height(8.dp))
 
         when (vm.step) {
-            EsStep.EMAIL -> StepEmail(vm)
-            EsStep.REDEFINIR -> StepRedefinir(vm, onBack)
+            EsStep.CPF -> StepCpf(vm)
+            EsStep.CODIGO -> StepCodigo(vm)
+            EsStep.SENHA -> StepSenha(vm)
             EsStep.CONCLUIDO -> StepConcluidoEs(onBack)
         }
 
@@ -62,23 +64,25 @@ fun EsqueciSenhaScreen(
 private fun EsTitle(text: String, sub: String) {
     Text(text, color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold, lineHeight = 30.sp)
     Spacer(Modifier.height(6.dp))
-    Text(sub, color = InkMuted, fontSize = 15.sp)
+    Text(sub, color = InkMuted, fontSize = 15.sp, lineHeight = 20.sp)
     Spacer(Modifier.height(20.dp))
 }
 
+/** Passo 1 — CPF. Ao enviar, o código vai para o e-mail cadastrado. */
 @Composable
-private fun StepEmail(vm: EsqueciSenhaViewModel) {
+private fun StepCpf(vm: EsqueciSenhaViewModel) {
     EsTitle(
         "Recuperar acesso",
-        "Informe o e-mail que você usou no primeiro acesso. Enviaremos um código de verificação para ele.",
+        "Digite seu CPF. Enviaremos um código de verificação para o e-mail cadastrado na sua conta.",
     )
     OutlinedTextField(
-        value = vm.email,
-        onValueChange = vm::onEmailChange,
-        label = { Text("Seu e-mail de cadastro") },
-        placeholder = { Text("voce@gmail.com") },
+        value = vm.cpf,
+        onValueChange = vm::onCpfChange,
+        label = { Text("CPF") },
+        placeholder = { Text("000.000.000-00") },
         singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+        visualTransformation = CpfVisualTransformation(),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth(),
     )
@@ -86,23 +90,33 @@ private fun StepEmail(vm: EsqueciSenhaViewModel) {
     AtlasPrimaryButton("Enviar código", onClick = vm::solicitar, loading = vm.loading)
 }
 
+/** Passo 2 — código, com o e-mail (mascarado) para onde o código foi enviado. */
 @Composable
-private fun StepRedefinir(vm: EsqueciSenhaViewModel, onBack: () -> Unit) {
+private fun StepCodigo(vm: EsqueciSenhaViewModel) {
     EsTitle(
         "Verifique o código",
-        "Enviamos um código de 6 dígitos para ${vm.destinoMasked}. Digite-o e escolha sua nova senha.",
+        "Enviamos um código de 6 dígitos para o e-mail ${vm.destinoMasked}. Confira sua caixa de entrada (e o spam).",
     )
     OutlinedTextField(
         value = vm.codigo,
         onValueChange = vm::onCodigoChange,
-        label = { Text("Código") },
+        label = { Text("Código de verificação") },
         placeholder = { Text("000000") },
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier.fillMaxWidth(),
     )
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(24.dp))
+    AtlasPrimaryButton("Continuar", onClick = vm::avancarCodigo, loading = vm.loading)
+    Spacer(Modifier.height(10.dp))
+    AtlasSecondaryButton("Voltar", onClick = vm::voltarCpf)
+}
+
+/** Passo 3 — nova senha (2x). */
+@Composable
+private fun StepSenha(vm: EsqueciSenhaViewModel) {
+    EsTitle("Nova senha", "Escolha uma nova senha para acessar sua conta.")
     OutlinedTextField(
         value = vm.senha,
         onValueChange = vm::onSenhaChange,
@@ -127,9 +141,9 @@ private fun StepRedefinir(vm: EsqueciSenhaViewModel, onBack: () -> Unit) {
     Spacer(Modifier.height(6.dp))
     Text("Mínimo de 8 caracteres.", color = InkMuted, fontSize = 12.sp)
     Spacer(Modifier.height(24.dp))
-    AtlasPrimaryButton("Redefinir senha", onClick = { vm.redefinir(onBack) }, loading = vm.loading)
+    AtlasPrimaryButton("Alterar senha", onClick = vm::redefinir, loading = vm.loading)
     Spacer(Modifier.height(10.dp))
-    AtlasSecondaryButton("Voltar", onClick = vm::voltarParaEmail)
+    AtlasSecondaryButton("Voltar", onClick = vm::voltarCodigo)
 }
 
 @Composable
@@ -137,12 +151,13 @@ private fun StepConcluidoEs(onBack: () -> Unit) {
     Spacer(Modifier.height(24.dp))
     Text("✅", fontSize = 52.sp)
     Spacer(Modifier.height(16.dp))
-    Text("Senha redefinida!", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+    Text("Senha alterada!", color = Ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
     Spacer(Modifier.height(8.dp))
     Text(
         "Sua nova senha já está valendo. Entre com seu CPF e a nova senha.",
         color = InkMuted,
         fontSize = 15.sp,
+        lineHeight = 20.sp,
     )
     Spacer(Modifier.height(28.dp))
     AtlasPrimaryButton("Acessar", onClick = onBack)

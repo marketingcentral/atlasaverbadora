@@ -180,7 +180,7 @@ private fun ContaEditDialog(vm: ContaViewModel, onSucesso: () -> Unit) {
                 if (vm.step == ContaStep.FORM) {
                     when (vm.mode) {
                         ContaEdit.EMAIL -> Field("Novo e-mail", vm.campo, vm::onCampo, KeyboardType.Email)
-                        ContaEdit.TELEFONE -> Field("Novo telefone", vm.campo, vm::onCampo, KeyboardType.Phone)
+                        ContaEdit.TELEFONE -> Field("Novo telefone", vm.campo, vm::onCampo, KeyboardType.Phone, phone = true)
                         ContaEdit.SENHA -> {
                             Field("Senha atual", vm.senhaAtual, vm::onSenhaAtual, KeyboardType.Password, senha = true)
                             Spacer(Modifier.height(10.dp))
@@ -223,13 +223,19 @@ private fun ContaEditDialog(vm: ContaViewModel, onSucesso: () -> Unit) {
 }
 
 @Composable
-private fun Field(label: String, value: String, onChange: (String) -> Unit, kb: KeyboardType, senha: Boolean = false) {
+private fun Field(label: String, value: String, onChange: (String) -> Unit, kb: KeyboardType, senha: Boolean = false, phone: Boolean = false) {
+    // Telefone: guarda só dígitos (máx. 11) e exibe com a máscara (xx) xxxxx-xxxx.
+    val transform = when {
+        phone -> io.atlas.servidor.ui.util.PhoneVisualTransformation()
+        senha -> PasswordVisualTransformation()
+        else -> androidx.compose.ui.text.input.VisualTransformation.None
+    }
     OutlinedTextField(
         value = value,
-        onValueChange = onChange,
+        onValueChange = { if (phone) onChange(it.filter { c -> c.isDigit() }.take(11)) else onChange(it) },
         label = { Text(label) },
         singleLine = true,
-        visualTransformation = if (senha) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        visualTransformation = transform,
         keyboardOptions = KeyboardOptions(keyboardType = kb),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth(),
