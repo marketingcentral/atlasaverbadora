@@ -1420,6 +1420,25 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await persistComunicados(c.env);
     return c.json({ comunicados: COMUNICADOS_MOCK });
   })
+  .post("/v1/admin/comunicados/reordenar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    await refreshComunicados(c.env);
+    const { ids } = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
+    // Reordena in-place com base na nova ordem. Ids fora da lista sao ignorados;
+    // ids da lista que nao vieram no payload vao pro fim (defensivo — evita
+    // sumir um comunicado se o front por bug mandar array incompleto).
+    const mapa = new Map(COMUNICADOS_MOCK.map((c) => [c.id, c]));
+    const reordenados = [] as typeof COMUNICADOS_MOCK;
+    for (const id of ids) {
+      const item = mapa.get(id);
+      if (item) { reordenados.push(item); mapa.delete(id); }
+    }
+    for (const restante of mapa.values()) reordenados.push(restante);
+    COMUNICADOS_MOCK.length = 0;
+    COMUNICADOS_MOCK.push(...reordenados);
+    await persistComunicados(c.env);
+    return c.json({ comunicados: COMUNICADOS_MOCK });
+  })
   .delete("/v1/admin/comunicados/:id", async (c) => {
     requireAdmin(c.get("jwt"));
     await refreshComunicados(c.env);

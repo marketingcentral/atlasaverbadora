@@ -1476,6 +1476,9 @@ export class AtlasClient {
       this.request<{ comunicado: Comunicado }>("/v1/admin/comunicados", { method: "POST", body }),
     moveComunicado: (id: string, direction: "up" | "down") =>
       this.request<{ comunicados: Comunicado[] }>(`/v1/admin/comunicados/${id}/mover`, { method: "POST", body: { direction } }),
+    /** Reordena a lista inteira em um POST — usado pelo drag-and-drop. */
+    reordenarComunicados: (ids: string[]) =>
+      this.request<{ comunicados: Comunicado[] }>("/v1/admin/comunicados/reordenar", { method: "POST", body: { ids } }),
     deleteComunicado: (id: string) =>
       this.request<{ ok: boolean }>(`/v1/admin/comunicados/${id}`, { method: "DELETE" }),
     health: () =>
