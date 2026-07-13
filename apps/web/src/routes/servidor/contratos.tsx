@@ -18,14 +18,21 @@ type EstadoProposta = "em_analise" | "aprovada" | "aguardando_formalizacao" | "r
 
 function mapSituacao(situacao: string): EstadoProposta {
   const t = situacao.toLowerCase();
-  if (t.includes("aguard confirm")) return "em_analise";
-  if (t.includes("aguard")) return "em_analise";
-  if (t.includes("cancel")) return "cancelada";
-  if (t.includes("recus")) return "recusada";
+  // ATENCAO: ordem importa — checagens negativas primeiro pra evitar que
+  // "Cancelado" caia em "aguard" (nunca cairia, mas defensivo).
+  if (t.includes("cancel") || t.includes("estorn")) return "cancelada";
+  if (t.includes("recus") || t.includes("reprov") || t.includes("rejeit") || t.includes("negad")) return "recusada";
   if (t.includes("suspens")) return "cancelada";
   if (t.includes("expir")) return "expirada";
   if (t.includes("quitad")) return "liberada";
   if (t.includes("ativo") || t.includes("averb")) return "liberada";
+  // Banco aprovou mas ainda nao averbou (situacao intermediaria "Aprovado")
+  // — antes caia no fallback "em_analise" que iludia o servidor a achar que
+  // ainda estava sob analise.
+  if (t.includes("aprov")) return "aprovada";
+  if (t.includes("formaliz")) return "aguardando_formalizacao";
+  if (t.includes("aguard confirm")) return "em_analise";
+  if (t.includes("aguard")) return "em_analise";
   return "em_analise";
 }
 
