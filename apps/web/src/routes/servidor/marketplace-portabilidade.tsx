@@ -146,6 +146,18 @@ export function ServidorMarketplacePortabilidade() {
 
   const ofertas = ofertasQ.data?.ofertas ?? [];
 
+  // Beneficios de saude (farmacia, clinica, laboratorio, etc). Categoria
+  // "telemedicina" NAO entra aqui — vai na tela /servidor/saude exclusiva.
+  // Cliente pediu: "os que for de saude e no marketplace, no telemedicina
+  // e apenas telemedicina".
+  const beneficiosSaudeQ = useQuery({
+    queryKey: ["servidor", "beneficios", "saude", matAtiva],
+    queryFn: () => atlas.servidor.getMyBeneficios("saude", matAtiva),
+    enabled: !!matAtiva,
+    refetchOnWindowFocus: true,
+  });
+  const beneficiosSaude = beneficiosSaudeQ.data?.beneficios ?? [];
+
   // Propostas de portabilidade que os bancos criaram pro servidor.
   const propostasQ = useQuery({
     queryKey: ["servidor", "propostas", matAtiva],
@@ -250,7 +262,44 @@ export function ServidorMarketplacePortabilidade() {
         )}
       </section>
 
-      {/* 2. Botao de PORTABILIDADE (destaque medio) */}
+      {/* 2. REDE DE SAUDE — beneficios de categoria "saude" (farmacia, clinica,
+          laboratorio, etc.). Telemedicina exclusiva vive em /servidor/saude. */}
+      {beneficiosSaude.length > 0 ? (
+        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+            Rede de saúde parceira
+          </span>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
+            {beneficiosSaude.map((b) => (
+              <Card key={b.id}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 10, flexShrink: 0,
+                    background: `color-mix(in srgb, ${b.cor} 20%, transparent)`,
+                    display: "grid", placeItems: "center", fontSize: 22,
+                  }}>
+                    {b.icone}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, color: "var(--text)" }}>{b.nome}</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+                      {b.local}
+                    </div>
+                  </div>
+                </div>
+                {b.descontoLabel ? (
+                  <div style={{ marginTop: 12, fontSize: 14 }}>
+                    <b style={{ color: "var(--emerald-500)" }}>{b.descontoLabel}</b>
+                    {b.descontoComplemento ? <span style={{ color: "var(--text-muted)" }}> {b.descontoComplemento}</span> : null}
+                  </div>
+                ) : null}
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {/* 3. Botao de PORTABILIDADE (destaque medio) */}
       <AcaoCard
         icone="🔁"
         titulo="Solicitar portabilidade"
