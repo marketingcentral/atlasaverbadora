@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Button, Card, Input, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -160,6 +161,8 @@ export function ServidorConta() {
         ) : null}
       </Card>
 
+      <RedefinirSenhaCard />
+
       <Card>
         <h3 style={{ marginTop: 0 }}>Aparencia</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -188,6 +191,85 @@ export function ServidorConta() {
 
       {showSelfie ? <SelfieModal onClose={() => setShowSelfie(false)} onConfirm={confirmarSelfie} /> : null}
     </div>
+  );
+}
+
+/** Card de redefinicao de senha — 3 campos (senha atual / nova / confirmar).
+ *  Client-side valida: nova == confirmar, nova >= 8 chars, nova != atual.
+ *  Backend valida hash da senha atual e persiste. */
+function RedefinirSenhaCard() {
+  const [aberto, setAberto] = useState(false);
+  const [senhaAtual, setSenhaAtual] = useState("");
+  const [novaSenha, setNovaSenha] = useState("");
+  const [confirmar, setConfirmar] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [okAt, setOkAt] = useState<Date | null>(null);
+
+  const mut = useMutation({
+    mutationFn: () => atlas.servidor.redefinirSenha({ senhaAtual, novaSenha }),
+    onSuccess: () => {
+      setOkAt(new Date());
+      setErro(null);
+      setSenhaAtual(""); setNovaSenha(""); setConfirmar("");
+      setAberto(false);
+    },
+    onError: (e) => setErro((e as Error).message || "Nao foi possivel redefinir a senha."),
+  });
+
+  function submeter() {
+    setErro(null);
+    if (!senhaAtual) { setErro("Informe a senha atual."); return; }
+    if (novaSenha.length < 8) { setErro("A nova senha precisa ter pelo menos 8 caracteres."); return; }
+    if (novaSenha === senhaAtual) { setErro("A nova senha nao pode ser igual a senha atual."); return; }
+    if (novaSenha !== confirmar) { setErro("Nova senha e confirmacao nao conferem."); return; }
+    mut.mutate();
+  }
+
+  function cancelar() {
+    setSenhaAtual(""); setNovaSenha(""); setConfirmar("");
+    setErro(null);
+    setAberto(false);
+  }
+
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: aberto ? 12 : 0 }}>
+        <h3 style={{ margin: 0 }}>Senha</h3>
+        {!aberto ? (
+          <Button size="sm" variant="ghost" onClick={() => { setAberto(true); setOkAt(null); }}>
+            Redefinir senha
+          </Button>
+        ) : null}
+      </div>
+
+      {aberto ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Input label="Senha atual" type="password" value={senhaAtual} onChange={(e) => setSenhaAtual(e.target.value)} autoComplete="current-password" />
+          <Input label="Nova senha" type="password" value={novaSenha} onChange={(e) => setNovaSenha(e.target.value)} autoComplete="new-password" />
+          <Input label="Confirmar senha" type="password" value={confirmar} onChange={(e) => setConfirmar(e.target.value)} autoComplete="new-password" />
+          {erro ? (
+            <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--danger-500)", background: "color-mix(in srgb, var(--danger-500) 12%, transparent)", fontSize: ".88rem" }}>
+              {erro}
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <Button onClick={submeter} disabled={mut.isPending}>
+              {mut.isPending ? "Salvando..." : "Salvar nova senha"}
+            </Button>
+            <Button variant="ghost" onClick={cancelar} disabled={mut.isPending}>Cancelar</Button>
+          </div>
+          <p style={{ fontSize: ".82rem", color: "var(--text-muted)", margin: 0 }}>
+            A nova senha precisa ter pelo menos 8 caracteres.
+          </p>
+        </div>
+      ) : null}
+
+      {okAt && !aberto ? (
+        <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 10, border: "1px solid var(--emerald-500)", background: "color-mix(in srgb, var(--emerald-500) 12%, transparent)", fontSize: ".88rem" }}>
+          ✓ Senha alterada em {okAt.toLocaleTimeString("pt-BR")}
+        </div>
+      ) : null}
+    </Card>
   );
 }
 

@@ -1137,6 +1137,15 @@ export class AtlasClient {
         "/v1/servidores/me/propostas",
         { query: matricula ? { matricula } : undefined },
       ),
+    /** Redefinicao direta de senha (fluxo simples, sem codigo por e-mail). O
+     *  backend valida senha_atual, aceita nova_senha >= 8 chars e recusa se
+     *  a nova for igual a atual. Confirmacao (nova == confirmar) e feita no
+     *  cliente antes do envio. */
+    redefinirSenha: (input: { senhaAtual: string; novaSenha: string }) =>
+      this.request<{ ok: true }>("/v1/servidores/me/senha/redefinir", {
+        method: "POST",
+        body: { senha_atual: input.senhaAtual, nova_senha: input.novaSenha },
+      }),
   };
 
   // ============ Portal Banco ============

@@ -796,6 +796,33 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
     return c.json({ ok: n > 0, email: body.email, telefone: body.telefone });
   })
+  // Redefinicao direta de senha (fluxo simples, sem codigo por e-mail): valida a
+  // senha atual e grava a nova. Usado na tela /servidor/conta ("Senha atual /
+  // Nova senha / Confirmar senha") — a confirmacao (nova == confirmar) e feita
+  // no client. Requer estar logado, entao a "senha atual" ja e o segundo fator
+  // de autoriza (posse da sessao + conhecimento da senha atual).
+  .post("/v1/servidores/me/senha/redefinir", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = z
+      .object({ senha_atual: z.string().min(1), nova_senha: z.string().min(8) })
+      .parse(await c.req.json());
+    if (body.senha_atual === body.nova_senha) {
+      throw Errors.validation({ nova_senha: "A nova senha nao pode ser igual a senha atual" });
+    }
+    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
+    const atualHash = await sha256Hex(body.senha_atual);
+    if (entry?.passwordHash && entry.passwordHash !== atualHash) {
+      throw Errors.unauthorized("Senha atual incorreta");
+    }
+    const novoHash = await sha256Hex(body.nova_senha);
+    await setServidorPassword(c.env, s.cpf, novoHash);
+    SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = novoHash; });
+    return c.json({ ok: true });
+  })
   // Troca de senha: valida a senha atual + o código. Persiste o novo hash no Postgres.
   .post("/v1/servidores/me/senha", async (c) => {
     const j = c.get("jwt");
