@@ -86,12 +86,19 @@ export function SimuladorInline({
   // altera o prazo max no /banco/cadastros/tabela-emprestimos, o servidor ve
   // as parcelas disponiveis mudarem sem refresh. Contratos ja vigentes nao
   // sao afetados — a tabela e' consultada so pra NOVAS simulacoes.
+  //
+  // queryKey precisa comecar com ["servidor", "ofertas"] pra bater com o
+  // invalidateQueries do form do banco (upsertTabela) — assim a mudanca
+  // reflete IMEDIATAMENTE, sem esperar os 5s do poll. refetchIntervalInBackground
+  // garante o poll rodar mesmo com aba fora de foco.
   const ofertasQ = useQuery({
-    queryKey: ["servidor", "ofertas-tabelas", info?.matricula],
+    queryKey: ["servidor", "ofertas", info?.matricula],
     queryFn: () => atlas.servidor.ofertas(info?.matricula),
     enabled: !!info?.matricula,
     refetchInterval: 5_000,
+    refetchIntervalInBackground: true,
     refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   });
   const PARCELAS = useMemo(() => {
     const of = ofertasQ.data?.ofertas ?? [];
