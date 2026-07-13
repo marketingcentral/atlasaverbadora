@@ -1162,9 +1162,23 @@ export class AtlasClient {
         body: { senha_atual: input.senhaAtual, nova_senha: input.novaSenha, codigo: input.codigo },
       }),
     /** Cancela um codigo pendente (deleta do KV). Chamado quando o usuario
-     *  clica "Cancelar" apos ja ter pedido o codigo — evita reuso posterior. */
+     *  clica "Cancelar" apos ja ter pedido o codigo — evita reuso posterior.
+     *  Vale tanto pro fluxo de senha quanto pro fluxo de contato — mesma chave
+     *  no KV (`chg:${cpf}`). */
     cancelarCodigoSenha: () =>
       this.request<{ ok: true }>("/v1/servidores/me/codigo", { method: "DELETE" }),
+    /** Passo 2 do fluxo de contato: valida o codigo + persiste e-mail/telefone.
+     *  Fluxo:
+     *  1) pedirCodigoSenha() envia o codigo (endpoint compartilhado com senha).
+     *  2) Usuario digita.
+     *  3) atualizarContato({ codigo, email, telefone }) grava.
+     *  Backend recusa se codigo estiver invalido/expirado (401). Sucesso remove
+     *  o codigo do KV automaticamente. */
+    atualizarContato: (input: { codigo: string; email?: string; telefone?: string }) =>
+      this.request<{ ok: boolean; email?: string; telefone?: string }>("/v1/servidores/me/contato", {
+        method: "POST",
+        body: { codigo: input.codigo, email: input.email, telefone: input.telefone },
+      }),
   };
 
   // ============ Portal Banco ============

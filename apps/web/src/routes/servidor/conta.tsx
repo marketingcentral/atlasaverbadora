@@ -28,56 +28,9 @@ export function ServidorConta() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Email/telefone iniciais vem da matricula ativa — quando trocar, reseta pros valores da nova.
-  const initialEmail = info?.email ?? "—";
-  const initialTel = info?.telefone ?? "—";
-
-  const [savedEmail, setSavedEmail] = useState(initialEmail);
-  const [savedTel, setSavedTel] = useState(initialTel);
-  const [draftEmail, setDraftEmail] = useState(initialEmail);
-  const [draftTel, setDraftTel] = useState(initialTel);
-  const [editing, setEditing] = useState(false);
-  const [showSelfie, setShowSelfie] = useState(false);
-  const [savedAt, setSavedAt] = useState<Date | null>(null);
-
-  // Quando troca matricula, reseta email/tel para os da nova (e fecha edicao em aberto).
-  useEffect(() => {
-    setSavedEmail(info?.email ?? "—");
-    setSavedTel(info?.telefone ?? "—");
-    setDraftEmail(info?.email ?? "—");
-    setDraftTel(info?.telefone ?? "—");
-    setEditing(false);
-    setSavedAt(null);
-  }, [info?.idMatricula]);
-
-  function comecarEdicao() {
-    setDraftEmail(savedEmail);
-    setDraftTel(savedTel);
-    setEditing(true);
-  }
-
-  function cancelarEdicao() {
-    setDraftEmail(savedEmail);
-    setDraftTel(savedTel);
-    setEditing(false);
-  }
-
-  function abrirConfirmacao() {
-    setShowSelfie(true);
-  }
-
-  async function confirmarSelfie() {
-    // Mock: pretend liveness check ran and passed.
-    await new Promise((r) => setTimeout(r, 1500));
-    setSavedEmail(draftEmail);
-    setSavedTel(draftTel);
-    setShowSelfie(false);
-    setEditing(false);
-    setSavedAt(new Date());
-  }
-
-  // Prefeitura decide se o servidor pode editar contato pelo app.
-  const podeEditarContato = info?.permiteServidorEditarContato ?? false;
+  // Prefeitura decide se o servidor pode editar contato pelo app — hoje o
+  // botao aparece independente da flag (cliente pediu). Mantido pra caso a
+  // regra mude no futuro.
   const nome = info?.nome ?? "Servidor";
   const cpfMasked = "***.***.222-33";
   const endereco = info?.endereco ?? "—";
@@ -111,55 +64,7 @@ export function ServidorConta() {
         </p>
       </Card>
 
-      <Card>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-          <h3 style={{ margin: 0 }}>Contato</h3>
-          {/* Botao Editar aparece sempre — cliente pediu que o servidor possa
-              editar e-mail/telefone direto da tela, independente da flag da prefeitura. */}
-          {!editing ? (
-            <Button size="sm" variant="ghost" onClick={comecarEdicao}>
-              Editar
-            </Button>
-          ) : null}
-        </div>
-
-        {editing ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <Input label="E-mail" type="email" value={draftEmail} onChange={(e) => setDraftEmail(e.target.value)} />
-            <Input label="Telefone" value={draftTel} onChange={(e) => setDraftTel(e.target.value)} />
-            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-              <Button
-                onClick={abrirConfirmacao}
-                disabled={draftEmail === savedEmail && draftTel === savedTel}
-              >
-                Salvar alteracoes
-              </Button>
-              <Button variant="ghost" onClick={cancelarEdicao}>Cancelar</Button>
-            </div>
-            <p style={{ fontSize: ".82rem", color: "var(--text-muted)", margin: 0 }}>
-              Por seguranca, vamos pedir uma selfie (liveness) antes de salvar.
-            </p>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
-            <ReadField label="E-mail" value={savedEmail} />
-            <ReadField label="Telefone" value={savedTel} />
-          </div>
-        )}
-
-        {savedAt ? (
-          <div
-            style={{
-              marginTop: 14, padding: "10px 14px", borderRadius: 10,
-              border: "1px solid var(--emerald-500)",
-              background: "color-mix(in srgb, var(--emerald-500) 12%, transparent)",
-              fontSize: ".88rem",
-            }}
-          >
-            ✓ Alteracoes salvas em {savedAt.toLocaleTimeString("pt-BR")}
-          </div>
-        ) : null}
-      </Card>
+      <ContatoCard info={info} />
 
       <RedefinirSenhaCard />
 
@@ -189,8 +94,182 @@ export function ServidorConta() {
         </Button>
       </div>
 
-      {showSelfie ? <SelfieModal onClose={() => setShowSelfie(false)} onConfirm={confirmarSelfie} /> : null}
     </div>
+  );
+}
+
+/** Card de contato (e-mail/telefone) em 2 passos com verificacao por e-mail:
+ *  1) Usuario clica Editar → altera campos → clica Salvar alteracoes. Client
+ *     valida (algum campo mudou, e-mail em formato valido) e pede o backend
+ *     gerar+enviar codigo por e-mail.
+ *  2) Codigo chega no e-mail; usuario digita e clica Confirmar. Backend valida
+ *     o codigo + persiste os novos e-mail/telefone.
+ *
+ *  Cancelar em qualquer etapa: se ja tinha pedido codigo, chama
+ *  DELETE /me/codigo pra invalidar no KV — mesma regra da senha. */
+function ContatoCard({ info }: { info: MatriculaInfo | null }) {
+  type Passo = "fechado" | "editando" | "codigo";
+  const emailAtual = info?.email ?? "—";
+  const telAtual = info?.telefone ?? "—";
+
+  const [passo, setPasso] = useState<Passo>("fechado");
+  const [savedEmail, setSavedEmail] = useState(emailAtual);
+  const [savedTel, setSavedTel] = useState(telAtual);
+  const [draftEmail, setDraftEmail] = useState(emailAtual);
+  const [draftTel, setDraftTel] = useState(telAtual);
+  const [codigo, setCodigo] = useState("");
+  const [destinoMasked, setDestinoMasked] = useState<string | null>(null);
+  const [codigoTeste, setCodigoTeste] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [okAt, setOkAt] = useState<Date | null>(null);
+
+  // Ao trocar matricula, reseta pros valores da nova e fecha qualquer edicao aberta.
+  useEffect(() => {
+    setSavedEmail(info?.email ?? "—");
+    setSavedTel(info?.telefone ?? "—");
+    setDraftEmail(info?.email ?? "—");
+    setDraftTel(info?.telefone ?? "—");
+    setPasso("fechado");
+    setCodigo(""); setDestinoMasked(null); setCodigoTeste(null); setErro(null); setOkAt(null);
+  }, [info?.idMatricula, info?.email, info?.telefone]);
+
+  const enviarCodigo = useMutation({
+    mutationFn: () => atlas.servidor.pedirCodigoSenha(), // endpoint compartilhado com senha
+    onSuccess: (r) => {
+      setDestinoMasked(r.destino ?? null);
+      setCodigoTeste(r.codigo_teste ?? null);
+      setErro(null);
+      setPasso("codigo");
+    },
+    onError: (e) => setErro((e as Error).message || "Nao foi possivel enviar o codigo."),
+  });
+
+  const confirmar = useMutation({
+    mutationFn: () => atlas.servidor.atualizarContato({
+      codigo,
+      email: draftEmail !== savedEmail ? draftEmail : undefined,
+      telefone: draftTel !== savedTel ? draftTel : undefined,
+    }),
+    onSuccess: () => {
+      setSavedEmail(draftEmail);
+      setSavedTel(draftTel);
+      setOkAt(new Date());
+      setCodigo(""); setDestinoMasked(null); setCodigoTeste(null); setErro(null);
+      setPasso("fechado");
+    },
+    onError: (e) => setErro((e as Error).message || "Nao foi possivel confirmar a alteracao."),
+  });
+
+  const cancelarMut = useMutation({
+    mutationFn: () => atlas.servidor.cancelarCodigoSenha(),
+  });
+  function cancelar() {
+    if (passo === "codigo") cancelarMut.mutate(); // invalida codigo no KV
+    setDraftEmail(savedEmail); setDraftTel(savedTel); setCodigo("");
+    setDestinoMasked(null); setCodigoTeste(null); setErro(null);
+    setPasso("fechado");
+  }
+
+  function submeterEdicao() {
+    setErro(null);
+    const emailMudou = draftEmail !== savedEmail;
+    const telMudou = draftTel !== savedTel;
+    if (!emailMudou && !telMudou) { setErro("Altere e-mail ou telefone antes de salvar."); return; }
+    if (emailMudou) {
+      // Validacao basica de e-mail (bate com o schema Zod do backend).
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draftEmail)) {
+        setErro("E-mail invalido."); return;
+      }
+    }
+    enviarCodigo.mutate();
+  }
+
+  function submeterCodigo() {
+    setErro(null);
+    if (!codigo.trim() || codigo.trim().length < 4) { setErro("Digite o codigo recebido no e-mail."); return; }
+    confirmar.mutate();
+  }
+
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: passo !== "fechado" ? 12 : 0 }}>
+        <h3 style={{ margin: 0 }}>Contato</h3>
+        {passo === "fechado" ? (
+          <Button size="sm" variant="ghost" onClick={() => { setOkAt(null); setDraftEmail(savedEmail); setDraftTel(savedTel); setPasso("editando"); }}>
+            Editar
+          </Button>
+        ) : null}
+      </div>
+
+      {passo === "editando" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Input label="E-mail" type="email" value={draftEmail} onChange={(e) => setDraftEmail(e.target.value)} autoComplete="email" />
+          <Input label="Telefone" value={draftTel} onChange={(e) => setDraftTel(e.target.value)} autoComplete="tel" />
+          {erro ? (
+            <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--danger-500)", background: "color-mix(in srgb, var(--danger-500) 12%, transparent)", fontSize: ".88rem" }}>
+              {erro}
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <Button
+              onClick={submeterEdicao}
+              disabled={enviarCodigo.isPending || (draftEmail === savedEmail && draftTel === savedTel)}
+            >
+              {enviarCodigo.isPending ? "Enviando codigo..." : "Salvar alteracoes"}
+            </Button>
+            <Button variant="ghost" onClick={cancelar} disabled={enviarCodigo.isPending}>Cancelar</Button>
+          </div>
+          <p style={{ fontSize: ".82rem", color: "var(--text-muted)", margin: 0 }}>
+            Por seguranca, vamos enviar um codigo de verificacao para o seu e-mail cadastrado antes de salvar.
+          </p>
+        </div>
+      ) : passo === "codigo" ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--border)", background: "var(--bg-elev-2)", fontSize: ".88rem" }}>
+            Enviamos um codigo de 6 digitos para <b>{destinoMasked ?? "seu e-mail"}</b>. Ele expira em 10 minutos.
+            {codigoTeste ? (
+              <>
+                <br />
+                <span style={{ color: "var(--gold-500)" }}>Modo teste — codigo: <b style={{ fontFamily: "var(--font-mono)" }}>{codigoTeste}</b></span>
+              </>
+            ) : null}
+          </div>
+          <Input
+            label="Codigo de verificacao"
+            value={codigo}
+            onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="000000"
+          />
+          {erro ? (
+            <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--danger-500)", background: "color-mix(in srgb, var(--danger-500) 12%, transparent)", fontSize: ".88rem" }}>
+              {erro}
+            </div>
+          ) : null}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+            <Button onClick={submeterCodigo} disabled={confirmar.isPending}>
+              {confirmar.isPending ? "Confirmando..." : "Confirmar e salvar"}
+            </Button>
+            <Button variant="ghost" onClick={() => enviarCodigo.mutate()} disabled={enviarCodigo.isPending || confirmar.isPending}>
+              {enviarCodigo.isPending ? "Reenviando..." : "Reenviar codigo"}
+            </Button>
+            <Button variant="ghost" onClick={cancelar} disabled={confirmar.isPending}>Cancelar</Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px" }}>
+          <ReadField label="E-mail" value={savedEmail} />
+          <ReadField label="Telefone" value={savedTel} />
+        </div>
+      )}
+
+      {okAt && passo === "fechado" ? (
+        <div style={{ marginTop: 14, padding: "10px 14px", borderRadius: 10, border: "1px solid var(--emerald-500)", background: "color-mix(in srgb, var(--emerald-500) 12%, transparent)", fontSize: ".88rem" }}>
+          ✓ Alteracoes salvas em {okAt.toLocaleTimeString("pt-BR")}
+        </div>
+      ) : null}
+    </Card>
   );
 }
 
@@ -359,71 +438,3 @@ function ReadField({ label, value, full }: { label: string; value: string; full?
   );
 }
 
-function SelfieModal({ onClose, onConfirm }: { onClose: () => void; onConfirm: () => Promise<void> }) {
-  const [running, setRunning] = useState(false);
-
-  // Close on Escape (unless verification is mid-flight).
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !running) onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onClose, running]);
-
-  return (
-    <div
-      role="dialog"
-      style={{
-        position: "fixed", inset: 0, background: "color-mix(in srgb, var(--navy-900) 70%, transparent)",
-        display: "grid", placeItems: "center", zIndex: 100, padding: 16,
-      }}
-    >
-      <Card style={{ maxWidth: 420, width: "100%" }}>
-        <h3 style={{ marginTop: 0 }}>Confirmacao por selfie</h3>
-        <p style={{ color: "var(--text-muted)", fontSize: ".9rem", marginTop: 0 }}>
-          Para sua seguranca, vamos verificar que e voce mesmo alterando os dados. Posicione seu rosto na area abaixo.
-        </p>
-        <div
-          style={{
-            margin: "12px 0", height: 220, borderRadius: 12,
-            border: "2px dashed var(--border-strong)", background: "var(--bg-elev-2)",
-            display: "grid", placeItems: "center", color: "var(--text-muted)", fontSize: ".88rem",
-          }}
-        >
-          {running ? (
-            <div style={{ textAlign: "center" }}>
-              <div
-                style={{
-                  width: 40, height: 40, borderRadius: "50%",
-                  border: "3px solid var(--border)", borderTopColor: "var(--accent)",
-                  margin: "0 auto", animation: "spin 1s linear infinite",
-                }}
-              />
-              <div style={{ marginTop: 12 }}>Analisando liveness…</div>
-            </div>
-          ) : (
-            <div style={{ textAlign: "center" }}>
-              <div style={{ fontSize: 40 }}>📷</div>
-              <div>Camera frontal — selfie liveness</div>
-            </div>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <Button variant="ghost" onClick={onClose} disabled={running}>Cancelar</Button>
-          <Button
-            disabled={running}
-            onClick={async () => {
-              setRunning(true);
-              await onConfirm();
-              setRunning(false);
-            }}
-          >
-            {running ? "Verificando..." : "Iniciar verificacao"}
-          </Button>
-        </div>
-      </Card>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}
