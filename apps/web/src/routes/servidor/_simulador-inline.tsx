@@ -34,6 +34,26 @@ function lockProdutoDe(p: ModalidadeSim): LockProduto {
   return "EMPRESTIMO";
 }
 
+/** Verifica se uma proposta (pelo seu tipoContrato do backend) pertence ao
+ *  produto travado — usado pra decidir se a proposta conta pra soltar a trava.
+ *  Backend usa "EMPRESTIMO" | "REFIN" | "ECONSIGNADO" | (undefined = emprestimo).
+ *  - EMPRESTIMO trava: solta com qualquer proposta de credito (emprestimo/refin).
+ *  - CARTAO_CONSIGNADO trava: solta so com proposta de cartao consignado.
+ *  - CARTAO_BENEFICIOS trava: solta so com proposta de cartao beneficio. */
+function matchesLockProduto(tipoContrato: string | undefined, lockProd: LockProduto): boolean {
+  const t = (tipoContrato ?? "").toUpperCase();
+  if (lockProd === "EMPRESTIMO") {
+    // Default (sem tipoContrato) = emprestimo — mantem retrocompat com propostas antigas.
+    if (!t) return true;
+    return t === "EMPRESTIMO" || t === "REFIN";
+  }
+  if (lockProd === "CARTAO_CONSIGNADO") {
+    return t.includes("CONSIG") && (t.includes("CARTAO") || t.includes("ECONSIGN"));
+  }
+  // CARTAO_BENEFICIOS
+  return t.includes("BENEF");
+}
+
 export function SimuladorInline({
   info,
   taxaAmDefault = 0.0179,
@@ -92,10 +112,15 @@ export function SimuladorInline({
     refetchInterval: 10_000,
     enabled: !!lockExpiresAt,
   });
-  const temPendente = useMemo(
-    () => (propostasQ.data?.propostas ?? []).some((p) => p.situacao.toLowerCase().includes("aguard")),
-    [propostasQ.data],
-  );
+  // Filtra propostas pelo produto atual — a trava e por produto, entao so faz
+  // sentido checar pendencias do MESMO produto. Antes, uma proposta antiga de
+  // cartao ainda "Aguardando" mantinha a trava de emprestimo travada mesmo
+  // depois do emprestimo ja ter sido aprovado/averbado.
+  const temPendente = useMemo(() => {
+    return (propostasQ.data?.propostas ?? [])
+      .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto))
+      .some((p) => p.situacao.toLowerCase().includes("aguard"));
+  }, [propostasQ.data, lockProduto]);
   useEffect(() => {
     if (!lockExpiresAt || !propostasQ.data) return;
     if (!temPendente) {
