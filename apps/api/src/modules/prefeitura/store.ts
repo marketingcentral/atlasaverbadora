@@ -244,8 +244,15 @@ export interface Anuencia {
   ip?: string;
 }
 
-const _anuencias: Anuencia[] = [];
-let _anuSeq = 1;
+// Seed de anuencias vigentes pras prefeituras seed — evita "Anuencia de dados
+// pendente" aparecer como pendencia permanente no painel. Prefeituras
+// cadastradas via UI (id > 2) nao tem seed, entao a pendencia aparece
+// legitimamente ate elas assinarem em /prefeitura/anuencia.
+const _anuencias: Anuencia[] = [
+  { id: "ANU-0001", prefeituraId: 1, versao: TERMO_VERSAO_ATUAL, escopo: "base_servidores", aceitoPor: "gestor@palhoca.sc.gov.br", aceitoEm: "2026-01-15T10:00:00.000Z", ip: "189.41.10.50" },
+  { id: "ANU-0002", prefeituraId: 2, versao: TERMO_VERSAO_ATUAL, escopo: "base_servidores", aceitoPor: "gestor@florianopolis.sc.gov.br", aceitoEm: "2026-01-20T14:30:00.000Z", ip: "189.41.12.20" },
+];
+let _anuSeq = 3;
 
 export function listAnuencias(prefeituraId: number): Anuencia[] {
   return _anuencias.filter((a) => a.prefeituraId === prefeituraId).sort((a, b) => b.aceitoEm.localeCompare(a.aceitoEm));

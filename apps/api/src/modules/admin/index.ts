@@ -281,10 +281,15 @@ async function persistServidor(env: Env, s: typeof SERVIDORES_BUSCA_MOCK[number]
   try { await upsertServidor(env, s); } catch (e) { pushEvent("warn", "db.servidores.write_failed", `Falha ao persistir servidor ${s.matricula}: ${(e as Error).message}`); }
 }
 
+// Seed das folhas — todas as competencias das prefeituras seed sao entregues
+// como FECHADAS pra o painel nao mostrar "1 folha aberta" como pendencia
+// permanente. Prefeituras cadastradas via UI criam suas proprias folhas
+// (abertas), o que gera pendencia real (como deveria).
 export const folhas: FolhaAdmin[] = [
   { id: "F-2026-06-1", prefeituraId: 1, prefeitura: "Palhoca", competencia: "202606", dataCorte: "2026-06-15", dataRepasse: "2026-07-05", status: "fechada" },
   { id: "F-2026-06-2", prefeituraId: 2, prefeitura: "Florianopolis", competencia: "202606", dataCorte: "2026-06-18", dataRepasse: "2026-07-08", status: "fechada" },
-  { id: "F-2026-07-1", prefeituraId: 1, prefeitura: "Palhoca", competencia: "202607", dataCorte: "2026-07-15", dataRepasse: null, status: "aberta" },
+  { id: "F-2026-07-1", prefeituraId: 1, prefeitura: "Palhoca", competencia: "202607", dataCorte: "2026-07-15", dataRepasse: "2026-08-05", status: "fechada" },
+  { id: "F-2026-07-2", prefeituraId: 2, prefeitura: "Florianopolis", competencia: "202607", dataCorte: "2026-07-18", dataRepasse: "2026-08-08", status: "fechada" },
 ];
 
 export const vitrine: VitrineBanner[] = [
