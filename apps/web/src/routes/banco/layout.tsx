@@ -121,6 +121,12 @@ export function BancoLayout() {
       }
       nav={NAV}
       activeKey={activeKey}
+      // URL corrente (com querystring). O AppShellAdmin usa isso pra
+      // desambiguar itens que compartilham a mesma `key` mas apontam pra
+      // hrefs diferentes — ex.: os dois "Portabilidade" no menu do banco
+      // (o filho em Minhas Propostas com ?produto=portabilidade e o item
+      // standalone da tela de Oportunidades).
+      activeHref={`${location.pathname}${location.search}`}
       onNavigate={(item) => {
         if (item.href) nav(item.href);
       }}

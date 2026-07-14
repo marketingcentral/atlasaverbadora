@@ -14,6 +14,11 @@ interface Props {
   topbarSlot?: ReactNode;
   nav: NavItem[];
   activeKey?: string;
+  /** Href da rota corrente (com querystring). Quando informado, itens que
+   *  compartilham a mesma `key` mas tem `href` diferente sao desambiguados
+   *  por href — so acende quem casa com esta URL. Sem isso, itens com key
+   *  duplicada acendem juntos (regressao histórica). */
+  activeHref?: string;
   onNavigate?: (item: NavItem) => void;
 }
 
@@ -23,6 +28,7 @@ export function AppShellAdmin({
   topbarSlot,
   nav,
   activeKey,
+  activeHref,
   onNavigate,
   children,
 }: PropsWithChildren<Props>) {
@@ -53,7 +59,7 @@ export function AppShellAdmin({
         {convenioSlot}
         <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {nav.map((item) => (
-            <NavLeaf key={item.key} item={item} activeKey={activeKey} onNavigate={onNavigate} />
+            <NavLeaf key={item.href ?? item.key} item={item} activeKey={activeKey} activeHref={activeHref} onNavigate={onNavigate} />
           ))}
         </nav>
       </aside>
@@ -79,16 +85,30 @@ export function AppShellAdmin({
 function NavLeaf({
   item,
   activeKey,
+  activeHref,
   onNavigate,
   depth = 0,
 }: {
   item: NavItem;
   activeKey?: string;
+  activeHref?: string;
   onNavigate?: (item: NavItem) => void;
   depth?: number;
 }) {
-  const [open, setOpen] = useState<boolean>(item.children?.some((c) => c.key === activeKey) ?? false);
-  const isActive = activeKey === item.key;
+  // Regra de highlight:
+  // - Se activeHref foi informado E o item tem href, casa por href (URL corrente).
+  //   Isso desambigua itens que compartilham `key` (dois "Portabilidade" no
+  //   sidebar do banco, por exemplo).
+  // - Senao, cai no match por key (comportamento historico — usado quando o
+  //   item nao tem href proprio ou o pai chamou sem activeHref).
+  const isActive = activeHref && item.href
+    ? item.href === activeHref
+    : activeKey === item.key;
+  const [open, setOpen] = useState<boolean>(
+    item.children?.some((c) =>
+      (activeHref && c.href ? c.href === activeHref : c.key === activeKey),
+    ) ?? false,
+  );
   const hasChildren = !!item.children?.length;
 
   const baseStyle: React.CSSProperties = {
@@ -133,7 +153,7 @@ function NavLeaf({
       </button>
       {hasChildren && open
         ? item.children!.map((child) => (
-            <NavLeaf key={child.key} item={child} activeKey={activeKey} onNavigate={onNavigate} depth={depth + 1} />
+            <NavLeaf key={child.href ?? child.key} item={child} activeKey={activeKey} activeHref={activeHref} onNavigate={onNavigate} depth={depth + 1} />
           ))
         : null}
     </>
