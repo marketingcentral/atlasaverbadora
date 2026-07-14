@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, KpiCard } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -41,18 +42,30 @@ export function AverbadoraDashboard() {
         <p style={{ color: "var(--text-muted)" }}>KPIs consolidados de todos os convênios.</p>
       </header>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
-        <KpiCard label="Pré-reservas ativas" value={k.preReservasAtivas ?? 0} hint="Margem travada" accent="info" />
-        <KpiCard label="Expirando em 24h" value={k.preReservasExpirandoEm24h ?? 0} accent={(k.preReservasExpirandoEm24h ?? 0) > 0 ? "warn" : "info"} hint="Vão liberar margem" />
-        <KpiCard label="Propostas hoje" value={k.propostasHoje} />
-        <KpiCard label="Folhas em aberto" value={k.folhasAbertas ?? 0} accent={(k.folhasAbertas ?? 0) > 0 ? "warn" : "info"} hint="Aguardando fechamento" />
-        <KpiCard label="Conversão" value={`${(k.conversao * 100).toFixed(1)}%`} hint="Aceite / criadas" accent="info" />
-        <KpiCard label="Ticket médio" value={fmtBRL(k.ticketMedio)} hint="Valor financiado por contrato" />
-        <KpiCard label="Margem travada" value={fmtBRL(k.margemTravada ?? 0)} hint="Total em pré-reservas ativas" />
-        <KpiCard label="Bancos ativos" value={k.bancosAtivos} accent="success" />
-        <KpiCard label="Prefeituras ativas" value={k.prefeiturasAtivas} accent="info" />
-        <KpiCard label="Servidores cadastrados" value={k.servidoresCadastrados.toLocaleString("pt-BR")} />
-        <KpiCard label="Receita vitrine (mês)" value={fmtBRL(k.receitaVitrineMes)} accent="success" />
+      {/* Grid uniforme 4 colunas — 3 grupos semanticos (Operacional / Financeiro
+          / Alcance) com o mesmo tamanho de card, sem KPI orfao no fim da linha.
+          `minmax(0, 1fr)` garante que os cards nao estourem a coluna quando o
+          conteudo e comprido (ex.: "R$ 49.322,28"). */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <KpiSection titulo="Operacional" hint="O que precisa de atenção agora">
+          <KpiCard label="Pré-reservas ativas" value={k.preReservasAtivas ?? 0} hint="Margem travada" accent="info" />
+          <KpiCard label="Expirando em 24h" value={k.preReservasExpirandoEm24h ?? 0} accent={(k.preReservasExpirandoEm24h ?? 0) > 0 ? "warn" : "info"} hint="Vão liberar margem" />
+          <KpiCard label="Propostas hoje" value={k.propostasHoje} />
+          <KpiCard label="Folhas em aberto" value={k.folhasAbertas ?? 0} accent={(k.folhasAbertas ?? 0) > 0 ? "warn" : "info"} hint="Aguardando fechamento" />
+        </KpiSection>
+
+        <KpiSection titulo="Financeiro" hint="Performance do mês">
+          <KpiCard label="Conversão" value={`${(k.conversao * 100).toFixed(1)}%`} hint="Aceite / criadas" accent="info" />
+          <KpiCard label="Ticket médio" value={fmtBRL(k.ticketMedio)} hint="Valor financiado por contrato" />
+          <KpiCard label="Margem travada" value={fmtBRL(k.margemTravada ?? 0)} hint="Total em pré-reservas ativas" />
+          <KpiCard label="Receita vitrine (mês)" value={fmtBRL(k.receitaVitrineMes)} accent="success" />
+        </KpiSection>
+
+        <KpiSection titulo="Alcance" hint="Quem já está na plataforma">
+          <KpiCard label="Bancos ativos" value={k.bancosAtivos} accent="success" />
+          <KpiCard label="Prefeituras ativas" value={k.prefeiturasAtivas} accent="info" />
+          <KpiCard label="Servidores cadastrados" value={k.servidoresCadastrados.toLocaleString("pt-BR")} />
+        </KpiSection>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
@@ -86,6 +99,27 @@ export function AverbadoraDashboard() {
         </Card>
       </div>
     </div>
+  );
+}
+
+/** Bloco de KPIs agrupados por tema. Grid responsivo: 4 col em desktop,
+ *  colapsa pra 2 em tablet e 1 em mobile. `minmax(0, 1fr)` evita overflow
+ *  quando o value e comprido (ex.: "R$ 49.322,28"). */
+function KpiSection({ titulo, hint, children }: { titulo: string; hint?: string; children: ReactNode }) {
+  return (
+    <section>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-dim)" }}>
+          {titulo}
+        </h2>
+        {hint ? (
+          <span style={{ fontSize: 12, color: "var(--text-dim)" }}>· {hint}</span>
+        ) : null}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16 }}>
+        {children}
+      </div>
+    </section>
   );
 }
 
