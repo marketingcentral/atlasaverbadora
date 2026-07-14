@@ -131,10 +131,20 @@ export interface ResponsavelBeneficio {
   cargo?: string;
 }
 
-/** Modelos de e-mail editaveis pela averbadora. */
+/** Modelos de e-mail do sistema — categorizados por evento. */
 export type EmailPublico = "servidor" | "banco" | "prefeitura" | "averbadora";
+export type EmailEvento =
+  | "primeiro_acesso"
+  | "recuperar_senha"
+  | "redefinir_senha"
+  | "simulacao"
+  | "beneficio";
+export type EmailSimulacaoTipo = "emprestimo" | "cartao_consignado" | "cartao_beneficio" | "portabilidade";
+export type EmailSimulacaoStatus = "enviada" | "aprovada" | "recusada" | "averbada";
+
 export interface EmailTemplate {
   id: string;
+  evento: EmailEvento;
   nome: string;
   publico: EmailPublico;
   assunto: string;
@@ -142,12 +152,23 @@ export interface EmailTemplate {
   descricao?: string;
   variaveis?: string[];
   ativo: boolean;
+  simulacaoTipo?: EmailSimulacaoTipo;
+  simulacaoStatus?: EmailSimulacaoStatus;
+  beneficioId?: string;
   criadoEm: string;
   atualizadoEm: string;
 }
-export type EmailTemplateInput = Partial<Omit<EmailTemplate, "criadoEm" | "atualizadoEm">> & {
-  nome: string;
-};
+/** Edicao: so muda assunto/corpo/descricao/variaveis/ativo. Os campos de
+ *  categorizacao (evento, publico, tipo, status, beneficioId, nome) sao
+ *  fixados pelo seed ou pelo hook de beneficio. */
+export interface EmailTemplateInput {
+  id: string;
+  assunto?: string;
+  corpo?: string;
+  descricao?: string;
+  variaveis?: string[];
+  ativo?: boolean;
+}
 
 export interface AdminBeneficio {
   id: string;

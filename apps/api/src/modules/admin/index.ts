@@ -23,7 +23,7 @@ import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
-import { loadTemplates, getTemplate, upsertTemplate, removerTemplate, renderTemplate, type EmailPublico } from "./email-templates.js";
+import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
@@ -2219,6 +2219,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       todasPrefeiturasParceiras: body.todasPrefeiturasParceiras,
     };
     await persistBeneficio(c.env, b);
+    // Hook: cria/atualiza o template de e-mail vinculado a este beneficio.
+    // Se ja existe (edit), preserva assunto/corpo customizados.
+    try { await upsertTemplateBeneficio(c.env, { id: b.id, nome: b.nome, publico: "servidor" }); }
+    catch { /* best-effort — nao quebra o save do beneficio */ }
     return c.json({ beneficio: b });
   })
   .patch("/v1/admin/beneficios/:id/pausar", async (c) => {
@@ -2251,22 +2255,40 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   .post("/v1/admin/email-templates", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    // Edicao mantem as regras: id obrigatorio (evento e' fixado no seed/hook,
+    // nao pode mudar), evento vem do proprio template atual (nao no body).
     const body = z.object({
-      id: z.string().optional(),
-      nome: z.string().min(2).max(120).default("Sem nome"),
-      publico: z.enum(["servidor", "banco", "prefeitura", "averbadora"]).default("servidor"),
+      id: z.string(),
       assunto: z.string().max(200).default(""),
       corpo: z.string().max(20_000).default(""),
       descricao: z.string().max(500).optional(),
       variaveis: z.array(z.string().max(60)).max(30).optional(),
       ativo: z.boolean().default(true),
     }).parse(await c.req.json());
-    const t = await upsertTemplate(c.env, body);
+    const atual = await getTemplate(c.env, body.id);
+    if (!atual) throw Errors.notFound("template");
+    const t = await upsertTemplate(c.env, {
+      id: atual.id,
+      evento: atual.evento,
+      nome: atual.nome,
+      publico: atual.publico,
+      assunto: body.assunto,
+      corpo: body.corpo,
+      descricao: body.descricao,
+      variaveis: body.variaveis,
+      ativo: body.ativo,
+      simulacaoTipo: atual.simulacaoTipo,
+      simulacaoStatus: atual.simulacaoStatus,
+      beneficioId: atual.beneficioId,
+    });
     return c.json({ template: t });
   })
+  // DELETE so remove templates de beneficio (dinamicos). Fixos nao podem
+  // ser excluidos — regra do cliente.
   .delete("/v1/admin/email-templates/:id", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
-    await removerTemplate(c.env, c.req.param("id"));
+    const r = await removerTemplateSeguro(c.env, c.req.param("id"));
+    if (!r.ok) throw Errors.validation({ template: r.motivo });
     return c.json({ ok: true });
   })
   // Envia um teste do template pro email do operador logado. Usa o SMTP

@@ -17,7 +17,7 @@ export type {
   AdminFolha, AdminFolhaInput,
   AdminBanner,
   Comunicado, ComunicadoInput, ComunicadoPublico,
-  EmailTemplate, EmailTemplateInput, EmailPublico,
+  EmailTemplate, EmailTemplateInput, EmailPublico, EmailEvento, EmailSimulacaoTipo, EmailSimulacaoStatus,
   AdminIdUnicoConfig, IdUnicoFormato,
   AdminPreReserva, AdminPreReservaResumo, PreReservaStatus, OperacaoTipo,
   AdminTombamentoLote, AdminTombamentoLinha, TombamentoStatus,

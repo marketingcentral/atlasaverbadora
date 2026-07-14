@@ -10,85 +10,121 @@ const TABLE = "email_templates";
 
 export type EmailPublico = "servidor" | "banco" | "prefeitura" | "averbadora";
 
+/**
+ * Evento que dispara o email — categoriza os templates no menu da averbadora.
+ * - primeiro_acesso, recuperar_senha, redefinir_senha: fixos, nao excluiveis.
+ * - simulacao: 1 template por (tipo, status) — ver simulacaoTipo/simulacaoStatus.
+ * - beneficio: 1 template por beneficio (auto-criado/excluido junto com o beneficio).
+ */
+export type EmailEvento =
+  | "primeiro_acesso"
+  | "recuperar_senha"
+  | "redefinir_senha"
+  | "simulacao"
+  | "beneficio";
+
+export type SimulacaoTipo = "emprestimo" | "cartao_consignado" | "cartao_beneficio" | "portabilidade";
+export type SimulacaoStatus = "enviada" | "aprovada" | "recusada" | "averbada";
+
 export interface EmailTemplate {
   id: string;
+  evento: EmailEvento;
   nome: string;
   publico: EmailPublico;
   assunto: string;
   corpo: string;
-  /** Descricao interna do que dispara o email (docs pra o operador). */
   descricao?: string;
-  /** Placeholders {{name}} que o corpo/assunto usam. Preenchidos ao enviar. */
   variaveis?: string[];
   ativo: boolean;
+  /** So pra evento="simulacao". */
+  simulacaoTipo?: SimulacaoTipo;
+  simulacaoStatus?: SimulacaoStatus;
+  /** So pra evento="beneficio". Vincula 1:1 com AdminBeneficio.id. */
+  beneficioId?: string;
   criadoEm: string;
   atualizadoEm: string;
 }
 
-// Seed de 5 templates cobrindo os eventos mais comuns do fluxo. Servem
-// como base editavel — a averbadora pode ajustar tom/assinatura.
+const NOW = "2026-07-14T10:00:00.000Z";
+
+/**
+ * Seeds fixos: templates que TODO ambiente tem por padrao.
+ * - Primeiro acesso / Recuperar / Redefinir senha: 1 template por perfil (4 cada).
+ * - Simulacao: 1 por combinacao (tipo x status). O operador ajusta o texto.
+ * - Beneficio: NAO tem seed — sao criados dinamicamente quando o admin cria
+ *   um beneficio via /averbadora/beneficios (auto-hook no criar/deletar).
+ */
+const PERFIS: EmailPublico[] = ["servidor", "banco", "prefeitura", "averbadora"];
+
+function tplPrimeiroAcesso(p: EmailPublico): EmailTemplate {
+  return {
+    id: `TPL-primeiro-acesso-${p}`, evento: "primeiro_acesso", nome: `Primeiro acesso — ${capitalize(p)}`,
+    publico: p, ativo: true, criadoEm: NOW, atualizadoEm: NOW,
+    assunto: "Confirme seu primeiro acesso ao Atlas",
+    corpo: "Olá {{nome}},\n\nUse o código abaixo para concluir seu primeiro acesso ao Atlas:\n\n{{codigo}}\n\nO código expira em {{expira_em}} minutos.\n\nSe você não iniciou este cadastro, ignore este e-mail.\n\nAtlas Averbadora",
+    descricao: `Enviado quando um usuário do perfil "${p}" solicita o código de primeiro acesso.`,
+    variaveis: ["nome", "codigo", "expira_em"],
+  };
+}
+
+function tplRecuperarSenha(p: EmailPublico): EmailTemplate {
+  return {
+    id: `TPL-recuperar-senha-${p}`, evento: "recuperar_senha", nome: `Recuperar senha — ${capitalize(p)}`,
+    publico: p, ativo: true, criadoEm: NOW, atualizadoEm: NOW,
+    assunto: "Recupere sua senha do Atlas",
+    corpo: "Olá {{nome}},\n\nRecebemos um pedido de recuperação de senha para sua conta.\n\nUse o código abaixo para redefinir sua senha:\n\n{{codigo}}\n\nO código expira em {{expira_em}} minutos.\n\nSe você não solicitou, ignore este e-mail — sua senha atual continua válida.\n\nAtlas Averbadora",
+    descricao: `Enviado quando um usuário do perfil "${p}" clica em "Esqueci a senha".`,
+    variaveis: ["nome", "codigo", "expira_em"],
+  };
+}
+
+function tplRedefinirSenha(p: EmailPublico): EmailTemplate {
+  return {
+    id: `TPL-redefinir-senha-${p}`, evento: "redefinir_senha", nome: `Redefinir senha — ${capitalize(p)}`,
+    publico: p, ativo: true, criadoEm: NOW, atualizadoEm: NOW,
+    assunto: "Confirme a troca de senha do Atlas",
+    corpo: "Olá {{nome}},\n\nUse o código abaixo para confirmar a troca da sua senha:\n\n{{codigo}}\n\nO código expira em {{expira_em}} minutos.\n\nSe não foi você que pediu a troca, entre em contato com o suporte imediatamente.\n\nAtlas Averbadora",
+    descricao: `Enviado quando um usuário do perfil "${p}" pede pra trocar a senha (verificação por email).`,
+    variaveis: ["nome", "codigo", "expira_em"],
+  };
+}
+
+const SIM_TIPOS: SimulacaoTipo[] = ["emprestimo", "cartao_consignado", "cartao_beneficio", "portabilidade"];
+const SIM_STATUS: SimulacaoStatus[] = ["enviada", "aprovada", "recusada", "averbada"];
+
+function tplSimulacao(tipo: SimulacaoTipo, status: SimulacaoStatus, publico: EmailPublico): EmailTemplate {
+  const nomeProduto = tipo === "emprestimo" ? "empréstimo consignado"
+    : tipo === "cartao_consignado" ? "cartão consignado"
+    : tipo === "cartao_beneficio" ? "cartão benefício"
+    : "portabilidade";
+  const acao = status === "enviada" ? "foi enviada"
+    : status === "aprovada" ? "foi aprovada pelo banco"
+    : status === "recusada" ? "foi recusada pelo banco"
+    : "foi averbada em folha";
+  return {
+    id: `TPL-simulacao-${tipo}-${status}-${publico}`,
+    evento: "simulacao", nome: `Simulação ${nomeProduto} — ${status} (${capitalize(publico)})`,
+    publico, ativo: true, criadoEm: NOW, atualizadoEm: NOW,
+    simulacaoTipo: tipo, simulacaoStatus: status,
+    assunto: `Simulação de ${nomeProduto} — ${status}`,
+    corpo: `Olá {{nome}},\n\nSua simulação de ${nomeProduto} (protocolo {{adf}}) ${acao}.\n\nValor: {{valor}}\nParcelas: {{parcelas}}x de {{valorParcela}}\nBanco: {{banco}}\n\nAtlas Averbadora`,
+    descricao: `Disparado no perfil "${publico}" quando uma simulação de ${nomeProduto} muda para "${status}".`,
+    variaveis: ["nome", "adf", "valor", "parcelas", "valorParcela", "banco"],
+  };
+}
+
 const SEED: EmailTemplate[] = [
-  {
-    id: "TPL-001",
-    nome: "Boas-vindas ao servidor",
-    publico: "servidor",
-    assunto: "Bem-vindo(a) ao Atlas, {{nome}}!",
-    corpo: "Olá {{nome}},\n\nSua conta no Atlas foi criada com sucesso. Você já pode acessar o app e consultar sua margem consignável, simular empréstimos e acompanhar seus contratos.\n\nMatrícula: {{matricula}}\nPrefeitura: {{prefeitura}}\n\nQualquer dúvida, estamos por aqui.\n\nAtlas Averbadora",
-    descricao: "Enviado quando o servidor conclui o primeiro acesso.",
-    variaveis: ["nome", "matricula", "prefeitura"],
-    ativo: true,
-    criadoEm: "2026-07-14T10:00:00.000Z",
-    atualizadoEm: "2026-07-14T10:00:00.000Z",
-  },
-  {
-    id: "TPL-002",
-    nome: "Proposta aprovada pelo banco",
-    publico: "servidor",
-    assunto: "Sua proposta {{adf}} foi aprovada",
-    corpo: "Olá {{nome}},\n\nBoa notícia! O {{banco}} aprovou sua proposta de crédito consignado.\n\nValor: {{valor}}\nParcelas: {{parcelas}}x de {{valorParcela}}\n\nEm breve o banco entrará em contato para fechar o contrato — a assinatura acontece presencialmente com a equipe do banco.\n\nAtlas Averbadora",
-    descricao: "Disparado quando o banco aprova uma proposta no /banco/propostas.",
-    variaveis: ["nome", "adf", "banco", "valor", "parcelas", "valorParcela"],
-    ativo: true,
-    criadoEm: "2026-07-14T10:00:00.000Z",
-    atualizadoEm: "2026-07-14T10:00:00.000Z",
-  },
-  {
-    id: "TPL-003",
-    nome: "Proposta recusada",
-    publico: "servidor",
-    assunto: "Sua proposta {{adf}} foi recusada",
-    corpo: "Olá {{nome}},\n\nInfelizmente o {{banco}} não aprovou sua proposta desta vez.\n\nMotivo informado: {{motivo}}\n\nSua margem foi liberada de volta — você pode simular outra proposta a qualquer momento.\n\nAtlas Averbadora",
-    descricao: "Disparado quando o banco recusa uma proposta.",
-    variaveis: ["nome", "adf", "banco", "motivo"],
-    ativo: true,
-    criadoEm: "2026-07-14T10:00:00.000Z",
-    atualizadoEm: "2026-07-14T10:00:00.000Z",
-  },
-  {
-    id: "TPL-004",
-    nome: "Contrato averbado em folha",
-    publico: "servidor",
-    assunto: "Contrato {{adf}} averbado — recurso liberado",
-    corpo: "Olá {{nome}},\n\nSua averbação foi confirmada em folha pela prefeitura. O recurso já pode ser liberado pelo {{banco}} conforme o combinado.\n\nValor financiado: {{valor}}\nParcela: {{parcelas}}x de {{valorParcela}}\n\nAcompanhe o desconto na próxima folha de pagamento.\n\nAtlas Averbadora",
-    descricao: "Disparado quando a averbadora aplica o ADF em folha.",
-    variaveis: ["nome", "adf", "banco", "valor", "parcelas", "valorParcela"],
-    ativo: true,
-    criadoEm: "2026-07-14T10:00:00.000Z",
-    atualizadoEm: "2026-07-14T10:00:00.000Z",
-  },
-  {
-    id: "TPL-005",
-    nome: "Notificação para o banco parceiro",
-    publico: "banco",
-    assunto: "Nova proposta aguardando análise — {{adf}}",
-    corpo: "Prezados,\n\nUma nova proposta caiu na sua fila:\n\nServidor: {{nome}} (matrícula {{matricula}})\nValor: {{valor}} em {{parcelas}}x\n\nAcesse o portal Atlas Banco para analisar.\n\nAtlas Averbadora",
-    descricao: "Aviso automático quando o servidor solicita nova proposta.",
-    variaveis: ["adf", "nome", "matricula", "valor", "parcelas"],
-    ativo: true,
-    criadoEm: "2026-07-14T10:00:00.000Z",
-    atualizadoEm: "2026-07-14T10:00:00.000Z",
-  },
+  ...PERFIS.map(tplPrimeiroAcesso),
+  ...PERFIS.map(tplRecuperarSenha),
+  ...PERFIS.map(tplRedefinirSenha),
+  // Simulacao: so servidor e banco (regra do cliente).
+  ...SIM_TIPOS.flatMap((t) => SIM_STATUS.flatMap((s) => [
+    tplSimulacao(t, s, "servidor"),
+    tplSimulacao(t, s, "banco"),
+  ])),
 ];
+
+function capitalize(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
 
 let _cache: EmailTemplate[] | null = null;
 
@@ -117,9 +153,66 @@ export async function upsertTemplate(env: Env, input: Omit<EmailTemplate, "id" |
   return t;
 }
 
+/** Remove template SEM restricao (uso interno pelo hook de cascade de beneficio).
+ *  Handler HTTP nao expoe esse metodo diretamente — usa removerTemplateSeguro. */
 export async function removerTemplate(env: Env, id: string): Promise<void> {
   await deleteCollectionRow(env, TABLE, id);
   _cache = null;
+}
+
+/** Remocao restrita: so permite apagar templates de evento="beneficio"
+ *  (que sao dinamicos). Os demais sao fixos e nao podem sumir da UI. */
+export async function removerTemplateSeguro(env: Env, id: string): Promise<{ ok: true } | { ok: false; motivo: string }> {
+  const t = await getTemplate(env, id);
+  if (!t) return { ok: false, motivo: "template não encontrado" };
+  if (t.evento !== "beneficio") {
+    return { ok: false, motivo: "templates fixos (primeiro acesso, senha, simulação) não podem ser excluídos manualmente" };
+  }
+  await removerTemplate(env, id);
+  return { ok: true };
+}
+
+/** Cria (ou re-cria) um template atrelado a um beneficio. Chamado no upsert
+ *  do beneficio. Se ja existe (por beneficioId), atualiza mantendo o assunto/
+ *  corpo customizado pelo admin. */
+export async function upsertTemplateBeneficio(
+  env: Env,
+  beneficio: { id: string; nome: string; publico?: EmailPublico },
+): Promise<EmailTemplate> {
+  const all = await loadTemplates(env);
+  const existente = all.find((t) => t.evento === "beneficio" && t.beneficioId === beneficio.id);
+  const now = new Date().toISOString();
+  const base: EmailTemplate = existente ?? {
+    id: `TPL-beneficio-${beneficio.id}`,
+    evento: "beneficio",
+    beneficioId: beneficio.id,
+    nome: `Benefício — ${beneficio.nome}`,
+    publico: beneficio.publico ?? "servidor",
+    assunto: `Novo benefício disponível: ${beneficio.nome}`,
+    corpo: `Olá {{nome}},\n\nO benefício "${beneficio.nome}" está disponível para você.\n\n{{desconto_label}} {{desconto_complemento}}\n\nAcesse o Atlas para ver os detalhes.\n\nAtlas Averbadora`,
+    descricao: `Aviso enviado quando o benefício "${beneficio.nome}" fica disponível para o público-alvo.`,
+    variaveis: ["nome", "desconto_label", "desconto_complemento"],
+    ativo: true,
+    criadoEm: now,
+    atualizadoEm: now,
+  };
+  // Mantem os textos customizados pelo admin em edicoes subsequentes do beneficio.
+  // Se o beneficio trocou de nome, atualiza SO o nome do template (nao o texto).
+  const t: EmailTemplate = {
+    ...base,
+    nome: `Benefício — ${beneficio.nome}`,
+    atualizadoEm: now,
+  };
+  await upsertCollectionRow(env, TABLE, t.id, t);
+  _cache = null;
+  return t;
+}
+
+/** Remove template vinculado a um beneficio (cascade quando o beneficio some). */
+export async function removerTemplatePorBeneficio(env: Env, beneficioId: string): Promise<void> {
+  const all = await loadTemplates(env);
+  const alvo = all.find((t) => t.evento === "beneficio" && t.beneficioId === beneficioId);
+  if (alvo) await removerTemplate(env, alvo.id);
 }
 
 /** Aplica {{var}} no assunto e corpo. Chaves nao preenchidas ficam como
