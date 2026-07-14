@@ -131,6 +131,24 @@ export interface ResponsavelBeneficio {
   cargo?: string;
 }
 
+/** Modelos de e-mail editaveis pela averbadora. */
+export type EmailPublico = "servidor" | "banco" | "prefeitura" | "averbadora";
+export interface EmailTemplate {
+  id: string;
+  nome: string;
+  publico: EmailPublico;
+  assunto: string;
+  corpo: string;
+  descricao?: string;
+  variaveis?: string[];
+  ativo: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+export type EmailTemplateInput = Partial<Omit<EmailTemplate, "criadoEm" | "atualizadoEm">> & {
+  nome: string;
+};
+
 export interface AdminBeneficio {
   id: string;
   prefeituraId: number;
@@ -1492,6 +1510,23 @@ export class AtlasClient {
         this.request<{ contagens: { beneficioId: string; total: number }[] }>(
           "/v1/admin/beneficios/interessados/resumo",
         ),
+    },
+
+    // ===== Modelos de e-mail (editaveis pela averbadora) =====
+    emailTemplates: {
+      list: () => this.request<{ templates: EmailTemplate[] }>("/v1/admin/email-templates"),
+      upsert: (body: EmailTemplateInput) =>
+        this.request<{ template: EmailTemplate }>("/v1/admin/email-templates", { method: "POST", body }),
+      remover: (id: string) =>
+        this.request<{ ok: true }>(`/v1/admin/email-templates/${id}`, { method: "DELETE" }),
+      /** Envia um teste real via SMTP configurado. `vars` preenche os placeholders. */
+      enviarTeste: (id: string, body: { destino: string; vars?: Record<string, string> }) =>
+        this.request<{
+          sent: boolean;
+          destino: string;
+          reason?: string;
+          preview: { assunto: string; corpo: string };
+        }>(`/v1/admin/email-templates/${id}/test`, { method: "POST", body }),
     },
 
     listServidores: (q?: { prefeitura_id?: number; status?: string }) =>

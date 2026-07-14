@@ -23,6 +23,7 @@ import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
+import { loadTemplates, getTemplate, upsertTemplate, removerTemplate, renderTemplate, type EmailPublico } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
@@ -2237,6 +2238,57 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.ativo = true;
     await persistBeneficio(c.env, b);
     return c.json({ beneficio: b });
+  })
+
+  // ===== Modelos de e-mail (editaveis pela averbadora) =====
+  // A averbadora edita assunto/corpo/publico-alvo. Nao dispara envio real
+  // automatico ainda — os handlers de fluxo usam textos hardcoded hoje. Este
+  // consultor serve pra o operador ver, ajustar e mandar teste pro proprio
+  // email. Prox iteracao: os handlers passam a ler daqui.
+  .get("/v1/admin/email-templates", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j);
+    return c.json({ templates: await loadTemplates(c.env) });
+  })
+  .post("/v1/admin/email-templates", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const body = z.object({
+      id: z.string().optional(),
+      nome: z.string().min(2).max(120).default("Sem nome"),
+      publico: z.enum(["servidor", "banco", "prefeitura", "averbadora"]).default("servidor"),
+      assunto: z.string().max(200).default(""),
+      corpo: z.string().max(20_000).default(""),
+      descricao: z.string().max(500).optional(),
+      variaveis: z.array(z.string().max(60)).max(30).optional(),
+      ativo: z.boolean().default(true),
+    }).parse(await c.req.json());
+    const t = await upsertTemplate(c.env, body);
+    return c.json({ template: t });
+  })
+  .delete("/v1/admin/email-templates/:id", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    await removerTemplate(c.env, c.req.param("id"));
+    return c.json({ ok: true });
+  })
+  // Envia um teste do template pro email do operador logado. Usa o SMTP
+  // configurado em /averbadora/configuracoes. Preview real (com placeholders
+  // renderizados via `variaveis` mock que o front envia no body).
+  .post("/v1/admin/email-templates/:id/test", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const id = c.req.param("id");
+    const t = await getTemplate(c.env, id);
+    if (!t) throw Errors.notFound("template");
+    const body = z.object({
+      destino: z.string().email(),
+      vars: z.record(z.string()).default({}),
+    }).parse(await c.req.json());
+    const { assunto, corpo } = renderTemplate(t, body.vars);
+    const r = await enviarNotificacao(c.env, {
+      destinoPadrao: body.destino,
+      titulo: assunto,
+      mensagem: corpo,
+      detalhes: [{ label: "Template", valor: `${t.nome} (${t.id})` }],
+    });
+    return c.json({ sent: r.sent, destino: r.destino, reason: r.reason, preview: { assunto, corpo } });
   })
   // Interessados = servidores que clicaram no botao "Acessar" de um beneficio.
   // ?beneficioId=BEN-X filtra por beneficio; sem filtro, retorna todos os

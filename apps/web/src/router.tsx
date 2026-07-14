@@ -33,6 +33,7 @@ import { AdminLogs } from "./routes/averbadora/logs";
 import { AdminVitrine } from "./routes/averbadora/vitrine";
 import { AdminBeneficios } from "./routes/averbadora/beneficios";
 import { AdminBeneficiosForm } from "./routes/averbadora/beneficios-form";
+import { AdminEmails } from "./routes/averbadora/emails";
 import { AverbadoraTelemedicina } from "./routes/averbadora/telemedicina";
 import { AverbadoraInteressados } from "./routes/averbadora/interessados";
 import { AverbadoraApiDocs } from "./routes/averbadora/api/docs";
@@ -209,6 +210,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "beneficios", element: <AdminBeneficios /> },
           { path: "beneficios/novo", element: <AdminBeneficiosForm /> },
           { path: "beneficios/:id/editar", element: <AdminBeneficiosForm /> },
+          { path: "emails", element: <AdminEmails /> },
           { path: "telemedicina", element: <AverbadoraTelemedicina /> },
           { path: "interessados", element: <AverbadoraInteressados /> },
           { path: "api/docs", element: <AverbadoraApiDocs /> },

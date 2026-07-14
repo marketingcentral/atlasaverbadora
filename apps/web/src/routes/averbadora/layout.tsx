@@ -28,6 +28,7 @@ const NAV = [
       { key: "comunicados-servidor", label: "Servidor", href: "/averbadora/comunicados/servidor" },
     ],
   },
+  { key: "emails", label: "Modelos de e-mail", href: "/averbadora/emails", icon: "✉" },
   { key: "health", label: "Health", href: "/averbadora/health", icon: "♥" },
   { key: "logs", label: "Logs", href: "/averbadora/logs", icon: "≡" },
   { key: "vitrine", label: "Vitrine", href: "/averbadora/vitrine", icon: "▢" },
