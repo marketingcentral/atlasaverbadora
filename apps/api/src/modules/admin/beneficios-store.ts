@@ -106,6 +106,10 @@ export interface Beneficio {
   /** Se true, aparece em todas as prefeituras parceiras — incluindo as
    *  cadastradas no futuro. Prevalece sobre prefeituraIdsExtras. */
   todasPrefeiturasParceiras?: boolean;
+  /** Compromisso minimo em MESES pra o servidor aderir. Ex.: telemedicina = 12.
+   *  0 ou undefined = sem compromisso minimo (mensal, cancelavel a qualquer momento).
+   *  UI mostra badge "Compromisso: N meses" quando > 0. */
+  duracaoMinimaMeses?: number;
 }
 
 const TABLE = "admin_beneficios";

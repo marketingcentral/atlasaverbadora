@@ -527,6 +527,14 @@ export function AdminBeneficiosForm() {
           placeholder="Ex.: Não válido em produtos em promoção. Máx. 1 uso por dia."
           rows={3}
         />
+
+        <TextField
+          label="Compromisso mínimo (meses)"
+          type="number"
+          value={form.duracaoMinimaMeses ?? 0}
+          onChange={(e) => set("duracaoMinimaMeses", Math.max(0, Number(e.target.value) || 0))}
+          hint="0 = sem compromisso (cancelável a qualquer momento). Telemedicina padrão = 12."
+        />
       </Secao>
 
       {/* ============ 3. ENDERECO E CONTATO ============ */}

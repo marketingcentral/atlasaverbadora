@@ -45,6 +45,7 @@ import { AdminIdUnico } from "./routes/averbadora/id-unico";
 import { AdminBateCarteira } from "./routes/averbadora/bate-carteira";
 import { AdminAdf } from "./routes/averbadora/adf";
 import { AverbadoraPortabilidade } from "./routes/averbadora/portabilidade";
+import { AverbadoraTermos } from "./routes/averbadora/termos";
 import { AdminAuditoria } from "./routes/averbadora/auditoria";
 import { AdminPerfis } from "./routes/averbadora/perfis";
 import { AverbadoraConta } from "./routes/averbadora/conta";
@@ -200,6 +201,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "bate-carteira", element: <AdminBateCarteira /> },
           { path: "adf", element: <AdminAdf /> },
           { path: "portabilidade", element: <AverbadoraPortabilidade /> },
+          { path: "termos", element: <AverbadoraTermos /> },
           { path: "auditoria", element: <AdminAuditoria /> },
           { path: "perfis", element: <AdminPerfis /> },
           { path: "comunicados", element: <Navigate to="/averbadora/comunicados/banco" replace /> },

@@ -30,6 +30,7 @@ import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
 import { ensurePortabilidadesLoaded, listIntencoes } from "./portabilidade-store.js";
+import { ensureTermosLoaded, listTermos, getTermo, upsertTermo, type TermoTipo } from "./termos-store.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -2021,6 +2022,29 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ intencoes: listIntencoes() });
   })
 
+  // ===== Templates de TERMOS =====
+  .get("/v1/admin/termos", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "termos");
+    await ensureTermosLoaded(c.env);
+    return c.json({ termos: listTermos() });
+  })
+  .post("/v1/admin/termos/:tipo", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "termos");
+    await ensureTermosLoaded(c.env);
+    const tipo = c.req.param("tipo") as TermoTipo;
+    const body = z.object({
+      titulo: z.string().min(3).max(200).optional(),
+      descricao: z.string().max(500).optional(),
+      corpo: z.string().min(10).max(20000).optional(),
+      ativo: z.boolean().optional(),
+      versao: z.string().max(20).optional(),
+    }).parse(await c.req.json());
+    const t = await upsertTermo(c.env, tipo, body);
+    if (!t) throw Errors.notFound("termo");
+    appendAudit({ categoria: "convenio_config", acao: "termo_atualizado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Termo ${tipo} atualizado (versao ${t.versao}).` });
+    return c.json({ termo: t });
+  })
+
   // ===== Auditoria (passo 12) =====
   .get("/v1/admin/auditoria", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "auditoria");
@@ -2190,6 +2214,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         textoBotao: z.string().max(40).optional(),
       }).optional(),
       todasPrefeiturasParceiras: z.boolean().optional(),
+      duracaoMinimaMeses: z.number().int().min(0).max(120).optional(),
     }).parse(await c.req.json());
     // Consistencia origem-vinculo: banco exige bancoId, convenio exige convenioId.
     // Sem isso, o servidor recebe o beneficio sem saber QUAL banco/convenio ofereceu.

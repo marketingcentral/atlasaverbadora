@@ -347,12 +347,18 @@ function Stat({ label, value, accent, muted }: { label: string; value: string; a
 }
 
 /** Banner destacado de Telemedicina — aparece no topo da aba Beneficios,
- *  linkando pra pagina exclusiva de saude/telemedicina se houver beneficios
- *  dessa categoria pra o servidor. */
+ *  linkando pra pagina exclusiva. Mostra a duracao minima de contratacao
+ *  (definida pela averbadora — telemedicina padrao = 12 meses). */
 function TelemedicinaBanner({ beneficios }: { beneficios: ServidorBeneficio[] }) {
   const nav = useNavigate();
-  const temTelemedicina = beneficios.some((b) => b.categorias.includes("telemedicina"));
-  if (!temTelemedicina) return null;
+  const telemedicinas = beneficios.filter((b) => b.categorias.includes("telemedicina"));
+  if (telemedicinas.length === 0) return null;
+  // Pega o maior compromisso minimo entre os beneficios de telemedicina — o mais
+  // conservador que o servidor pode aceitar. Default 12 meses (regra de negocio).
+  const duracaoMinima = Math.max(
+    12,
+    ...telemedicinas.map((b) => (b as ServidorBeneficio & { duracaoMinimaMeses?: number }).duracaoMinimaMeses ?? 0),
+  );
   return (
     <button
       type="button"
@@ -379,7 +385,7 @@ function TelemedicinaBanner({ beneficios }: { beneficios: ServidorBeneficio[] })
         </div>
         <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>Telemedicina 24h grátis</div>
         <div style={{ fontSize: 13, opacity: 0.92, marginTop: 4 }}>
-          Consultas online com médicos parceiros, sem custo. Toque pra ver.
+          Consultas online com médicos parceiros. Compromisso mínimo de <b>{duracaoMinima} meses</b>.
         </div>
       </div>
       <div style={{ fontSize: 22, fontWeight: 800 }}>→</div>

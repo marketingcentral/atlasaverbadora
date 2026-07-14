@@ -16,6 +16,7 @@ import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo, enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, cancelarIntencao, aceitarOferta, getIntencao } from "../admin/portabilidade-store.js";
+import { ensureTermosLoaded, getTermo, renderTermo, type TermoTipo } from "../admin/termos-store.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
@@ -537,6 +538,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         imagens: b.imagens,
         modoImagens: b.modoImagens,
         linkAcesso: b.linkAcesso,
+        duracaoMinimaMeses: b.duracaoMinimaMeses,
       })),
     });
   })
@@ -1029,6 +1031,26 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const r = await aceitarOferta(c.env, i.id, body.ofertaId, i.servidorMatricula);
     if (!r.ok) throw Errors.validation({ oferta: r.motivo });
     return c.json({ intencao: r.intencao });
+  })
+  // ===== Termos (renderiza template editado no /averbadora/termos) =====
+  // Servidor autenticado busca corpo do termo antes de aceitar. Se pediu
+  // ?vars={"chave":"valor"}, ja retorna com placeholders substituidos.
+  .get("/v1/servidores/me/termos/:tipo", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureTermosLoaded(c.env);
+    const tipo = c.req.param("tipo") as TermoTipo;
+    const t = getTermo(tipo);
+    if (!t) throw Errors.notFound("termo");
+    const url = new URL(c.req.url);
+    const varsRaw = url.searchParams.get("vars");
+    let vars: Record<string, string | number | undefined> = {};
+    if (varsRaw) {
+      try { vars = JSON.parse(varsRaw); } catch { /* ignore */ }
+    }
+    return c.json({
+      termo: { id: t.id, titulo: t.titulo, versao: t.versao, corpo: renderTermo(t.corpo, vars) },
+    });
   })
   .get("/v1/servidores/me/comunicados", async (c) => {
     const j = c.get("jwt");

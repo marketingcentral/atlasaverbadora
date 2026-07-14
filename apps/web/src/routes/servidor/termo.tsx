@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import type { TermoTipo } from "@atlas/sdk";
 import { readActiveMatricula } from "../../lib/matricula-data";
 
 type Tipo = "novo" | "portabilidade" | "refinanciamento";
@@ -47,6 +49,24 @@ export function ServidorTermo() {
 
   const prazo = PRAZOS[tipo];
   const tipoLabel = TIPO_LABEL[tipo];
+
+  // Mapeia tipo local pro TermoTipo do backend (editavel em /averbadora/termos).
+  const termoTipo: TermoTipo = tipo === "portabilidade" ? "portabilidade"
+    : tipo === "refinanciamento" ? "refinanciamento"
+    : "emprestimo";
+  const vars = useMemo(() => ({
+    tipoLabel, valor: fmtBRL(valor), parcelas: String(parcelas),
+    parcela: fmtBRL(parcela), banco, prazo: prazo.label,
+  }), [tipoLabel, valor, parcelas, parcela, banco, prazo.label]);
+  // Puxa o corpo renderizado da API. Fallback (isLoading/erro) cai no texto
+  // hardcoded — o servidor NUNCA fica sem termo pra aceitar.
+  const termoQ = useQuery({
+    queryKey: ["servidor", "termo", termoTipo, vars],
+    queryFn: () => atlas.servidor.getTermo(termoTipo, vars),
+    staleTime: 60_000,
+  });
+  const termoCorpo = termoQ.data?.termo.corpo ?? null;
+  const termoTitulo = termoQ.data?.termo.titulo ?? "Termo de autorização";
 
   async function autorizar() {
     setSubmitting(true);
@@ -158,7 +178,7 @@ export function ServidorTermo() {
       </Card>
 
       <Card>
-        <h3 style={{ marginTop: 0 }}>Termo de autorização</h3>
+        <h3 style={{ marginTop: 0 }}>{termoTitulo}</h3>
         <div
           style={{
             maxHeight: 280, overflow: "auto", padding: 16,
@@ -166,30 +186,29 @@ export function ServidorTermo() {
             fontSize: ".88rem", color: "var(--text-muted)", lineHeight: 1.7,
           }}
         >
-          <p>
-            <b>Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora</b> a registrar a
-            averbacao da minha margem consignavel junto a minha prefeitura empregadora para a operacao de
-            <b> {tipoLabel}</b>, no valor de <b>{fmtBRL(valor)}</b>, em {parcelas} parcelas de
-            <b> {fmtBRL(parcela)}</b>, junto ao banco <b>{banco}</b>.
-          </p>
-          <p>
-            Estou ciente de que ao confirmar este aceite minha margem ficara <b>indisponivel</b> para outras operacoes
-            pelo prazo de <b>{prazo.label}</b>, podendo ser liberada antes desse periodo mediante cancelamento da
-            pre-reserva.
-          </p>
-          <p>
-            <b>LGPD e log de auditoria.</b> Este aceite sera registrado com data, hora, endereco IP, dispositivo, CPF e
-            identificador desta proposta para fins legais e de auditoria, conforme a Lei 13.709/2018.
-          </p>
-          <p>
-            <b>Custo Efetivo Total (CET).</b> A taxa apresentada e mensal e inclui juros remuneratorios, IOF, tarifas e
-            seguros aplicaveis quando exigidos pelo convenio. O contrato definitivo sera disponibilizado pelo banco apos
-            a aprovacao.
-          </p>
-          <p>
-            Em caso de duvidas, consulte a area "Meus contratos" para historico ou entre em contato com o RH da sua
-            prefeitura.
-          </p>
+          {termoCorpo ? (
+            // Corpo vem do backend com {{vars}} substituidas. Parses paragrafos
+            // (linha em branco = novo <p>) + **negrito**.
+            termoCorpo.split(/\n\n+/).map((p, i) => (
+              <p key={i} style={{ margin: i === 0 ? "0 0 8px" : "8px 0" }} dangerouslySetInnerHTML={{
+                __html: p.replace(/\*\*(.+?)\*\*/g, '<b style="color: var(--text)">$1</b>').replace(/\n/g, "<br/>"),
+              }} />
+            ))
+          ) : (
+            // Fallback enquanto carrega ou se der erro na API — texto minimo hardcoded
+            // pra o servidor nunca ficar sem termo pra aceitar.
+            <>
+              <p>
+                <b>Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora</b> a
+                registrar a averbação da minha margem consignável junto à minha prefeitura empregadora para a
+                operação de <b>{tipoLabel}</b>, no valor de <b>{fmtBRL(valor)}</b>, em {parcelas} parcelas de{" "}
+                <b>{fmtBRL(parcela)}</b>, junto ao banco <b>{banco}</b>.
+              </p>
+              <p>
+                Estou ciente de que minha margem ficará <b>indisponível</b> pelo prazo de <b>{prazo.label}</b>.
+              </p>
+            </>
+          )}
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".92rem", marginTop: 16, cursor: "pointer" }}>
           <input type="checkbox" checked={aceito} onChange={(e) => setAceito(e.target.checked)} />

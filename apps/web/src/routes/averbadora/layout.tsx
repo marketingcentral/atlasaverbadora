@@ -41,6 +41,7 @@ const NAV = [
       { key: "email-beneficio", label: "Benefícios", href: "/averbadora/emails/beneficios" },
     ],
   },
+  { key: "termos", label: "Termos de aceite", href: "/averbadora/termos", icon: "📜" },
   { key: "health", label: "Health", href: "/averbadora/health", icon: "♥" },
   { key: "logs", label: "Logs", href: "/averbadora/logs", icon: "≡" },
   { key: "vitrine", label: "Vitrine", href: "/averbadora/vitrine", icon: "▢" },

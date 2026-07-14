@@ -51,6 +51,29 @@ export interface NovoContratoBody {
 
 export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios" | "personalizado";
 
+export type TermoTipo =
+  | "emprestimo" | "portabilidade" | "refinanciamento" | "cartao_consignado"
+  | "beneficio_generico" | "telemedicina" | "lgpd_servidor" | "anuencia_prefeitura";
+export interface TermoTemplate {
+  id: TermoTipo;
+  titulo: string;
+  descricao: string;
+  variaveis: string[];
+  corpo: string;
+  versao: string;
+  ativo: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+/** Termo renderizado (com placeholders substituidos) — o que o servidor consome. */
+export interface TermoRenderizado {
+  id: TermoTipo;
+  titulo: string;
+  versao: string;
+  /** Corpo pronto pra exibir (placeholders {{}} ja substituidos). */
+  corpo: string;
+}
+
 export interface PortabilidadeOferta {
   id: string;
   bancoDestinoId: number;
@@ -253,6 +276,8 @@ export interface AdminBeneficio {
   /** Se true, o beneficio aparece em TODAS as prefeituras parceiras — incluindo
    *  as cadastradas no futuro. Prevalece sobre prefeituraIdsExtras. */
   todasPrefeiturasParceiras?: boolean;
+  /** Compromisso minimo em meses. 0/undefined = sem compromisso. */
+  duracaoMinimaMeses?: number;
 }
 export interface AdminBeneficioInput {
   id?: string;
@@ -288,6 +313,8 @@ export interface AdminBeneficioInput {
   modoImagens?: ModoImagens;
   linkAcesso?: LinkAcessoBeneficio;
   todasPrefeiturasParceiras?: boolean;
+  /** Compromisso minimo em meses. 0/undefined = sem compromisso. */
+  duracaoMinimaMeses?: number;
 }
 export interface ServidorBeneficio {
   id: string;
@@ -309,6 +336,8 @@ export interface ServidorBeneficio {
   imagens?: string[];
   modoImagens?: ModoImagens;
   linkAcesso?: LinkAcessoBeneficio;
+  /** Compromisso minimo em meses (telemedicina padrao = 12). */
+  duracaoMinimaMeses?: number;
 }
 
 export interface BancoOfertaFiltro {
@@ -1306,6 +1335,12 @@ export class AtlasClient {
         method: "POST",
         body: { codigo: input.codigo, email: input.email, telefone: input.telefone },
       }),
+    /** Le o termo renderizado (placeholders substituidos com vars). Fonte: /averbadora/termos. */
+    getTermo: (tipo: TermoTipo, vars?: Record<string, string | number>) => {
+      const query: Record<string, string> = {};
+      if (vars && Object.keys(vars).length > 0) query.vars = JSON.stringify(vars);
+      return this.request<{ termo: TermoRenderizado }>(`/v1/servidores/me/termos/${tipo}`, { query });
+    },
   };
 
   // ============ Portal Banco ============
@@ -1555,6 +1590,11 @@ export class AtlasClient {
     // Auditoria
     listAuditoria: (q?: { categoria?: AuditCategoria; cpf?: string; matricula?: string; proposta_id?: string; desde?: string; ate?: string; limit?: number }) =>
       this.request<{ entries: AdminAuditEntry[]; categorias: { value: AuditCategoria; label: string }[] }>("/v1/admin/auditoria", { query: q ?? {} }),
+
+    // Templates de TERMOS (aceite in-app do servidor + anuencia da prefeitura)
+    listTermos: () => this.request<{ termos: TermoTemplate[] }>("/v1/admin/termos"),
+    upsertTermo: (tipo: TermoTipo, patch: { titulo?: string; descricao?: string; corpo?: string; ativo?: boolean; versao?: string }) =>
+      this.request<{ termo: TermoTemplate }>(`/v1/admin/termos/${tipo}`, { method: "POST", body: patch }),
 
     // Perfis admin
     listPerfisAdmin: () =>

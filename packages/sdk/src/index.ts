@@ -30,5 +30,6 @@ export type {
   CsvImportOutcome,
   PrefeituraServidor, PrefeituraFolha, PrefeituraConvenio, PrefeituraContrato, PrefeituraAdf, PrefeituraPerfil, PrefeituraPerfilInput, PrefeituraArea,
   PortabilidadeIntencao, PortabilidadeOferta,
+  TermoTemplate, TermoTipo, TermoRenderizado,
 } from "./client.js";
 export { ApiHttpError } from "./errors.js";
