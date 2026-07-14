@@ -43,7 +43,7 @@ interface ApiService {
     ): io.atlas.servidor.data.remote.dto.BeneficiosResponse
 
     /** Solicita portabilidade — o banco recebe o pedido e avalia os contratos do servidor. */
-    @POST("v1/servidores/me/portabilidade")
+    @POST("v1/servidores/me/portabilidade/solicitar")
     suspend fun solicitarPortabilidade(@Body body: io.atlas.servidor.data.remote.dto.SolicitarPortabilidadeRequest): io.atlas.servidor.data.remote.dto.PortabilidadeSolicitadaResponse
 
     @POST("v1/servidores/me/propostas")

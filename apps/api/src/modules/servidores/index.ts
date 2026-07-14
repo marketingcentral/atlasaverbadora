@@ -812,12 +812,14 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       201,
     );
   })
-  // Servidor SOLICITA portabilidade de um emprestimo de OUTRO banco (elegivelId) —
+  // Servidor SOLICITA trazer um emprestimo de OUTRO banco (elegivelId) PARA o Banco Atlas —
   // o BANCO recebe em "Propostas e Portabilidade" como REFIN pendente, com os dados do
   // contrato de origem (banco/contrato/saldo) e o telefone do servidor pra contato.
   // Regras: bloqueia a margem de EMPRESTIMO consignado por ate 5 dias (reserva) e NAO
   // permite solicitar se ja houver emprestimo/portabilidade EM ANALISE.
-  .post("/v1/servidores/me/portabilidade", async (c) => {
+  // Path distinto de /me/portabilidade (que e o marketplace de intencoes p/ bancos
+  // concorrentes) — este e' o fluxo "trazer pro Atlas" do app/emulador.
+  .post("/v1/servidores/me/portabilidade/solicitar", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
