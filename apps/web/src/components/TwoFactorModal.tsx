@@ -60,11 +60,11 @@ export function TwoFactorModal({ acao, recurso, onConfirm, onCancel }: Props) {
 
   async function confirmar() {
     if (code.replace(/\D/g, "").length !== 6) {
-      setError("O codigo precisa ter 6 digitos.");
+      setError("O código precisa ter 6 dígitos.");
       return;
     }
     if (!challengeId) {
-      setError("Solicite um novo codigo.");
+      setError("Solicite um novo código.");
       return;
     }
     setSubmitting(true);
@@ -82,7 +82,7 @@ export function TwoFactorModal({ acao, recurso, onConfirm, onCancel }: Props) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Verificacao em duas etapas"
+      aria-label="Verificação em duas etapas"
       style={{
         position: "fixed",
         inset: 0,
@@ -97,7 +97,7 @@ export function TwoFactorModal({ acao, recurso, onConfirm, onCancel }: Props) {
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
           <span style={{ fontSize: 28 }}>🔐</span>
           <div>
-            <h3 style={{ margin: 0 }}>Confirmacao em duas etapas</h3>
+            <h3 style={{ margin: 0 }}>Confirmação em duas etapas</h3>
             <p style={{ margin: "4px 0 0", fontSize: ".82rem", color: "var(--text-muted)" }}>
               Para {acao}, precisamos validar sua identidade.
             </p>
@@ -108,7 +108,7 @@ export function TwoFactorModal({ acao, recurso, onConfirm, onCancel }: Props) {
           {enviando ? (
             "Enviando o codigo de 6 digitos…"
           ) : destino ? (
-            <>Enviamos um codigo de 6 digitos para <b style={{ color: "var(--text)" }}>{destino}</b>. Ele expira em 10 minutos.</>
+            <>Enviamos um código de 6 dígitos para <b style={{ color: "var(--text)" }}>{destino}</b>. Ele expira em 10 minutos.</>
           ) : (
             "Digite o codigo de 6 digitos."
           )}
@@ -123,7 +123,7 @@ export function TwoFactorModal({ acao, recurso, onConfirm, onCancel }: Props) {
 
         <Input
           ref={inputRef}
-          label="Codigo de verificacao"
+          label="Código de verificação"
           value={code}
           onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
           placeholder="000000"

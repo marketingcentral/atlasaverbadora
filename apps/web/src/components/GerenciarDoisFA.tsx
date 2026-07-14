@@ -54,7 +54,7 @@ export function GerenciarDoisFA() {
       setModo("idle");
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Codigo invalido");
+      setError(e instanceof Error ? e.message : "Código inválido");
     } finally { setBusy(false); }
   }
 
@@ -66,7 +66,7 @@ export function GerenciarDoisFA() {
       setModo("idle");
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Codigo invalido");
+      setError(e instanceof Error ? e.message : "Código inválido");
     } finally { setBusy(false); }
   }
 
@@ -102,8 +102,8 @@ export function GerenciarDoisFA() {
       </h3>
       <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 6 }}>
         {status?.enabled
-          ? "A cada login voce vai precisar de um codigo de 6 digitos do seu aplicativo autenticador (Google Authenticator, Authy, 1Password)."
-          : "Ative pra exigir um codigo do seu aplicativo autenticador a cada login. Recomendado."}
+          ? "A cada login você vai precisar de um código de 6 dígitos do seu aplicativo autenticador (Google Authenticator, Authy, 1Password)."
+          : "Ative pra exigir um código do seu aplicativo autenticador a cada login. Recomendado."}
       </p>
 
       {modo === "idle" ? (
@@ -156,7 +156,7 @@ export function GerenciarDoisFA() {
               O aplicativo vai mostrar um codigo de 6 digitos que muda a cada 30 segundos. Digite o codigo atual pra confirmar.
             </p>
             <Input
-              label="Codigo 2FA"
+              label="Código 2FA"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder="000000"
@@ -183,7 +183,7 @@ export function GerenciarDoisFA() {
             Pra desativar, digite o codigo de 6 digitos do seu autenticador. Isso confirma que voce e voce.
           </p>
           <Input
-            label="Codigo 2FA"
+            label="Código 2FA"
             value={code}
             onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
             placeholder="000000"
@@ -194,7 +194,7 @@ export function GerenciarDoisFA() {
           {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
           <div style={{ display: "flex", gap: 8 }}>
             <Button onClick={desativar} disabled={busy || code.length < 6}>
-              {busy ? "Desativando…" : "Confirmar desativacao"}
+              {busy ? "Desativando…" : "Confirmar desativação"}
             </Button>
             <Button variant="ghost" onClick={cancelar} disabled={busy}>Cancelar</Button>
           </div>

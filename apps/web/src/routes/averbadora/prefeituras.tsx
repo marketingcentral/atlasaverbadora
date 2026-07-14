@@ -200,7 +200,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
             value={form.folhaSincUrl ?? ""}
             onChange={(e) => setForm({ ...form, folhaSincUrl: e.target.value })}
             placeholder="https://prefeitura.gov.br/folha.csv"
-            hint="Deixe em branco se nao houver origem automatica. Colunas: cpf, matricula, nome, cargo, vinculo, salarioLiquido, idConvenio, email, telefone"
+            hint="Deixe em branco se não houver origem automatica. Colunas: cpf, matrícula, nome, cargo, vinculo, salarioLiquido, idConvenio, email, telefone"
           />
         </FormGrid>
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, color: "var(--text-muted)", cursor: "pointer", marginTop: 4 }}>

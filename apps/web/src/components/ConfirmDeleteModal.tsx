@@ -60,7 +60,7 @@ export function ConfirmDeleteModal({ titulo, alvo, acao, recurso, confirmarLabel
 
   async function confirmar() {
     if (!challengeId) return;
-    if (code.replace(/\D/g, "").length !== 6) { setError("O codigo precisa ter 6 digitos."); return; }
+    if (code.replace(/\D/g, "").length !== 6) { setError("O código precisa ter 6 dígitos."); return; }
     setConfirmando(true);
     setError(null);
     try {
@@ -91,18 +91,18 @@ export function ConfirmDeleteModal({ titulo, alvo, acao, recurso, confirmarLabel
         </div>
 
         <p style={{ fontSize: ".88rem", color: "var(--text-muted)", margin: "12px 0 8px" }}>
-          {enviando ? "Enviando codigo…" : emailMascarado ? <>Enviamos um codigo para <b>{emailMascarado}</b>. Expira em 10 minutos.</> : ""}
+          {enviando ? "Enviando código…" : emailMascarado ? <>Enviamos um código para <b>{emailMascarado}</b>. Expira em 10 minutos.</> : ""}
         </p>
 
         {codigoDemo ? (
           <div style={{ margin: "0 0 12px", padding: "8px 12px", borderRadius: 8, border: "1px dashed var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 10%, transparent)", fontSize: ".8rem", color: "var(--text)" }}>
-            <b>Modo demonstracao</b> (sem provedor de email): seu codigo e <b style={{ fontFamily: "var(--font-mono)", letterSpacing: 2 }}>{codigoDemo}</b>
+            <b>Modo demonstracao</b> (sem provedor de email): seu código e <b style={{ fontFamily: "var(--font-mono)", letterSpacing: 2 }}>{codigoDemo}</b>
           </div>
         ) : null}
 
         <Input
           ref={inputRef}
-          label="Codigo de verificacao"
+          label="Código de verificação"
           value={code}
           onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
           placeholder="000000"

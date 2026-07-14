@@ -55,7 +55,7 @@ export function ServidorConta() {
           <ReadField label="CPF" value={cpfMasked} />
           <ReadField label="Cargo" value={cargo} />
           <ReadField label="Vínculo" value={vinculo} />
-          <ReadField label="Matricula" value={matricula} />
+          <ReadField label="Matrícula" value={matricula} />
           <ReadField label="Prefeitura" value={prefeitura} />
           <ReadField label="Endereço" value={endereco} full />
         </div>

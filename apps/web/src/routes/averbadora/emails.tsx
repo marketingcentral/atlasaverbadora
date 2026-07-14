@@ -86,7 +86,7 @@ export function AdminEmails({ evento }: { evento: EmailEvento }) {
           {EVENTO_DESCRICAO[evento]}
         </p>
         <p style={{ color: "var(--text-dim)", marginTop: 8, fontSize: 12 }}>
-          💡 Use <code style={codeInline}>&#123;&#123;variavel&#125;&#125;</code> no assunto e no corpo — serão substituídas na hora do envio real. Ex.: <code style={codeInline}>&#123;&#123;contract_name&#125;&#125;</code>, <code style={codeInline}>&#123;&#123;nome&#125;&#125;</code>, <code style={codeInline}>&#123;&#123;codigo&#125;&#125;</code>.
+          💡 Use <code style={codeInline}>&#123;&#123;variavel&#125;&#125;</code> no assunto e no corpo — serão substituídas na hora do envio real. Ex.: <code style={codeInline}>&#123;&#123;contract_name&#125;&#125;</code>, <code style={codeInline}>&#123;&#123;nome&#125;&#125;</code>, <code style={codeInline}>&#123;&#123;código&#125;&#125;</code>.
         </p>
       </header>
 
@@ -304,7 +304,7 @@ function EmailTemplateModal({
           label="Variáveis declaradas (separadas por vírgula)"
           value={variaveisRaw}
           onChange={(e) => setVariaveisRaw(e.target.value)}
-          placeholder="nome, codigo, contract_name"
+          placeholder="nome, código, contract_name"
           hint="Documenta as variáveis que esse template usa. O sistema preenche na hora do envio real."
         />
 

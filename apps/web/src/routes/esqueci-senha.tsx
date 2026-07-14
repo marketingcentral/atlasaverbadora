@@ -50,7 +50,7 @@ export function EsqueciSenhaPage() {
     try {
       const id = normalizeIdentifier(identifier);
       if (!id.includes("@") && id.length !== 11) {
-        setError("Informe um CPF valido (11 digitos) ou um e-mail.");
+        setError("Informe um CPF válido (11 dígitos) ou um e-mail.");
         return;
       }
       const r = await atlas.esqueciSenha.universalSolicitar(id);
@@ -59,7 +59,7 @@ export function EsqueciSenhaPage() {
       setPerfilDetectado(r.perfil ?? null);
       setStep("codigo");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Falha ao enviar codigo.");
+      setError(err instanceof Error ? err.message : "Falha ao enviar código.");
     } finally { setLoading(false); }
   }
 
@@ -67,7 +67,7 @@ export function EsqueciSenhaPage() {
     setError(null); setLoading(true);
     try {
       const r = await atlas.esqueciSenha.universalSolicitar(normalizeIdentifier(identifier));
-      setAviso(r.enviado ? "Codigo reenviado." : (r.aviso ?? null));
+      setAviso(r.enviado ? "Código reenviado." : (r.aviso ?? null));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao reenviar.");
     } finally { setLoading(false); }
@@ -76,23 +76,23 @@ export function EsqueciSenhaPage() {
   function irParaSenha(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (codigo.replace(/\D/g, "").length !== 6) { setError("Codigo precisa ter 6 digitos."); return; }
+    if (codigo.replace(/\D/g, "").length !== 6) { setError("Código precisa ter 6 dígitos."); return; }
     setStep("senha");
   }
 
   async function redefinir(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    if (senha.length < 8) { setError("A senha deve ter no minimo 8 caracteres."); return; }
-    if (!/[a-zA-Z]/.test(senha) || !/\d/.test(senha)) { setError("A senha deve conter letras e numeros."); return; }
-    if (senha !== senha2) { setError("As senhas nao conferem."); return; }
+    if (senha.length < 8) { setError("A senha deve ter no mínimo 8 caracteres."); return; }
+    if (!/[a-zA-Z]/.test(senha) || !/\d/.test(senha)) { setError("A senha deve conter letras e números."); return; }
+    if (senha !== senha2) { setError("As senhas não conferem."); return; }
     setLoading(true);
     try {
       await atlas.esqueciSenha.universalRedefinir(normalizeIdentifier(identifier), codigo.replace(/\D/g, ""), senha);
       setStep("ok");
       setTimeout(() => nav("/login"), 4000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Codigo invalido ou expirado.");
+      setError(err instanceof Error ? err.message : "Código inválido ou expirado.");
       setStep("codigo");
     } finally { setLoading(false); }
   }
@@ -130,7 +130,7 @@ export function EsqueciSenhaPage() {
             />
             {error ? <ErrorBox>{error}</ErrorBox> : null}
             <Button type="submit" disabled={loading || !identifier}>
-              {loading ? "Enviando..." : "Enviar codigo"}
+              {loading ? "Enviando..." : "Enviar código"}
             </Button>
             <Link to="/login" style={{ color: "var(--text-muted)", fontSize: ".88rem", textAlign: "center" }}>
               Voltar para o login
@@ -142,14 +142,14 @@ export function EsqueciSenhaPage() {
           <form onSubmit={irParaSenha} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
               {destino ? (
-                <>Enviamos um codigo de 6 digitos para <b>{destino}</b>{perfilLabel ? <> (perfil <b>{perfilLabel}</b>)</> : null}. Ele expira em 10 minutos.</>
+                <>Enviamos um código de 6 dígitos para <b>{destino}</b>{perfilLabel ? <> (perfil <b>{perfilLabel}</b>)</> : null}. Ele expira em 10 minutos.</>
               ) : (
-                "Se o identificador informado existir, um codigo foi enviado. Verifique seu e-mail (inclusive spam)."
+                "Se o identificador informado existir, um código foi enviado. Verifique seu e-mail (inclusive spam)."
               )}
             </p>
             {aviso ? <InfoBox>{aviso}</InfoBox> : null}
             <Input
-              label="Codigo de verificacao"
+              label="Código de verificação"
               value={codigo}
               onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder="000000"
@@ -162,7 +162,7 @@ export function EsqueciSenhaPage() {
             <Button type="submit" disabled={codigo.length < 6}>Continuar →</Button>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <button type="button" onClick={() => setStep("identifier")} style={linkBtn}>← Voltar</button>
-              <button type="button" onClick={reenviar} disabled={loading} style={{ ...linkBtn, color: "var(--accent)" }}>Reenviar codigo</button>
+              <button type="button" onClick={reenviar} disabled={loading} style={{ ...linkBtn, color: "var(--accent)" }}>Reenviar código</button>
             </div>
           </form>
         ) : null}
@@ -170,7 +170,7 @@ export function EsqueciSenhaPage() {
         {step === "senha" ? (
           <form onSubmit={redefinir} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <p style={{ color: "var(--text-muted)", fontSize: ".9rem", margin: 0 }}>
-              Crie uma nova senha. Minimo 8 caracteres, com letras e numeros.
+              Crie uma nova senha. Mínimo 8 caracteres, com letras e números.
             </p>
             <Input label="Nova senha" type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" required />
             <Input label="Confirmar senha" type="password" value={senha2} onChange={(e) => setSenha2(e.target.value)} autoComplete="new-password" required />
@@ -189,7 +189,7 @@ export function EsqueciSenhaPage() {
               fontSize: 32, fontWeight: 800, margin: "0 auto",
             }}>✓</div>
             <div style={{ fontWeight: 700, fontSize: "1.1rem" }}>Senha redefinida!</div>
-            <p style={{ color: "var(--text-muted)", margin: 0 }}>Voce ja pode entrar com a nova senha.</p>
+            <p style={{ color: "var(--text-muted)", margin: 0 }}>Você já pode entrar com a nova senha.</p>
             <Button onClick={() => nav("/login")}>Ir para o login →</Button>
           </div>
         ) : null}
