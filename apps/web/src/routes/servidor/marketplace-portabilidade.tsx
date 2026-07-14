@@ -145,7 +145,9 @@ export function ServidorMarketplacePortabilidade() {
     enabled: !!matAtiva,
   });
 
-  const ofertas = ofertasQ.data?.ofertas ?? [];
+  // Cartao Beneficio nao entra no app (decisao cliente 14/07/2026). Filtra
+  // ofertas desse tipo antes de renderizar — servidor nao ve nem clica.
+  const ofertas = (ofertasQ.data?.ofertas ?? []).filter((o) => o.tipo !== "cartao_beneficio");
 
   // Beneficios de saude (farmacia, clinica, laboratorio, etc). Categoria
   // "telemedicina" NAO entra aqui — vai na tela /servidor/saude exclusiva.

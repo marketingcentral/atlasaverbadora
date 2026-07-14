@@ -90,7 +90,9 @@ export interface PortabilidadeIntencao {
 
 /** Categorias de beneficio. "telemedicina" separada de "saude" — cliente pediu
  *  aba exclusiva pra telemedicina na averbadora. */
-export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina";
+export type CategoriaBeneficio =
+  | "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina"
+  | "academia" | "farmacia" | "supermercado";
 
 /** Modo de exibicao das imagens no card do servidor. "unica" = 1 imagem fixa
  *  (estatica), "carrossel" = varias com navegacao. "nenhum" = so o icone. */

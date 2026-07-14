@@ -110,8 +110,14 @@ export function ServidorDashboard() {
         </div>
       </header>
 
-      {/* 3 cards de margem lado a lado — botao de acao em cada. */}
+      {/* 3 cards de margem lado a lado — botao de acao em cada
+          (Emprestimo, Cartao Consignado, Cartao Beneficio). */}
       <MinhaMargemPorModalidade info={info} />
+
+      {/* Banner destacado de Beneficios do Atlas. Cliente pediu (14/07/2026):
+          "banner no inicio do app" apontando pra aba Beneficios com farmacia,
+          academia, supermercado, telemedicina — tudo negociado pela Atlas. */}
+      <BeneficiosBanner />
 
       {/* Carrossel de comunicados/vitrine da averbadora — publico=servidor.
           Cliente pediu explicitamente o carrossel NO MEIO, entre os cards de
@@ -152,8 +158,6 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
 
   return (
     <article style={{
-      // Tokens semanticos (surface + border) adaptam sozinhos ao tema
-      // claro/escuro. Antes era navy fixo, ficava incoerente no tema claro.
       background: "var(--surface-solid)",
       border: "1px solid var(--border-strong)",
       borderRadius: 16,
@@ -306,6 +310,44 @@ function AtalhoCard({
       >
         Ver mais →
       </span>
+    </button>
+  );
+}
+
+/** Banner destacado apontando pra aba Beneficios (farmacia, academia,
+ *  supermercado, telemedicina) — todos beneficios negociados pela Atlas. */
+function BeneficiosBanner() {
+  const nav = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => nav("/servidor/beneficios")}
+      style={{
+        background: "linear-gradient(135deg, #7C3AED 0%, #EC4899 100%)",
+        border: "none",
+        borderRadius: 16,
+        padding: 22,
+        display: "flex",
+        alignItems: "center",
+        gap: 18,
+        cursor: "pointer",
+        boxShadow: "var(--shadow-md)",
+        color: "white",
+        textAlign: "left",
+        width: "100%",
+      }}
+    >
+      <div style={{ fontSize: 48 }}>🎁</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 700, opacity: 0.9, textTransform: "uppercase" }}>
+          Benefícios Atlas
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2 }}>Descontos em farmácia, academia, supermercado e mais</div>
+        <div style={{ fontSize: 13, opacity: 0.95, marginTop: 6 }}>
+          Parceiros negociados pela Atlas na sua cidade. Sem cartão, sem burocracia — só apresentar sua matrícula.
+        </div>
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 800 }}>→</div>
     </button>
   );
 }

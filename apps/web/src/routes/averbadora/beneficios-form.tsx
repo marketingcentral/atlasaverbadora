@@ -19,6 +19,9 @@ import type {
 const CATEGORIAS: { id: CategoriaBeneficio; label: string; icone: string }[] = [
   { id: "saude", label: "Saúde", icone: "🩺" },
   { id: "telemedicina", label: "Telemedicina", icone: "📱" },
+  { id: "farmacia", label: "Farmácia", icone: "💊" },
+  { id: "supermercado", label: "Supermercado", icone: "🛒" },
+  { id: "academia", label: "Academia", icone: "🏋️" },
   { id: "alimentacao", label: "Alimentação", icone: "🍽️" },
   { id: "educacao", label: "Educação", icone: "🎓" },
   { id: "lazer", label: "Lazer", icone: "🎭" },
