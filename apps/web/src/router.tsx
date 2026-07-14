@@ -47,7 +47,6 @@ import { AdminAdf } from "./routes/averbadora/adf";
 import { AdminAuditoria } from "./routes/averbadora/auditoria";
 import { AdminPerfis } from "./routes/averbadora/perfis";
 import { AverbadoraConta } from "./routes/averbadora/conta";
-import { AverbadoraPermissoes } from "./routes/averbadora/permissoes";
 import { PrefeituraLayout } from "./routes/prefeitura/layout";
 import { PrefeituraDashboard } from "./routes/prefeitura/dashboard";
 import { PrefeituraServidores } from "./routes/prefeitura/servidores";
@@ -223,7 +222,6 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "api/tokens", element: <AverbadoraApiTokens /> },
           { path: "api/webhooks", element: <AverbadoraApiWebhooks /> },
           { path: "conta", element: <AverbadoraConta /> },
-          { path: "permissoes", element: <AverbadoraPermissoes /> },
         ],
       },
     ],

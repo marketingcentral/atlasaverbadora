@@ -95,7 +95,6 @@ export const RESOURCE_GROUPS: { titulo: string; recursos: { key: string; label: 
       { key: "api-tokens", label: "API — Tokens" },
       { key: "api-webhooks", label: "API — Webhooks" },
       { key: "configuracoes", label: "Configuracoes" },
-      { key: "permissoes", label: "Presets (visualizacao)" },
     ],
   },
 ];
