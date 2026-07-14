@@ -26,11 +26,12 @@ export function ServidorLayout() {
   const nav = useNavigate();
   const location = useLocation();
   const { resolved, setMode } = useThemeMode();
-  // As rotas Ofertas/Simular/Portabilidade/Propostas foram fundidas dentro do
-  // MarketPlace — quando o servidor cai numa dessas (via link direto ou botao),
-  // o menu deve destacar MarketPlace ("marketplace-port"), nao a chave da URL.
+  // Item "Portabilidade" do menu (key marketplace-port) so acende quando o
+  // servidor esta EFETIVAMENTE na tela de Portabilidade (/marketplace/portabilidade
+  // ou /portabilidade). Simular tem tela propria — nao deve destacar Portabilidade
+  // no topo (era o bug que o cliente reportou: "clico Simular e vai pra Portabilidade").
   const seg2 = location.pathname.split("/")[2] ?? "dashboard";
-  const active = (seg2 === "marketplace" || seg2 === "simular" || seg2 === "portabilidade" || seg2 === "propostas")
+  const active = (seg2 === "marketplace" || seg2 === "portabilidade")
     ? "marketplace-port"
     : seg2;
 
