@@ -23,12 +23,12 @@ import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
-import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
+import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
-import { sendMail, enviarNotificacao } from "./mailer.js";
+import { sendMail, enviarNotificacao, movimentacaoEmail } from "./mailer.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -2291,9 +2291,19 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!r.ok) throw Errors.validation({ template: r.motivo });
     return c.json({ ok: true });
   })
-  // Envia um teste do template pro email do operador logado. Usa o SMTP
-  // configurado em /averbadora/configuracoes. Preview real (com placeholders
-  // renderizados via `variaveis` mock que o front envia no body).
+  // Preview de variaveis pre-preenchidas com dados REAIS do ambiente.
+  // Serve pra UX: o operador nao precisa digitar valor pra cada {{var}} —
+  // o front puxa esse endpoint e usa como default.
+  .get("/v1/admin/email-templates/:id/preview-vars", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j);
+    const t = await getTemplate(c.env, c.req.param("id"));
+    if (!t) throw Errors.notFound("template");
+    return c.json({ vars: exemploVarsRealistas(t) });
+  })
+  // Envia teste REAL via SMTP configurado, DIRETO pro `destino` (nao passa
+  // pelo notifyEmail global). Se o body nao trouxer `vars` (ou vier vazio),
+  // usa dados de exemplo realistas — assim o operador so precisa digitar
+  // o email de destino e clicar enviar.
   .post("/v1/admin/email-templates/:id/test", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
     const id = c.req.param("id");
@@ -2301,16 +2311,26 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!t) throw Errors.notFound("template");
     const body = z.object({
       destino: z.string().email(),
-      vars: z.record(z.string()).default({}),
+      vars: z.record(z.string()).optional(),
     }).parse(await c.req.json());
-    const { assunto, corpo } = renderTemplate(t, body.vars);
-    const r = await enviarNotificacao(c.env, {
-      destinoPadrao: body.destino,
-      titulo: assunto,
-      mensagem: corpo,
-      detalhes: [{ label: "Template", valor: `${t.nome} (${t.id})` }],
+    // Merge: user tem prioridade, defaults cobrem o resto.
+    const defaults = exemploVarsRealistas(t);
+    const mergedVars = { ...defaults, ...(body.vars ?? {}) };
+    const { assunto, corpo } = renderTemplate(t, mergedVars);
+    // sendMail DIRETO com destino do body — nao passa por enviarNotificacao
+    // que sobrescreveria com notifyEmail global do SMTP.
+    const { subject, text, html } = movimentacaoEmail(assunto, corpo, [
+      { label: "Template", valor: `${t.nome} (${t.id})` },
+      { label: "Modo", valor: "Teste manual pelo painel" },
+    ]);
+    const r = await sendMail(c.env, { to: body.destino, subject, text, html });
+    return c.json({
+      sent: r.sent,
+      destino: body.destino,
+      reason: r.reason,
+      preview: { assunto, corpo },
+      varsAplicadas: mergedVars,
     });
-    return c.json({ sent: r.sent, destino: r.destino, reason: r.reason, preview: { assunto, corpo } });
   })
   // Interessados = servidores que clicaram no botao "Acessar" de um beneficio.
   // ?beneficioId=BEN-X filtra por beneficio; sem filtro, retorna todos os

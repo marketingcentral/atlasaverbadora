@@ -1540,14 +1540,20 @@ export class AtlasClient {
         this.request<{ template: EmailTemplate }>("/v1/admin/email-templates", { method: "POST", body }),
       remover: (id: string) =>
         this.request<{ ok: true }>(`/v1/admin/email-templates/${id}`, { method: "DELETE" }),
-      /** Envia um teste real via SMTP configurado. `vars` preenche os placeholders. */
+      /** Envia um teste real via SMTP configurado. Se `vars` for omitido/vazio,
+       *  o backend preenche automaticamente com dados de exemplo realistas. */
       enviarTeste: (id: string, body: { destino: string; vars?: Record<string, string> }) =>
         this.request<{
           sent: boolean;
           destino: string;
           reason?: string;
           preview: { assunto: string; corpo: string };
+          varsAplicadas: Record<string, string>;
         }>(`/v1/admin/email-templates/${id}/test`, { method: "POST", body }),
+      /** Pre-preenchimento de variaveis com dados realistas — usado pelo
+       *  modal de teste pra popular os inputs sem o operador digitar. */
+      previewVars: (id: string) =>
+        this.request<{ vars: Record<string, string> }>(`/v1/admin/email-templates/${id}/preview-vars`),
     },
 
     listServidores: (q?: { prefeitura_id?: number; status?: string }) =>

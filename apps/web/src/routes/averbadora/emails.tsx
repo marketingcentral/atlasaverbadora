@@ -244,13 +244,35 @@ function EmailTemplateModal({
     sent: boolean; destino: string; reason?: string;
     preview: { assunto: string; corpo: string };
   }>(null);
+
+  // Pre-preenchimento automatico: puxa dados realistas ao abrir o bloco.
+  // Sem isso, o operador precisava digitar valor pra cada {{var}}.
+  const previewQ = useQuery({
+    queryKey: ["admin", "email-templates", template.id, "preview-vars", template.atualizadoEm],
+    queryFn: () => atlas.admin.emailTemplates.previewVars(template.id),
+    enabled: testeAberto,
+    staleTime: 60_000,
+  });
+  const defaults = previewQ.data?.vars ?? {};
+
   const enviarTeste = useMutation({
     mutationFn: () => atlas.admin.emailTemplates.enviarTeste(template.id, {
       destino: testeDestino,
-      vars: testeVars,
+      // Merge defaults + o que o operador digitou. Backend faz merge tambem
+      // — dupla proteção pra o teste nunca ir com {{var}} literal.
+      vars: { ...defaults, ...testeVars },
     }),
     onSuccess: (r) => setTesteResultado(r),
   });
+
+  const reasonAmigavel = (r?: string): string => {
+    if (!r) return "";
+    if (r === "not_configured") return "SMTP não configurado. Configure em Averbadora → Configurações → SMTP.";
+    if (r === "no_recipient") return "E-mail de destino vazio.";
+    if (r === "sem destino") return "E-mail de destino vazio.";
+    if (r === "timeout") return "Servidor SMTP não respondeu (timeout de 12s). Verifique host/porta.";
+    return r;
+  };
 
   return (
     <div style={modalBackdrop} onClick={onClose}>
@@ -321,18 +343,33 @@ function EmailTemplateModal({
                 onChange={(e) => setTesteDestino(e.target.value)}
                 placeholder="seu-email@dominio.com"
                 type="email"
+                hint="O e-mail vai direto pra este endereço — não passa pelo notifyEmail global do SMTP."
               />
               {variaveisUsadas.length > 0 ? (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 8 }}>
-                  {variaveisUsadas.map((v) => (
-                    <TextField
-                      key={v}
-                      label={v}
-                      value={testeVars[v] ?? ""}
-                      onChange={(e) => setTesteVars({ ...testeVars, [v]: e.target.value })}
-                      placeholder={`valor de {{${v}}}`}
-                    />
-                  ))}
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <div style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                      Variáveis {previewQ.isLoading ? "(carregando exemplos...)" : "— usa os exemplos abaixo se você não editar"}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setTesteVars({}); void previewQ.refetch(); }}
+                      style={{ background: "transparent", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}
+                    >
+                      ↺ Recarregar exemplos
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8 }}>
+                    {variaveisUsadas.map((v) => (
+                      <TextField
+                        key={v}
+                        label={v}
+                        value={testeVars[v] ?? defaults[v] ?? ""}
+                        onChange={(e) => setTesteVars({ ...testeVars, [v]: e.target.value })}
+                        placeholder={defaults[v] ?? `valor de {{${v}}}`}
+                      />
+                    ))}
+                  </div>
                 </div>
               ) : null}
               <div>
@@ -350,14 +387,20 @@ function EmailTemplateModal({
                   padding: 12, borderRadius: 8,
                   background: testeResultado.sent
                     ? "color-mix(in srgb, var(--emerald-500) 10%, transparent)"
-                    : "color-mix(in srgb, var(--gold-500) 10%, transparent)",
-                  border: `1px solid ${testeResultado.sent ? "var(--emerald-500)" : "var(--gold-500)"}`,
+                    : "color-mix(in srgb, var(--danger-500) 10%, transparent)",
+                  border: `1px solid ${testeResultado.sent ? "var(--emerald-500)" : "var(--danger-500)"}`,
                   fontSize: 12,
                 }}>
                   <div style={{ fontWeight: 700 }}>
-                    {testeResultado.sent ? "✓ Enviado" : "⚠ Não enviado"}
-                    {testeResultado.reason ? ` — ${testeResultado.reason}` : ""}
+                    {testeResultado.sent
+                      ? `✓ Enviado para ${testeResultado.destino}`
+                      : "⚠ Não enviado"}
                   </div>
+                  {testeResultado.reason ? (
+                    <div style={{ marginTop: 4, color: testeResultado.sent ? "var(--text-muted)" : "var(--danger-500)" }}>
+                      {reasonAmigavel(testeResultado.reason)}
+                    </div>
+                  ) : null}
                   <div style={{ marginTop: 8, color: "var(--text-muted)" }}>Preview do que foi gerado:</div>
                   <div style={{ marginTop: 4, fontFamily: "var(--font-mono)", fontSize: 11 }}>
                     <b>Assunto:</b> {testeResultado.preview.assunto}

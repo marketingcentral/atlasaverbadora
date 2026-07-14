@@ -221,3 +221,53 @@ export function renderTemplate(t: EmailTemplate, vars: Record<string, string>): 
   const apply = (s: string) => s.replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, k: string) => vars[k] ?? `{{${k}}}`);
   return { assunto: apply(t.assunto), corpo: apply(t.corpo) };
 }
+
+/**
+ * Valores realistas por variavel — usado pra pre-preencher o teste manual
+ * no /averbadora/emails. O operador nao precisa digitar cada campo: cai
+ * um exemplo coerente e ele pode sobrescrever se quiser.
+ *
+ * Cobre as variaveis mais comuns dos templates fixos (nome, codigo,
+ * expira_em, adf, valor, parcelas, valorParcela, banco, matricula,
+ * prefeitura, motivo, desconto_label, desconto_complemento, contract_name).
+ * Variaveis desconhecidas ficam como "Exemplo {{var}}" pra deixar claro
+ * ao operador que precisa preencher manualmente.
+ */
+export function exemploVarsRealistas(t: EmailTemplate): Record<string, string> {
+  const declaradas = Array.from(new Set([
+    ...(t.variaveis ?? []),
+    ...extrairVariaveis(t.assunto),
+    ...extrairVariaveis(t.corpo),
+  ]));
+  const defaults: Record<string, string> = {
+    nome: "Adriana Marques da Silva",
+    codigo: "168348",
+    expira_em: "10",
+    adf: "9518368",
+    valor: "R$ 8.500,00",
+    parcelas: "36",
+    valorParcela: "R$ 320,00",
+    banco: "Banco Atlas",
+    matricula: "852029100",
+    prefeitura: "Palhoça",
+    motivo: "Análise de crédito não aprovada",
+    desconto_label: "12% desconto",
+    desconto_complemento: "em medicamentos",
+    contract_name: "CCB-2026-9518368",
+    email: "adriana.silva@palhoca.sc.gov.br",
+    telefone: "(48) 99101-2233",
+  };
+  const out: Record<string, string> = {};
+  for (const v of declaradas) {
+    out[v] = defaults[v] ?? `Exemplo ${v}`;
+  }
+  return out;
+}
+
+function extrairVariaveis(s: string): string[] {
+  const re = /\{\{\s*(\w+)\s*\}\}/g;
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(s)) !== null) out.push(m[1]!);
+  return out;
+}
