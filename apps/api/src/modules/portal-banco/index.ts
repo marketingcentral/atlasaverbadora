@@ -8,6 +8,7 @@ import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtu
 import { refreshConvenios } from "./convenios-store.js";
 import { refreshComunicados } from "./comunicados-store.js";
 import { prefeituras, bancos, pushEvent } from "../admin/index.js";
+import { getConvenioConfig } from "../admin/convenios-config.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
@@ -196,7 +197,15 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       // (CCB e/ou 2FA), pra o front condicionar o fluxo de averbação.
       convenios: ativos.map((cv) => {
         const pref = prefeituras.find((p) => p.id === cv.prefeituraId);
-        return { id: cv.id, nome: cv.nome, prefeitura: cv.prefeitura, uf: cv.uf, exigeCcb: pref?.exigeCcb ?? false, exigeBanco2FA: pref?.exigeBanco2FA ?? false };
+        const cfg = getConvenioConfig(cv.id);
+        return {
+          id: cv.id, nome: cv.nome, prefeitura: cv.prefeitura, uf: cv.uf,
+          exigeCcb: pref?.exigeCcb ?? false,
+          exigeBanco2FA: pref?.exigeBanco2FA ?? false,
+          // Teto de parcelas definido pela prefeitura. Banco nao pode
+          // criar tabela com prazoMaxMeses acima desse valor.
+          maxParcelas: cfg?.maxParcelas ?? 96,
+        };
       }),
       activeId,
     });
@@ -556,6 +565,15 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (body.id) {
       const existente = await getTabela(c.env, body.id);
       if (existente && !meusConvenios.has(existente.convenioId)) throw Errors.notFound("tabela");
+    }
+    // TETO DA PREFEITURA: prazoMaxMeses da tabela do banco nao pode exceder
+    // convenio.maxParcelas definido pela prefeitura. Regra combinada com o
+    // cliente — cada prefeitura estabelece o limite maximo aplicado ao banco.
+    const cfg = getConvenioConfig(body.convenioId);
+    if (cfg && body.prazoMaxMeses > cfg.maxParcelas) {
+      throw Errors.validation({
+        prazoMaxMeses: `Prazo maximo do convenio e' de ${cfg.maxParcelas} parcelas (teto definido pela prefeitura). Reduza o prazo desta tabela.`,
+      });
     }
     return c.json({ tabela: await upsertTabela(c.env, body) });
   })

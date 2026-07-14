@@ -486,6 +486,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       prazoTravaHoras: z.number().int().min(1).max(720),
       prazoPortabilidadeDU: z.number().int().min(1).max(30),
       maxComprometimentoPct: z.number().min(0.05).max(0.7),
+      // Teto de parcelas aplicado ao banco quando ele cria tabelas de
+      // emprestimo. Fechado nas mesmas opcoes que o banco pode escolher.
+      maxParcelas: z.union([
+        z.literal(12), z.literal(24), z.literal(36), z.literal(48),
+        z.literal(60), z.literal(72), z.literal(84), z.literal(96), z.literal(120),
+      ]),
       vinculosAceitos: z.array(z.enum(VINCULOS)).min(1),
       formatoImportacao: z.enum(["CSV", "EXCEL", "API"]),
       regrasEspeciais: z.string().default(""),
@@ -496,7 +502,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       id: cv.id,
       prazoTravaHoras: body.prazoTravaHoras, prazoPortabilidadeDU: body.prazoPortabilidadeDU,
       maxComprometimentoPct: body.maxComprometimentoPct,
-      maxParcelas: prev?.maxParcelas ?? 96, taxaMaxAm: prev?.taxaMaxAm ?? 1.8,
+      maxParcelas: body.maxParcelas, taxaMaxAm: prev?.taxaMaxAm ?? 1.8,
       idadeMin: prev?.idadeMin ?? 18, idadeMax: prev?.idadeMax ?? 80,
       vinculosAceitos: body.vinculosAceitos, formatoImportacao: body.formatoImportacao,
       regrasEspeciais: body.regrasEspeciais, vigenciaInicio: prev?.vigenciaInicio ?? "2026-01-01",
@@ -508,7 +514,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       formato: idcfg?.formato ?? "SEQ", larguraSeq: idcfg?.larguraSeq ?? 6,
       proximoSeq: idcfg?.proximoSeq ?? 1, separador: idcfg?.separador ?? "-",
     });
-    appendAudit({ categoria: "convenio_config", acao: "config_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Convenio ${cv.id}: trava=${body.prazoTravaHoras}h, portabilidade=${body.prazoPortabilidadeDU}DU, maxComp=${Math.round(body.maxComprometimentoPct * 100)}%, prefixo=${body.prefixo.toUpperCase()}.` });
+    appendAudit({ categoria: "convenio_config", acao: "config_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Convenio ${cv.id}: trava=${body.prazoTravaHoras}h, portabilidade=${body.prazoPortabilidadeDU}DU, maxComp=${Math.round(body.maxComprometimentoPct * 100)}%, tetoParcelas=${body.maxParcelas}, prefixo=${body.prefixo.toUpperCase()}.` });
     return c.json({ config: cfg, prefixo: body.prefixo.toUpperCase() });
   })
 

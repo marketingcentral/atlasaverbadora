@@ -57,7 +57,17 @@ export function BancoTabelaEmprestimosForm() {
     }
   }, [existing.data, convenios.data, convenioId]);
 
-  const convenioNome = useMemo(() => convenios.data?.convenios.find((c) => c.id === convenioId)?.nome ?? "", [convenios.data, convenioId]);
+  const convenioSelecionado = useMemo(() => convenios.data?.convenios.find((c) => c.id === convenioId), [convenios.data, convenioId]);
+  const convenioNome = convenioSelecionado?.nome ?? "";
+  /** Teto de parcelas definido pela prefeitura pro convenio selecionado.
+   *  Banco nao pode ultrapassar — dropdown esconde opcoes acima e backend
+   *  bloqueia com 422 se alguem burlar o UI. */
+  const tetoPrefeitura = convenioSelecionado?.maxParcelas ?? 120;
+  const opcoesPrazo = useMemo(() => [12, 24, 36, 48, 60, 72, 96, 120].filter((n) => n <= tetoPrefeitura), [tetoPrefeitura]);
+  // Se o convenio mudou e o valor atual excede o teto novo, reduz automaticamente.
+  useEffect(() => {
+    if (prazoMaxMeses > tetoPrefeitura) setPrazoMaxMeses(tetoPrefeitura);
+  }, [tetoPrefeitura, prazoMaxMeses]);
 
   const save = useMutation({
     mutationFn: () => {
@@ -132,15 +142,15 @@ export function BancoTabelaEmprestimosForm() {
           />
           <NumberField label="Taxa min (% a.m.)" step={0.01} value={taxaMinPct} onChange={(e) => setTaxaMinPct(Number(e.target.value))} required />
           <NumberField label="Taxa max (% a.m.)" step={0.01} value={taxaMaxPct} onChange={(e) => setTaxaMaxPct(Number(e.target.value))} required />
-          {/* Prazo max fechado em opcoes fixas (12/24/36/48/60/72/96/120) —
-              cliente pediu pra remover a edicao livre em numeros. Servidor
-              simulando so ve prazos ate esse teto (bate em tempo real via
-              atlas.servidor.tabelas). */}
+          {/* Prazo max fechado em opcoes fixas — filtradas pelo TETO DA
+              PREFEITURA (convenio.maxParcelas). Servidor simulando so ve
+              prazos ate esse teto. */}
           <SelectField
             label="Prazo max (meses)"
             value={String(prazoMaxMeses)}
             onChange={(e) => setPrazoMaxMeses(Number(e.target.value))}
-            options={[12, 24, 36, 48, 60, 72, 96, 120].map((n) => ({ value: String(n), label: `${n} meses` }))}
+            options={opcoesPrazo.map((n) => ({ value: String(n), label: `${n} meses` }))}
+            hint={`Teto da prefeitura: ${tetoPrefeitura} meses. Nao e' possivel exceder esse limite.`}
             required
           />
           <TextField label="Vigência início" type="date" value={vigenciaInicio} onChange={(e) => setVigenciaInicio(e.target.value)} required />

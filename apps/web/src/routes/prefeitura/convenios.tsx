@@ -84,7 +84,7 @@ export function PrefeituraConvenios() {
 
 function ConfigModal({ id, onClose, onSaved }: { id: string; onClose: () => void; onSaved: () => void }) {
   const cfg = useQuery({ queryKey: ["prefeitura", "convenio-config", id], queryFn: () => atlas.prefeitura.convenioConfig(id) });
-  const [form, setForm] = useState<null | { prazoTravaHoras: number; prazoPortabilidadeDU: number; maxComprometimentoPct: number; vinculosAceitos: string[]; formatoImportacao: string; regrasEspeciais: string; prefixo: string }>(null);
+  const [form, setForm] = useState<null | { prazoTravaHoras: number; prazoPortabilidadeDU: number; maxComprometimentoPct: number; maxParcelas: number; vinculosAceitos: string[]; formatoImportacao: string; regrasEspeciais: string; prefixo: string }>(null);
   const f = form ?? cfg.data?.config ?? null;
 
   const save = useMutation({
@@ -104,6 +104,11 @@ function ConfigModal({ id, onClose, onSaved }: { id: string; onClose: () => void
               <Field lbl="Portabilidade (DU)" hint="dias úteis (7)"><input type="number" style={inp} value={f.prazoPortabilidadeDU} onChange={(e) => upd({ prazoPortabilidadeDU: Number(e.target.value) })} /></Field>
               <Field lbl="Max. comprom. (%)" hint="ex.: 35"><input type="number" style={inp} value={Math.round(f.maxComprometimentoPct * 100)} onChange={(e) => upd({ maxComprometimentoPct: Number(e.target.value) / 100 })} /></Field>
             </div>
+            <Field lbl="Teto de parcelas (banco não pode exceder)" hint="Aplica ao criar tabelas de empréstimo. O servidor só vê prazos até esse teto.">
+              <select style={selStyle} value={String(f.maxParcelas)} onChange={(e) => upd({ maxParcelas: Number(e.target.value) })}>
+                {[12, 24, 36, 48, 60, 72, 84, 96, 120].map((n) => <option key={n} value={n}>{n} meses</option>)}
+              </select>
+            </Field>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               <Field lbl="Prefixo (origem)" hint="ex.: PLH, GRU, SP"><input style={inp} value={f.prefixo} onChange={(e) => upd({ prefixo: e.target.value.toUpperCase() })} maxLength={5} /></Field>
               <Field lbl="Formato de importação">
