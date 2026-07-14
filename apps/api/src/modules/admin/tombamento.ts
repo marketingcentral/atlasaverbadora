@@ -167,6 +167,83 @@ export function listLinhas(loteId: string): TombamentoLinha[] {
   return _linhas.filter((l) => l.loteId === loteId);
 }
 
+// ---------------------------------------------------------------------------
+// Emprestimos externos (portabilidade)
+// ---------------------------------------------------------------------------
+// Fonte da portabilidade: os contratos que o servidor JA TEM em OUTROS bancos.
+// Vem de duas origens: (1) o tombamento importado pela prefeitura (planilha de
+// emprestimos — mesmas colunas do relatorio real), e (2) um seed de teste em
+// memoria (sempre presente, independente do Postgres) para validar o fluxo.
+export interface ExternalLoan {
+  id: string;
+  matricula: string;
+  bancoNome: string;
+  contratoOrigem: string;
+  valorParcela: number;
+  parcelasRestantes: number;
+  totalParcelas: number;
+  saldoDevedor: number;
+  valorEmprestimo: number;
+  taxaAm: number;
+  tipo: string;
+}
+
+// Seed de teste — SEMPRE em memoria (nao depende do Postgres), pra o fluxo de
+// portabilidade poder ser validado com os servidores de teste.
+const EXTERNAL_LOANS_SEED: ExternalLoan[] = [
+  // Diego (teste, matricula 993410027): Santander, R$ 50 mil, faltam 40 parcelas.
+  {
+    id: "EXT-993410027-SANTANDER",
+    matricula: "993410027",
+    bancoNome: "Santander",
+    contratoOrigem: "SAN-0099341027",
+    valorParcela: 1483.33,
+    parcelasRestantes: 40,
+    totalParcelas: 60,
+    saldoDevedor: 42000,
+    valorEmprestimo: 50000,
+    taxaAm: 0.0219,
+    tipo: "Empréstimo",
+  },
+];
+
+/** Mapeia uma linha de tombamento (planilha importada) para um emprestimo externo portavel. */
+function tombamentoLinhaToLoan(l: TombamentoLinha): ExternalLoan {
+  const total = l.totalParcelas ?? l.parcelasRestantes;
+  return {
+    id: `EXT-${l.matricula}-${l.adfBanco}`,
+    matricula: l.matricula,
+    bancoNome: l.bancoNome,
+    contratoOrigem: l.adfBanco,
+    valorParcela: l.valorParcela,
+    parcelasRestantes: l.parcelasRestantes,
+    totalParcelas: total,
+    saldoDevedor: l.saldoDevedor,
+    valorEmprestimo: l.valorEmprestimo ?? l.saldoDevedor,
+    taxaAm: 0.02, // taxa de origem estimada (o relatorio nao traz taxa)
+    tipo: l.tipo ?? "Empréstimo",
+  };
+}
+
+/** Emprestimos externos (de outros bancos) de um servidor — para portabilidade.
+ *  Une o seed de teste + o que a prefeitura importou via tombamento, pela matricula.
+ *  Ignora cartao beneficio (nao e portavel como emprestimo consignado). */
+export function listExternalLoans(matricula: string): ExternalLoan[] {
+  const seed = EXTERNAL_LOANS_SEED.filter((l) => l.matricula === matricula);
+  const tomb = _linhas
+    .filter((l) => l.matricula === matricula)
+    .filter((l) => !/beneficio|benefício/i.test(l.tipo ?? ""))
+    .map(tombamentoLinhaToLoan);
+  // dedup por contratoOrigem (o seed tem prioridade)
+  const seen = new Set(seed.map((l) => l.contratoOrigem));
+  return [...seed, ...tomb.filter((l) => !seen.has(l.contratoOrigem))];
+}
+
+/** Um emprestimo externo especifico do servidor (para preencher a portabilidade). */
+export function getExternalLoan(matricula: string, id: string): ExternalLoan | undefined {
+  return listExternalLoans(matricula).find((l) => l.id === id);
+}
+
 export interface ImportTombamentoResult {
   lote: TombamentoLote;
   inseridos: number;

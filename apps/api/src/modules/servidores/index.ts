@@ -6,6 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
+import { ensureTombamentoLoaded, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato, removeContratosByAdf } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -153,10 +154,13 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
       tipoContrato: ct.tipoContrato,
       tipoMargem: ct.tipoMargem ?? deriveTipoMargem(ct),
     }));
-  const elegiveis = ativos.map((ct) => ({
-    id: ct.adf, banco: bancoNome(ct.bancoId), saldoDevedor: round2(ct.saldoDevedor), parcela: round2(ct.valorParcela),
-    parcelasRestantes: ct.totalParcelas - ct.parcelasPagas, totalParcelas: ct.totalParcelas, taxaAm: ct.taxaAm,
-    tipoContrato: (ct.tipoContrato === "REFIN" ? "Refin" : "Emprestimo") as "Emprestimo" | "Refin",
+  // Elegiveis para portabilidade = emprestimos que o servidor JA TEM em OUTROS
+  // bancos (importados pela prefeitura via tombamento + seed de teste), NAO os
+  // contratos Atlas. Sao esses que o servidor pode "trazer" pro Banco Atlas.
+  const elegiveis = listExternalLoans(e.matricula).map((l) => ({
+    id: l.id, banco: l.bancoNome, saldoDevedor: round2(l.saldoDevedor), parcela: round2(l.valorParcela),
+    parcelasRestantes: l.parcelasRestantes, totalParcelas: l.totalParcelas, taxaAm: l.taxaAm,
+    tipoContrato: "Emprestimo" as "Emprestimo" | "Refin",
   }));
   return {
     idMatricula: e.idMatricula, matricula: e.matricula,
@@ -298,6 +302,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
+    await ensureTombamentoLoaded(c.env); // emprestimos externos importados (elegiveis p/ portabilidade)
     await refreshContratos(c.env); // ve propostas/contratos criados em OUTRO isolate (app/web) — margem fresca
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -807,17 +812,22 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       201,
     );
   })
-  // Servidor SOLICITA portabilidade (lead) — o BANCO recebe como REFIN pendente e avalia os
-  // contratos do servidor. E um pedido de interesse: nao reserva margem livre nem trava 48h;
-  // os valores sao indicativos, confirmados pelo banco depois.
+  // Servidor SOLICITA portabilidade de um emprestimo de OUTRO banco (elegivelId) —
+  // o BANCO recebe em "Propostas e Portabilidade" como REFIN pendente, com os dados do
+  // contrato de origem (banco/contrato/saldo) e o telefone do servidor pra contato.
+  // Regras: bloqueia a margem de EMPRESTIMO consignado por ate 5 dias (reserva) e NAO
+  // permite solicitar se ja houver emprestimo/portabilidade EM ANALISE.
   .post("/v1/servidores/me/portabilidade", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
+    await ensureTombamentoLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
-    const body = z.object({ matricula: z.string().optional() }).parse(await c.req.json().catch(() => ({})));
+    const body = z
+      .object({ matricula: z.string().optional(), elegivelId: z.string().optional() })
+      .parse(await c.req.json().catch(() => ({})));
     const entry =
       (body.matricula ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === body.matricula) : undefined) ??
       SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === s.matricula) ??
@@ -825,7 +835,28 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!entry) throw Errors.notFound("matricula");
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
     await refreshContratos(c.env); // sincroniza o contador de adf entre isolates antes de criar
-    const valorIndicativo = round2(margemTotal(entry.salarioLiquido, "EMPRESTIMO")); // so indicativo pro banco
+
+    // Nao permite portabilidade se ja ha emprestimo consignado OU portabilidade EM ANALISE
+    // (mesma regra do emprestimo novo — a margem EMPRESTIMO ja esta pre-reservada).
+    const jaPendenteEmprestimo = listContratos({ matricula: entry.matricula })
+      .some((ct) => /aguard/i.test(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO");
+    if (jaPendenteEmprestimo) {
+      throw new HttpError(
+        409,
+        "proposta_pendente",
+        "Voce ja tem uma solicitacao de emprestimo/portabilidade em analise. Aguarde a resposta do banco para solicitar outra.",
+      );
+    }
+
+    // Empréstimo de origem selecionado (de outro banco) — vem do tombamento/seed.
+    const loan = body.elegivelId ? getExternalLoan(entry.matricula, body.elegivelId) : undefined;
+    const bancoOrigem = loan?.bancoNome ?? "Outro banco";
+    const contratoOrigem = loan?.contratoOrigem;
+    const saldoDevedorOrigem = loan ? round2(loan.saldoDevedor) : undefined;
+    // Valor/parcelas indicativos: baseados no saldo de origem quando ha, senao na margem.
+    const valorBase = loan ? round2(loan.saldoDevedor) : round2(margemTotal(entry.salarioLiquido, "EMPRESTIMO"));
+    const parcelasBase = loan?.parcelasRestantes ?? 60;
+    const taxaAtlas = 0.0145;
     const contrato = criarContratoOuReserva({
       bancoId: conv?.bancoId ?? 1,
       servidorId: s.id,
@@ -836,22 +867,28 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       convenioId: conv?.id ?? entry.idConvenio,
       convenio: conv?.nome ?? "Banco Atlas",
       tipoContrato: "REFIN",
-      valorFinanciado: valorIndicativo,
-      parcelas: 60,
-      taxaAm: 0.0145,
-      cetAm: 0.0145,
+      valorFinanciado: valorBase,
+      parcelas: parcelasBase,
+      taxaAm: taxaAtlas,
+      cetAm: taxaAtlas,
       iof: 0,
       diasCarencia: 30,
-      valorParcela: round2(valorIndicativo / 60),
+      valorParcela: round2(valorBase / Math.max(1, parcelasBase)),
       codigoVerba: conv?.codigoVerba ?? "",
-      observacoes: "Solicitacao de portabilidade enviada pelo servidor via app — valores a confirmar com o banco.",
+      observacoes: loan
+        ? `Portabilidade do contrato ${contratoOrigem} (${bancoOrigem}) — solicitada pelo servidor. Valores a confirmar com o banco.`
+        : "Solicitacao de portabilidade enviada pelo servidor via app — valores a confirmar com o banco.",
       isReserva: true,
+      reservaDias: 5, // bloqueia a margem de EMPRESTIMO por ate 5 dias
+      bancoOrigem,
+      contratoOrigem,
+      saldoDevedorOrigem,
       ator: `servidor:${s.id}`,
     });
     await persistContrato(c.env, contrato.adf);
     notifyServidor(c, entry.email, {
       titulo: `Solicitação de portabilidade ${contrato.adf} enviada`,
-      mensagem: `Sua solicitação de portabilidade foi enviada ao ${bancoNome(contrato.bancoId)}. O banco vai avaliar seus contratos de outros bancos e entrar em contato.`,
+      mensagem: `Sua solicitação de portabilidade${loan ? ` do contrato ${bancoOrigem}` : ""} foi enviada ao ${bancoNome(contrato.bancoId)}. Sua margem de empréstimo fica reservada por até 5 dias e o banco vai entrar em contato.`,
       detalhes: [{ label: "Situação", valor: contrato.situacao }],
     });
     return c.json({ id: contrato.adf, situacao: contrato.situacao }, 201);

@@ -401,6 +401,8 @@ export interface NovoContratoInput {
   codigoVerba: string;
   observacoes?: string;
   isReserva: boolean;
+  /** Dias ate a reserva expirar (libera a margem). Default 2 (48h). Portabilidade usa 5. */
+  reservaDias?: number;
   bancoOrigem?: string;
   contratoOrigem?: string;
   saldoDevedorOrigem?: number;
@@ -414,13 +416,14 @@ export interface NovoContratoInput {
 export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
   const adf = nextAdf();
   const nowMs = Date.now();
-  const expiracao = input.isReserva ? addDaysISO(2) : null;
+  const reservaDias = input.reservaDias ?? 2;
+  const expiracao = input.isReserva ? addDaysISO(reservaDias) : null;
   // Timestamps ISO exatos (com hora/minuto/segundo). O frontend usa criadoEmIso
   // + 48h pra calcular a trava com precisao — usar so lancamento (DD/MM/YYYY)
   // e "expiracao" (DD/MM/YYYY) inflava a contagem em ate ~24h porque parse cai
   // em fim-de-dia (23:59:59).
   const criadoEmIso = new Date(nowMs).toISOString();
-  const expiracaoIso = input.isReserva ? new Date(nowMs + 2 * 86400_000).toISOString() : null;
+  const expiracaoIso = input.isReserva ? new Date(nowMs + reservaDias * 86400_000).toISOString() : null;
   const valorLiquido = input.valorFinanciado - input.iof;
   const c: ContratoFull = {
     adf,

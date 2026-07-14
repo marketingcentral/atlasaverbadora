@@ -9,7 +9,7 @@ const NAV = [
   { key: "visao-geral", label: "Visão Geral", href: "/banco/visao-geral", icon: "◉" },
   {
     key: "propostas",
-    label: "Minhas Propostas",
+    label: "Propostas e Portabilidade",
     icon: "◈",
     children: [
       { key: "emprestimo", label: "Empréstimo", href: "/banco/propostas?produto=emprestimo" },
