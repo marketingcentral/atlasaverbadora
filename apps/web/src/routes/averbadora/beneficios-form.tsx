@@ -152,7 +152,7 @@ export function AdminBeneficiosForm() {
   }, [form.prefeituraId, form.prefeituraIdsExtras, form.todasPrefeiturasParceiras, prefeituras]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 900 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%" }}>
       <header style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
         <div>
           <button
