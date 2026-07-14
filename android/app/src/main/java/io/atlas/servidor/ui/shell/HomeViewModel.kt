@@ -131,7 +131,7 @@ class HomeViewModel : ViewModel() {
             // Quais produtos têm proposta em análise agora — a trava vale por produto.
             val pendentes = r.propostas
                 .filter { isReservaPendente(it.situacao) }
-                .map { produtoDaProposta(it.tipoContrato) }
+                .map { produtoDaProposta(it.tipoContrato, it.tipoMargem) }
                 .toSet()
             produtosPendentes = pendentes
             // Libera a trava dos produtos que NÃO têm mais proposta pendente.

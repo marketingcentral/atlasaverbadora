@@ -118,6 +118,8 @@ data class PropostaDto(
     val taxaAm: Double = 0.0, // já em % (ex.: 1.79)
     val situacao: String? = null,
     val tipoContrato: String? = null,
+    /** Bucket de margem exato (EMPRESTIMO | CARTAO_CONSIGNADO | CARTAO_BENEFICIOS). */
+    val tipoMargem: String? = null,
     val folhaStatus: String? = null,
     val folhaMotivo: String? = null,
     val data: String? = null,
@@ -174,7 +176,7 @@ data class BeneficioDto(
 )
 data class BeneficiosResponse(val beneficios: List<BeneficioDto> = emptyList())
 
-data class SolicitarPortabilidadeRequest(val matricula: String? = null)
+data class SolicitarPortabilidadeRequest(val matricula: String? = null, val elegivelId: String? = null)
 data class PortabilidadeSolicitadaResponse(val id: String? = null, val situacao: String? = null)
 
 // ---------- Servidor profile ----------

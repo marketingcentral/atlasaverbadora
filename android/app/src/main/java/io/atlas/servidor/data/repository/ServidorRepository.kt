@@ -50,8 +50,8 @@ class ServidorRepository(
         }
 
     /** Solicita portabilidade (pedido geral) — o banco recebe e avalia os contratos do servidor. */
-    suspend fun solicitarPortabilidade(matricula: String?) =
-        safeApi(gson) { api.solicitarPortabilidade(io.atlas.servidor.data.remote.dto.SolicitarPortabilidadeRequest(matricula)) }
+    suspend fun solicitarPortabilidade(matricula: String?, elegivelId: String? = null) =
+        safeApi(gson) { api.solicitarPortabilidade(io.atlas.servidor.data.remote.dto.SolicitarPortabilidadeRequest(matricula, elegivelId)) }
 
     /** Remove as propostas EM ANÁLISE (fase de teste). */
     suspend fun removerPropostasEmAnalise(matricula: String?) = safeApi(gson) { api.removerPropostasEmAnalise(matricula) }

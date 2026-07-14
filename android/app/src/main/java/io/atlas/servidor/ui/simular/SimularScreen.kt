@@ -78,8 +78,8 @@ fun SimularScreen(
             // travava o produto mesmo depois de a proposta ser limpa no servidor.
             if (vm.pendenteDoProduto) {
                 MargemTravadaLock(remainingMs = 0L, onVerAnalise = onSolicitado)
-            } else if (produto == Produtos.CARTAO_CONSIGNADO) {
-                // Cartão tem fluxo próprio (limite/fatura), igual à web — não é simulador de parcelas.
+            } else if (vm.ehCartao) {
+                // Cartão (consignado ou benefício) tem fluxo próprio (limite/fatura), igual à web — não é simulador de parcelas.
                 CartaoConsignadoView(vm, onSolicitado, onVoltar)
             } else {
                 Simulador(vm, onSolicitado, onVoltar)
@@ -290,14 +290,17 @@ private fun Simulador(vm: SimularViewModel, onSolicitado: () -> Unit, onVoltar: 
  *  igual à web (`solicitar-cartao.tsx`). Não é simulador de parcelas. */
 @Composable
 private fun CartaoConsignadoView(vm: SimularViewModel, onSolicitado: () -> Unit, onVoltar: () -> Unit) {
-    val margem = vm.margemCartaoConsignado
+    val margem = vm.margemCartao
+    val ehBeneficio = vm.produto == Produtos.CARTAO_BENEFICIOS
+    val rotMargem = if (ehBeneficio) "SUA MARGEM CARTÃO BENEFÍCIO" else "SUA MARGEM CARTÃO CONSIGNADO"
+    val rotBotao = if (ehBeneficio) "Solicitar Cartão Benefício" else "Solicitar Cartão Consignado"
     Column(
         modifier = Modifier.fillMaxSize().background(Fundo).verticalScroll(rememberScrollState()).padding(20.dp),
     ) {
         VoltarLink(onVoltar)
         Spacer(Modifier.height(8.dp))
         Text("Solicitar cartão", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
-        Text("Cartão de Crédito Consignado", color = InkMuted, fontSize = 14.sp)
+        Text(vm.produtoLabel, color = InkMuted, fontSize = 14.sp)
         Spacer(Modifier.height(6.dp))
         Text(
             "Cartão de crédito com fatura mínima descontada em folha. Você usa como um cartão " +
@@ -310,7 +313,7 @@ private fun CartaoConsignadoView(vm: SimularViewModel, onSolicitado: () -> Unit,
         Spacer(Modifier.height(20.dp))
         // Margem cartão consignado
         AtlasCard {
-            Text("SUA MARGEM CARTÃO CONSIGNADO", color = InkMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            Text(rotMargem, color = InkMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(4.dp))
             Text(
                 Format.money(margem),
@@ -376,7 +379,7 @@ private fun CartaoConsignadoView(vm: SimularViewModel, onSolicitado: () -> Unit,
 
             Spacer(Modifier.height(20.dp))
             AtlasPrimaryButton(
-                text = "Solicitar Cartão Consignado",
+                text = rotBotao,
                 onClick = { vm.solicitarCartao(onSolicitado) },
                 loading = vm.submitting,
             )

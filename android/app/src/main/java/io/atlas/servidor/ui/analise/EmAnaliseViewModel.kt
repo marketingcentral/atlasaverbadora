@@ -35,7 +35,7 @@ class EmAnaliseViewModel : ViewModel() {
                 // Libera a trava dos produtos que não têm mais proposta pendente (por produto).
                 val pendentes = r.propostas
                     .filter { isReservaPendente(it.situacao) }
-                    .map { produtoDaProposta(it.tipoContrato) }
+                    .map { produtoDaProposta(it.tipoContrato, it.tipoMargem) }
                     .toSet()
                 prefs.selectedMatricula?.let { mat ->
                     listOf("EMPRESTIMO", "CARTAO_CONSIGNADO").forEach { p ->

@@ -55,7 +55,15 @@ class SimularViewModel : ViewModel() {
         private set
 
     val produtoLabel: String
-        get() = if (produto == Produtos.CARTAO_CONSIGNADO) "Cartão de Crédito Consignado" else "Empréstimo Consignado"
+        get() = when (produto) {
+            Produtos.CARTAO_CONSIGNADO -> "Cartão de Crédito Consignado"
+            Produtos.CARTAO_BENEFICIOS -> "Cartão Benefício Consignado"
+            else -> "Empréstimo Consignado"
+        }
+
+    /** Este produto é um cartão (tem fluxo próprio de limite, não simulador de parcelas)? */
+    val ehCartao: Boolean
+        get() = produto == Produtos.CARTAO_CONSIGNADO || produto == Produtos.CARTAO_BENEFICIOS
 
     init { load() }
 
@@ -81,7 +89,7 @@ class SimularViewModel : ViewModel() {
                 try {
                     val props = repo.getPropostas(prefs.selectedMatricula).propostas
                     pendenteDoProduto = props.any {
-                        isReservaPendente(it.situacao) && produtoDaProposta(it.tipoContrato) == produto
+                        isReservaPendente(it.situacao) && produtoDaProposta(it.tipoContrato, it.tipoMargem) == produto
                     }
                     if (!pendenteDoProduto) {
                         (matricula?.matricula ?: prefs.selectedMatricula)?.let { prefs.clearSimLock(it, produto) }
@@ -108,25 +116,26 @@ class SimularViewModel : ViewModel() {
 
     val valorMaximo: Double get() = Simulation.valorMaximo(margemDisponivel, parcelas, taxaAm)
 
-    // ---- Cartão de crédito consignado (fluxo próprio, igual à web) ----
-    /** Margem mensal disponível do cartão consignado (5% do salário). */
-    val margemCartaoConsignado: Double
-        get() = matricula?.margem?.margensPorTipo?.firstOrNull { it.tipo == Produtos.CARTAO_CONSIGNADO }?.disponivel ?: 0.0
+    // ---- Cartão (crédito consignado OU benefício) — fluxo próprio, igual à web ----
+    /** Margem mensal disponível do bucket do cartão atual (5% do salário). */
+    val margemCartao: Double
+        get() = matricula?.margem?.margensPorTipo?.firstOrNull { it.tipo == produto }?.disponivel ?: 0.0
 
     /** Limite proposto do cartão: 30× a margem mensal (mesma regra da web). */
-    val limiteCartao: Double get() = kotlin.math.floor(margemCartaoConsignado * 30.0)
+    val limiteCartao: Double get() = kotlin.math.floor(margemCartao * 30.0)
 
-    /** Solicita o cartão de crédito consignado no MESMO endpoint da web (/me/cartoes):
+    /** Solicita o cartão (consignado ou benefício) no MESMO endpoint da web (/me/cartoes):
      *  cria reserva ECONSIGNADO no bucket do cartão — o banco recebe como cartão. */
     fun solicitarCartao(onDone: () -> Unit) {
         val m = matricula ?: return
-        if (lockExpiry() != null) return // já há uma solicitação de cartão em análise (trava 48h)
+        if (lockExpiry() != null) return // já há uma solicitação deste cartão em análise (trava)
+        val produtoApi = if (produto == Produtos.CARTAO_BENEFICIOS) "cartao_beneficio" else "cartao_consignado"
         submitting = true
         submitError = null
         viewModelScope.launch {
             try {
-                repo.solicitarCartao("cartao_consignado", "Banco Atlas", limiteCartao, m.matricula)
-                prefs.setSimLock(m.matricula, Produtos.CARTAO_CONSIGNADO)
+                repo.solicitarCartao(produtoApi, "Banco Atlas", limiteCartao, m.matricula)
+                prefs.setSimLock(m.matricula, produto)
                 submitting = false
                 onDone()
             } catch (e: ApiException) {

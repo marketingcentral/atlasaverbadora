@@ -12,10 +12,13 @@ import java.util.UUID
 fun isReservaPendente(situacao: String?): Boolean =
     situacao?.contains("aguard", ignoreCase = true) == true
 
-/** Produto (para a trava) de uma proposta pelo seu tipoContrato.
- *  ECONSIGNADO = cartão de crédito consignado; demais = empréstimo. */
-fun produtoDaProposta(tipoContrato: String?): String =
-    if (tipoContrato?.equals("ECONSIGNADO", ignoreCase = true) == true) "CARTAO_CONSIGNADO" else "EMPRESTIMO"
+/** Bucket de margem (para a trava) de uma proposta. Usa o `tipoMargem` do servidor
+ *  quando presente — distingue cartão CONSIGNADO de BENEFÍCIO, que compartilham o
+ *  tipoContrato ECONSIGNADO. Fallback pelo tipoContrato para propostas antigas. */
+fun produtoDaProposta(tipoContrato: String?, tipoMargem: String? = null): String {
+    if (!tipoMargem.isNullOrBlank()) return tipoMargem
+    return if (tipoContrato?.equals("ECONSIGNADO", ignoreCase = true) == true) "CARTAO_CONSIGNADO" else "EMPRESTIMO"
+}
 
 /** Non-secret device/app preferences (stable device id, last selected matrícula). */
 class AppPrefs(context: Context) {

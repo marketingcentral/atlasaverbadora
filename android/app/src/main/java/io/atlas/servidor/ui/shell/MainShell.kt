@@ -19,7 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MedicalServices
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -46,7 +46,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import io.atlas.servidor.ui.conta.ContaScreen
 import io.atlas.servidor.ui.contratos.ContratosScreen
-import io.atlas.servidor.ui.embreve.EmBreveScreen
+import io.atlas.servidor.ui.portabilidade.PortabilidadeScreen
 import io.atlas.servidor.ui.inicio.InicioScreen
 import io.atlas.servidor.ui.navigation.Produtos
 import io.atlas.servidor.ui.navigation.Routes
@@ -59,7 +59,7 @@ import io.atlas.servidor.ui.theme.InkMuted
 import io.atlas.servidor.ui.theme.Superficie
 import io.atlas.servidor.ui.theme.Verde
 
-/** `destaque` = item central (Marketplace), desenhado como botão circular verde. */
+/** `destaque` = item central (Portabilidade), desenhado como botão circular verde. */
 private data class Tab(
     val route: String,
     val label: String,
@@ -70,8 +70,8 @@ private data class Tab(
 private val tabs = listOf(
     Tab(Routes.TAB_INICIO, "Início", Icons.Filled.Home),
     Tab(Routes.TAB_CONTRATOS, "Contratos", Icons.AutoMirrored.Filled.ReceiptLong),
-    Tab(Routes.TAB_MARKETPLACE, "Marketplace", Icons.Filled.Storefront, destaque = true),
-    Tab(Routes.TAB_TELEMEDICINA, "Telemedicina", Icons.Filled.MedicalServices),
+    Tab(Routes.TAB_PORTABILIDADE, "Portabilidade", Icons.Filled.SwapHoriz, destaque = true),
+    Tab(Routes.TAB_TELEMEDICINA, "Benefícios", Icons.Filled.MedicalServices),
     Tab(Routes.TAB_CONTA, "Conta", Icons.Filled.Person),
 )
 
@@ -118,9 +118,9 @@ fun MainShell(
                 InicioScreen(
                     vm = vm,
                     onSimularProduto = { produto -> innerNav.navigate(Routes.simular(produto)) },
-                    onOpenMarketplace = { goTab(Routes.TAB_MARKETPLACE) },
+                    onOpenMarketplace = { goTab(Routes.TAB_PORTABILIDADE) },
                     onOpenAnalise = { goAnalise() },
-                    onOpenPortabilidade = onOpenPortabilidade,
+                    onOpenPortabilidade = { goTab(Routes.TAB_PORTABILIDADE) },
                 )
             }
             composable(
@@ -137,12 +137,10 @@ fun MainShell(
             composable(Routes.TAB_CONTRATOS) {
                 ContratosScreen(vm = vm)
             }
-            composable(Routes.TAB_MARKETPLACE) {
-                EmBreveScreen(
-                    titulo = "Marketplace",
-                    emoji = "🛍️",
-                    descricao = "Aqui você vai encontrar os benefícios e parceiros oferecidos pela Atlas. " +
-                        "Estamos preparando tudo para você.",
+            composable(Routes.TAB_PORTABILIDADE) {
+                PortabilidadeScreen(
+                    onBack = { goTab(Routes.TAB_INICIO) },
+                    onSolicitado = { goAnalise() },
                 )
             }
             composable(Routes.TAB_TELEMEDICINA) {

@@ -114,6 +114,7 @@ fun InicioScreen(
             // criada na web — bloqueia. Empréstimo em análise não bloqueia o cartão, e vice-versa.
             val lockEmprestimo = vm.produtoBloqueado(Produtos.EMPRESTIMO)
             val lockCartao = vm.produtoBloqueado(Produtos.CARTAO_CONSIGNADO)
+            val lockBeneficio = vm.produtoBloqueado(Produtos.CARTAO_BENEFICIOS)
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -136,8 +137,8 @@ fun InicioScreen(
                         info = info,
                         lockEmprestimo = lockEmprestimo,
                         lockCartao = lockCartao,
+                        lockBeneficio = lockBeneficio,
                         onSimularProduto = onSimularProduto,
-                        onOpenMarketplace = onOpenMarketplace,
                         onOpenAnalise = onOpenAnalise,
                     )
                     Spacer(Modifier.height(24.dp))
@@ -299,8 +300,8 @@ private fun ProdutosSection(
     info: MatriculaInfoDto,
     lockEmprestimo: Boolean,
     lockCartao: Boolean,
+    lockBeneficio: Boolean,
     onSimularProduto: (String) -> Unit,
-    onOpenMarketplace: () -> Unit,
     onOpenAnalise: () -> Unit,
 ) {
     val porTipo = info.margem.margensPorTipo.associateBy { it.tipo }
@@ -335,11 +336,11 @@ private fun ProdutosSection(
     ProdutoCard(
         emoji = "🎁",
         titulo = "Cartão Benefício Consignado",
-        descricao = "Use seus benefícios nos parceiros do convênio.",
+        descricao = "Cartão com limite próprio e fatura descontada em folha.",
         margem = cartaoBeneficio,
-        aviso = null,
-        textoBotao = "Ver Marketplace",
-        onClick = onOpenMarketplace,
+        aviso = if (lockBeneficio) avisoAnalise else null,
+        textoBotao = if (lockBeneficio) "Acompanhar análise" else "Simular",
+        onClick = if (lockBeneficio) onOpenAnalise else ({ onSimularProduto(Produtos.CARTAO_BENEFICIOS) }),
     )
 }
 

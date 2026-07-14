@@ -8,14 +8,18 @@ import androidx.lifecycle.viewModelScope
 import io.atlas.servidor.core.ApiException
 import io.atlas.servidor.core.ServiceLocator
 import io.atlas.servidor.core.UiState
+import io.atlas.servidor.core.isReservaPendente
+import io.atlas.servidor.core.produtoDaProposta
 import io.atlas.servidor.data.remote.dto.ElegivelDto
 import io.atlas.servidor.domain.Simulation
+import io.atlas.servidor.ui.navigation.Produtos
 import kotlinx.coroutines.launch
 
 /**
- * Portabilidade: lista os contratos elegíveis (de outros bancos) e permite trazê-los para o
- * Banco Atlas com taxa menor. Ao solicitar, cria a proposta que o banco recebe (mesmo fluxo
- * do empréstimo novo — `POST /me/propostas`).
+ * Portabilidade: lista os empréstimos que o servidor tem em OUTROS bancos (importados pela
+ * prefeitura + trazidos pelo servidor de teste) e permite trazê-los para o Banco Atlas. Ao
+ * solicitar, o banco recebe em "Propostas e Portabilidade" com os dados do contrato de origem
+ * e o telefone do servidor; a margem de empréstimo consignado fica reservada por até 5 dias.
  */
 class PortabilidadeViewModel : ViewModel() {
     private val repo = ServiceLocator.servidorRepository
@@ -27,10 +31,10 @@ class PortabilidadeViewModel : ViewModel() {
         private set
     var submitting by mutableStateOf(false)
         private set
-    // Resultado da solicitação geral de portabilidade (botão "Solicitar Portabilidade").
-    var solicitacaoEnviada by mutableStateOf(false)
+    var submitError by mutableStateOf<String?>(null)
         private set
-    var solicitacaoErro by mutableStateOf<String?>(null)
+    /** Já há empréstimo/portabilidade EM ANÁLISE → não permite nova portabilidade (margem reservada). */
+    var emprestimoEmAnalise by mutableStateOf(false)
         private set
     private var matriculaAtiva: String? = null
 
@@ -47,6 +51,11 @@ class PortabilidadeViewModel : ViewModel() {
                 taxaAtlas = try {
                     repo.ofertas().data.ofertas.minOfOrNull { it.taxaMinAm } ?: 0.0155
                 } catch (e: ApiException) { 0.0155 }
+                emprestimoEmAnalise = try {
+                    repo.getPropostas(matriculaAtiva).propostas.any {
+                        isReservaPendente(it.situacao) && produtoDaProposta(it.tipoContrato, it.tipoMargem) == Produtos.EMPRESTIMO
+                    }
+                } catch (e: ApiException) { false }
                 state = UiState.Success(info?.elegiveisPortabilidade.orEmpty())
             } catch (e: ApiException) {
                 state = UiState.Error(e.userMessage)
@@ -60,36 +69,24 @@ class PortabilidadeViewModel : ViewModel() {
 
     fun economiaMensal(e: ElegivelDto): Double = (e.parcela - novaParcela(e)).coerceAtLeast(0.0)
 
-    /** Solicitação GERAL de portabilidade (botão dedicado): envia o pedido ao banco, que
-     *  avalia os contratos do servidor. Não trava margem (é um pedido de interesse). */
-    fun solicitarPortabilidade() {
-        if (submitting || solicitacaoEnviada) return
-        submitting = true
-        solicitacaoErro = null
-        viewModelScope.launch {
-            try {
-                repo.solicitarPortabilidade(matriculaAtiva)
-                solicitacaoEnviada = true
-            } catch (ex: ApiException) {
-                solicitacaoErro = ex.userMessage
-            }
-            submitting = false
-        }
-    }
-
+    /** Solicita a portabilidade do contrato escolhido — o banco recebe os dados de origem + telefone.
+     *  A margem de empréstimo consignado fica reservada por até 5 dias (regra igual à do empréstimo). */
     fun solicitar(e: ElegivelDto, onDone: () -> Unit) {
         val mat = matriculaAtiva ?: return
+        if (submitting || emprestimoEmAnalise) return
         submitting = true
+        submitError = null
         viewModelScope.launch {
             try {
-                // Portabilidade é um refinanciamento de empréstimo → trava o produto EMPRESTIMO.
-                repo.criarProposta(e.saldoDevedor, e.parcelasRestantes, taxaAtlas, mat, "Banco Atlas (portabilidade)", "EMPRESTIMO")
-                prefs.setSimLock(mat, "EMPRESTIMO")
+                repo.solicitarPortabilidade(mat, e.id)
+                prefs.setSimLock(mat, Produtos.EMPRESTIMO)
+                emprestimoEmAnalise = true
+                submitting = false
+                onDone()
             } catch (ex: ApiException) {
-                // best-effort
+                submitting = false
+                submitError = ex.userMessage
             }
-            submitting = false
-            onDone()
         }
     }
 }

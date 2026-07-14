@@ -35,6 +35,8 @@ import io.atlas.servidor.ui.components.ErrorBox
 import io.atlas.servidor.ui.components.InfoRow
 import io.atlas.servidor.ui.components.LoadingBox
 import io.atlas.servidor.ui.components.StatusChip
+import io.atlas.servidor.ui.theme.Ambar
+import io.atlas.servidor.ui.theme.DangerRed
 import io.atlas.servidor.ui.theme.Fundo
 import io.atlas.servidor.ui.theme.Ink
 import io.atlas.servidor.ui.theme.InkMuted
@@ -65,53 +67,56 @@ fun PortabilidadeScreen(
         BackHeader("Portabilidade", onBack)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Traga um contrato de outro banco para o Banco Atlas com taxa menor e reduza a parcela.",
+            "Traga os empréstimos que você tem em outros bancos para o Banco Atlas e pague menos juros.",
             color = InkMuted,
             fontSize = 14.sp,
         )
-
-        // Solicitação geral: envia o pedido ao banco (que avalia os contratos do servidor).
         Spacer(Modifier.height(16.dp))
-        AtlasCard {
-            if (vm.solicitacaoEnviada) {
-                Text("✓ Solicitação enviada", color = Verde, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
+
+        if (vm.emprestimoEmAnalise) {
+            AtlasCard {
+                StatusChip("Em análise", ChipTone.Ambar)
+                Spacer(Modifier.height(6.dp))
                 Text(
-                    "Seu pedido de portabilidade foi enviado ao banco. Ele vai avaliar seus contratos de outros bancos e entrar em contato.",
+                    "Você tem um empréstimo ou portabilidade em análise. A margem de empréstimo " +
+                        "consignado está reservada — aguarde a resposta do banco para solicitar uma portabilidade.",
                     color = InkMuted,
                     fontSize = 13.sp,
                 )
-            } else {
-                Text(
-                    "Quer trazer seus empréstimos para o Atlas? Envie uma solicitação e o banco cuida do resto.",
-                    color = InkMuted,
-                    fontSize = 13.sp,
-                )
-                Spacer(Modifier.height(12.dp))
-                AtlasPrimaryButton(
-                    text = "Solicitar Portabilidade",
-                    onClick = { vm.solicitarPortabilidade() },
-                    loading = vm.submitting,
-                )
-                vm.solicitacaoErro?.let {
-                    Spacer(Modifier.height(8.dp))
-                    Text(it, color = io.atlas.servidor.ui.theme.DangerRed, fontSize = 13.sp)
-                }
             }
+            Spacer(Modifier.height(16.dp))
         }
-        Spacer(Modifier.height(20.dp))
+        vm.submitError?.let {
+            Text(it, color = DangerRed, fontSize = 13.sp)
+            Spacer(Modifier.height(12.dp))
+        }
 
         when (val s = vm.state) {
             is UiState.Loading -> LoadingBox()
             is UiState.Error -> ErrorBox(s.message, onRetry = { vm.load() })
             is UiState.Success -> {
                 if (s.data.isEmpty()) {
-                    Box(Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
-                        Text("Nenhum contrato elegível para portabilidade nesta matrícula.", color = InkMuted, fontSize = 14.sp)
+                    AtlasCard {
+                        Text("Nenhum empréstimo encontrado", color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Não encontramos empréstimos de outros bancos na sua matrícula. Quando a " +
+                                "prefeitura importar seus contratos, eles aparecem aqui para portabilidade.",
+                            color = InkMuted,
+                            fontSize = 13.sp,
+                        )
                     }
                 } else {
+                    Text("Seus contratos em outros bancos", color = InkMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(12.dp))
                     s.data.forEach { e ->
-                        ElegivelCard(e, vm.novaParcela(e), vm.economiaMensal(e), onPortar = { alvo = e })
+                        ElegivelCard(
+                            e = e,
+                            novaParcela = vm.novaParcela(e),
+                            economia = vm.economiaMensal(e),
+                            bloqueado = vm.emprestimoEmAnalise,
+                            onPortar = { alvo = e },
+                        )
                         Spacer(Modifier.height(12.dp))
                     }
                 }
@@ -122,12 +127,12 @@ fun PortabilidadeScreen(
 }
 
 @Composable
-private fun ElegivelCard(e: ElegivelDto, novaParcela: Double, economia: Double, onPortar: () -> Unit) {
+private fun ElegivelCard(e: ElegivelDto, novaParcela: Double, economia: Double, bloqueado: Boolean, onPortar: () -> Unit) {
     AtlasCard {
         Column {
             Text(e.banco, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(2.dp))
-            StatusChip(if (e.tipoContrato == "Refin") "Refinanciamento" else "Empréstimo", ChipTone.Neutro)
+            StatusChip("Empréstimo consignado", ChipTone.Neutro)
             Spacer(Modifier.height(10.dp))
             InfoRow("Saldo devedor", Format.money(e.saldoDevedor))
             InfoRow("Parcela atual", Format.money(e.parcela))
@@ -137,7 +142,7 @@ private fun ElegivelCard(e: ElegivelDto, novaParcela: Double, economia: Double, 
                 InfoRow("Economia/mês", Format.money(economia), valueColor = Verde)
             }
             Spacer(Modifier.height(12.dp))
-            AtlasPrimaryButton("Trazer para o Banco Atlas", onClick = onPortar)
+            AtlasPrimaryButton("Solicitar Portabilidade", onClick = onPortar, enabled = !bloqueado)
         }
     }
 }
@@ -153,20 +158,26 @@ private fun TermoPortabilidade(
     AlertDialog(
         onDismissRequest = onCancelar,
         containerColor = Superficie,
-        title = { Text("Portabilidade", fontWeight = FontWeight.ExtraBold, color = Ink) },
+        title = { Text("Solicitar portabilidade", fontWeight = FontWeight.ExtraBold, color = Ink) },
         text = {
             Column {
-                Text("Você está solicitando a portabilidade do contrato de ${e.banco} para o Banco Atlas:", color = InkMuted, fontSize = 14.sp)
+                Text(
+                    "Você está solicitando a portabilidade do contrato de ${e.banco} (saldo devedor " +
+                        "${Format.money(e.saldoDevedor)}) para o Banco Atlas:",
+                    color = InkMuted,
+                    fontSize = 14.sp,
+                )
                 Spacer(Modifier.height(10.dp))
-                InfoRow("Saldo devedor", Format.money(e.saldoDevedor))
                 InfoRow("Parcelas", "${e.parcelasRestantes}× de ${Format.money(novaParcela)}")
                 InfoRow("Taxa Atlas", Format.rateAm(taxaAtlas))
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(12.dp))
                 Text(
-                    "Ao aceitar, a solicitação é enviada ao Banco Atlas e sua margem fica reservada por 48h. " +
-                        "O banco de origem tem prazo para informar o saldo; a taxa inclui o CET.",
-                    color = InkMuted,
+                    "⚠️ Ao confirmar, a sua margem de empréstimo consignado será bloqueada por até " +
+                        "5 dias enquanto o banco analisa. Você autoriza o Banco Atlas a entrar em contato " +
+                        "para concluir a portabilidade — a mesma regra de quando você solicita um empréstimo.",
+                    color = Ambar,
                     fontSize = 12.5.sp,
+                    fontWeight = FontWeight.Medium,
                 )
             }
         },
@@ -174,7 +185,7 @@ private fun TermoPortabilidade(
             androidx.compose.material3.Button(
                 onClick = onAceitar,
                 colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = Verde, contentColor = Superficie),
-            ) { Text("Aceitar e solicitar", fontWeight = FontWeight.Bold) }
+            ) { Text("Autorizar e solicitar", fontWeight = FontWeight.Bold) }
         },
         dismissButton = {
             TextButton(onClick = onCancelar) { Text("Cancelar", color = InkMuted, fontWeight = FontWeight.SemiBold) }
