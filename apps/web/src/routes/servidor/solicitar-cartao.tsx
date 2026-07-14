@@ -20,11 +20,11 @@ export function ServidorSolicitarCartao() {
   const [sp] = useSearchParams();
   const info = useMemo(() => readActiveMatricula(), []);
 
-  // Cartao Beneficio nao entra no app (decisao cliente 14/07/2026). Se veio na URL,
-  // trata como cartao_consignado — servidor nao ve mais essa opcao no dashboard.
+  // ?produto=cartao_consignado|cartao_beneficio — ambos sao produtos validos
+  // do app do servidor. A margem/limite lidos abaixo mudam conforme o produto.
   const produtoParam = sp.get("produto");
-  const produto = "cartao_consignado" as const;
-  void produtoParam;
+  const produto: "cartao_consignado" | "cartao_beneficio" =
+    produtoParam === "cartao_beneficio" ? "cartao_beneficio" : "cartao_consignado";
   const bancoNome = sp.get("banco") ?? "Banco";
   const limiteProposto = Math.max(500, Number(sp.get("limite") ?? "0") || 0);
   const ofertaId = sp.get("oferta") ?? undefined;
