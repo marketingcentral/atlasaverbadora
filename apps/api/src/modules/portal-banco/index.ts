@@ -777,7 +777,8 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         cpf: z.string().regex(/^\d{11}$/, "CPF deve ter 11 digitos").optional(),
         cpfMasked: z.string().optional().default("***.***.***-**"),
         organizacao: z.string().default("DELTA GLOBAL"),
-        perfil: z.enum(["admin", "operador", "consulta", "relatorios"]),
+        perfil: z.enum(["admin", "operador", "consulta", "relatorios", "personalizado"]).optional(),
+        permissoes: z.array(z.string().min(1).max(64)).max(200).optional(),
         ipsPermitidos: z.array(z.string()).default([]),
         ativo: z.boolean().default(true),
       })

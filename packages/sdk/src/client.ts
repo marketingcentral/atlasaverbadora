@@ -49,7 +49,7 @@ export interface NovoContratoBody {
   valorRefin?: number;
 }
 
-export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios";
+export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios" | "personalizado";
 
 /** Categorias de beneficio. "telemedicina" separada de "saude" — cliente pediu
  *  aba exclusiva pra telemedicina na averbadora. */
@@ -370,6 +370,8 @@ export interface BancoUsuario {
   cpfMasked: string;
   organizacao: string;
   perfil: BancoPerfil;
+  /** Fonte de verdade da autorizacao. "*" = wildcard (admin). */
+  permissoes: string[];
   ipsPermitidos: string[];
   ativo: boolean;
   criadoEm: string;
@@ -383,7 +385,10 @@ export interface BancoUsuarioInput {
   cpf?: string;
   cpfMasked?: string;
   organizacao?: string;
-  perfil: BancoPerfil;
+  /** Preset escolhido (label). Opcional — deriva de permissoes se ausente. */
+  perfil?: BancoPerfil;
+  /** Fonte de verdade da autorizacao. */
+  permissoes?: string[];
   ipsPermitidos?: string[];
   ativo?: boolean;
 }
@@ -830,15 +835,28 @@ export interface PrefeituraAdf {
   status: "recebida" | "aplicada" | "falha";
   motivo?: string;
 }
+export type PrefeituraArea = "rh" | "financeiro" | "gestor" | "personalizado";
 export interface PrefeituraPerfil {
   id: number;
   prefeituraId: number;
   nome: string;
   email: string;
-  area: "rh" | "financeiro" | "gestor";
+  area: PrefeituraArea;
+  /** Fonte de verdade da autorizacao. "*" = wildcard (gestor). */
+  permissoes: string[];
   ativo: boolean;
   twofaEnabled: boolean;
   hasTotp: boolean;
+}
+export interface PrefeituraPerfilInput {
+  id?: number;
+  nome: string;
+  email: string;
+  /** Preset escolhido (label). Opcional. */
+  area?: PrefeituraArea;
+  /** Fonte de verdade. Opcional — deriva do preset. */
+  permissoes?: string[];
+  ativo?: boolean;
 }
 export interface PrefeituraFolha {
   id: string;
@@ -1703,7 +1721,7 @@ export class AtlasClient {
 
     // Perfis + 2FA (passo 1)
     perfis: () => this.request<{ perfis: PrefeituraPerfil[]; areas: { value: string; label: string }[] }>("/v1/prefeitura/perfis"),
-    salvarPerfil: (body: { id?: number; nome: string; email: string; area: string; ativo?: boolean }) =>
+    salvarPerfil: (body: PrefeituraPerfilInput) =>
       this.request<{ perfil: PrefeituraPerfil }>("/v1/prefeitura/perfis", { method: "POST", body }),
     excluirPerfil: (id: number) => this.request<void>(`/v1/prefeitura/perfis/${id}`, { method: "DELETE" }),
     reativarPerfil: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/reativar`, { method: "POST" }),

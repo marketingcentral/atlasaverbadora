@@ -49,6 +49,7 @@ const PERFIS: { value: BancoPerfil | ""; label: string }[] = [
   { value: "operador", label: "Operador" },
   { value: "consulta", label: "Consulta" },
   { value: "relatorios", label: "Relatórios" },
+  { value: "personalizado", label: "Personalizado" },
 ];
 
 export function BancoUsuariosLista() {
@@ -89,6 +90,14 @@ export function BancoUsuariosLista() {
     { key: "email", header: "Login" },
     { key: "cpfMasked", header: "CPF", mono: true },
     { key: "perfil", header: "Perfil" },
+    {
+      key: "permissoes", header: "Permissões",
+      render: (u) => (
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {u.permissoes?.includes("*") ? "todas (*)" : `${u.permissoes?.length ?? 0} marcadas`}
+        </span>
+      ),
+    },
     { key: "organizacao", header: "Organização" },
   ];
 

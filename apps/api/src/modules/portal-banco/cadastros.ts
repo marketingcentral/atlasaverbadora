@@ -13,6 +13,38 @@ export interface TabelaEmprestimo {
   criadoEm: string;
 }
 
+/** Rotulo do preset — apenas label de UI. "personalizado" quando as caixas
+ *  nao casam com nenhum preset. Fonte de verdade e sempre `permissoes`. */
+export type BancoUsuarioPerfil = "admin" | "operador" | "consulta" | "relatorios" | "personalizado";
+
+/** Presets do banco — pontos de partida pro checkbox matrix. */
+export const BANCO_PRESETS: Record<BancoUsuarioPerfil, string[]> = {
+  admin: ["*"],
+  operador: [
+    "visao-geral", "propostas", "emprestimo", "cartao", "portabilidade",
+    "ofertas", "margem-contratacao", "carteira", "convenios", "conta",
+  ],
+  consulta: [
+    "visao-geral", "propostas", "emprestimo", "cartao", "portabilidade",
+    "carteira", "convenios", "conta",
+  ],
+  relatorios: [
+    "visao-geral", "relatorios", "consignacoes", "gerador", "faturamento",
+    "bate-carteira", "conta",
+  ],
+  personalizado: [],
+};
+
+export function detectarBancoPreset(permissoes: string[]): BancoUsuarioPerfil {
+  const set = new Set(permissoes);
+  for (const [nome, keys] of Object.entries(BANCO_PRESETS) as [BancoUsuarioPerfil, string[]][]) {
+    if (nome === "personalizado") continue;
+    if (keys.length !== set.size) continue;
+    if (keys.every((k) => set.has(k))) return nome;
+  }
+  return "personalizado";
+}
+
 export interface BancoUsuario {
   id: string;
   bancoId: number;
@@ -23,7 +55,10 @@ export interface BancoUsuario {
   cpf: string;
   cpfMasked: string;
   organizacao: string;
-  perfil: "admin" | "operador" | "consulta" | "relatorios";
+  /** Label de UI. Fonte de verdade e `permissoes`. */
+  perfil: BancoUsuarioPerfil;
+  /** Fonte de verdade da autorizacao. "*" = wildcard (admin). */
+  permissoes: string[];
   ipsPermitidos: string[];
   ativo: boolean;
   criadoEm: string;
@@ -55,12 +90,19 @@ const _tabelas: TabelaEmprestimo[] = [
 ];
 
 const _usuarios: BancoUsuario[] = [
-  { id: "U-116612", bancoId: 1, codigo: "116612", nome: "Bruno Lopes do Nascimento", email: "BRUNOLOPES@DELTAGLOBAL", cpf: "12345678977", cpfMasked: "***.***.***-77", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "admin", ipsPermitidos: [], ativo: true, criadoEm: "2026-01-10" },
-  { id: "U-116889", bancoId: 1, codigo: "116889", nome: "Vinicius Costa Nery", email: "44445948888@DELTAGLOBAL", cpf: "44445948888", cpfMasked: "***.***.***-88", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", ipsPermitidos: [], ativo: true, criadoEm: "2026-02-05" },
-  { id: "U-116891", bancoId: 1, codigo: "116891", nome: "Lucas Vicente Ohi", email: "34537215860@DELTAGLOBAL", cpf: "34537215860", cpfMasked: "***.***.***-60", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", ipsPermitidos: [], ativo: true, criadoEm: "2026-02-12" },
-  { id: "U-118327", bancoId: 1, codigo: "118327", nome: "Camila Alves", email: "CAMILAALVES@DELTAGLOBAL", cpf: "55566677722", cpfMasked: "***.***.***-22", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "consulta", ipsPermitidos: [], ativo: true, criadoEm: "2026-03-01" },
-  { id: "U-120258", bancoId: 1, codigo: "120258", nome: "Kaua Nogueira da Cunha", email: "45198007811@DELTAGLOBAL", cpf: "45198007811", cpfMasked: "***.***.***-11", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "relatorios", ipsPermitidos: ["189.45.10.0/24"], ativo: true, criadoEm: "2026-04-20" },
+  { id: "U-116612", bancoId: 1, codigo: "116612", nome: "Bruno Lopes do Nascimento", email: "BRUNOLOPES@DELTAGLOBAL", cpf: "12345678977", cpfMasked: "***.***.***-77", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "admin", permissoes: [...BANCO_PRESETS.admin], ipsPermitidos: [], ativo: true, criadoEm: "2026-01-10" },
+  { id: "U-116889", bancoId: 1, codigo: "116889", nome: "Vinicius Costa Nery", email: "44445948888@DELTAGLOBAL", cpf: "44445948888", cpfMasked: "***.***.***-88", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", permissoes: [...BANCO_PRESETS.operador], ipsPermitidos: [], ativo: true, criadoEm: "2026-02-05" },
+  { id: "U-116891", bancoId: 1, codigo: "116891", nome: "Lucas Vicente Ohi", email: "34537215860@DELTAGLOBAL", cpf: "34537215860", cpfMasked: "***.***.***-60", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", permissoes: [...BANCO_PRESETS.operador], ipsPermitidos: [], ativo: true, criadoEm: "2026-02-12" },
+  { id: "U-118327", bancoId: 1, codigo: "118327", nome: "Camila Alves", email: "CAMILAALVES@DELTAGLOBAL", cpf: "55566677722", cpfMasked: "***.***.***-22", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "consulta", permissoes: [...BANCO_PRESETS.consulta], ipsPermitidos: [], ativo: true, criadoEm: "2026-03-01" },
+  { id: "U-120258", bancoId: 1, codigo: "120258", nome: "Kaua Nogueira da Cunha", email: "45198007811@DELTAGLOBAL", cpf: "45198007811", cpfMasked: "***.***.***-11", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "relatorios", permissoes: [...BANCO_PRESETS.relatorios], ipsPermitidos: ["189.45.10.0/24"], ativo: true, criadoEm: "2026-04-20" },
 ];
+
+/** Migra usuarios existentes sem permissoes[] — deriva do perfil. Idempotente. */
+function ensureBancoUsuarioPermissoes(u: BancoUsuario): void {
+  if (Array.isArray(u.permissoes) && u.permissoes.length > 0) return;
+  const preset = BANCO_PRESETS[u.perfil];
+  u.permissoes = preset ? [...preset] : [];
+}
 
 /** Helpers para padrao mask/cpf consistente */
 function maskCpf(cpf11: string): string {
@@ -168,16 +210,27 @@ export function listUsuarios(opts: { perfil?: BancoUsuario["perfil"]; somenteAdm
 export function getUsuario(id: string): BancoUsuario | undefined {
   return _usuarios.find((u) => u.id === id);
 }
-type UsuarioUpsert = Omit<BancoUsuario, "id" | "criadoEm" | "codigo" | "cpf" | "cpfMasked"> & {
+type UsuarioUpsert = Omit<BancoUsuario, "id" | "criadoEm" | "codigo" | "cpf" | "cpfMasked" | "perfil" | "permissoes"> & {
   id?: string;
   cpf?: string;
   cpfMasked?: string;
+  /** Preset escolhido (label). Opcional — deriva de permissoes se ausente. */
+  perfil?: BancoUsuarioPerfil;
+  /** Fonte de verdade da autorizacao. Opcional — deriva do preset se ausente. */
+  permissoes?: string[];
 };
 
 export function upsertUsuario(input: UsuarioUpsert): BancoUsuario {
   const cpf = (input.cpf ?? "").replace(/\D/g, "");
   const cpfMasked = cpf.length === 11 ? maskCpf(cpf) : input.cpfMasked ?? "***.***.***-**";
-  const normalized = { ...input, cpf, cpfMasked };
+  // Resolve permissoes: se veio explicito, usa; senao deriva do preset; senao "operador".
+  const permissoes = Array.isArray(input.permissoes)
+    ? [...input.permissoes]
+    : input.perfil && BANCO_PRESETS[input.perfil]
+      ? [...BANCO_PRESETS[input.perfil]]
+      : [...BANCO_PRESETS.operador];
+  const perfilResolvido: BancoUsuarioPerfil = input.perfil ?? detectarBancoPreset(permissoes);
+  const normalized = { ...input, cpf, cpfMasked, perfil: perfilResolvido, permissoes };
   if (input.id) {
     const idx = _usuarios.findIndex((u) => u.id === input.id);
     if (idx >= 0) {

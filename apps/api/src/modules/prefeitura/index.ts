@@ -678,9 +678,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const body = z.object({
       id: z.number().int().optional(),
       nome: z.string().min(2), email: z.string().email(),
-      area: z.enum(["rh", "financeiro", "gestor"]), ativo: z.boolean().optional(),
+      area: z.enum(["rh", "financeiro", "gestor", "personalizado"]).optional(),
+      permissoes: z.array(z.string().min(1).max(64)).max(200).optional(),
+      ativo: z.boolean().optional(),
     }).parse(await c.req.json());
-    const perfil = upsertPerfil({ prefeituraId: id, ...body, area: body.area as PrefeituraArea }, new Date().toISOString());
+    const perfil = upsertPerfil({ prefeituraId: id, ...body, area: body.area as PrefeituraArea | undefined }, new Date().toISOString());
     return c.json({ perfil: sanitizePerfil(perfil) }, body.id ? 200 : 201);
   })
   .delete("/v1/prefeitura/perfis/:id", (c) => {

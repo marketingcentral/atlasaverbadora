@@ -283,15 +283,50 @@ export function registrarAnuencia(input: { prefeituraId: number; aceitoPor: stri
 // Perfis por área (RH, financeiro, gestor) + 2FA TOTP
 // ============================================================
 
-export type PrefeituraArea = "rh" | "financeiro" | "gestor";
-export const AREA_LABEL: Record<PrefeituraArea, string> = { rh: "Recursos Humanos", financeiro: "Financeiro", gestor: "Gestor" };
+/** Preset (label) — apenas display. Fonte de verdade da autorizacao e permissoes[].
+ *  "gestor" mantido pra retrocompat. "personalizado" quando as caixas nao casam
+ *  com nenhum preset. */
+export type PrefeituraArea = "rh" | "financeiro" | "gestor" | "personalizado";
+export const AREA_LABEL: Record<PrefeituraArea, string> = {
+  rh: "Recursos Humanos",
+  financeiro: "Financeiro",
+  gestor: "Gestor",
+  personalizado: "Personalizado",
+};
+
+/** Presets do portal prefeitura — pontos de partida pro checkbox matrix. */
+export const PREFEITURA_PRESETS: Record<PrefeituraArea, string[]> = {
+  gestor: ["*"],
+  rh: [
+    "dashboard", "servidores", "convenios", "contratos", "adf",
+    "anuencia", "comunicados", "conta",
+  ],
+  financeiro: [
+    "dashboard", "folhas", "contratos", "tombamento", "adf",
+    "relatorios", "comunicados", "conta",
+  ],
+  personalizado: [],
+};
+
+export function detectarPrefeituraPreset(permissoes: string[]): PrefeituraArea {
+  const set = new Set(permissoes);
+  for (const [nome, keys] of Object.entries(PREFEITURA_PRESETS) as [PrefeituraArea, string[]][]) {
+    if (nome === "personalizado") continue;
+    if (keys.length !== set.size) continue;
+    if (keys.every((k) => set.has(k))) return nome;
+  }
+  return "personalizado";
+}
 
 export interface PrefeituraPerfil {
   id: number;
   prefeituraId: number;
   nome: string;
   email: string;
+  /** Label do preset. Fonte de verdade da autorizacao e `permissoes`. */
   area: PrefeituraArea;
+  /** Fonte de verdade da autorizacao. "*" = wildcard (gestor). */
+  permissoes: string[];
   ativo: boolean;
   twofaEnabled: boolean;
   totpSecret?: string;
@@ -299,25 +334,41 @@ export interface PrefeituraPerfil {
 }
 
 const _perfis: PrefeituraPerfil[] = [
-  { id: 1, prefeituraId: 1, nome: "Coordenação RH", email: "rh@palhoca.sc.gov.br", area: "rh", ativo: true, twofaEnabled: true, totpSecret: "JBSWY3DPEHPK3PXP", criadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
-  { id: 2, prefeituraId: 1, nome: "Setor Financeiro", email: "financeiro@palhoca.sc.gov.br", area: "financeiro", ativo: true, twofaEnabled: false, criadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
+  { id: 1, prefeituraId: 1, nome: "Coordenação RH", email: "rh@palhoca.sc.gov.br", area: "rh", permissoes: [...PREFEITURA_PRESETS.rh], ativo: true, twofaEnabled: true, totpSecret: "JBSWY3DPEHPK3PXP", criadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
+  { id: 2, prefeituraId: 1, nome: "Setor Financeiro", email: "financeiro@palhoca.sc.gov.br", area: "financeiro", permissoes: [...PREFEITURA_PRESETS.financeiro], ativo: true, twofaEnabled: false, criadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
 ];
 let _perfilSeq = 3;
+
+/** Migra perfis hidratados do PG sem permissoes[] — deriva da area. Idempotente. */
+export function ensurePerfilPermissoes(p: PrefeituraPerfil): void {
+  if (Array.isArray(p.permissoes) && p.permissoes.length > 0) return;
+  const preset = PREFEITURA_PRESETS[p.area];
+  p.permissoes = preset ? [...preset] : [];
+}
 
 export function listPerfis(prefeituraId: number): PrefeituraPerfil[] {
   return _perfis.filter((p) => p.prefeituraId === prefeituraId);
 }
 
-export function upsertPerfil(input: { id?: number; prefeituraId: number; nome: string; email: string; area: PrefeituraArea; ativo?: boolean }, now: string): PrefeituraPerfil {
+export function upsertPerfil(input: { id?: number; prefeituraId: number; nome: string; email: string; area?: PrefeituraArea; permissoes?: string[]; ativo?: boolean }, now: string): PrefeituraPerfil {
+  // Resolve permissoes: se veio explicito, usa; senao deriva do preset; senao "rh".
+  const permissoes = Array.isArray(input.permissoes)
+    ? [...input.permissoes]
+    : input.area && PREFEITURA_PRESETS[input.area]
+      ? [...PREFEITURA_PRESETS[input.area]]
+      : [...PREFEITURA_PRESETS.rh];
+  const areaResolvida: PrefeituraArea = input.area ?? detectarPrefeituraPreset(permissoes);
   const existing = input.id ? _perfis.find((p) => p.id === input.id && p.prefeituraId === input.prefeituraId) : undefined;
   if (existing) {
-    existing.nome = input.nome; existing.email = input.email; existing.area = input.area;
+    existing.nome = input.nome; existing.email = input.email;
+    existing.area = areaResolvida;
+    existing.permissoes = permissoes;
     if (input.ativo != null) existing.ativo = input.ativo;
     return existing;
   }
   const novo: PrefeituraPerfil = {
     id: _perfilSeq++, prefeituraId: input.prefeituraId, nome: input.nome, email: input.email,
-    area: input.area, ativo: input.ativo ?? true, twofaEnabled: false, criadoEm: now,
+    area: areaResolvida, permissoes, ativo: input.ativo ?? true, twofaEnabled: false, criadoEm: now,
   };
   _perfis.push(novo);
   return novo;
