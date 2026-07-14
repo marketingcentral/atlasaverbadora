@@ -14,11 +14,11 @@ const NAV = [
   // continuam existindo pra links diretos e para o dashboard/marketplace apontarem).
   // MarketPlace unificado: ofertas de bancos + simular + portabilidade +
   // propostas de portabilidade dos bancos.
-  { key: "marketplace-port", label: "MarketPlace", href: "/servidor/marketplace/portabilidade", icon: "🛒" },
+  { key: "marketplace-port", label: "Portabilidade", href: "/servidor/marketplace/portabilidade", icon: "🛒" },
   // Contratos passa a mostrar propostas em andamento no topo (o servidor ve
   // sua solicitacao virar contrato depois que o banco aprova).
   { key: "contratos", label: "Contratos", href: "/servidor/contratos", icon: "📄" },
-  { key: "saude", label: "Telemedicina", href: "/servidor/saude", icon: "🏥" },
+  { key: "beneficios", label: "Benefícios", href: "/servidor/beneficios", icon: "🏥" },
   { key: "conta", label: "Conta", href: "/servidor/conta", icon: "👤" },
 ];
 
