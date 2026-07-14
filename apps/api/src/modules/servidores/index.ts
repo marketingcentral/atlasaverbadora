@@ -464,18 +464,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         ],
       },
     );
-    const bancoRecCartao = bancos.find((b) => b.id === contrato.bancoId);
-    if (bancoRecCartao?.contatoEmail) {
-      notifyViaTemplate(
-        c, bancoRecCartao.contatoEmail,
-        { evento: "simulacao", publico: "banco", simulacaoTipo: simTipoCartao, simulacaoStatus: "enviada" },
-        varsCartao,
-        {
-          titulo: `Nova solicitacao de ${nomeProduto} — ${contrato.adf}`,
-          mensagem: `${entry.nome} (matricula ${entry.matricula}) solicitou ${nomeProduto} — limite proposto R$ ${body.limite.toFixed(2)}.`,
-        },
-      );
-    }
+    // REVERTIDO (14/07/2026): nao mandar email pra o banco na simulacao inicial.
+    // O banco so recebe notificacao nas acoes dele (aprovar/recusar/averbar/etc),
+    // via portal-banco/index.ts notifyMovimentacao. Manda-lo email na simulacao
+    // gerava ruido em contas de teste (Banco Atlas com contatoEmail apontando
+    // pra caixa pessoal).
     return c.json({
       ok: true,
       protocolo: contrato.adf,
@@ -767,23 +760,9 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         ],
       },
     );
-    // Pro banco (email de contato — banco recebe aviso de proposta nova)
-    const bancoRec = bancos.find((b) => b.id === contrato.bancoId);
-    if (bancoRec?.contatoEmail) {
-      notifyViaTemplate(
-        c, bancoRec.contatoEmail,
-        { evento: "simulacao", publico: "banco", simulacaoTipo: "emprestimo", simulacaoStatus: "enviada" },
-        varsSim,
-        {
-          titulo: `Nova proposta ${contrato.adf} aguardando análise`,
-          mensagem: `${entry.nome} (matrícula ${entry.matricula}) enviou uma proposta de empréstimo. Acesse o portal para analisar.`,
-          detalhes: [
-            { label: "Valor", valor: brlFmt(contrato.valorFinanciado) },
-            { label: "Parcelas", valor: `${contrato.totalParcelas}x de ${brlFmt(contrato.valorParcela)}` },
-          ],
-        },
-      );
-    }
+    // REVERTIDO (14/07/2026): nao mandar email pra o banco na simulacao inicial.
+    // O banco so recebe notificacao nas acoes dele (aprovar/recusar/averbar/etc),
+    // via portal-banco/index.ts notifyMovimentacao.
     return c.json(
       {
         id: contrato.adf,
