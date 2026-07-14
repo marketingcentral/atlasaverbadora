@@ -51,6 +51,43 @@ export interface NovoContratoBody {
 
 export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios" | "personalizado";
 
+export interface PortabilidadeOferta {
+  id: string;
+  bancoDestinoId: number;
+  bancoDestinoNome: string;
+  /** Taxa a.m. proposta (decimal, ex.: 0.0155 = 1,55%). */
+  taxaAmProposta: number;
+  novaParcela: number;
+  novoPrazo: number;
+  /** Economia estimada em R$ (parcela original × prazo restante − nova parcela × novo prazo). */
+  economia: number;
+  observacao?: string;
+  ofertadaEm: string;
+  status: "ativa" | "aceita" | "recusada" | "expirada";
+}
+export interface PortabilidadeIntencao {
+  id: string;
+  publicadaEm: string;
+  expiraEm: string;
+  status: "aberta" | "aceita" | "cancelada" | "expirada";
+  aceitaOfertaId?: string;
+  servidorNome: string;
+  servidorMatricula: string;
+  servidorCpfMasked: string;
+  prefeituraId: number;
+  prefeituraNome: string;
+  convenioId: string;
+  contratoAdfOrigem: string;
+  bancoOrigemId: number;
+  bancoOrigemNome: string;
+  saldoDevedor: number;
+  valorParcela: number;
+  parcelasRestantes: number;
+  totalParcelasOriginal: number;
+  taxaAm: number;
+  ofertas: PortabilidadeOferta[];
+}
+
 /** Categorias de beneficio. "telemedicina" separada de "saude" — cliente pediu
  *  aba exclusiva pra telemedicina na averbadora. */
 export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina";
@@ -1079,6 +1116,31 @@ export class AtlasClient {
       }>("/v1/confirmacao/solicitar", { method: "POST", body: { acao, recurso } }),
     verificar: (challengeId: string, codigo: string) =>
       this.request<{ ok: boolean }>("/v1/confirmacao/verificar", { method: "POST", body: { challengeId, codigo } }),
+  };
+
+  // ============ Portabilidade marketplace ============
+  // Averbadora armazena a intencao (dados vindos do contrato origem). Bancos
+  // concorrentes veem e ofertam. Servidor aceita a melhor.
+  readonly portabilidade = {
+    // === Servidor ===
+    minhas: () =>
+      this.request<{ intencoes: PortabilidadeIntencao[] }>("/v1/servidores/me/portabilidade"),
+    publicar: (adf: string) =>
+      this.request<{ intencao: PortabilidadeIntencao }>("/v1/servidores/me/portabilidade", { method: "POST", body: { adf } }),
+    cancelar: (id: string) =>
+      this.request<{ intencao: PortabilidadeIntencao }>(`/v1/servidores/me/portabilidade/${id}/cancelar`, { method: "POST" }),
+    aceitar: (id: string, ofertaId: string) =>
+      this.request<{ intencao: PortabilidadeIntencao }>(`/v1/servidores/me/portabilidade/${id}/aceitar`, { method: "POST", body: { ofertaId } }),
+
+    // === Banco ===
+    oportunidadesBanco: () =>
+      this.request<{ intencoes: PortabilidadeIntencao[] }>("/v1/portal/banco/portabilidade"),
+    ofertar: (id: string, body: { taxaAmProposta: number; novaParcela: number; novoPrazo: number; observacao?: string }) =>
+      this.request<{ intencao: PortabilidadeIntencao; oferta: PortabilidadeOferta }>(`/v1/portal/banco/portabilidade/${id}/ofertar`, { method: "POST", body }),
+
+    // === Averbadora (visao global) ===
+    todas: () =>
+      this.request<{ intencoes: PortabilidadeIntencao[] }>("/v1/admin/portabilidade"),
   };
 
   // ============ Servidor (marketplace + demais consultas do proprio servidor) ============

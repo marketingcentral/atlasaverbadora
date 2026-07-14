@@ -17,6 +17,7 @@ const NAV = [
   { key: "id-unico", label: "ID único", href: "/averbadora/id-unico", icon: "#" },
   { key: "bate-carteira", label: "Bate de carteira", href: "/averbadora/bate-carteira", icon: "⇄" },
   { key: "adf", label: "ADF", href: "/averbadora/adf", icon: "▤" },
+  { key: "portabilidade", label: "Portabilidade", href: "/averbadora/portabilidade", icon: "⇌" },
   { key: "auditoria", label: "Auditoria", href: "/averbadora/auditoria", icon: "⚖" },
   { key: "perfis", label: "Usuários", href: "/averbadora/perfis", icon: "⚙" },
   {

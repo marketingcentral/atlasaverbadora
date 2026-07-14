@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, Pill } from "@atlas/ui/web";
 import {
   ContratoElegivelMock as ContratoElegivel,
@@ -8,6 +9,7 @@ import {
   STORAGE_KEY_ID,
   STORAGE_KEY_META,
 } from "../../lib/matricula-data";
+import { atlas } from "../../lib/sdk";
 
 // Bancos que aceitariam portabilidade (mock — em prod viria de
 // atlas.servidor.ofertas() filtrado por convenio + produto portabilidade).
@@ -98,6 +100,7 @@ export function ServidorPortabilidade() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+      <MarketplaceBlock />
       <button
         type="button"
         onClick={() => nav("/servidor/marketplace/portabilidade")}
@@ -288,5 +291,96 @@ function KV({ label, v, accent, muted }: { label: string; v: string; accent?: bo
         {v}
       </div>
     </div>
+  );
+}
+
+
+// Marketplace de portabilidade: publica intencao a partir de um contrato
+// ativo (dados vem da averbadora automaticamente). Depois bancos ofertam.
+function MarketplaceBlock() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["servidor", "portabilidade"], queryFn: () => atlas.portabilidade.minhas(), refetchInterval: 15000 });
+  const [info] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+  const publicar = useMutation({
+    mutationFn: (adf: string) => atlas.portabilidade.publicar(adf),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),
+  });
+  const cancelar = useMutation({
+    mutationFn: (id: string) => atlas.portabilidade.cancelar(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),
+  });
+  const aceitar = useMutation({
+    mutationFn: (v: { id: string; ofertaId: string }) => atlas.portabilidade.aceitar(v.id, v.ofertaId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),
+  });
+  const intencoes = q.data?.intencoes ?? [];
+  const elegiveis = info?.elegiveisPortabilidade ?? [];
+  const jaPublicados = new Set(intencoes.filter((i) => i.status === "aberta").map((i) => i.contratoAdfOrigem));
+  return (
+    <Card style={{ borderColor: "var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 6%, var(--surface))" }}>
+      <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase", marginBottom: 8 }}>
+        Marketplace: deixe os bancos disputarem sua divida
+      </div>
+      <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted)" }}>
+        Publique um contrato ativo aqui e bancos concorrentes ofertam propostas de portabilidade. Voce escolhe a melhor.
+      </p>
+      {elegiveis.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Voce nao tem contratos elegiveis agora.</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {elegiveis.map((c) => (
+            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "var(--bg-elev)", borderRadius: 8, gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13 }}>
+                <b>{c.banco}</b> · ADF {c.id} · {fmtBRL(c.saldoDevedor)} saldo · {fmtBRL(c.parcela)} × {c.parcelasRestantes}x
+              </div>
+              {jaPublicados.has(c.id) ? (
+                <Pill variant="aceita">publicado</Pill>
+              ) : (
+                <Button size="sm" onClick={() => publicar.mutate(c.id)} disabled={publicar.isPending}>Publicar</Button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {intencoes.length > 0 ? (
+        <div style={{ marginTop: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Minhas intencoes publicadas</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {intencoes.map((i) => (
+              <div key={i.id} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <span style={{ fontSize: 13 }}><b>{i.bancoOrigemNome}</b> · ADF {i.contratoAdfOrigem} · {fmtBRL(i.saldoDevedor)}</span>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <Pill variant={i.status === "aceita" ? "averbado" : i.status === "aberta" ? "aceita" : "expirado"}>{i.status}</Pill>
+                    {i.status === "aberta" ? (
+                      <Button size="sm" variant="ghost" onClick={() => { if (confirm("Cancelar publicacao?")) cancelar.mutate(i.id); }}>Cancelar</Button>
+                    ) : null}
+                  </div>
+                </div>
+                {i.ofertas.length > 0 ? (
+                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                    {i.ofertas.filter((o) => o.status === "ativa" || o.status === "aceita").map((o) => (
+                      <div key={o.id} style={{ padding: 8, borderRadius: 6, background: o.status === "aceita" ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "var(--bg-elev-2)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 12 }}>
+                          <b>{o.bancoDestinoNome}</b> · {fmtBRL(o.novaParcela)} × {o.novoPrazo}x @ {(o.taxaAmProposta * 100).toFixed(2)}% a.m.
+                          {o.economia > 0 ? <span style={{ color: "var(--emerald-500)", marginLeft: 6 }}>economia {fmtBRL(o.economia)}</span> : null}
+                        </span>
+                        {i.status === "aberta" && o.status === "ativa" ? (
+                          <Button size="sm" onClick={() => aceitar.mutate({ id: i.id, ofertaId: o.id })}>Aceitar</Button>
+                        ) : o.status === "aceita" ? (
+                          <Pill variant="averbado">aceita</Pill>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-muted)" }}>Aguardando ofertas dos bancos…</div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </Card>
   );
 }

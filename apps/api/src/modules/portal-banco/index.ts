@@ -9,6 +9,7 @@ import { refreshConvenios } from "./convenios-store.js";
 import { refreshComunicados } from "./comunicados-store.js";
 import { prefeituras, bancos, pushEvent } from "../admin/index.js";
 import { getConvenioConfig } from "../admin/convenios-config.js";
+import { ensurePortabilidadesLoaded, listIntencoesAbertasParaBanco, adicionarOferta } from "../admin/portabilidade-store.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
@@ -220,6 +221,34 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       await c.env.KV_CACHE.put(`banco_convenio:${j.banco_id}:${j.sub}`, convenioId, { expirationTtl: 60 * 60 * 24 * 7 });
     }
     return c.json({ activeId: convenioId });
+  })
+
+  // --------- Portabilidade marketplace (banco destino) ----------
+  // Lista intencoes ABERTAS onde este banco NAO e' o origem — ou seja,
+  // oportunidades onde ele pode entrar como banco destino.
+  .get("/v1/portal/banco/portabilidade", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    await ensurePortabilidadesLoaded(c.env);
+    const intencoes = listIntencoesAbertasParaBanco(j.banco_id);
+    return c.json({ intencoes });
+  })
+  .post("/v1/portal/banco/portabilidade/:id/ofertar", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    await ensurePortabilidadesLoaded(c.env);
+    const body = z.object({
+      taxaAmProposta: z.number().min(0).max(1),
+      novaParcela: z.number().min(1),
+      novoPrazo: z.number().int().min(1).max(120),
+      observacao: z.string().max(500).optional(),
+    }).parse(await c.req.json());
+    const bancoNome = bancos.find((b) => b.id === j.banco_id)?.nome ?? `Banco ${j.banco_id}`;
+    const r = await adicionarOferta(c.env, c.req.param("id"), j.banco_id, bancoNome, body);
+    if (!r.ok) throw Errors.validation({ oferta: r.motivo });
+    return c.json({ intencao: r.intencao, oferta: r.oferta });
   })
 
   // --------- Visao Geral ----------

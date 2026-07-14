@@ -31,6 +31,7 @@ const NAV = [
   { key: "carteira", label: "Meus Contratos", href: "/banco/carteira", icon: "▥" },
   { key: "bate-carteira", label: "Bate de Carteira", href: "/banco/bate-carteira", icon: "▦" },
   { key: "convenios", label: "Convênios", href: "/banco/convenios", icon: "◈" },
+  { key: "portabilidade", label: "Portabilidade", href: "/banco/portabilidade", icon: "⇌" },
   {
     key: "relatorios",
     label: "Relatórios",

@@ -15,6 +15,7 @@ import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo, enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
+import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, cancelarIntencao, aceitarOferta, getIntencao } from "../admin/portabilidade-store.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
@@ -945,6 +946,89 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = novoHash; });
     await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
     return c.json({ ok: true });
+  })
+  // ================== PORTABILIDADE (marketplace) ==================
+  // Servidor publica intencao a partir de um contrato ATIVO que ele tem em
+  // algum banco. A averbadora ja sabe todos os dados do contrato — o servidor
+  // so escolhe qual ADF quer portar. Depois de publicada, bancos concorrentes
+  // (todos MENOS o banco origem) veem em /banco/portabilidade e fazem ofertas.
+  .get("/v1/servidores/me/portabilidade", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env); await refreshContratos(c.env); await ensurePortabilidadesLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
+    const mats = entry ? SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === entry.cpf).map((x) => x.matricula) : [];
+    const intencoes = mats.flatMap((m) => listIntencoesDoServidor(m));
+    return c.json({ intencoes });
+  })
+  .post("/v1/servidores/me/portabilidade", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env); await refreshContratos(c.env); await ensurePortabilidadesLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = z.object({ adf: z.string().min(3) }).parse(await c.req.json());
+    const ct = getContrato(body.adf);
+    if (!ct) throw Errors.notFound("contrato");
+    // Isolamento: contrato tem que ser de uma matricula desse CPF.
+    const matriculasDoCpf = new Set(SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((x) => x.matricula));
+    if (!matriculasDoCpf.has(ct.matricula)) throw Errors.notFound("contrato");
+    // So contrato ATIVO ou AVERBADO faz sentido portar.
+    const sit = (ct.situacao ?? "").toLowerCase();
+    if (!(sit.includes("ativ") || sit.includes("averb"))) {
+      throw Errors.validation({ contrato: "so contrato ativo/averbado pode ser portado" });
+    }
+    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === ct.matricula);
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+    const bancoOrigem = bancos.find((b) => b.id === ct.bancoId);
+    const parcelasRestantes = Math.max(1, ct.totalParcelas - ct.parcelasPagas);
+    const intencao = await criarIntencao(c.env, {
+      servidorNome: entry?.nome ?? ct.nome,
+      servidorMatricula: ct.matricula,
+      servidorCpfMasked: entry?.cpfMasked ?? "***.***.***-**",
+      prefeituraId: conv ? Number(conv.prefeituraId ?? 0) : 0,
+      prefeituraNome: conv?.prefeitura ?? "",
+      convenioId: ct.convenioId,
+      contratoAdfOrigem: ct.adf,
+      bancoOrigemId: ct.bancoId,
+      bancoOrigemNome: bancoOrigem?.nome ?? `Banco ${ct.bancoId}`,
+      saldoDevedor: Math.round(ct.saldoDevedor * 100) / 100,
+      valorParcela: Math.round(ct.valorParcela * 100) / 100,
+      parcelasRestantes,
+      totalParcelasOriginal: ct.totalParcelas,
+      taxaAm: ct.taxaAm,
+    });
+    return c.json({ intencao });
+  })
+  .post("/v1/servidores/me/portabilidade/:id/cancelar", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env); await ensurePortabilidadesLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const i = getIntencao(c.req.param("id"));
+    if (!i) throw Errors.notFound("intencao");
+    const matriculasDoCpf = new Set(SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((x) => x.matricula));
+    if (!matriculasDoCpf.has(i.servidorMatricula)) throw Errors.notFound("intencao");
+    const r = await cancelarIntencao(c.env, i.id, i.servidorMatricula);
+    return c.json({ intencao: r });
+  })
+  .post("/v1/servidores/me/portabilidade/:id/aceitar", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env); await ensurePortabilidadesLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = z.object({ ofertaId: z.string().min(3) }).parse(await c.req.json());
+    const i = getIntencao(c.req.param("id"));
+    if (!i) throw Errors.notFound("intencao");
+    const matriculasDoCpf = new Set(SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((x) => x.matricula));
+    if (!matriculasDoCpf.has(i.servidorMatricula)) throw Errors.notFound("intencao");
+    const r = await aceitarOferta(c.env, i.id, body.ofertaId, i.servidorMatricula);
+    if (!r.ok) throw Errors.validation({ oferta: r.motivo });
+    return c.json({ intencao: r.intencao });
   })
   .get("/v1/servidores/me/comunicados", async (c) => {
     const j = c.get("jwt");

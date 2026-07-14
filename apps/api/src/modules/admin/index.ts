@@ -29,6 +29,7 @@ import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStat
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
+import { ensurePortabilidadesLoaded, listIntencoes } from "./portabilidade-store.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -2011,6 +2012,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       return csvResponse(`bate-carteira-${banco.nome.replace(/\s+/g, "-")}-${body.competencia}.csv`, bateCarteiraCsv(r));
     }
     return c.json(r);
+  })
+
+  // ===== Portabilidade marketplace (visao global) =====
+  .get("/v1/admin/portabilidade", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "portabilidade");
+    await ensurePortabilidadesLoaded(c.env);
+    return c.json({ intencoes: listIntencoes() });
   })
 
   // ===== Auditoria (passo 12) =====

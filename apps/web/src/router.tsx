@@ -44,6 +44,7 @@ import { AdminTombamento } from "./routes/averbadora/tombamento";
 import { AdminIdUnico } from "./routes/averbadora/id-unico";
 import { AdminBateCarteira } from "./routes/averbadora/bate-carteira";
 import { AdminAdf } from "./routes/averbadora/adf";
+import { AverbadoraPortabilidade } from "./routes/averbadora/portabilidade";
 import { AdminAuditoria } from "./routes/averbadora/auditoria";
 import { AdminPerfis } from "./routes/averbadora/perfis";
 import { AverbadoraConta } from "./routes/averbadora/conta";
@@ -70,6 +71,7 @@ import { BancoOfertas } from "./routes/banco/ofertas";
 import { BancoCarteira } from "./routes/banco/carteira/index";
 import { BancoBateCarteira } from "./routes/banco/bate-carteira";
 import { BancoConvenios } from "./routes/banco/convenios";
+import { BancoPortabilidade } from "./routes/banco/portabilidade";
 import { BancoMargemContratacaoBusca } from "./routes/banco/margem-contratacao/index";
 import { BancoMargemContratacaoFicha } from "./routes/banco/margem-contratacao/ficha";
 import { OperacaoForm } from "./routes/banco/margem-contratacao/OperacaoForm";
@@ -154,6 +156,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "carteira", element: <BancoCarteira /> },
           { path: "bate-carteira", element: <BancoBateCarteira /> },
           { path: "convenios", element: <BancoConvenios /> },
+          { path: "portabilidade", element: <BancoPortabilidade /> },
 
           { path: "cadastros/tabela-emprestimos", element: <BancoTabelaEmprestimosLista /> },
           { path: "cadastros/tabela-emprestimos/novo", element: <BancoTabelaEmprestimosForm /> },
@@ -196,6 +199,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "id-unico", element: <AdminIdUnico /> },
           { path: "bate-carteira", element: <AdminBateCarteira /> },
           { path: "adf", element: <AdminAdf /> },
+          { path: "portabilidade", element: <AverbadoraPortabilidade /> },
           { path: "auditoria", element: <AdminAuditoria /> },
           { path: "perfis", element: <AdminPerfis /> },
           { path: "comunicados", element: <Navigate to="/averbadora/comunicados/banco" replace /> },

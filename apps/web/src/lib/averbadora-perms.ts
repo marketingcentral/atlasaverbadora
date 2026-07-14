@@ -40,6 +40,7 @@ export const RESOURCE_GROUPS: { titulo: string; recursos: { key: string; label: 
       { key: "pre-reservas", label: "Pre-reservas" },
       { key: "tombamento", label: "Tombamento" },
       { key: "adf", label: "ADF (Descontos em folha)" },
+      { key: "portabilidade", label: "Portabilidade (marketplace)" },
       { key: "beneficios", label: "Beneficios" },
       { key: "telemedicina", label: "Telemedicina" },
       { key: "interessados", label: "Interessados" },
