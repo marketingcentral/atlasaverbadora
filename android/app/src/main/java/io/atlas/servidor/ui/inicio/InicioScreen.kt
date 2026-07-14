@@ -138,6 +138,7 @@ fun InicioScreen(
                         lockEmprestimo = lockEmprestimo,
                         lockCartao = lockCartao,
                         lockBeneficio = lockBeneficio,
+                        portabilidadeEmAnalise = vm.portabilidadeEmAnalise,
                         onSimularProduto = onSimularProduto,
                         onOpenAnalise = onOpenAnalise,
                     )
@@ -301,6 +302,7 @@ private fun ProdutosSection(
     lockEmprestimo: Boolean,
     lockCartao: Boolean,
     lockBeneficio: Boolean,
+    portabilidadeEmAnalise: Boolean,
     onSimularProduto: (String) -> Unit,
     onOpenAnalise: () -> Unit,
 ) {
@@ -319,7 +321,7 @@ private fun ProdutosSection(
         descricao = "Dinheiro na sua conta, descontado direto da folha.",
         margem = emprestimo,
         aviso = if (lockEmprestimo) avisoAnalise else null,
-        textoBotao = if (lockEmprestimo) "Acompanhar análise" else "Simular",
+        textoBotao = if (lockEmprestimo) (if (portabilidadeEmAnalise) "Solicitação Bloqueada" else "Acompanhar análise") else "Simular",
         onClick = if (lockEmprestimo) onOpenAnalise else ({ onSimularProduto(Produtos.EMPRESTIMO) }),
     )
     Spacer(Modifier.height(14.dp))

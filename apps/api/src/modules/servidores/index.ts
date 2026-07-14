@@ -855,10 +855,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const bancoOrigem = loan?.bancoNome ?? "Outro banco";
     const contratoOrigem = loan?.contratoOrigem;
     const saldoDevedorOrigem = loan ? round2(loan.saldoDevedor) : undefined;
-    // Valor/parcelas indicativos: baseados no saldo de origem quando ha, senao na margem.
+    // Valores do contrato de ORIGEM (sem inventar promocao): o banco recebe o saldo/parcela
+    // reais do outro banco e confirma as condicoes depois. NAO calculamos "parcela no Atlas".
     const valorBase = loan ? round2(loan.saldoDevedor) : round2(margemTotal(entry.salarioLiquido, "EMPRESTIMO"));
     const parcelasBase = loan?.parcelasRestantes ?? 60;
-    const taxaAtlas = 0.0145;
     const contrato = criarContratoOuReserva({
       bancoId: conv?.bancoId ?? 1,
       servidorId: s.id,
@@ -871,11 +871,14 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       tipoContrato: "REFIN",
       valorFinanciado: valorBase,
       parcelas: parcelasBase,
-      taxaAm: taxaAtlas,
-      cetAm: taxaAtlas,
+      taxaAm: loan?.taxaAm ?? 0,
+      cetAm: loan?.taxaAm ?? 0,
       iof: 0,
       diasCarencia: 30,
-      valorParcela: round2(valorBase / Math.max(1, parcelasBase)),
+      // Parcela 0 no bucket de margem: a portabilidade BLOQUEIA a margem de emprestimo
+      // (proposta pendente), mas NAO reduz o valor disponivel — a margem so muda quando
+      // o banco confirmar a portabilidade. O valor real da origem vai em saldoDevedorOrigem.
+      valorParcela: 0,
       codigoVerba: conv?.codigoVerba ?? "",
       observacoes: loan
         ? `Portabilidade do contrato ${contratoOrigem} (${bancoOrigem}) — solicitada pelo servidor. Valores a confirmar com o banco.`

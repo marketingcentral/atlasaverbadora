@@ -54,8 +54,6 @@ fun PortabilidadeScreen(
     alvo?.let { e ->
         TermoPortabilidade(
             e = e,
-            novaParcela = vm.novaParcela(e),
-            taxaAtlas = vm.taxaAtlas,
             onAceitar = { alvo = null; vm.solicitar(e, onSolicitado) },
             onCancelar = { alvo = null },
         )
@@ -112,8 +110,6 @@ fun PortabilidadeScreen(
                     s.data.forEach { e ->
                         ElegivelCard(
                             e = e,
-                            novaParcela = vm.novaParcela(e),
-                            economia = vm.economiaMensal(e),
                             bloqueado = vm.emprestimoEmAnalise,
                             onPortar = { alvo = e },
                         )
@@ -127,7 +123,7 @@ fun PortabilidadeScreen(
 }
 
 @Composable
-private fun ElegivelCard(e: ElegivelDto, novaParcela: Double, economia: Double, bloqueado: Boolean, onPortar: () -> Unit) {
+private fun ElegivelCard(e: ElegivelDto, bloqueado: Boolean, onPortar: () -> Unit) {
     AtlasCard {
         Column {
             Text(e.banco, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
@@ -137,10 +133,6 @@ private fun ElegivelCard(e: ElegivelDto, novaParcela: Double, economia: Double, 
             InfoRow("Saldo devedor", Format.money(e.saldoDevedor))
             InfoRow("Parcela atual", Format.money(e.parcela))
             InfoRow("Parcelas restantes", "${e.parcelasRestantes}")
-            InfoRow("Parcela no Atlas", Format.money(novaParcela), valueColor = Verde)
-            if (economia > 0) {
-                InfoRow("Economia/mês", Format.money(economia), valueColor = Verde)
-            }
             Spacer(Modifier.height(12.dp))
             AtlasPrimaryButton("Solicitar Portabilidade", onClick = onPortar, enabled = !bloqueado)
         }
@@ -150,8 +142,6 @@ private fun ElegivelCard(e: ElegivelDto, novaParcela: Double, economia: Double, 
 @Composable
 private fun TermoPortabilidade(
     e: ElegivelDto,
-    novaParcela: Double,
-    taxaAtlas: Double,
     onAceitar: () -> Unit,
     onCancelar: () -> Unit,
 ) {
@@ -163,13 +153,10 @@ private fun TermoPortabilidade(
             Column {
                 Text(
                     "Você está solicitando a portabilidade do contrato de ${e.banco} (saldo devedor " +
-                        "${Format.money(e.saldoDevedor)}) para o Banco Atlas:",
+                        "${Format.money(e.saldoDevedor)}) para o Banco Atlas.",
                     color = InkMuted,
                     fontSize = 14.sp,
                 )
-                Spacer(Modifier.height(10.dp))
-                InfoRow("Parcelas", "${e.parcelasRestantes}× de ${Format.money(novaParcela)}")
-                InfoRow("Taxa Atlas", Format.rateAm(taxaAtlas))
                 Spacer(Modifier.height(12.dp))
                 Text(
                     "⚠️ Ao confirmar, a sua margem de empréstimo consignado será bloqueada por até " +

@@ -37,6 +37,9 @@ class HomeViewModel : ViewModel() {
     // não consultado. Ex.: {"EMPRESTIMO"} = empréstimo em análise, cartão liberado.
     var produtosPendentes by mutableStateOf<Set<String>?>(null)
         private set
+    /** Há uma portabilidade (REFIN) em análise → empréstimo mostra "Solicitação Bloqueada". */
+    var portabilidadeEmAnalise by mutableStateOf(false)
+        private set
 
     // Propostas cruas (fonte do banco) — usadas pelo Histórico de Contratos (recusadas).
     var propostas by mutableStateOf<List<io.atlas.servidor.data.remote.dto.PropostaDto>>(emptyList())
@@ -134,6 +137,11 @@ class HomeViewModel : ViewModel() {
                 .map { produtoDaProposta(it.tipoContrato, it.tipoMargem) }
                 .toSet()
             produtosPendentes = pendentes
+            // Há uma PORTABILIDADE (REFIN de outro banco) em análise? Nesse caso o empréstimo
+            // consignado mostra "Solicitação Bloqueada" (margem reservada pela portabilidade).
+            portabilidadeEmAnalise = r.propostas.any {
+                isReservaPendente(it.situacao) && it.tipoContrato?.equals("REFIN", ignoreCase = true) == true
+            }
             // Libera a trava dos produtos que NÃO têm mais proposta pendente.
             selectedMatricula?.let { mat ->
                 listOf("EMPRESTIMO", "CARTAO_CONSIGNADO").forEach { produto ->
