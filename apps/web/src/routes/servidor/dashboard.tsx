@@ -173,10 +173,11 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
 const ACAO_POR_TIPO: Record<string, { label: string; href: string } | undefined> = {
   EMPRESTIMO: { label: "Simular →", href: "/servidor/simular?produto=emprestimo" },
   CARTAO_CONSIGNADO: { label: "Simular →", href: "/servidor/simular?produto=cartao_consignado" },
-  // Cartao Beneficio nao simula — vai direto pro Marketplace principal
-  // (/servidor/marketplace/portabilidade), que ja mostra Ofertas + bloco
-  // "Solicitar portabilidade" — mesma pagina do link "MarketPlace" no menu superior.
-  CARTAO_BENEFICIOS: { label: "Ver ofertas →", href: "/servidor/marketplace/portabilidade" },
+  // Cartao Beneficio segue a mesma dinamica do Consignado: simula na tela
+  // dedicada (/servidor/simular?produto=cartao_beneficio) e cria a proposta
+  // com tipoMargem=CARTAO_BENEFICIOS. No banco, a proposta cai no submenu
+  // "Cartao Beneficio" (nao em "Cartao"), gracas ao filtro por tipoMargem.
+  CARTAO_BENEFICIOS: { label: "Simular →", href: "/servidor/simular?produto=cartao_beneficio" },
 };
 
 function MargemCard({ data }: { data: { tipo: string; total: number; disponivel: number } }) {

@@ -15,6 +15,7 @@ const NAV = [
       { key: "emprestimo", label: "Empréstimo", href: "/banco/propostas?produto=emprestimo" },
       { key: "cartao", label: "Cartão", href: "/banco/propostas?produto=cartao" },
       { key: "portabilidade", label: "Portabilidade", href: "/banco/propostas?produto=portabilidade" },
+      { key: "cartao_beneficio", label: "Cartão Benefício", href: "/banco/propostas?produto=cartao_beneficio" },
     ],
   },
   { key: "ofertas", label: "Ofertas", href: "/banco/ofertas", icon: "◇" },
@@ -72,13 +73,13 @@ export function BancoLayout() {
 
   // activeKey ordinariamente e' o ultimo segmento do path. Excecao:
   // /banco/propostas tem submenu por produto controlado por query param
-  // (?produto=emprestimo|cartao|portabilidade) — usa o valor pra destacar
-  // o filho certo no sidebar.
+  // (?produto=emprestimo|cartao|portabilidade|cartao_beneficio) — usa o valor
+  // pra destacar o filho certo no sidebar.
   const activeKey = ((): string => {
     const last = location.pathname.split("/").pop() ?? "visao-geral";
     if (last === "propostas") {
       const p = new URLSearchParams(location.search).get("produto");
-      if (p === "emprestimo" || p === "cartao" || p === "portabilidade") return p;
+      if (p === "emprestimo" || p === "cartao" || p === "portabilidade" || p === "cartao_beneficio") return p;
       return "emprestimo"; // default
     }
     return last;

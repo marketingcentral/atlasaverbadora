@@ -41,7 +41,7 @@ export function BancoPropostas() {
   const [sp] = useSearchParams();
   const produtoTab: BancoProduto = (() => {
     const p = sp.get("produto");
-    if (p === "cartao" || p === "portabilidade" || p === "emprestimo") return p;
+    if (p === "cartao" || p === "portabilidade" || p === "emprestimo" || p === "cartao_beneficio") return p;
     return "emprestimo";
   })();
   const [tab, setTab] = useState<TabKey>("todas");
@@ -77,7 +77,7 @@ export function BancoPropostas() {
 
   // Contagem por produto pra badge das abas primarias.
   const totaisPorProduto = useMemo(() => {
-    const m: Record<BancoProduto, number> = { emprestimo: 0, cartao: 0, portabilidade: 0 };
+    const m: Record<BancoProduto, number> = { emprestimo: 0, cartao: 0, cartao_beneficio: 0, portabilidade: 0 };
     for (const p of todas) m[p.produto]++;
     return m;
   }, [todas]);

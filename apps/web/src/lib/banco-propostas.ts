@@ -54,7 +54,7 @@ export function setBancoPerfil(id: string): void {
 // Modelo da proposta (Passos 3-7).
 // ---------------------------------------------------------------------------
 
-export type BancoProduto = "emprestimo" | "cartao" | "portabilidade";
+export type BancoProduto = "emprestimo" | "cartao" | "cartao_beneficio" | "portabilidade";
 
 export type BancoPropostaStatus =
   | "recebida" // acabou de cair na fila (origem: app do servidor)
@@ -157,6 +157,7 @@ export function statusPill(s: BancoPropostaStatus): "pendente" | "aceita" | "ave
 export const PRODUTO_LABEL: Record<BancoProduto, string> = {
   emprestimo: "Empréstimo",
   cartao: "Cartão",
+  cartao_beneficio: "Cartão Benefício",
   portabilidade: "Portabilidade",
 };
 
@@ -343,6 +344,10 @@ export interface BancoContratoApi {
    *  criados antes da migracao nao tem esse campo — cai no parse de `lancamento`
    *  (DD/MM/YYYY, so dia). Prefer sempre este quando disponivel pra sort exato. */
   criadoEmIso?: string | null;
+  /** Bucket de margem — separa cartao consignado (CARTAO_CONSIGNADO) de cartao
+   *  beneficio (CARTAO_BENEFICIOS). tipoContrato=ECONSIGNADO sozinho nao
+   *  distingue os dois; sem esse campo, ambos caiam no submenu "Cartao". */
+  tipoMargem?: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS";
 }
 
 export interface BancoPropostaFromApi extends BancoProposta {
@@ -381,14 +386,15 @@ export function contratoToProposta(ct: BancoContratoApi): BancoPropostaFromApi {
     nome: ct.nome,
     convenio: ct.convenio,
     matricula: ct.matricula,
-    // tipoContrato do backend -> BancoProduto:
-    //   REFIN        -> portabilidade
-    //   ECONSIGNADO  -> cartao (consignado / benefício)
-    //   *default*    -> emprestimo (EMPRESTIMO)
+    // tipoContrato + tipoMargem do backend -> BancoProduto:
+    //   REFIN                                       -> portabilidade
+    //   ECONSIGNADO + tipoMargem=CARTAO_BENEFICIOS  -> cartao_beneficio
+    //   ECONSIGNADO (default)                       -> cartao (consignado)
+    //   *default*                                   -> emprestimo (EMPRESTIMO)
     produto: ct.tipoContrato === "REFIN"
       ? "portabilidade"
       : ct.tipoContrato === "ECONSIGNADO"
-        ? "cartao"
+        ? (ct.tipoMargem === "CARTAO_BENEFICIOS" ? "cartao_beneficio" : "cartao")
         : "emprestimo",
     valor: ct.valorFinanciado,
     parcelas: ct.totalParcelas,
