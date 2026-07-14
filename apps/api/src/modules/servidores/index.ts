@@ -13,7 +13,7 @@ import { loadCliques, refreshCliques, persistClique, nextCliqueId, type Benefici
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
-import { enviarCodigo, enviarNotificacao } from "../admin/mailer.js";
+import { enviarCodigo, enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
@@ -54,6 +54,24 @@ function notifyServidor(
   } catch {
     void p; // sem executionCtx: dispara e esquece
   }
+}
+
+/** Tenta enviar via template editavel (/averbadora/emails). Se nao houver
+ *  template ativo, executa o fallback hardcoded passado. Best-effort. */
+function notifyViaTemplate(
+  c: { env: Env; executionCtx: { waitUntil(p: Promise<unknown>): void } },
+  email: string | undefined,
+  filtro: Parameters<typeof dispatchTemplateEmail>[1],
+  vars: Record<string, string>,
+  fallback: { titulo: string; mensagem: string; detalhes?: { label: string; valor: string }[] },
+): void {
+  if (!email) return;
+  const p = (async () => {
+    const r = await dispatchTemplateEmail(c.env, filtro, email, vars);
+    if (r.usouTemplate) return;
+    await enviarNotificacao(c.env, { destinoPadrao: email, ...fallback });
+  })();
+  try { c.executionCtx.waitUntil(p); } catch { void p; }
 }
 
 function mapContratoStatus(situacao: string): "Averbado" | "Em dia" | "Quitado" {
@@ -416,16 +434,46 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       "averbadora.solicitacao_cartao",
       `${entry.nome} (matricula ${entry.matricula}, ${conv?.prefeitura ?? "prefeitura"}) solicitou ${nomeProduto} com ${body.bancoNome} — limite proposto R$ ${body.limite.toFixed(2)}.`,
     );
-    // Notifica o servidor da criacao (in-app + e-mail).
-    notifyServidor(c, entry.email, {
-      titulo: `Solicitacao ${contrato.adf} enviada ao banco`,
-      mensagem: `Sua solicitacao de ${nomeProduto} foi enviada ao ${body.bancoNome} e esta em analise. Voce sera avisado quando houver uma atualizacao.`,
-      detalhes: [
-        { label: "Banco", valor: body.bancoNome },
-        { label: "Produto", valor: nomeProduto },
-        { label: "Limite proposto", valor: `R$ ${body.limite.toFixed(2)}` },
-      ],
-    });
+    // Notifica servidor E banco via template editavel + fallback.
+    const simTipoCartao: "cartao_consignado" | "cartao_beneficio" =
+      body.produto === "cartao_consignado" ? "cartao_consignado" : "cartao_beneficio";
+    const varsCartao: Record<string, string> = {
+      nome: entry.nome,
+      matricula: entry.matricula,
+      prefeitura: conv?.prefeitura ?? "",
+      adf: contrato.adf,
+      banco: body.bancoNome,
+      valor: `R$ ${body.limite.toFixed(2)}`,
+      parcelas: String(contrato.totalParcelas),
+      valorParcela: brlFmt(contrato.valorParcela),
+      contract_name: `CCB-${new Date().getFullYear()}-${contrato.adf}`,
+    };
+    notifyViaTemplate(
+      c, entry.email,
+      { evento: "simulacao", publico: "servidor", simulacaoTipo: simTipoCartao, simulacaoStatus: "enviada" },
+      varsCartao,
+      {
+        titulo: `Solicitacao ${contrato.adf} enviada ao banco`,
+        mensagem: `Sua solicitacao de ${nomeProduto} foi enviada ao ${body.bancoNome} e esta em analise.`,
+        detalhes: [
+          { label: "Banco", valor: body.bancoNome },
+          { label: "Produto", valor: nomeProduto },
+          { label: "Limite proposto", valor: `R$ ${body.limite.toFixed(2)}` },
+        ],
+      },
+    );
+    const bancoRecCartao = bancos.find((b) => b.id === contrato.bancoId);
+    if (bancoRecCartao?.contatoEmail) {
+      notifyViaTemplate(
+        c, bancoRecCartao.contatoEmail,
+        { evento: "simulacao", publico: "banco", simulacaoTipo: simTipoCartao, simulacaoStatus: "enviada" },
+        varsCartao,
+        {
+          titulo: `Nova solicitacao de ${nomeProduto} — ${contrato.adf}`,
+          mensagem: `${entry.nome} (matricula ${entry.matricula}) solicitou ${nomeProduto} — limite proposto R$ ${body.limite.toFixed(2)}.`,
+        },
+      );
+    }
     return c.json({
       ok: true,
       protocolo: contrato.adf,
@@ -686,16 +734,53 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ator: `servidor:${s.id}`,
     });
     await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh
-    // Notificação de movimentação (in-app + e-mail): solicitação enviada ao banco.
-    notifyServidor(c, entry.email, {
-      titulo: `Solicitação ${contrato.adf} enviada ao banco`,
-      mensagem: `Sua solicitação de empréstimo foi enviada ao ${bancoNome(contrato.bancoId)} e está em análise. Você será avisado quando houver uma atualização.`,
-      detalhes: [
-        { label: "Valor", valor: brlFmt(contrato.valorFinanciado) },
-        { label: "Parcelas", valor: `${contrato.totalParcelas}x de ${brlFmt(contrato.valorParcela)}` },
-        { label: "Situação", valor: contrato.situacao },
-      ],
-    });
+    // Notificação em tempo real: e-mail pro servidor + e-mail pro banco.
+    // Tenta template editavel em /averbadora/emails/simulacao primeiro;
+    // cai no fallback hardcoded se nao houver template ativo.
+    const nomeBancoDest = body.bancoNome ?? bancoNome(contrato.bancoId);
+    const varsSim: Record<string, string> = {
+      nome: entry.nome,
+      matricula: entry.matricula,
+      prefeitura: conv?.prefeitura ?? "",
+      adf: contrato.adf,
+      banco: nomeBancoDest,
+      valor: brlFmt(contrato.valorFinanciado),
+      parcelas: String(contrato.totalParcelas),
+      valorParcela: brlFmt(contrato.valorParcela),
+      contract_name: `CCB-${new Date().getFullYear()}-${contrato.adf}`,
+    };
+    // Pra servidor
+    notifyViaTemplate(
+      c, entry.email,
+      { evento: "simulacao", publico: "servidor", simulacaoTipo: "emprestimo", simulacaoStatus: "enviada" },
+      varsSim,
+      {
+        titulo: `Solicitação ${contrato.adf} enviada ao banco`,
+        mensagem: `Sua solicitação de empréstimo foi enviada ao ${nomeBancoDest} e está em análise. Você será avisado quando houver uma atualização.`,
+        detalhes: [
+          { label: "Valor", valor: brlFmt(contrato.valorFinanciado) },
+          { label: "Parcelas", valor: `${contrato.totalParcelas}x de ${brlFmt(contrato.valorParcela)}` },
+          { label: "Situação", valor: contrato.situacao },
+        ],
+      },
+    );
+    // Pro banco (email de contato — banco recebe aviso de proposta nova)
+    const bancoRec = bancos.find((b) => b.id === contrato.bancoId);
+    if (bancoRec?.contatoEmail) {
+      notifyViaTemplate(
+        c, bancoRec.contatoEmail,
+        { evento: "simulacao", publico: "banco", simulacaoTipo: "emprestimo", simulacaoStatus: "enviada" },
+        varsSim,
+        {
+          titulo: `Nova proposta ${contrato.adf} aguardando análise`,
+          mensagem: `${entry.nome} (matrícula ${entry.matricula}) enviou uma proposta de empréstimo. Acesse o portal para analisar.`,
+          detalhes: [
+            { label: "Valor", valor: brlFmt(contrato.valorFinanciado) },
+            { label: "Parcelas", valor: `${contrato.totalParcelas}x de ${brlFmt(contrato.valorParcela)}` },
+          ],
+        },
+      );
+    }
     return c.json(
       {
         id: contrato.adf,

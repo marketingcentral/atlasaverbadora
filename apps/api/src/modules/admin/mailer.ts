@@ -181,6 +181,13 @@ export async function enviarCodigo(
      *  false = manda DIRETO pro destinoPadrao (fluxos de servidor: primeiro-acesso,
      *  esqueci-senha, editar contato — o proprio dono da conta e quem tem que receber). */
     respeitaOverride?: boolean;
+    /** Se presente, tenta primeiro o template editavel em /averbadora/emails/*.
+     *  Se nao houver template ativo com esse filtro, cai no email hardcoded acima. */
+    templateFiltro?: Parameters<typeof dispatchTemplateEmail>[1];
+    /** Vars extras para o template (codigo ja e mesclado automaticamente). */
+    templateVars?: Record<string, string>;
+    /** Nome amigavel do destinatario (usado como {{nome}} se templateVars nao trouxer). */
+    nome?: string;
   },
 ): Promise<SendResult & { destino: string }> {
   const cfg = await getSmtpConfigForSend(env);
@@ -189,6 +196,12 @@ export async function enviarCodigo(
   const respeita = opts.respeitaOverride ?? true;
   const destino = respeita ? (notify || padrao) : (padrao || notify);
   if (!destino) return { sent: false, reason: "sem destino", destino: "" };
+  // Tenta template editavel primeiro (se filtro fornecido).
+  if (opts.templateFiltro) {
+    const vars = { codigo: opts.codigo, nome: opts.nome ?? "", ...(opts.templateVars ?? {}) };
+    const r = await dispatchTemplateEmail(env, opts.templateFiltro, destino, vars);
+    if (r.usouTemplate) return { sent: r.sent, reason: r.reason, destino };
+  }
   const { subject, text } = codigoEmail(opts.codigo, opts.contexto);
   const r = await sendMail(env, { to: destino, subject, text });
   return { ...r, destino };
@@ -270,4 +283,39 @@ export async function enviarNotificacao(
   const { subject, text, html } = movimentacaoEmail(opts.titulo, opts.mensagem, opts.detalhes ?? []);
   const r = await sendMail(env, { to: destino, subject, text, html });
   return { ...r, destino };
+}
+
+/**
+ * Envia e-mail via TEMPLATE editavel do consultor (/averbadora/emails). O
+ * chamador passa o filtro (evento + publico + eventuais subtipos) e as
+ * variaveis pra substituicao. Se nao houver template ATIVO que case, o
+ * chamador deve cair pro texto hardcoded (helper retorna { sent: false,
+ * reason: "no_template" } — nunca lança).
+ *
+ * Sempre manda DIRETO pro destinatario passado (nao usa o override
+ * notifyEmail global — esse override e' so pra codigos de teste).
+ */
+export async function dispatchTemplateEmail(
+  env: Env,
+  filtro: {
+    evento: "primeiro_acesso" | "recuperar_senha" | "redefinir_senha" | "simulacao" | "beneficio";
+    publico: "servidor" | "banco" | "prefeitura" | "averbadora";
+    simulacaoTipo?: "emprestimo" | "cartao_consignado" | "cartao_beneficio" | "portabilidade";
+    simulacaoStatus?: "enviada" | "aprovada" | "recusada" | "averbada";
+    beneficioId?: string;
+  },
+  destino: string,
+  vars: Record<string, string>,
+): Promise<SendResult & { destino: string; usouTemplate: boolean }> {
+  if (!destino) return { sent: false, reason: "no_recipient", destino: "", usouTemplate: false };
+  // Import lazy pra evitar ciclo (mailer <-> email-templates via admin index).
+  const { findTemplate, renderTemplate } = await import("./email-templates.js");
+  const t = await findTemplate(env, filtro);
+  if (!t) return { sent: false, reason: "no_template", destino, usouTemplate: false };
+  const { assunto, corpo } = renderTemplate(t, vars);
+  const { subject, text, html } = movimentacaoEmail(assunto, corpo, [
+    { label: "Template", valor: `${t.nome} (${t.id})` },
+  ]);
+  const r = await sendMail(env, { to: destino, subject, text, html });
+  return { ...r, destino, usouTemplate: true };
 }

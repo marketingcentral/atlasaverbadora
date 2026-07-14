@@ -470,7 +470,10 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     // Primeiro-acesso: e o proprio servidor provando que aquele email e dele.
     // Nao respeitar o notifyEmail (override de teste dos perfis admin) — o codigo
     // TEM que ir pro email que o servidor digitou, senao ele nunca recebe.
-    const r = await enviarCodigo(c.env, { destinoPadrao: email, contexto: "ativar seu acesso Atlas", codigo, respeitaOverride: false });
+    const r = await enviarCodigo(c.env, {
+      destinoPadrao: email, contexto: "ativar seu acesso Atlas", codigo, respeitaOverride: false,
+      templateFiltro: { evento: "primeiro_acesso", publico: "servidor" },
+    });
     return c.json({
       enviado: r.sent,
       destino: maskEmail(r.destino || email),
@@ -517,7 +520,11 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     const codigo = await gerarCodigoUnico(c.env);
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`rs:${digits}`, codigo, { expirationTtl: 600 });
     // Esqueci-senha: dono da conta recebe direto. Bypass do notifyEmail global.
-    const r = await enviarCodigo(c.env, { destinoPadrao: s.email, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false });
+    const r = await enviarCodigo(c.env, {
+      destinoPadrao: s.email, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false,
+      templateFiltro: { evento: "recuperar_senha", publico: "servidor" },
+      nome: s.nome,
+    });
     return c.json({
       enviado: r.sent,
       destino: maskEmail(r.destino || s.email),
@@ -537,7 +544,11 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     if (!s) throw Errors.validation({ email: "E-mail errado ou inexistente. Use o e-mail do seu primeiro acesso." });
     const codigo = await gerarCodigoUnico(c.env);
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(`rs:${s.cpf}`, codigo, { expirationTtl: 600 });
-    const r = await enviarCodigo(c.env, { destinoPadrao: s.email, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false });
+    const r = await enviarCodigo(c.env, {
+      destinoPadrao: s.email, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false,
+      templateFiltro: { evento: "recuperar_senha", publico: "servidor" },
+      nome: s.nome,
+    });
     return c.json({
       enviado: r.sent,
       cpf: s.cpf, // o app usa no passo de redefinir
@@ -610,7 +621,10 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     }
     const codigo = await gerarCodigoUnico(c.env);
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.put(kvKey, codigo, { expirationTtl: 600 });
-    const r = await enviarCodigo(c.env, { destinoPadrao: alvoEmail, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false });
+    const r = await enviarCodigo(c.env, {
+      destinoPadrao: alvoEmail, contexto: "redefinir sua senha Atlas", codigo, respeitaOverride: false,
+      templateFiltro: { evento: "recuperar_senha", publico: perfil },
+    });
     return c.json({
       enviado: r.sent,
       destino: maskEmail(r.destino || alvoEmail),

@@ -271,3 +271,35 @@ function extrairVariaveis(s: string): string[] {
   while ((m = re.exec(s)) !== null) out.push(m[1]!);
   return out;
 }
+
+/**
+ * Encontra o template ativo que casa com um filtro. Usado pelos handlers
+ * de fluxo (proposta criada, aprovada, averbada, primeiro acesso, etc.)
+ * pra achar o modelo certo e enviar automaticamente.
+ *
+ * Retorna undefined se nao houver template ativo — o chamador deve cair
+ * no texto hardcoded como fallback (nunca deixar de notificar por falta
+ * de template).
+ */
+export async function findTemplate(env: Env, filtro: {
+  evento: EmailEvento;
+  publico: EmailPublico;
+  simulacaoTipo?: SimulacaoTipo;
+  simulacaoStatus?: SimulacaoStatus;
+  beneficioId?: string;
+}): Promise<EmailTemplate | undefined> {
+  const all = await loadTemplates(env);
+  return all.find((t) => {
+    if (!t.ativo) return false;
+    if (t.evento !== filtro.evento) return false;
+    if (t.publico !== filtro.publico) return false;
+    if (filtro.evento === "simulacao") {
+      if (filtro.simulacaoTipo && t.simulacaoTipo !== filtro.simulacaoTipo) return false;
+      if (filtro.simulacaoStatus && t.simulacaoStatus !== filtro.simulacaoStatus) return false;
+    }
+    if (filtro.evento === "beneficio") {
+      if (filtro.beneficioId && t.beneficioId !== filtro.beneficioId) return false;
+    }
+    return true;
+  });
+}

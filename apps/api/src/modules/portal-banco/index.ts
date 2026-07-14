@@ -11,7 +11,7 @@ import { prefeituras, bancos, pushEvent } from "../admin/index.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
-import { enviarNotificacao } from "../admin/mailer.js";
+import { enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
 import type { ContratoFull } from "./store.js";
 
 function requireBancoRole(j: JwtClaims): void {
@@ -20,7 +20,27 @@ function requireBancoRole(j: JwtClaims): void {
 
 const brlNotif = (n: number) => `R$ ${(Math.round(n * 100) / 100).toFixed(2).replace(".", ",")}`;
 
-/** Notifica o servidor (e-mail, best-effort) sobre uma ação do banco no contrato. */
+/** Mapeia acao do banco -> status do template de simulacao. */
+function acaoToSimStatus(acao: string): "aprovada" | "recusada" | "averbada" | null {
+  if (acao === "aprovar") return "aprovada";
+  if (acao === "cancelar") return "recusada";
+  if (acao === "confirmar") return "averbada";
+  return null;
+}
+
+/** Deriva simulacaoTipo do contrato (EMPRESTIMO | REFIN | ECONSIGNADO). */
+function contratoToSimTipo(ct: ContratoFull): "emprestimo" | "cartao_consignado" | "cartao_beneficio" | "portabilidade" {
+  const t = (ct.tipoContrato ?? "").toUpperCase();
+  if (t === "REFIN") return "portabilidade";
+  if (t === "ECONSIGNADO") {
+    return ct.tipoMargem === "CARTAO_BENEFICIOS" ? "cartao_beneficio" : "cartao_consignado";
+  }
+  return "emprestimo";
+}
+
+/** Notifica o servidor (e-mail, best-effort) sobre uma ação do banco no contrato.
+ *  Fluxo real, tempo real: tenta template editavel primeiro; cai no hardcoded
+ *  como fallback (nunca deixa de notificar por falta de template ativo). */
 function notifyMovimentacao(
   c: { env: Env; executionCtx: { waitUntil(p: Promise<unknown>): void } },
   ct: ContratoFull,
@@ -29,42 +49,70 @@ function notifyMovimentacao(
 ): void {
   const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
   if (!srv?.email) return;
-  const mapa: Record<string, { titulo: string; mensagem: string }> = {
-    aprovar: {
-      titulo: `Proposta ${ct.adf} aprovada`,
-      mensagem: "Boa notícia! O banco aprovou sua proposta. Em breve entrarão em contato pra fechar o contrato — a assinatura acontece presencialmente com o banco.",
-    },
-    confirmar: {
-      titulo: `Proposta ${ct.adf} averbada`,
-      mensagem: "Sua proposta foi averbada. Aguarde a confirmação do desconto em folha pela prefeitura.",
-    },
-    cancelar: {
-      titulo: `Proposta ${ct.adf} recusada`,
-      mensagem: motivo ? `Sua proposta foi recusada pelo banco. Motivo: ${motivo}.` : "Sua proposta foi recusada pelo banco e a margem voltou a ficar disponível.",
-    },
-    suspender: { titulo: `Contrato ${ct.adf} suspenso`, mensagem: motivo ? `Seu contrato foi suspenso. Motivo: ${motivo}.` : "Seu contrato foi suspenso pelo banco." },
-    quitar: { titulo: `Contrato ${ct.adf} quitado`, mensagem: "Seu contrato foi quitado. A margem correspondente foi liberada." },
-    alongar: { titulo: `Contrato ${ct.adf} atualizado`, mensagem: "Seu contrato teve o prazo alterado pelo banco." },
-    alterar: { titulo: `Contrato ${ct.adf} atualizado`, mensagem: "Seu contrato foi atualizado pelo banco." },
+  const srvEmail: string = srv.email;
+
+  const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+  const bancoNome = bancos.find((b) => b.id === ct.bancoId)?.nome ?? `Banco ${ct.bancoId}`;
+  const vars: Record<string, string> = {
+    nome: ct.nome,
+    matricula: ct.matricula,
+    prefeitura: conv?.prefeitura ?? "",
+    adf: ct.adf,
+    banco: bancoNome,
+    valor: brlNotif(ct.valorFinanciado),
+    parcelas: String(ct.totalParcelas),
+    valorParcela: brlNotif(ct.valorParcela),
+    motivo: motivo ?? "não informado",
+    contract_name: `CCB-${new Date().getFullYear()}-${ct.adf}`,
   };
-  const info = mapa[acao];
-  if (!info) return;
-  const p = enviarNotificacao(c.env, {
-    destinoPadrao: srv.email,
-    titulo: info.titulo,
-    mensagem: info.mensagem,
-    detalhes: [
-      { label: "Banco", valor: ct.convenio ?? "Banco Atlas" },
-      { label: "Valor", valor: brlNotif(ct.valorFinanciado) },
-      { label: "Parcela", valor: `${ct.totalParcelas}x de ${brlNotif(ct.valorParcela)}` },
-      { label: "Situação", valor: ct.situacao },
-    ],
-  });
-  try {
-    c.executionCtx.waitUntil(p);
-  } catch {
-    void p;
-  }
+
+  const simStatus = acaoToSimStatus(acao);
+  const p = (async () => {
+    // 1) Tenta template editavel do consultor (/averbadora/emails).
+    if (simStatus) {
+      const r = await dispatchTemplateEmail(
+        c.env,
+        { evento: "simulacao", publico: "servidor", simulacaoTipo: contratoToSimTipo(ct), simulacaoStatus: simStatus },
+        srvEmail,
+        vars,
+      );
+      if (r.usouTemplate) return; // enviou via template, fim.
+    }
+    // 2) Fallback hardcoded (acoes sem template: suspender/quitar/alongar/alterar
+    //    e casos onde nao ha template ativo pro (tipo, status) especifico).
+    const mapa: Record<string, { titulo: string; mensagem: string }> = {
+      aprovar: {
+        titulo: `Proposta ${ct.adf} aprovada`,
+        mensagem: "Boa notícia! O banco aprovou sua proposta. Em breve entrarão em contato pra fechar o contrato — a assinatura acontece presencialmente com o banco.",
+      },
+      confirmar: {
+        titulo: `Proposta ${ct.adf} averbada`,
+        mensagem: "Sua proposta foi averbada. Aguarde a confirmação do desconto em folha pela prefeitura.",
+      },
+      cancelar: {
+        titulo: `Proposta ${ct.adf} recusada`,
+        mensagem: motivo ? `Sua proposta foi recusada pelo banco. Motivo: ${motivo}.` : "Sua proposta foi recusada pelo banco e a margem voltou a ficar disponível.",
+      },
+      suspender: { titulo: `Contrato ${ct.adf} suspenso`, mensagem: motivo ? `Seu contrato foi suspenso. Motivo: ${motivo}.` : "Seu contrato foi suspenso pelo banco." },
+      quitar: { titulo: `Contrato ${ct.adf} quitado`, mensagem: "Seu contrato foi quitado. A margem correspondente foi liberada." },
+      alongar: { titulo: `Contrato ${ct.adf} atualizado`, mensagem: "Seu contrato teve o prazo alterado pelo banco." },
+      alterar: { titulo: `Contrato ${ct.adf} atualizado`, mensagem: "Seu contrato foi atualizado pelo banco." },
+    };
+    const info = mapa[acao];
+    if (!info) return;
+    await enviarNotificacao(c.env, {
+      destinoPadrao: srvEmail,
+      titulo: info.titulo,
+      mensagem: info.mensagem,
+      detalhes: [
+        { label: "Banco", valor: bancoNome },
+        { label: "Valor", valor: brlNotif(ct.valorFinanciado) },
+        { label: "Parcela", valor: `${ct.totalParcelas}x de ${brlNotif(ct.valorParcela)}` },
+        { label: "Situação", valor: ct.situacao },
+      ],
+    });
+  })();
+  try { c.executionCtx.waitUntil(p); } catch { void p; }
 }
 
 /**

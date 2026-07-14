@@ -28,7 +28,7 @@ import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
-import { sendMail, enviarNotificacao, movimentacaoEmail } from "./mailer.js";
+import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -2413,8 +2413,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     appendAudit({ categoria: "margem", acao: "adf_aplicada_admin", userId: ator, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
     // Notifica cada servidor por email (best-effort — nunca quebra a request).
-    // Fecha o loop end-to-end: banco aprovou -> averbadora aplicou em folha ->
-    // servidor recebe "seu contrato foi averbado, recurso liberado".
+    // Tenta template editavel /averbadora/emails/simulacao (averbada) primeiro;
+    // fallback hardcoded se nao houver template ativo.
     for (const adf of adfs) {
       const ct = getContrato(adf);
       if (!ct) continue;
@@ -2422,17 +2422,40 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (!srv?.email) continue;
       const brl = (n: number) => `R$ ${(Math.round(n * 100) / 100).toFixed(2).replace(".", ",")}`;
       const bancoNome = bancos.find((b) => b.id === ct.bancoId)?.nome ?? `Banco ${ct.bancoId}`;
-      const p = enviarNotificacao(c.env, {
-        destinoPadrao: srv.email,
-        titulo: `Contrato ${adf} averbado`,
-        mensagem: "Sua averbacao foi confirmada em folha pela prefeitura. O recurso ja pode ser liberado pelo banco conforme o combinado.",
-        detalhes: [
-          { label: "Banco", valor: bancoNome },
-          { label: "Valor financiado", valor: brl(ct.valorFinanciado) },
-          { label: "Parcela", valor: `${ct.totalParcelas}x de ${brl(ct.valorParcela)}` },
-          { label: "Situacao", valor: "Averbada / Liberada" },
-        ],
-      });
+      const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+      const simTipo: "emprestimo" | "cartao_consignado" | "cartao_beneficio" | "portabilidade" = (() => {
+        const t = (ct.tipoContrato ?? "").toUpperCase();
+        if (t === "REFIN") return "portabilidade";
+        if (t === "ECONSIGNADO") return ct.tipoMargem === "CARTAO_BENEFICIOS" ? "cartao_beneficio" : "cartao_consignado";
+        return "emprestimo";
+      })();
+      const vars: Record<string, string> = {
+        nome: ct.nome, matricula: ct.matricula, prefeitura: conv?.prefeitura ?? "",
+        adf, banco: bancoNome, valor: brl(ct.valorFinanciado),
+        parcelas: String(ct.totalParcelas), valorParcela: brl(ct.valorParcela),
+        contract_name: `CCB-${new Date().getFullYear()}-${adf}`,
+      };
+      const p = (async () => {
+        const r = await dispatchTemplateEmail(
+          c.env,
+          { evento: "simulacao", publico: "servidor", simulacaoTipo: simTipo, simulacaoStatus: "averbada" },
+          srv.email!,
+          vars,
+        );
+        if (r.usouTemplate) return;
+        // Fallback
+        await enviarNotificacao(c.env, {
+          destinoPadrao: srv.email,
+          titulo: `Contrato ${adf} averbado`,
+          mensagem: "Sua averbacao foi confirmada em folha pela prefeitura. O recurso ja pode ser liberado pelo banco conforme o combinado.",
+          detalhes: [
+            { label: "Banco", valor: bancoNome },
+            { label: "Valor financiado", valor: brl(ct.valorFinanciado) },
+            { label: "Parcela", valor: `${ct.totalParcelas}x de ${brl(ct.valorParcela)}` },
+            { label: "Situacao", valor: "Averbada / Liberada" },
+          ],
+        });
+      })();
       try { c.executionCtx.waitUntil(p); } catch { void p; }
     }
     return c.json({ aplicadas: adfs.length });
