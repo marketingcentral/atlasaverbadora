@@ -1281,6 +1281,9 @@ export class AtlasClient {
       this.request<{ propostas: {
         id: string; banco: string; valor: number; parcelas: number; parcela: number; taxaAm: number;
         situacao: string; tipoContrato?: string;
+        /** Bucket de margem — distingue Cartao Consignado de Cartao Beneficio
+         *  quando tipoContrato=ECONSIGNADO. Valores: EMPRESTIMO | CARTAO_CONSIGNADO | CARTAO_BENEFICIOS. */
+        tipoMargem?: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS";
         /** Dados da portabilidade (quando REFIN — o banco intenciona substituir o contrato). */
         bancoOrigem?: string; contratoOrigem?: string; saldoDevedorOrigem?: number;
         folhaStatus?: "recebida" | "aplicada" | "falha"; folhaMotivo?: string;

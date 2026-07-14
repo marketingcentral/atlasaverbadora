@@ -16,6 +16,12 @@ export interface ContratoMock {
   taxaAm: number;
   valorFinanciado: number;
   pdfUrl: string;
+  /** Tipo do contrato no backend: EMPRESTIMO | REFIN | ECONSIGNADO.
+   *  Usado pelo card em /servidor/contratos pra rotular o produto correto. */
+  tipoContrato?: "EMPRESTIMO" | "REFIN" | "ECONSIGNADO";
+  /** Bucket de margem: distingue Cartao Consignado (CARTAO_CONSIGNADO) de
+   *  Cartao Beneficio (CARTAO_BENEFICIOS) — ambos tem tipoContrato=ECONSIGNADO. */
+  tipoMargem?: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS";
 }
 
 export interface ContratoElegivelMock {

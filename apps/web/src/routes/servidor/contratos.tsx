@@ -37,13 +37,18 @@ function mapSituacao(situacao: string): EstadoProposta {
   return "em_analise";
 }
 
-/** Label do produto pro card do servidor. tipoContrato vem do backend
- *  (EMPRESTIMO | REFIN | ECONSIGNADO). Fallback pra "Empréstimo consignado"
- *  se vier undefined (dado antigo antes deste campo existir). */
-function mapProduto(tipoContrato: string | undefined): string {
+/** Label do produto pro card do servidor. tipoContrato + tipoMargem vem
+ *  do backend. Distingue os 4 casos:
+ *   - REFIN                                      -> Portabilidade
+ *   - ECONSIGNADO + tipoMargem=CARTAO_BENEFICIOS -> Cartao Beneficio
+ *   - ECONSIGNADO (default)                      -> Cartao Consignado
+ *   - EMPRESTIMO / undefined                     -> Emprestimo Consignado */
+function mapProduto(tipoContrato: string | undefined, tipoMargem?: string): string {
   const t = (tipoContrato ?? "").toUpperCase();
   if (t === "REFIN") return "Portabilidade";
-  if (t === "ECONSIGNADO") return "Cartão consignado";
+  if (t === "ECONSIGNADO") {
+    return tipoMargem === "CARTAO_BENEFICIOS" ? "Cartão benefício" : "Cartão consignado";
+  }
   return "Empréstimo consignado";
 }
 
@@ -57,12 +62,23 @@ const ESTADO_LABEL: Record<EstadoProposta, string> = {
   liberada: "Averbada — virou contrato",
 };
 
-/** Rotulo do produto no card do contrato. ContratoMock nao tem tipoContrato
- *  explicito; deduz por substring no nome do banco (compat com codigo antigo:
- *  banco com "refin" no nome ⇒ Portabilidade). Quando o backend passar a mandar
- *  tipoContrato no contrato, so trocar por mapProduto(c.tipoContrato). */
-function produtoContratoLabel(banco: string): string {
-  if (banco.toLowerCase().includes("refin")) return "Portabilidade";
+/** Rotulo do produto no card do contrato. Usa tipoContrato + tipoMargem do
+ *  backend pra distinguir os 4 casos:
+ *   - REFIN                                      -> Portabilidade
+ *   - ECONSIGNADO + tipoMargem=CARTAO_BENEFICIOS -> Cartao Beneficio
+ *   - ECONSIGNADO (default)                      -> Cartao Consignado
+ *   - EMPRESTIMO / default                       -> Emprestimo Consignado
+ *  Fallback pra contratos antigos sem esses campos: olha substring no banco
+ *  (compat com codigo antes do backend expor tipoContrato/tipoMargem). */
+function produtoContratoLabel(c: { tipoContrato?: string; tipoMargem?: string; banco: string }): string {
+  const t = (c.tipoContrato ?? "").toUpperCase();
+  if (t === "REFIN") return "Portabilidade";
+  if (t === "ECONSIGNADO") {
+    return c.tipoMargem === "CARTAO_BENEFICIOS" ? "Cartão benefício" : "Cartão consignado";
+  }
+  if (t === "EMPRESTIMO") return "Empréstimo consignado";
+  // Fallback dado antigo — nao tinha tipoContrato exposto no payload
+  if (c.banco.toLowerCase().includes("refin")) return "Portabilidade";
   return "Empréstimo consignado";
 }
 
@@ -129,7 +145,7 @@ export function ServidorContratos() {
       // tipoContrato do backend: EMPRESTIMO | REFIN | ECONSIGNADO.
       // Usado pra mostrar "Empréstimo / Portabilidade / Cartão" no card
       // (senao o servidor nao sabe pra qual produto e a proposta).
-      produto: mapProduto(p.tipoContrato),
+      produto: mapProduto(p.tipoContrato, p.tipoMargem),
       valor: p.valor,
       parcelas: p.parcelas,
       parcela: p.parcela,
@@ -341,7 +357,7 @@ export function ServidorContratos() {
             {filtered.map((c) => {
               const pct = (c.parcelasPagas / c.total) * 100;
               const quitado = c.status === "Quitado";
-              const produto = produtoContratoLabel(c.banco);
+              const produto = produtoContratoLabel(c);
               return (
                 <Card key={c.id}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>

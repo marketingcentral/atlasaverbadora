@@ -147,6 +147,11 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
       id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
       total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: ct.folhaUltimoDesconto || "—",
       taxaAm: ct.taxaAm, valorFinanciado: round2(ct.valorFinanciado), pdfUrl: `/v1/portal/banco/contratos/${ct.adf}/comprovante.pdf`,
+      // Rotula corretamente o card no /servidor/contratos: sem esses campos
+      // o front nao distingue Cartao Consignado / Cartao Beneficio / Portabilidade
+      // e caia tudo em "Emprestimo consignado" (fallback antigo).
+      tipoContrato: ct.tipoContrato,
+      tipoMargem: ct.tipoMargem ?? deriveTipoMargem(ct),
     }));
   const elegiveis = ativos.map((ct) => ({
     id: ct.adf, banco: bancoNome(ct.bancoId), saldoDevedor: round2(ct.saldoDevedor), parcela: round2(ct.valorParcela),
@@ -805,6 +810,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         taxaAm: round2(ct.taxaAm * 100),
         situacao: ct.situacao,
         tipoContrato: ct.tipoContrato,
+        // Bucket de margem — permite o front distinguir Cartao Consignado
+        // (CARTAO_CONSIGNADO) de Cartao Beneficio (CARTAO_BENEFICIOS) quando
+        // tipoContrato=ECONSIGNADO.
+        tipoMargem: ct.tipoMargem ?? deriveTipoMargem(ct),
         // Dados de portabilidade (quando a proposta e' um REFIN vindo de outro banco)
         bancoOrigem: ct.bancoOrigem,
         contratoOrigem: ct.contratoOrigem,
