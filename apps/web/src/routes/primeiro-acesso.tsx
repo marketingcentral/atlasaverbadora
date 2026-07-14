@@ -188,7 +188,7 @@ export function PrimeiroAcessoPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="voce@gmail.com"
+                placeholder="você@gmail.com"
                 autoComplete="email"
                 required
               />

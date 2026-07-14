@@ -119,7 +119,7 @@ export function ServidorTermo() {
               border: "1px solid var(--gold-500)", color: "var(--text)", fontSize: ".88rem", lineHeight: 1.5,
             }}
           >
-            <b>Proxima etapa:</b> voce recebera uma notificacao quando o {banco} responder a analise. Caso a proposta seja
+            <b>Próxima etapa:</b> voce recebera uma notificacao quando o {banco} responder a analise. Caso a proposta seja
             aprovada, o proprio {banco} entrara em contato para formalizar o contrato — a assinatura acontece direto com o banco (telefone, e-mail ou app do banco).
           </div>
 
@@ -138,7 +138,7 @@ export function ServidorTermo() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720, margin: "0 auto", width: "100%" }}>
       <header>
         <span className="eyebrow">Pre-reserva de margem</span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Termo de autorizacao</h1>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Termo de autorização</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6 }}>
           Leia e autorize a averbacao da sua margem para esta operacao. A margem ficara travada para o banco abaixo
           pelo prazo de <b>{prazo.label}</b>.
@@ -146,9 +146,9 @@ export function ServidorTermo() {
       </header>
 
       <Card>
-        <h3 style={{ marginTop: 0 }}>Detalhes da operacao</h3>
+        <h3 style={{ marginTop: 0 }}>Detalhes da operação</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px", marginTop: 12 }}>
-          <ReadField label="Operacao" value={tipoLabel} />
+          <ReadField label="Operação" value={tipoLabel} />
           <ReadField label="Banco" value={banco} />
           <ReadField label="Valor liberado" value={fmtBRL(valor)} accent />
           <ReadField label="Parcelas" value={`${parcelas}x de ${fmtBRL(parcela)}`} />
@@ -158,7 +158,7 @@ export function ServidorTermo() {
       </Card>
 
       <Card>
-        <h3 style={{ marginTop: 0 }}>Termo de autorizacao</h3>
+        <h3 style={{ marginTop: 0 }}>Termo de autorização</h3>
         <div
           style={{
             maxHeight: 280, overflow: "auto", padding: 16,
@@ -193,7 +193,7 @@ export function ServidorTermo() {
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".92rem", marginTop: 16, cursor: "pointer" }}>
           <input type="checkbox" checked={aceito} onChange={(e) => setAceito(e.target.checked)} />
-          Li, entendi e <b>aceito o termo de autorizacao</b>
+          Li, entendi e <b>aceito o termo de autorização</b>
         </label>
       </Card>
 

@@ -36,7 +36,19 @@ export function PrefeituraAdf() {
     { key: "cpfMasked", header: "CPF", mono: true },
     { key: "nome", header: "Servidor" },
     { key: "bancoNome", header: "Banco" },
-    { key: "valorParcela", header: "Parcela", align: "right", render: (a) => fmtBRL(a.valorParcela) },
+    {
+      key: "valorParcela",
+      header: "Parcela",
+      align: "right",
+      render: (a) => (
+        <span>
+          {fmtBRL(a.valorParcela)}
+          <span style={{ color: "var(--text-muted)", marginLeft: 6, fontSize: 12 }}>
+            × {a.totalParcelas}x
+          </span>
+        </span>
+      ),
+    },
     { key: "status", header: "Status", render: (a) => <Pill variant={a.status === "aplicada" ? "averbado" : a.status === "falha" ? "expirado" : "pendente"}>{a.status}</Pill> },
   ];
 

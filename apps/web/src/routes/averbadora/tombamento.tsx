@@ -177,7 +177,7 @@ function ImportModal({
           value={csv}
           onChange={(e) => setCsv(e.target.value)}
           rows={10}
-          placeholder="cpf,matricula,nome,banco,numeroContrato,valorParcela,totalParcelas,parcelasRestantes,valorEmprestimo,status,motivo,tipo"
+          placeholder="cpf,matrícula,nome,banco,numeroContrato,valorParcela,totalParcelas,parcelasRestantes,valorEmprestimo,status,motivo,tipo"
           style={{
             background: "var(--bg-elev)", border: "1px solid var(--border-strong)",
             borderRadius: 10, padding: 12, color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: 13,

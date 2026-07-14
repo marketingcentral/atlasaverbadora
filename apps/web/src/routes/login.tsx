@@ -46,7 +46,7 @@ export function LoginPage() {
       const res = await atlas.verify2fa(pending.mfa_token, codigo.replace(/\D/g, ""));
       finalize(res.role);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Codigo invalido");
+      setError(err instanceof Error ? err.message : "Código inválido");
     } finally {
       setLoading(false);
     }
@@ -71,7 +71,7 @@ export function LoginPage() {
           <AtlasLogo height={96} />
           <div style={{ fontSize: ".82rem", color: "var(--text-dim)" }}>
             {pending
-              ? "Verificacao em duas etapas"
+              ? "Verificação em duas etapas"
               : "Entre com seu CPF (servidor) ou e-mail (banco / averbadora / prefeitura)"}
           </div>
         </div>
@@ -79,10 +79,10 @@ export function LoginPage() {
         {pending ? (
           <form onSubmit={submit2FA} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <p style={{ margin: 0, fontSize: ".9rem", color: "var(--text-muted)" }}>
-              {pending.hint ?? "Informe o codigo de 6 digitos do seu aplicativo autenticador."}
+              {pending.hint ?? "Informe o código de 6 dígitos do seu aplicativo autenticador."}
             </p>
             <Input
-              label="Codigo 2FA"
+              label="Código 2FA"
               value={codigo}
               onChange={(e) => setCodigo(e.target.value.replace(/\D/g, "").slice(0, 6))}
               placeholder="000000"
@@ -112,7 +112,7 @@ export function LoginPage() {
               label="CPF ou e-mail"
               value={identifier}
               onChange={(e) => setId(e.target.value)}
-              placeholder="000.111.222-33 ou voce@empresa.com"
+              placeholder="000.111.222-33 ou você@empresa.com"
               autoComplete="username"
               required
             />

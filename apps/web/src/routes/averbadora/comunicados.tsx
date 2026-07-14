@@ -340,7 +340,7 @@ function ComunicadoModal({
             label="URL do link (opcional)"
             value={form.linkHref}
             onChange={(e) => setForm({ ...form, linkHref: e.target.value })}
-            placeholder="Ex.: /banco/cadastros/tabela-emprestimos"
+            placeholder="Ex.: /banco/cadastros/tabela-empréstimos"
           />
         </FormGrid>
         {save.isError ? (

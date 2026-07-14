@@ -248,7 +248,7 @@ export function ServidorPortabilidade() {
             {economia > 0 ? (
               <KV label="Economia / parcela" v={`- ${fmtBRL(economia)}`} accent />
             ) : (
-              <KV label="Diferenca" v={`+ ${fmtBRL(Math.abs(economia))}`} muted />
+              <KV label="Diferença" v={`+ ${fmtBRL(Math.abs(economia))}`} muted />
             )}
           </div>
           <p style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 12, marginBottom: 16 }}>

@@ -332,7 +332,7 @@ function SmtpSection() {
           placeholder={cfg?.hasPassword ? "••••••••" : "senha SMTP"}
           autoComplete="off"
         />
-        <Input label="E-mail remetente (from)" value={form.fromEmail} onChange={(e) => setForm({ ...form, fromEmail: e.target.value })} placeholder="voce@gmail.com" autoComplete="off" spellCheck={false} />
+        <Input label="E-mail remetente (from)" value={form.fromEmail} onChange={(e) => setForm({ ...form, fromEmail: e.target.value })} placeholder="você@gmail.com" autoComplete="off" spellCheck={false} />
         <Input label="Nome remetente" value={form.fromName} onChange={(e) => setForm({ ...form, fromName: e.target.value })} placeholder="Atlas Averbadora" />
       </div>
 
@@ -394,7 +394,7 @@ function SmtpSection() {
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 260px" }}>
-              <Input label="E-mail para receber o teste" type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="voce@email.com" autoComplete="off" spellCheck={false} />
+              <Input label="E-mail para receber o teste" type="email" value={testTo} onChange={(e) => setTestTo(e.target.value)} placeholder="você@email.com" autoComplete="off" spellCheck={false} />
             </div>
             <Button variant="ghost" onClick={() => testar.mutate()} disabled={!/^\S+@\S+\.\S+$/.test(testTo.trim()) || testar.isPending}>
               {testar.isPending ? "Enviando…" : "✉ Enviar teste"}

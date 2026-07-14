@@ -61,7 +61,7 @@ export function ServidorSimular() {
         </h1>
         <p style={{ color: "var(--text-muted)" }}>
           {info ? (
-            <>Simulando para a matricula <b>{info.matricula}</b> ({info.prefeitura}). </>
+            <>Simulando para a matrícula <b>{info.matricula}</b> ({info.prefeitura}). </>
           ) : null}
           {produto === "emprestimo"
             ? "Ajuste valor e parcelas para encontrar a melhor opção."

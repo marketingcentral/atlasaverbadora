@@ -86,7 +86,7 @@ export function ServidorSelecionarMatricula() {
       </header>
 
       <main style={{ flex: 1, padding: "48px 24px", maxWidth: 720, width: "100%", margin: "0 auto" }}>
-        <span className="eyebrow">Selecione sua matricula</span>
+        <span className="eyebrow">Selecione sua matrícula</span>
         <h1 style={{ margin: "8px 0 0", fontSize: "1.8rem", letterSpacing: "-.02em" }}>
           Voce tem mais de uma matricula
         </h1>

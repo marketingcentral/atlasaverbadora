@@ -393,7 +393,7 @@ function ImportModal({
             value={pasted}
             onChange={(e) => setPasted(e.target.value)}
             rows={6}
-            placeholder="cpf,matricula,nome,..."
+            placeholder="cpf,matrícula,nome,..."
             style={{ width: "100%", marginTop: 6, padding: 10, fontFamily: "var(--font-mono)", fontSize: 12, background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border-strong)", borderRadius: 8 }}
           />
           <Button size="sm" onClick={() => checkAndMaybeImport(pasted)} disabled={importMut.isPending || !pasted.trim()} style={{ marginTop: 8 }}>
