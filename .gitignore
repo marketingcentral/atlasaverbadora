@@ -11,7 +11,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 #Claude
 *.claude
-specs
 mcp-servers
 integracao_exemplo
 breafing_base_concorrentes
