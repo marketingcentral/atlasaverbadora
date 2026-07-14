@@ -10,10 +10,17 @@ import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
-type Categoria = "todos" | "alimentacao" | "educacao" | "lazer";
+// Cliente pediu (14/07/2026): aba Beneficios com mais categorias — academia,
+// farmacia, super mercado, alem das existentes. Todas sao beneficios do Atlas
+// (parceiros negociados), nao cartao beneficio.
+type Categoria = "todos" | "alimentacao" | "farmacia" | "supermercado" | "academia" | "saude" | "educacao" | "lazer";
 
 const CATEGORIAS: { id: Categoria; label: string }[] = [
   { id: "todos", label: "Todos" },
+  { id: "farmacia", label: "Farmácia" },
+  { id: "supermercado", label: "Supermercado" },
+  { id: "academia", label: "Academia" },
+  { id: "saude", label: "Saúde" },
   { id: "alimentacao", label: "Alimentação" },
   { id: "educacao", label: "Educação" },
   { id: "lazer", label: "Lazer" },
@@ -43,9 +50,11 @@ export function ServidorBeneficios() {
     refetchOnWindowFocus: true,
     enabled: !!info?.matricula,
   });
+  // Todos os beneficios exceto telemedicina puro (esse aparece em banner separado
+  // no topo da tela). Um beneficio com telemedicina + outra categoria aparece nos dois.
   const parceiros = useMemo(
     () => (beneficiosQ.data?.beneficios ?? []).filter((p) =>
-      p.categorias.some((c) => c === "alimentacao" || c === "educacao" || c === "lazer"),
+      p.categorias.some((c) => c !== "telemedicina"),
     ),
     [beneficiosQ.data],
   );
@@ -99,6 +108,8 @@ export function ServidorBeneficios() {
           ))}
         </div>
       </header>
+
+      <TelemedicinaBanner beneficios={beneficiosQ.data?.beneficios ?? []} />
 
       {/* Parceiros comerciais */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -332,5 +343,46 @@ function Stat({ label, value, accent, muted }: { label: string; value: string; a
         {value}
       </div>
     </div>
+  );
+}
+
+/** Banner destacado de Telemedicina — aparece no topo da aba Beneficios,
+ *  linkando pra pagina exclusiva de saude/telemedicina se houver beneficios
+ *  dessa categoria pra o servidor. */
+function TelemedicinaBanner({ beneficios }: { beneficios: ServidorBeneficio[] }) {
+  const nav = useNavigate();
+  const temTelemedicina = beneficios.some((b) => b.categorias.includes("telemedicina"));
+  if (!temTelemedicina) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => nav("/servidor/saude")}
+      style={{
+        background: "linear-gradient(135deg, var(--accent) 0%, var(--gold-500) 100%)",
+        border: "none",
+        borderRadius: 14,
+        padding: 20,
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        cursor: "pointer",
+        boxShadow: "var(--shadow-md)",
+        color: "white",
+        textAlign: "left",
+        width: "100%",
+      }}
+    >
+      <div style={{ fontSize: 42 }}>📱</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 700, opacity: 0.9, textTransform: "uppercase" }}>
+          Benefício Atlas
+        </div>
+        <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>Telemedicina 24h grátis</div>
+        <div style={{ fontSize: 13, opacity: 0.92, marginTop: 4 }}>
+          Consultas online com médicos parceiros, sem custo. Toque pra ver.
+        </div>
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 800 }}>→</div>
+    </button>
   );
 }

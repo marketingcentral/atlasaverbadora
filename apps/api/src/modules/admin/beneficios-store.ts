@@ -8,7 +8,9 @@
 import type { Env } from "../../env.js";
 import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
 
-export type CategoriaBeneficio = "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina";
+export type CategoriaBeneficio =
+  | "saude" | "alimentacao" | "educacao" | "lazer" | "telemedicina"
+  | "academia" | "farmacia" | "supermercado";
 export type ModoImagens = "nenhum" | "unica" | "carrossel";
 export interface LinkAcessoBeneficio {
   url: string;

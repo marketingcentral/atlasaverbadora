@@ -10,7 +10,8 @@ import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib
 const PRODUTO_LABEL: Record<string, string> = {
   EMPRESTIMO: "Empréstimo Consignado",
   CARTAO_CONSIGNADO: "Cartão de Crédito Consignado",
-  CARTAO_BENEFICIOS: "Cartão Benefício Consignado",
+  // Cartao Beneficio NAO entra no app do servidor — decisao do cliente
+  // (14/07/2026). Os beneficios sao do Atlas, direto via aba Beneficios.
 };
 
 const fmtBRL = (n: number) =>
@@ -110,8 +111,14 @@ export function ServidorDashboard() {
         </div>
       </header>
 
-      {/* 3 cards de margem lado a lado — botao de acao em cada. */}
+      {/* 2 cards de margem lado a lado — botao de acao em cada.
+          Cartao Beneficio removido do app (decisao cliente 14/07/2026). */}
       <MinhaMargemPorModalidade info={info} />
+
+      {/* Banner destacado de Beneficios do Atlas. Cliente pediu (14/07/2026):
+          "banner no inicio do app" apontando pra aba Beneficios com farmacia,
+          academia, supermercado, telemedicina — tudo negociado pela Atlas. */}
+      <BeneficiosBanner />
 
       {/* Carrossel de comunicados/vitrine da averbadora — publico=servidor.
           Cliente pediu explicitamente o carrossel NO MEIO, entre os cards de
@@ -147,13 +154,13 @@ export function ServidorDashboard() {
  *  do colega: cliente aprovou o formato — mantido como esta. */
 function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
   const porTipo = new Map(info.margem.margens_por_tipo.map((m) => [m.tipo, m]));
-  const ordem = ["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const;
+  // Cartao Beneficio nao aparece no app do servidor — decisao do cliente
+  // (14/07/2026). Os beneficios sao do Atlas via aba Beneficios.
+  const ordem = ["EMPRESTIMO", "CARTAO_CONSIGNADO"] as const;
   const linhas = ordem.map((t) => porTipo.get(t) ?? { tipo: t, total: 0, disponivel: 0 });
 
   return (
     <article style={{
-      // Tokens semanticos (surface + border) adaptam sozinhos ao tema
-      // claro/escuro. Antes era navy fixo, ficava incoerente no tema claro.
       background: "var(--surface-solid)",
       border: "1px solid var(--border-strong)",
       borderRadius: 16,
@@ -161,7 +168,7 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
       color: "var(--text)",
       boxShadow: "var(--shadow-md)",
     }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16 }}>
         {linhas.map((m) => (
           <MargemCard key={m.tipo} data={m} />
         ))}
@@ -173,10 +180,8 @@ function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
 const ACAO_POR_TIPO: Record<string, { label: string; href: string } | undefined> = {
   EMPRESTIMO: { label: "Simular →", href: "/servidor/simular?produto=emprestimo" },
   CARTAO_CONSIGNADO: { label: "Simular →", href: "/servidor/simular?produto=cartao_consignado" },
-  // Cartao Beneficio nao simula — vai direto pro Marketplace principal
-  // (/servidor/marketplace/portabilidade), que ja mostra Ofertas + bloco
-  // "Solicitar portabilidade" — mesma pagina do link "MarketPlace" no menu superior.
-  CARTAO_BENEFICIOS: { label: "Ver ofertas →", href: "/servidor/marketplace/portabilidade" },
+  // CARTAO_BENEFICIOS foi removido do app do servidor (decisao cliente 14/07/2026).
+  // Beneficios sao do Atlas via aba Beneficios.
 };
 
 function MargemCard({ data }: { data: { tipo: string; total: number; disponivel: number } }) {
@@ -305,6 +310,44 @@ function AtalhoCard({
       >
         Ver mais →
       </span>
+    </button>
+  );
+}
+
+/** Banner destacado apontando pra aba Beneficios (farmacia, academia,
+ *  supermercado, telemedicina) — todos beneficios negociados pela Atlas. */
+function BeneficiosBanner() {
+  const nav = useNavigate();
+  return (
+    <button
+      type="button"
+      onClick={() => nav("/servidor/beneficios")}
+      style={{
+        background: "linear-gradient(135deg, #7C3AED 0%, #EC4899 100%)",
+        border: "none",
+        borderRadius: 16,
+        padding: 22,
+        display: "flex",
+        alignItems: "center",
+        gap: 18,
+        cursor: "pointer",
+        boxShadow: "var(--shadow-md)",
+        color: "white",
+        textAlign: "left",
+        width: "100%",
+      }}
+    >
+      <div style={{ fontSize: 48 }}>🎁</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 700, opacity: 0.9, textTransform: "uppercase" }}>
+          Benefícios Atlas
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 800, marginTop: 2 }}>Descontos em farmácia, academia, supermercado e mais</div>
+        <div style={{ fontSize: 13, opacity: 0.95, marginTop: 6 }}>
+          Parceiros negociados pela Atlas na sua cidade. Sem cartão, sem burocracia — só apresentar sua matrícula.
+        </div>
+      </div>
+      <div style={{ fontSize: 26, fontWeight: 800 }}>→</div>
     </button>
   );
 }

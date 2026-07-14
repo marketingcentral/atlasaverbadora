@@ -4,7 +4,9 @@ import { Card, Pill } from "@atlas/ui/web";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
-type TipoMargem = "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS";
+// Cartao Beneficio nao entra no app do servidor (decisao cliente 14/07/2026).
+// Os beneficios sao do Atlas via aba Beneficios (parceiros locais + telemedicina).
+type TipoMargem = "EMPRESTIMO" | "CARTAO_CONSIGNADO";
 
 const MODALIDADES: { id: TipoMargem; nome: string; descricao: string; icone: string }[] = [
   {
@@ -21,13 +23,6 @@ const MODALIDADES: { id: TipoMargem; nome: string; descricao: string; icone: str
       "Cartão de crédito com limite exclusivo. A fatura mensal é descontada em folha, sem risco de inadimplência. Alguns municípios oferecem tabelas exclusivas.",
     icone: "💳",
   },
-  {
-    id: "CARTAO_BENEFICIOS",
-    nome: "Cartão Benefício Consignado",
-    descricao:
-      "Cartão específico para saúde e bem-estar (farmácias, mercados, óticas, telemedicina). A fatura é descontada em folha, como o cartão consignado, mas com uso restrito a benefícios.",
-    icone: "🎁",
-  },
 ];
 
 const fmtBRL = (n: number) =>
@@ -41,7 +36,6 @@ function contratosDaModalidade(info: MatriculaInfo, tipo: TipoMargem) {
     const isRefin = bancoLower.includes("refin");
     if (tipo === "EMPRESTIMO") return !bancoLower.includes("cart") && !bancoLower.includes("benef") || isRefin;
     if (tipo === "CARTAO_CONSIGNADO") return bancoLower.includes("cart") && !bancoLower.includes("benef");
-    if (tipo === "CARTAO_BENEFICIOS") return bancoLower.includes("benef");
     return false;
   });
 }
@@ -238,18 +232,18 @@ export function ServidorMinhaMargem() {
                     : "Quer ativar este produto?"}
               </div>
               <div style={{ fontSize: 13, color: "var(--text-muted)" }}>
-                Você tem <b style={{ color: "var(--emerald-500)" }}>{fmtBRL(dados.disponivel)}</b> disponível nesta modalidade. {tab === "CARTAO_BENEFICIOS" ? "Veja as ofertas dos bancos parceiros." : "As ofertas dos bancos parceiros aparecem abaixo do simulador."}
+                Você tem <b style={{ color: "var(--emerald-500)" }}>{fmtBRL(dados.disponivel)}</b> disponível nesta modalidade. As ofertas dos bancos parceiros aparecem abaixo do simulador.
               </div>
             </div>
             <button
               type="button"
-              onClick={() => nav(tab === "CARTAO_BENEFICIOS" ? "/servidor/marketplace" : "/servidor/simular")}
+              onClick={() => nav("/servidor/simular")}
               style={{
                 padding: "10px 18px", borderRadius: 10, border: "none",
                 background: "var(--emerald-500)", color: "white", fontWeight: 700, cursor: "pointer",
               }}
             >
-              {tab === "CARTAO_BENEFICIOS" ? "Ver ofertas →" : "Simular →"}
+              Simular →
             </button>
           </div>
         </Card>

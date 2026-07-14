@@ -37,17 +37,17 @@ export function ServidorSimular() {
   const taxaAmDefault = useMemo(() => num(sp.get("taxa"), 1.79) / 100, [sp]);
   // ?produto=X → tela dedicada por tipo. Sem tabs no SimuladorInline: cada
   // botao "Simular" do dashboard aponta pra esta URL com o produto certo.
-  const produto = useMemo<"emprestimo" | "cartao_consignado" | "cartao_beneficio">(() => {
+  // Cartao Beneficio nao entra no app do servidor (decisao cliente 14/07/2026).
+  // Se ?produto=cartao_beneficio chegar, faz fallback silencioso pra emprestimo.
+  const produto = useMemo<"emprestimo" | "cartao_consignado">(() => {
     const p = sp.get("produto");
-    if (p === "cartao_consignado" || p === "cartao_beneficio") return p;
+    if (p === "cartao_consignado") return "cartao_consignado";
     return "emprestimo";
   }, [sp]);
 
   const meta = produto === "emprestimo"
     ? { eyebrow: "Simular empréstimo", titulo: "Quanto cabe no seu bolso?", icone: "💰" }
-    : produto === "cartao_consignado"
-      ? { eyebrow: "Simular cartão consignado", titulo: "Que limite cabe na sua margem?", icone: "💳" }
-      : { eyebrow: "Simular cartão benefício", titulo: "Que limite cabe na sua margem?", icone: "🎫" };
+    : { eyebrow: "Simular cartão consignado", titulo: "Que limite cabe na sua margem?", icone: "💳" };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720, width: "100%", margin: "0 auto" }}>

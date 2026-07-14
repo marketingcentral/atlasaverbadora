@@ -36,7 +36,8 @@ export function ServidorMarketplace() {
     enabled: !!info?.matricula,
   });
 
-  const ofertas = q.data?.ofertas ?? [];
+  // Cartao Beneficio nao entra no app (decisao cliente 14/07/2026).
+  const ofertas = (q.data?.ofertas ?? []).filter((o) => o.tipo !== "cartao_beneficio");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>

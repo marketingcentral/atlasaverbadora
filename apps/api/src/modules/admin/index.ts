@@ -2113,7 +2113,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       id: z.string().optional(),
       prefeituraId: z.number().int(),
       nome: z.string().max(100).default("Beneficio sem nome"),
-      categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer", "telemedicina"])).default([]),
+      categorias: z.array(z.enum(["saude", "alimentacao", "educacao", "lazer", "telemedicina", "academia", "farmacia", "supermercado"])).default([]),
       local: z.string().max(80).default(""),
       icone: z.string().max(500).default("🎁"),
       cor: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#C9A961"),
