@@ -9,10 +9,11 @@ export interface JwtClaims {
   servidor_id?: number;
   banco_id?: number;
   prefeitura_id?: number;
-  /** Subperfil da averbadora (operador/supervisor/comercial/financeiro/auditoria).
-   *  So preenchido quando o login foi de um subusuario cadastrado; o dev-user
-   *  "admin@atlas.test" nao tem subperfil e cai como supervisor por default no front. */
-  averbadora_perfil?: "operador" | "supervisor" | "comercial" | "financeiro" | "auditoria";
+  /** Rotulo do preset (opcional, apenas display). */
+  averbadora_perfil?: "operador" | "supervisor" | "comercial" | "financeiro" | "auditoria" | "personalizado";
+  /** Fonte de verdade da autorizacao granular por recurso. Ex.: ["bancos","adf","dashboard"].
+   *  "*" = wildcard (supervisor). Se ausente (dev-user ou JWT antigo), cai como supervisor. */
+  averbadora_permissoes?: string[];
   device_id?: string;
   iat: number;
   exp: number;

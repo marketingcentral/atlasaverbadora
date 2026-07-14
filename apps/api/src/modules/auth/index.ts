@@ -102,7 +102,7 @@ async function resolveBancoByCredentials(
 async function resolveAverbadoraByCredentials(
   identifier: string,
   password: string,
-): Promise<{ match: ResolvedUser | null; claimedBy: boolean; perfil?: string; userId?: number }> {
+): Promise<{ match: ResolvedUser | null; claimedBy: boolean; perfil?: string; permissoes?: string[]; userId?: number }> {
   const email = identifier.trim().toLowerCase();
   if (!email.includes("@")) return { match: null, claimedBy: false };
   const u = findAverbadoraByEmail(email);
@@ -114,6 +114,7 @@ async function resolveAverbadoraByCredentials(
     match: { id: u.id, nome: u.nome, role: "averbadora" },
     claimedBy: true,
     perfil: u.perfil,
+    permissoes: u.permissoes ?? [],
     userId: u.id,
   };
 }
@@ -193,6 +194,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     let resolved: ResolvedUser | null = servidorAuth.match;
     let claimed = servidorAuth.claimedBy;
     let averbadoraPerfil: string | undefined;
+    let averbadoraPermissoes: string[] | undefined;
 
     // 2) Banco cadastrado via averbadora (login = email + senha SHA-256).
     if (!resolved && !claimed) {
@@ -214,6 +216,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       resolved = avAuth.match;
       claimed = claimed || avAuth.claimedBy;
       averbadoraPerfil = avAuth.perfil;
+      averbadoraPermissoes = avAuth.permissoes;
       if (resolved && avAuth.userId != null) {
         // Atualiza ultimoLogin na fixture (write-through persiste na proxima mutacao).
         const u = exportAverbadoraUsers().find((x) => x.id === avAuth.userId);
@@ -273,6 +276,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
           banco_id: resolved.banco_id,
           prefeitura_id: resolved.prefeitura_id,
           averbadora_perfil: averbadoraPerfil,
+          averbadora_permissoes: averbadoraPermissoes,
           device_id: body.device_id,
         }),
         { expirationTtl: 300 },
@@ -291,6 +295,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       banco_id: resolved.banco_id,
       prefeitura_id: resolved.prefeitura_id,
       averbadora_perfil: averbadoraPerfil as JwtClaims["averbadora_perfil"] | undefined,
+      averbadora_permissoes: averbadoraPermissoes,
       device_id: body.device_id,
     });
     const refreshToken = generateRefreshToken();
@@ -330,7 +335,8 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       servidor_id: z.number().optional(),
       banco_id: z.number().optional(),
       prefeitura_id: z.number().optional(),
-      averbadora_perfil: z.enum(["operador", "supervisor", "comercial", "financeiro", "auditoria"]).optional(),
+      averbadora_perfil: z.enum(["operador", "supervisor", "comercial", "financeiro", "auditoria", "personalizado"]).optional(),
+      averbadora_permissoes: z.array(z.string()).optional(),
       device_id: z.string().optional(),
     }).parse(JSON.parse(raw));
 
@@ -369,6 +375,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       banco_id: parsed.banco_id,
       prefeitura_id: parsed.prefeitura_id,
       averbadora_perfil: parsed.averbadora_perfil,
+      averbadora_permissoes: parsed.averbadora_permissoes,
       device_id: parsed.device_id,
     });
     const refreshToken = generateRefreshToken();

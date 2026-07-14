@@ -74,11 +74,24 @@ function requireAdmin(j: JwtClaims): void {
   if (j.role !== "averbadora") throw Errors.forbidden("Requer perfil averbadora");
 }
 
-/** Gating por SUBPERFIL da averbadora. Uso: primeiro requireAdmin, depois
- *  requireAverbadoraPerfil(j, "supervisor", "operador"). Se o JWT nao tem o
- *  claim averbadora_perfil (dev-user admin@atlas.test), passa como supervisor
- *  de fato — retrocompat com o dev login antigo. */
+/** Gating GRANULAR por RECURSO. Fonte de verdade: `averbadora_permissoes` no JWT.
+ *  - "*" = wildcard (supervisor / admin) — passa em qualquer recurso.
+ *  - JWT sem claim (dev-user admin@atlas.test) — passa em tudo (retrocompat).
+ *  - Exact match do resource key — permite.
+ *  Ex.: requirePermissao(j, "bancos") libera para quem tem "bancos" marcado. */
+export function requirePermissao(j: JwtClaims, resourceKey: string): void {
+  const perms = j.averbadora_permissoes;
+  if (!perms || perms.length === 0) return; // dev-user / JWT antigo — retrocompat
+  if (perms.includes("*") || perms.includes(resourceKey)) return;
+  throw Errors.forbidden(`Este recurso exige permissao "${resourceKey}". Seu usuario nao tem essa caixa marcada.`);
+}
+
+/** LEGADO — mantido para retrocompat. Usa averbadora_perfil (label do preset).
+ *  Novo codigo deve chamar requirePermissao(j, "<resource-key>") direto. */
 export function requireAverbadoraPerfil(j: JwtClaims, ...allowed: NonNullable<JwtClaims["averbadora_perfil"]>[]): void {
+  // Se JWT tem o claim novo permissoes, ignora o legado e passa (o gating real ja aconteceu).
+  const perms = j.averbadora_permissoes;
+  if (perms && (perms.includes("*") || perms.length > 0)) return;
   const p = j.averbadora_perfil;
   if (!p) return; // dev-user sem claim — trata como supervisor
   if (p === "supervisor") return;
@@ -837,11 +850,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/bancos", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j); // read banco: supervisor
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "bancos");
     return c.json({ bancos: bancos.map(sanitizeBanco) });
   })
   .get("/v1/admin/bancos/:id", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "bancos");
     const b = bancos.find((x) => x.id === Number(c.req.param("id")));
     if (!b) throw Errors.notFound("banco");
     return c.json({ banco: sanitizeBanco(b) });
@@ -908,7 +921,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .post("/v1/admin/bancos", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
-    requireAverbadoraPerfil(j); // CRUD de bancos: so supervisor
+    requirePermissao(j, "bancos");
     const body = z
       .object({
         id: z.number().int().optional(),
@@ -972,7 +985,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .post("/v1/admin/bancos/:id/reset-password", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
-    requireAverbadoraPerfil(j); // reset de senha de banco: so supervisor
+    requirePermissao(j, "bancos");
     const b = bancos.find((x) => x.id === Number(c.req.param("id")));
     if (!b) throw Errors.notFound("banco");
     const body = z.object({ password: z.string().min(6) }).parse(await c.req.json());
@@ -1001,7 +1014,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .delete("/v1/admin/bancos/:id", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
-    requireAverbadoraPerfil(j); // desativar banco: so supervisor
+    requirePermissao(j, "bancos");
     const id = Number(c.req.param("id"));
     const b = bancos.find((x) => x.id === id);
     if (!b) throw Errors.notFound("banco");
@@ -1014,7 +1027,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/prefeituras", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador"); // supervisor+operador
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
   })
   .post("/v1/admin/prefeituras", async (c) => {
@@ -1190,7 +1203,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ ok: true });
   })
   .get("/v1/admin/convenios", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     await refreshConvenios(c.env);
     // Retorna TODOS (ativos e inativos) — a UI mostra a situacao e permite reativar.
     const detalhado = CONVENIOS_MOCK.map((cv) => ({
@@ -1203,7 +1216,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/servidores", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
     await ensureServidorStatusLoaded(c.env);
     const url = new URL(c.req.url);
     const prefeituraId = url.searchParams.get("prefeitura_id");
@@ -1304,7 +1317,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/folhas", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "financeiro"); // supervisor+financeiro
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
     return c.json({ folhas });
   })
   .post("/v1/admin/folhas", async (c) => {
@@ -1375,12 +1388,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/comunicados", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "comercial"); // supervisor+comercial
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "comunicados");
     await refreshComunicados(c.env);
     return c.json({ comunicados: COMUNICADOS_MOCK });
   })
   .post("/v1/admin/comunicados", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "comercial");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "comunicados");
     await refreshComunicados(c.env);
     const body = z
       .object({
@@ -1465,7 +1478,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/logs", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "auditoria"); // supervisor+auditoria
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "logs");
     const url = new URL(c.req.url);
     const level = url.searchParams.get("level");
     const source = url.searchParams.get("source");
@@ -1497,7 +1510,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .get("/v1/admin/vitrine", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "comercial");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "vitrine");
     await ensureVitrineLoaded(c.env);
     return c.json({ banners: vitrine });
   })
@@ -1537,7 +1550,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== API Tokens =====
   .get("/v1/admin/api-tokens", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-tokens");
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
     const env = c.req.query("environment") as ApiEnvironment | undefined;
     const aud = c.req.query("audience") as ApiAudience | undefined;
@@ -1555,7 +1568,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ tokens, scopesByAudience: SCOPES_BY_AUDIENCE });
   })
   .post("/v1/admin/api-tokens", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-tokens");
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
     const body = z.object({
       name: z.string().min(2),
@@ -1578,7 +1591,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // revoga, e NÃO toca no perfil/parceria dono — ele continua ativo. Independe
   // do cascade do banco: reativar o banco não desfaz um pause manual.
   .patch("/v1/admin/api-tokens/:id/pause", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-tokens");
     const kv = c.env.KV_CACHE; if (!kv) throw Errors.bankUnavailable("KV não configurado");
     const body = z.object({ paused: z.boolean() }).parse(await c.req.json());
     const t = await setTokenPaused(kv, c.req.param("id"), body.paused);
@@ -1589,7 +1602,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Webhooks (admin) =====
   .get("/v1/admin/webhooks", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-webhooks");
     const env = c.req.query("environment") as ApiEnvironment | undefined;
     // Overlay do pause: webhook de banco pausado aparece inativo, seguindo o
     // status do banco (fonte de verdade), independente do estado em memória
@@ -1602,7 +1615,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ webhooks, events: WEBHOOK_EVENTS });
   })
   .post("/v1/admin/webhooks", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-webhooks");
     const body = z.object({
       audience: z.enum(["banco", "averbadora"]),
       partnerId: z.number().int().default(0),
@@ -1628,7 +1641,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ deliveries: listDeliveries(c.req.param("id")) });
   })
   .post("/v1/admin/webhooks/fire", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-webhooks");
     const body = z.object({
       event: z.enum(WEBHOOK_EVENTS),
       environment: z.enum(["production", "sandbox"]).default("sandbox"),
@@ -1640,7 +1653,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Test a webhook by delivering each event it is subscribed to (the exact ones
   // selected), so they all appear in the receiver.
   .post("/v1/admin/webhooks/:id/test", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-webhooks");
     const deliveries = await testWebhookEvents(c.req.param("id"));
     if (!deliveries) throw Errors.notFound("webhook");
     return c.json({
@@ -1653,7 +1666,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== CSV Import =====
   .post("/v1/admin/bancos/importar", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "bancos");
     const text = await readCsvBody(c);
     const { rows } = parseCsv(text);
     const out: ImportOutcome<BancoAdmin> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
@@ -1929,7 +1942,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Tombamento de contratos (passo 9) =====
   .get("/v1/admin/tombamento/lotes", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "tombamento");
     const url = new URL(c.req.url);
     const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
     const competencia = url.searchParams.get("competencia") ?? undefined;
@@ -1940,7 +1953,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ lotes });
   })
   .get("/v1/admin/tombamento/lotes/:id/linhas", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "tombamento");
     const linhas = listLinhas(c.req.param("id"));
     return c.json({ linhas });
   })
@@ -2002,7 +2015,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Auditoria (passo 12) =====
   .get("/v1/admin/auditoria", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "auditoria");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "auditoria");
     const url = new URL(c.req.url);
     const categoria = url.searchParams.get("categoria") as AuditCategoria | null;
     const cpf = url.searchParams.get("cpf") ?? undefined;
@@ -2017,18 +2030,19 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Perfis admin (passo 1: perfis + 2FA) =====
   .get("/v1/admin/perfis", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
     await ensurePerfisLoaded(c.env);
     return c.json({ usuarios: listAverbadoraUsers(), perfis: perfilOptions() });
   })
   .post("/v1/admin/perfis", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
     await ensurePerfisLoaded(c.env);
     const body = z.object({
       id: z.number().int().optional(),
       nome: z.string().min(2),
       email: z.string().email(),
-      perfil: z.enum(["operador", "supervisor", "comercial", "financeiro", "auditoria"] as const),
+      perfil: z.enum(["operador", "supervisor", "comercial", "financeiro", "auditoria", "personalizado"] as const).optional(),
+      permissoes: z.array(z.string().min(1).max(64)).max(200).optional(),
       ativo: z.boolean().default(true),
       password: z.string().min(6).optional(),
       twoFactorEnabled: z.boolean().optional(),
@@ -2039,7 +2053,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ usuario: u });
   })
   .post("/v1/admin/perfis/:id/2fa/rotate", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
     const id = Number(c.req.param("id"));
     const r = rotateTotpSecret(id);
     if (!r) throw Errors.notFound("usuario");
@@ -2048,7 +2062,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(r);
   })
   .post("/v1/admin/perfis/:id/2fa/disable", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
     const id = Number(c.req.param("id"));
     if (!disable2FA(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
@@ -2056,7 +2070,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ ok: true });
   })
   .delete("/v1/admin/perfis/:id", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
     const id = Number(c.req.param("id"));
     if (!deleteAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
@@ -2064,7 +2078,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.body(null, 204);
   })
   .post("/v1/admin/perfis/:id/reativar", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
     const id = Number(c.req.param("id"));
     if (!reactivateAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
@@ -2076,13 +2090,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Servidor consulta em /v1/servidores/me/beneficios (filtrado pela pref dele).
   // ============================================================
   .get("/v1/admin/beneficios", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "beneficios");
     await refreshBeneficios(c.env);
     const list = await loadBeneficios(c.env);
     return c.json({ beneficios: list });
   })
   .post("/v1/admin/beneficios", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "beneficios");
     await refreshBeneficios(c.env);
     // Cliente pediu pra afrouxar TUDO pra testar rapido — so prefeituraId
     // continua obrigatorio (senao o beneficio fica orfao). Demais campos
@@ -2254,7 +2268,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ templates: await loadTemplates(c.env) });
   })
   .post("/v1/admin/email-templates", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "email-sistema");
     // Edicao mantem as regras: id obrigatorio (evento e' fixado no seed/hook,
     // nao pode mudar), evento vem do proprio template atual (nao no body).
     const body = z.object({
@@ -2286,7 +2300,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // DELETE so remove templates de beneficio (dinamicos). Fixos nao podem
   // ser excluidos — regra do cliente.
   .delete("/v1/admin/email-templates/:id", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "email-sistema");
     const r = await removerTemplateSeguro(c.env, c.req.param("id"));
     if (!r.ok) throw Errors.validation({ template: r.motivo });
     return c.json({ ok: true });
@@ -2305,7 +2319,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // usa dados de exemplo realistas — assim o operador so precisa digitar
   // o email de destino e clicar enviar.
   .post("/v1/admin/email-templates/:id/test", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "email-sistema");
     const id = c.req.param("id");
     const t = await getTemplate(c.env, id);
     if (!t) throw Errors.notFound("template");
@@ -2336,7 +2350,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ?beneficioId=BEN-X filtra por beneficio; sem filtro, retorna todos os
   // cliques (ate 500 mais recentes). Ordenados do mais recente pro mais antigo.
   .get("/v1/admin/beneficios/interessados", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "interessados");
     await refreshCliques(c.env);
     const url = new URL(c.req.url);
     const beneficioId = url.searchParams.get("beneficioId");
@@ -2353,7 +2367,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   // Contadores por beneficio — usado pelas listas (badge de N interessados).
   .get("/v1/admin/beneficios/interessados/resumo", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requireAverbadoraPerfil(j, "operador");
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "interessados");
     await refreshCliques(c.env);
     const cliques = await loadCliques(c.env);
     const contagemPorBeneficio = new Map<string, number>();

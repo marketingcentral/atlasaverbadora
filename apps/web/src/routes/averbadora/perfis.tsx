@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, FormActions, FormGrid, IconButton, Pill, SelectField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminAverbadoraUser, AverbadoraPerfil } from "@atlas/sdk";
+import { PRESETS, RESOURCE_GROUPS, TODAS_PERMISSOES, detectarPreset } from "../../lib/averbadora-perms";
 
-type PerfilOpcao = { value: AverbadoraPerfil; label: string; descricao: string };
+type PerfilOpcao = { value: AverbadoraPerfil; label: string; descricao: string; permissoes: string[] };
 
 export function AdminPerfis() {
   const qc = useQueryClient();
@@ -41,7 +42,18 @@ export function AdminPerfis() {
     },
     { key: "nome", header: "Nome" },
     { key: "email", header: "Email" },
-    { key: "perfil", header: "Perfil", render: (u) => <Pill variant="emdia">{u.perfil}</Pill> },
+    {
+      key: "perfil", header: "Perfil",
+      render: (u) => <Pill variant="emdia">{u.perfil}</Pill>,
+    },
+    {
+      key: "permissoes", header: "Permissoes",
+      render: (u) => (
+        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
+          {u.permissoes?.includes("*") ? "todas (*)" : `${u.permissoes?.length ?? 0} marcadas`}
+        </span>
+      ),
+    },
     { key: "twoFactorEnabled", header: "2FA", render: (u) => u.twoFactorEnabled ? <Pill variant="averbado">on</Pill> : <Pill variant="expirado">off</Pill> },
     { key: "ultimoLogin", header: "Último login", render: (u) => u.ultimoLogin ? new Date(u.ultimoLogin).toLocaleString("pt-BR") : "—" },
   ];
@@ -53,15 +65,14 @@ export function AdminPerfis() {
           <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
             Averbadora
           </span>
-          <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Usuários e perfis do painel</h1>
-          <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 720 }}>
-            Subperfis da averbadora (operador, supervisor, comercial, financeiro, auditoria) e gestão de 2FA por usuário.
+          <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Usuários e permissões</h1>
+          <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 780 }}>
+            Cada usuário tem um conjunto próprio de permissões (caixas marcadas). Presets são apenas atalhos —
+            depois de escolher um, você pode marcar/desmarcar caixa por caixa e o usuário vira "personalizado".
           </p>
         </div>
         <Button onClick={() => setEditing("new")}>+ Novo usuário</Button>
       </header>
-
-      <PerfilsLegend opts={data.data?.perfis ?? []} />
 
       <DataTable
         columns={columns}
@@ -104,25 +115,6 @@ export function AdminPerfis() {
   );
 }
 
-function PerfilsLegend({ opts }: { opts: PerfilOpcao[] }) {
-  if (!opts.length) return null;
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-      {opts.map((p) => (
-        <div key={p.value} style={{
-          background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 14,
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700 }}>
-            <Pill variant="emdia">{p.value}</Pill>
-            <span>{p.label}</span>
-          </div>
-          <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--text-muted)", lineHeight: 1.4 }}>{p.descricao}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function UserModal({
   initial, perfis, onClose,
 }: {
@@ -131,25 +123,50 @@ function UserModal({
   onClose: () => void;
 }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({
-    id: initial?.id,
-    nome: initial?.nome ?? "",
-    email: initial?.email ?? "",
-    perfil: initial?.perfil ?? "operador" as AverbadoraPerfil,
-    ativo: initial?.ativo ?? true,
-    password: "",
-    twoFactorEnabled: initial?.twoFactorEnabled ?? false,
+  const [nome, setNome] = useState(initial?.nome ?? "");
+  const [email, setEmail] = useState(initial?.email ?? "");
+  const [ativo, setAtivo] = useState(initial?.ativo ?? true);
+  const [password, setPassword] = useState("");
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(initial?.twoFactorEnabled ?? false);
+
+  // Fonte da verdade: o array `permissoes`. O preset e apenas um atalho de preenchimento.
+  const [permissoes, setPermissoes] = useState<string[]>(() => {
+    if (initial?.permissoes && initial.permissoes.length > 0) return [...initial.permissoes];
+    return [...PRESETS.operador]; // default pra novo usuario
   });
+  const supervisor = permissoes.includes("*");
+  const perfilDetectado = useMemo(() => detectarPreset(permissoes), [permissoes]);
+  const [presetEscolhido, setPresetEscolhido] = useState<AverbadoraPerfil>(perfilDetectado);
+
   const [error, setError] = useState<string | null>(null);
+
+  function aplicarPreset(v: AverbadoraPerfil) {
+    setPresetEscolhido(v);
+    setPermissoes([...(PRESETS[v] ?? [])]);
+  }
+  function togglePermissao(key: string) {
+    if (supervisor) {
+      // Se e supervisor (*), desmarcar uma caixa vira personalizado com "tudo menos essa".
+      setPermissoes(TODAS_PERMISSOES.filter((k) => k !== key));
+      return;
+    }
+    setPermissoes((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  }
+  function marcarTodas() { setPermissoes(["*"]); }
+  function desmarcarTodas() { setPermissoes([]); }
+
   const save = useMutation({
     mutationFn: () => atlas.admin.upsertPerfilAdmin({
-      id: form.id,
-      nome: form.nome,
-      email: form.email,
-      perfil: form.perfil,
-      ativo: form.ativo,
-      password: form.password || undefined,
-      twoFactorEnabled: form.twoFactorEnabled,
+      id: initial?.id,
+      nome,
+      email,
+      perfil: perfilDetectado,
+      permissoes,
+      ativo,
+      password: password || undefined,
+      twoFactorEnabled,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "perfis"] });
@@ -157,39 +174,103 @@ function UserModal({
     },
     onError: (err) => setError(err instanceof Error ? err.message : "Erro ao salvar"),
   });
+
+  const totalMarcadas = supervisor ? TODAS_PERMISSOES.length : permissoes.length;
+
   return (
     <div onClick={onClose} style={modalBackdrop}>
       <div onClick={(e) => e.stopPropagation()} style={modalCard}>
         <h3 style={{ margin: 0 }}>{initial ? `Editar ${initial.email}` : "Novo usuário"}</h3>
+
         <FormGrid cols={2}>
-          <TextField label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
-          <TextField label="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
-          <SelectField
-            label="Perfil"
-            value={form.perfil}
-            onChange={(e) => setForm({ ...form, perfil: e.target.value as AverbadoraPerfil })}
-            options={perfis.map((p) => ({ value: p.value, label: p.label }))}
-          />
-          <SelectField
-            label="Status"
-            value={form.ativo ? "1" : "0"}
-            onChange={(e) => setForm({ ...form, ativo: e.target.value === "1" })}
-            options={[{ value: "1", label: "Ativo" }, { value: "0", label: "Inativo" }]}
-          />
+          <TextField label="Nome" value={nome} onChange={(e) => setNome(e.target.value)} required />
+          <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <TextField
             label={initial ? "Nova senha (opcional)" : "Senha"}
             type="password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             placeholder={initial ? "deixe em branco para manter" : "min. 6 caracteres"}
           />
           <SelectField
+            label="Status"
+            value={ativo ? "1" : "0"}
+            onChange={(e) => setAtivo(e.target.value === "1")}
+            options={[{ value: "1", label: "Ativo" }, { value: "0", label: "Inativo" }]}
+          />
+          <SelectField
             label="2FA"
-            value={form.twoFactorEnabled ? "1" : "0"}
-            onChange={(e) => setForm({ ...form, twoFactorEnabled: e.target.value === "1" })}
+            value={twoFactorEnabled ? "1" : "0"}
+            onChange={(e) => setTwoFactorEnabled(e.target.value === "1")}
             options={[{ value: "0", label: "Desativado" }, { value: "1", label: "Ativado (gera secret)" }]}
           />
         </FormGrid>
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Permissões</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                Marque o que este usuário pode ver e fazer.
+                {" "}
+                Perfil atual: <b>{perfilDetectado}</b> · <b>{totalMarcadas}</b> {supervisor ? "(todas via *)" : "marcada(s)"}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <SelectField
+                label="Preset"
+                value={presetEscolhido}
+                onChange={(e) => aplicarPreset(e.target.value as AverbadoraPerfil)}
+                options={perfis.map((p) => ({ value: p.value, label: p.label }))}
+              />
+              <Button size="sm" variant="ghost" type="button" onClick={marcarTodas}>Marcar tudo</Button>
+              <Button size="sm" variant="ghost" type="button" onClick={desmarcarTodas}>Limpar</Button>
+            </div>
+          </div>
+
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: 12, maxHeight: 380, overflowY: "auto",
+            padding: 12, background: "var(--bg-elev)", borderRadius: 10,
+          }}>
+            {RESOURCE_GROUPS.map((g) => (
+              <div key={g.titulo} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase", marginBottom: 4 }}>
+                  {g.titulo}
+                </div>
+                {g.recursos.map((r) => {
+                  const marcada = supervisor || permissoes.includes(r.key);
+                  return (
+                    <label
+                      key={r.key}
+                      style={{
+                        display: "flex", alignItems: "flex-start", gap: 8,
+                        padding: "6px 8px", borderRadius: 6, cursor: "pointer",
+                        background: marcada ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "transparent",
+                        border: marcada ? "1px solid var(--emerald-500)" : "1px solid var(--border)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={marcada}
+                        onChange={() => togglePermissao(r.key)}
+                        style={{ marginTop: 3 }}
+                      />
+                      <span style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</span>
+                        {r.descricao ? (
+                          <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>{r.descricao}</span>
+                        ) : null}
+                        <code style={{ fontSize: 10, color: "var(--text-dim)" }}>{r.key}</code>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
@@ -234,6 +315,7 @@ const modalBackdrop: React.CSSProperties = {
 };
 const modalCard: React.CSSProperties = {
   background: "var(--bg-elev)", border: "1px solid var(--border-strong)",
-  borderRadius: 14, padding: 24, maxWidth: 640, width: "calc(100% - 48px)",
+  borderRadius: 14, padding: 24, maxWidth: 900, width: "calc(100% - 48px)",
   display: "flex", flexDirection: "column", gap: 16, boxShadow: "var(--shadow-lg)",
+  maxHeight: "calc(100vh - 48px)", overflowY: "auto",
 };

@@ -634,13 +634,17 @@ export interface AdminAuditEntry {
   detalhes: string;
 }
 
-export type AverbadoraPerfil = "operador" | "supervisor" | "comercial" | "financeiro" | "auditoria";
+/** Rotulo do preset escolhido — apenas display. Fonte de verdade da autorizacao
+ *  e `permissoes: string[]`. */
+export type AverbadoraPerfil = "operador" | "supervisor" | "comercial" | "financeiro" | "auditoria" | "personalizado";
 
 export interface AdminAverbadoraUser {
   id: number;
   nome: string;
   email: string;
   perfil: AverbadoraPerfil;
+  /** Fonte de verdade — array de resource keys. "*" = wildcard (supervisor). */
+  permissoes: string[];
   ativo: boolean;
   twoFactorEnabled: boolean;
   criadoEm: string;
@@ -1472,8 +1476,8 @@ export class AtlasClient {
 
     // Perfis admin
     listPerfisAdmin: () =>
-      this.request<{ usuarios: AdminAverbadoraUser[]; perfis: { value: AverbadoraPerfil; label: string; descricao: string }[] }>("/v1/admin/perfis"),
-    upsertPerfilAdmin: (body: { id?: number; nome: string; email: string; perfil: AverbadoraPerfil; ativo: boolean; password?: string; twoFactorEnabled?: boolean }) =>
+      this.request<{ usuarios: AdminAverbadoraUser[]; perfis: { value: AverbadoraPerfil; label: string; descricao: string; permissoes: string[] }[] }>("/v1/admin/perfis"),
+    upsertPerfilAdmin: (body: { id?: number; nome: string; email: string; perfil?: AverbadoraPerfil; permissoes?: string[]; ativo: boolean; password?: string; twoFactorEnabled?: boolean }) =>
       this.request<{ usuario: AdminAverbadoraUser }>("/v1/admin/perfis", { method: "POST", body }),
     rotate2FA: (id: number) =>
       this.request<{ secret: string; otpauthUrl: string }>(`/v1/admin/perfis/${id}/2fa/rotate`, { method: "POST" }),
