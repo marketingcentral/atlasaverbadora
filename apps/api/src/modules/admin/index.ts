@@ -654,10 +654,32 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       acc[banco] = (acc[banco] ?? 0) + c.valorFinanciado;
       return acc;
     }, {});
+    // Contagem REAL de propostas por banco — antes vinha do Math.random(), que
+    // fazia os numeros dancarem a cada request/refetch e nao batia com nada.
+    const propostasPorBanco = todosContratos.reduce<Record<number, number>>((acc, c) => {
+      acc[c.bancoId] = (acc[c.bancoId] ?? 0) + 1;
+      return acc;
+    }, {});
+    const topBancos = bancos
+      .map((b) => ({ nome: b.nome, propostas: propostasPorBanco[b.id] ?? 0 }))
+      .sort((a, b) => b.propostas - a.propostas)
+      .slice(0, 3);
+    // "Propostas hoje" = contratos criados hoje (criadoEmIso). Antes contava TUDO
+    // desde o inicio dos tempos e chamava de "hoje".
+    const hojeIso = new Date().toISOString().slice(0, 10);
+    const propostasHoje = todosContratos.filter((c) => (c.criadoEmIso ?? "").slice(0, 10) === hojeIso).length;
+    // Conversao = formalizadas / total (bruto — nao considera propostas que nunca
+    // viraram contrato porque nao temos historico delas na base atual). Ainda
+    // assim, muito melhor que o 0.427 hardcoded que o cliente ja viu ha meses.
+    const formalizadas = todosContratos.filter((c) => {
+      const s = c.situacao.toLowerCase();
+      return s === "ativo" || s === "averbado" || s === "formalizado";
+    }).length;
+    const conversao = todosContratos.length > 0 ? Math.round((formalizadas / todosContratos.length) * 1000) / 1000 : 0;
     return c.json({
       kpis: {
-        propostasHoje: todosContratos.length,
-        conversao: 0.427,
+        propostasHoje,
+        conversao,
         ticketMedio: todosContratos.length > 0 ? Math.round((todosContratos.reduce((a, c) => a + c.valorFinanciado, 0) / todosContratos.length) * 100) / 100 : 0,
         bancosAtivos: bancos.filter((b) => b.status === "ativo").length,
         prefeiturasAtivas: prefeituras.filter((p) => p.status === "ativo").length,
@@ -668,7 +690,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         margemTravada: preResumo.margemTotalTravada,
         folhasAbertas,
       },
-      topBancos: bancos.slice(0, 3).map((b) => ({ nome: b.nome, propostas: Math.floor(Math.random() * 500) + 100 })),
+      topBancos,
       topPrefeituras: prefeituras.slice(0, 3).map((p) => ({ nome: `${p.nome}/${p.uf}`, servidores: p.servidoresCount })),
       volumePorConvenio: Object.entries(volumePorConvenio).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
       volumePorBanco: Object.entries(volumePorBanco).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),

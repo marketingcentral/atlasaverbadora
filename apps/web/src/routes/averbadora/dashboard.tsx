@@ -26,11 +26,24 @@ interface DashboardResponse {
 }
 
 export function AverbadoraDashboard() {
-  const data = useQuery<DashboardResponse>({ queryKey: ["admin", "dashboard"], queryFn: () => atlas.admin.dashboard() as Promise<DashboardResponse> });
+  // Poll 8s — KPIs (propostasHoje, preReservasExpirandoEm24h, folhasAbertas)
+  // mudam conforme os bancos aprovam, prefeituras aplicam ADFs e o tempo passa.
+  const data = useQuery<DashboardResponse>({
+    queryKey: ["admin", "dashboard"],
+    queryFn: () => atlas.admin.dashboard() as Promise<DashboardResponse>,
+    refetchInterval: 8_000,
+    refetchOnWindowFocus: true,
+  });
 
-  if (data.isLoading) return <div style={{ color: "var(--text-muted)" }}>Carregando dashboard...</div>;
+  // isPending (nao isLoading) — sem isso, todo refetch piscaria "Carregando".
+  if (data.isPending) return <div style={{ color: "var(--text-muted)" }}>Carregando dashboard...</div>;
+  // Erro real precede "!data.data" — assim rede caida ou 500 nao vira "Erro ao
+  // carregar" generico e o usuario ve a mensagem do servidor no console.
+  if (data.error) return <div style={{ color: "var(--danger-500)" }}>Erro ao carregar: {(data.error as Error).message}</div>;
   if (!data.data) return <div style={{ color: "var(--danger-500)" }}>Erro ao carregar.</div>;
   const k = data.data.kpis;
+  const topBancos = data.data.topBancos ?? [];
+  const topPrefeituras = data.data.topPrefeituras ?? [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -79,23 +92,31 @@ export function AverbadoraDashboard() {
         </Card>
         <Card>
           <h3 style={{ marginTop: 0 }}>Top bancos por propostas</h3>
-          <ol style={{ marginTop: 8, paddingLeft: 18, color: "var(--text-muted)" }}>
-            {data.data.topBancos.map((b) => (
-              <li key={b.nome} style={{ margin: "6px 0" }}>
-                {b.nome} — <b style={{ color: "var(--accent)" }}>{b.propostas}</b>
-              </li>
-            ))}
-          </ol>
+          {topBancos.length === 0 ? (
+            <p style={{ color: "var(--text-dim)", fontSize: 13 }}>Sem propostas.</p>
+          ) : (
+            <ol style={{ marginTop: 8, paddingLeft: 18, color: "var(--text-muted)" }}>
+              {topBancos.map((b) => (
+                <li key={b.nome} style={{ margin: "6px 0" }}>
+                  {b.nome} — <b style={{ color: "var(--accent)" }}>{b.propostas}</b>
+                </li>
+              ))}
+            </ol>
+          )}
         </Card>
         <Card>
           <h3 style={{ marginTop: 0 }}>Top prefeituras por servidores</h3>
-          <ol style={{ marginTop: 8, paddingLeft: 18, color: "var(--text-muted)" }}>
-            {data.data.topPrefeituras.map((p) => (
-              <li key={p.nome} style={{ margin: "6px 0" }}>
-                {p.nome} — <b style={{ color: "var(--accent)" }}>{p.servidores.toLocaleString("pt-BR")}</b>
-              </li>
-            ))}
-          </ol>
+          {topPrefeituras.length === 0 ? (
+            <p style={{ color: "var(--text-dim)", fontSize: 13 }}>Sem prefeituras.</p>
+          ) : (
+            <ol style={{ marginTop: 8, paddingLeft: 18, color: "var(--text-muted)" }}>
+              {topPrefeituras.map((p) => (
+                <li key={p.nome} style={{ margin: "6px 0" }}>
+                  {p.nome} — <b style={{ color: "var(--accent)" }}>{p.servidores.toLocaleString("pt-BR")}</b>
+                </li>
+              ))}
+            </ol>
+          )}
         </Card>
       </div>
     </div>
