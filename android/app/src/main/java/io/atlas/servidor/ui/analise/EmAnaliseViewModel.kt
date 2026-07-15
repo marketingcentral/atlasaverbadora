@@ -25,12 +25,20 @@ class EmAnaliseViewModel : ViewModel() {
     var state by mutableStateOf<UiState<List<PropostaDto>>>(UiState.Loading)
         private set
 
+    /** Cotação de telemedicina em andamento (nova/contatado) — mostrada em Em Análise. */
+    var cotacaoTele by mutableStateOf<io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaDto?>(null)
+        private set
+
     init { load() }
 
     fun load() {
         viewModelScope.launch {
             state = UiState.Loading
             try {
+                try {
+                    cotacaoTele = repo.minhasCotacoesTelemedicina().cotacoes
+                        .firstOrNull { !it.situacao.equals("fechado", true) && !it.situacao.equals("cancelado", true) }
+                } catch (_: ApiException) { /* mantém */ }
                 val r = repo.getPropostas(prefs.selectedMatricula)
                 // Libera a trava dos produtos que não têm mais proposta pendente (por produto).
                 val pendentes = r.propostas

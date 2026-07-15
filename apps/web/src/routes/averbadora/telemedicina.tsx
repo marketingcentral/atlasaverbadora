@@ -5,6 +5,13 @@ import { Button, DataTable, IconButton, Pill, type Column } from "@atlas/ui/web"
 import { atlas } from "../../lib/sdk";
 import type { AdminBeneficio, TelemedicinaCotacao } from "@atlas/sdk";
 
+const SITUACAO_VAR: Record<string, "pendente" | "aceita" | "averbado" | "expirado"> = {
+  nova: "pendente",
+  contatado: "aceita",
+  fechado: "averbado",
+  cancelado: "expirado",
+};
+
 /** Tela dedicada de Telemedicina — mesmo padrao de tabs de /banco/ofertas:
  *  "Ativas" x "Encerradas". Encerrar (🗑) = soft-delete (pausar), volta pra
  *  Ativas via ▶ Reativar. Nunca ha hard-delete. */
@@ -24,6 +31,16 @@ export function AverbadoraTelemedicina() {
     queryKey: ["admin", "telemedicina", "cotacoes"],
     queryFn: () => atlas.admin.listTelemedicinaCotacoes(),
     refetchInterval: 30_000,
+  });
+
+  const [selCot, setSelCot] = useState<TelemedicinaCotacao | null>(null);
+  const ativarCot = useMutation({
+    mutationFn: (id: string) => atlas.admin.ativarCotacaoTelemedicina(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "telemedicina", "cotacoes"] }); setSelCot(null); },
+  });
+  const cancelarCot = useMutation({
+    mutationFn: (id: string) => atlas.admin.cancelarCotacaoTelemedicina(id),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["admin", "telemedicina", "cotacoes"] }); setSelCot(null); },
   });
 
   const cotacaoCols: Column<TelemedicinaCotacao>[] = [
@@ -183,9 +200,45 @@ export function AverbadoraTelemedicina() {
           rows={cotacoesQ.data?.cotacoes ?? []}
           rowKey={(c) => c.id}
           loading={cotacoesQ.isLoading}
+          onRowClick={(c) => setSelCot(c)}
           emptyState="Nenhuma cotação de telemedicina solicitada ainda."
         />
       </div>
+
+      {selCot && (
+        <div
+          onClick={() => !ativarCot.isPending && !cancelarCot.isPending && setSelCot(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%" }}>
+            <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>Cotação de Telemedicina</span>
+            <h2 style={{ margin: "4px 0 2px", fontSize: "1.35rem" }}>{selCot.nome}</h2>
+            <div style={{ marginBottom: 16 }}><Pill variant={SITUACAO_VAR[selCot.situacao] ?? "pendente"}>{selCot.situacao}</Pill></div>
+            <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "10px 16px", margin: "0 0 20px", fontSize: 14 }}>
+              <dt style={{ color: "var(--text-muted)" }}>Telefone</dt>
+              <dd style={{ margin: 0, fontWeight: 800, fontSize: 16 }}>{selCot.telefone || "—"}</dd>
+              <dt style={{ color: "var(--text-muted)" }}>E-mail</dt>
+              <dd style={{ margin: 0 }}>{selCot.email || "—"}</dd>
+              <dt style={{ color: "var(--text-muted)" }}>CPF</dt>
+              <dd style={{ margin: 0 }}>{selCot.cpfMasked || "—"}</dd>
+              <dt style={{ color: "var(--text-muted)" }}>Matrícula</dt>
+              <dd style={{ margin: 0 }}>{selCot.matricula}</dd>
+              <dt style={{ color: "var(--text-muted)" }}>Prefeitura</dt>
+              <dd style={{ margin: 0 }}>{selCot.prefeitura}</dd>
+              <dt style={{ color: "var(--text-muted)" }}>Solicitado em</dt>
+              <dd style={{ margin: 0 }}>{new Date(selCot.criadoEm).toLocaleString("pt-BR")}</dd>
+            </dl>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <Button variant="ghost" onClick={() => cancelarCot.mutate(selCot.id)} disabled={cancelarCot.isPending || ativarCot.isPending}>
+                {cancelarCot.isPending ? "Cancelando…" : "Cancelar"}
+              </Button>
+              <Button onClick={() => ativarCot.mutate(selCot.id)} disabled={ativarCot.isPending || cancelarCot.isPending}>
+                {ativarCot.isPending ? "Ativando…" : "Ativar Plano"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

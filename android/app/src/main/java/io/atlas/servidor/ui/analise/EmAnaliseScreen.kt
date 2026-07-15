@@ -77,12 +77,17 @@ fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel(), onMudou: () -> Unit =
             is UiState.Error -> ErrorBox(s.message, onRetry = { vm.load() })
             is UiState.Success -> {
                 val emAnalise = emAnaliseAtivas(s.data)
-                if (emAnalise.isEmpty()) {
+                val cot = vm.cotacaoTele
+                if (emAnalise.isEmpty() && cot == null) {
                     Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
                         Text("Você não tem solicitações em análise.", color = InkMuted, fontSize = 14.sp)
                     }
                 } else {
                     Column(Modifier.verticalScroll(rememberScrollState())) {
+                        cot?.let {
+                            CotacaoTeleCard(it)
+                            Spacer(Modifier.height(12.dp))
+                        }
                         emAnalise.forEach { p ->
                             PropostaCard(p)
                             Spacer(Modifier.height(12.dp))
@@ -200,5 +205,33 @@ private fun situacaoCurta(situacao: String): String {
         s.contains("cancel") -> "Cancelada"
         s.contains("recus") -> "Recusada"
         else -> situacao
+    }
+}
+
+/** Cartão da cotação de telemedicina em análise — passo a passo próprio (não é proposta de banco). */
+@Composable
+private fun CotacaoTeleCard(cot: io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaDto) {
+    val contatado = cot.situacao.equals("contatado", ignoreCase = true)
+    AtlasCard {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+            Column {
+                Text("Telemedicina", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Cotação · solicitada em ${cot.criadoEm.take(10)}", color = InkMuted, fontSize = 12.sp)
+            }
+            StatusChip("Em análise", ChipTone.Ambar)
+        }
+        Spacer(Modifier.height(12.dp))
+        PassoTele("Cotação solicitada", true)
+        PassoTele("Em análise — a Atlas vai entrar em contato", contatado)
+        PassoTele("Plano ativado", false)
+    }
+}
+
+@Composable
+private fun PassoTele(label: String, feito: Boolean) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+        Box(Modifier.size(16.dp).clip(CircleShape).background(if (feito) Verde else Divider))
+        Spacer(Modifier.width(8.dp))
+        Text(label, color = if (feito) Ink else InkMuted, fontSize = 13.sp)
     }
 }

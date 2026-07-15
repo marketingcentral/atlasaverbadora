@@ -25,7 +25,7 @@ import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbado
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
-import { refreshCotacoes } from "./telemedicina-cotacoes-store.js";
+import { refreshCotacoes, updateCotacaoSituacao } from "./telemedicina-cotacoes-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
@@ -673,6 +673,21 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         criadoEm: x.criadoEm,
       }));
     return c.json({ cotacoes });
+  })
+
+  // Averbadora ativa o plano de telemedicina do servidor (situacao -> "fechado").
+  .post("/v1/admin/telemedicina/cotacoes/:id/ativar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const cot = await updateCotacaoSituacao(c.env, c.req.param("id"), "fechado");
+    if (!cot) throw Errors.notFound("cotacao");
+    return c.json({ ok: true, situacao: cot.situacao });
+  })
+  // Averbadora cancela a cotacao (situacao -> "cancelado").
+  .post("/v1/admin/telemedicina/cotacoes/:id/cancelar", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const cot = await updateCotacaoSituacao(c.env, c.req.param("id"), "cancelado");
+    if (!cot) throw Errors.notFound("cotacao");
+    return c.json({ ok: true, situacao: cot.situacao });
   })
 
   // ===== Manutenção de contas de TESTE =====

@@ -182,6 +182,9 @@ data class BeneficiosResponse(val beneficios: List<BeneficioDto> = emptyList())
 
 data class CotacaoTelemedicinaRequest(val matricula: String? = null)
 
+data class CotacaoTelemedicinaDto(val id: String, val situacao: String, val criadoEm: String)
+data class MinhasCotacoesResponse(val cotacoes: List<CotacaoTelemedicinaDto> = emptyList())
+
 data class SolicitarPortabilidadeRequest(val matricula: String? = null, val elegivelId: String? = null)
 data class PortabilidadeSolicitadaResponse(val id: String? = null, val situacao: String? = null)
 

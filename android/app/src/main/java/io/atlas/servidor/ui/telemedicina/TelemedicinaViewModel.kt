@@ -26,8 +26,20 @@ class TelemedicinaViewModel : ViewModel() {
         private set
     var cotacaoErro by mutableStateOf<String?>(null)
         private set
+    /** Já existe cotação em andamento (nova/contatado) → esconde o botão, mostra "em análise". */
+    var cotacaoPendente by mutableStateOf(false)
+        private set
 
-    init { load() }
+    init { load(); carregarCotacoes() }
+
+    private fun carregarCotacoes() {
+        viewModelScope.launch {
+            try {
+                val r = repo.minhasCotacoesTelemedicina()
+                cotacaoPendente = r.cotacoes.any { !it.situacao.equals("fechado", true) && !it.situacao.equals("cancelado", true) }
+            } catch (_: ApiException) { /* mantém estado */ }
+        }
+    }
 
     /** Envia a cotação de telemedicina (a averbadora recebe os dados do servidor). */
     fun solicitarCotacao(onSucesso: () -> Unit) {
@@ -37,6 +49,7 @@ class TelemedicinaViewModel : ViewModel() {
             try {
                 repo.solicitarCotacaoTelemedicina(prefs.selectedMatricula)
                 cotacaoEnviada = true
+                cotacaoPendente = true // esconde o botão na hora
                 onSucesso()
             } catch (e: ApiException) {
                 cotacaoErro = e.userMessage

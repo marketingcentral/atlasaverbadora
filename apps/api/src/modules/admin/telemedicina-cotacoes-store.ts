@@ -46,6 +46,16 @@ export async function persistCotacao(env: Env, cot: TelemedicinaCotacao): Promis
   CACHE.list.push(cot);
 }
 
+/** Atualiza a situacao de uma cotacao (averbadora: "contatado" | "fechado" | "cancelado"). */
+export async function updateCotacaoSituacao(env: Env, id: string, situacao: string): Promise<TelemedicinaCotacao | null> {
+  await refreshCotacoes(env);
+  const cot = CACHE.list.find((x) => x.id === id);
+  if (!cot) return null;
+  cot.situacao = situacao;
+  try { await upsertCollectionRow(env, TABLE, cot.id, cot); } catch { /* fail-safe */ }
+  return cot;
+}
+
 /** ID: prefixo TMC + segundo + random (random cobre colisoes no mesmo segundo). */
 export function nextCotacaoId(): string {
   const rand = Math.random().toString(36).slice(2, 8).toUpperCase();

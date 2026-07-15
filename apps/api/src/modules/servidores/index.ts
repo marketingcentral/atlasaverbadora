@@ -655,6 +655,21 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     pushEvent("info", "servidor.telemedicina_cotacao", `${entryAtivo.nome} solicitou cotacao de telemedicina.`);
     return c.json({ ok: true, id: cot.id });
   })
+  // Cotacoes de telemedicina DO PROPRIO servidor — o app/web usa pra esconder o botao
+  // "Solicitar Cotacao" (mostra "em analise") e listar na aba Em Analise.
+  .get("/v1/servidores/me/telemedicina/cotacoes", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    await refreshCotacoes(c.env);
+    const cotacoes = (await loadCotacoes(c.env))
+      .filter((x) => x.servidorId === s.id)
+      .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))
+      .map((x) => ({ id: x.id, situacao: x.situacao, criadoEm: x.criadoEm }));
+    return c.json({ cotacoes });
+  })
   // Vitrine (carrossel) exibido no dashboard do servidor. So banners ativos.
   // Fonte de verdade: admin_vitrine (a averbadora cadastra em /averbadora/vitrine).
   .get("/v1/servidores/me/vitrine", async (c) => {

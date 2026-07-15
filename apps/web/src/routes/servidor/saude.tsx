@@ -35,9 +35,16 @@ export function ServidorSaude() {
   const parceiros = beneficiosQ.data?.beneficios ?? [];
 
   const [showCotar, setShowCotar] = useState(false);
+  const minhasCotacoesQ = useQuery({
+    queryKey: ["servidor", "telemedicina", "minhas-cotacoes"],
+    queryFn: () => atlas.servidor.minhasCotacoesTelemedicina(),
+  });
+  const cotacaoPendente = (minhasCotacoesQ.data?.cotacoes ?? []).some(
+    (c) => c.situacao !== "fechado" && c.situacao !== "cancelado",
+  );
   const cotacao = useMutation({
     mutationFn: () => atlas.servidor.solicitarCotacaoTelemedicina({ matricula: info?.matricula }),
-    onSuccess: () => setShowCotar(false),
+    onSuccess: () => { setShowCotar(false); minhasCotacoesQ.refetch(); },
   });
 
   if (!info) return null;
@@ -91,18 +98,27 @@ export function ServidorSaude() {
           }}>
             Plano mínimo de 12 meses
           </span>
-          <button
-            type="button"
-            onClick={() => setShowCotar(true)}
-            style={{
-              padding: "10px 18px", borderRadius: 10,
-              background: "white", color: "var(--emerald-600, #059669)",
-              fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(0,0,0,.15)",
-            }}
-          >
-            Solicitar Cotação
-          </button>
+          {cotacaoPendente ? (
+            <span style={{
+              padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+              background: "rgba(255,255,255,.18)", color: "white", textAlign: "center",
+            }}>
+              ⏳ Cotação em análise · a Atlas vai entrar em contato
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowCotar(true)}
+              style={{
+                padding: "10px 18px", borderRadius: 10,
+                background: "white", color: "var(--emerald-600, #059669)",
+                fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,.15)",
+              }}
+            >
+              Solicitar Cotação
+            </button>
+          )}
         </div>
       </article>
 

@@ -85,7 +85,7 @@ fun TelemedicinaScreen(home: HomeViewModel, vm: TelemedicinaViewModel = viewMode
                 onCancelar = { showCotar = false },
             )
         }
-        TelemedicinaBanner(onSolicitarCotacao = { showCotar = true })
+        TelemedicinaBanner(cotacaoPendente = vm.cotacaoPendente, onSolicitarCotacao = { showCotar = true })
 
         Spacer(Modifier.height(24.dp))
         SectionLabel("Rede de saúde parceira")
@@ -113,7 +113,7 @@ fun TelemedicinaScreen(home: HomeViewModel, vm: TelemedicinaViewModel = viewMode
 
 /** Destaque verde — Telemedicina (mesmo conteúdo da web) + botão Solicitar Cotação. */
 @Composable
-private fun TelemedicinaBanner(onSolicitarCotacao: () -> Unit) {
+private fun TelemedicinaBanner(cotacaoPendente: Boolean, onSolicitarCotacao: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)),
         color = Verde,
@@ -148,19 +148,36 @@ private fun TelemedicinaBanner(onSolicitarCotacao: () -> Unit) {
                 )
             }
             Spacer(Modifier.height(14.dp))
-            Surface(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onSolicitarCotacao),
-                color = Superficie,
-                shape = RoundedCornerShape(10.dp),
-            ) {
-                Text(
-                    "Solicitar Cotação",
-                    color = Verde,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                )
+            if (cotacaoPendente) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Superficie.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text(
+                        "⏳ Cotação em análise · a Atlas vai entrar em contato",
+                        color = Superficie,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 8.dp),
+                    )
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).clickable(onClick = onSolicitarCotacao),
+                    color = Superficie,
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Text(
+                        "Solicitar Cotação",
+                        color = Verde,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    )
+                }
             }
         }
     }

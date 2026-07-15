@@ -39,6 +39,10 @@ interface ApiService {
     @POST("v1/servidores/me/telemedicina/cotacao")
     suspend fun solicitarCotacaoTelemedicina(@Body body: io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaRequest): io.atlas.servidor.data.remote.dto.OkResponse
 
+    /** Cotações de telemedicina do próprio servidor (situação/data). */
+    @GET("v1/servidores/me/telemedicina/cotacoes")
+    suspend fun minhasCotacoesTelemedicina(): io.atlas.servidor.data.remote.dto.MinhasCotacoesResponse
+
     /** Benefícios/parceiros por categoria (ex.: "saude" para a Telemedicina). */
     @GET("v1/servidores/me/beneficios")
     suspend fun beneficios(

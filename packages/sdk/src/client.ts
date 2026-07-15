@@ -1246,6 +1246,12 @@ export class AtlasClient {
         "/v1/servidores/me/telemedicina/cotacao",
         { method: "POST", body: input ?? {} },
       ),
+    /** Cotacoes de telemedicina DO PROPRIO servidor — pra esconder o botao (mostra
+     *  "em analise") e listar na aba Em Analise. */
+    minhasCotacoesTelemedicina: () =>
+      this.request<{ cotacoes: { id: string; situacao: string; criadoEm: string }[] }>(
+        "/v1/servidores/me/telemedicina/cotacoes",
+      ),
     /** Vitrine (carrossel) mostrada no dashboard do servidor — banners ativos
      *  cadastrados pela averbadora em /averbadora/vitrine. */
     vitrine: () =>
@@ -1618,6 +1624,10 @@ export class AtlasClient {
     // A averbadora ve os dados do servidor — principalmente o telefone — pra formalizar.
     listTelemedicinaCotacoes: () =>
       this.request<{ cotacoes: TelemedicinaCotacao[] }>("/v1/admin/telemedicina/cotacoes"),
+    ativarCotacaoTelemedicina: (id: string) =>
+      this.request<{ ok: true; situacao: string }>(`/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/ativar`, { method: "POST" }),
+    cancelarCotacaoTelemedicina: (id: string) =>
+      this.request<{ ok: true; situacao: string }>(`/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/cancelar`, { method: "POST" }),
 
     // Templates de TERMOS (aceite in-app do servidor + anuencia da prefeitura)
     listTermos: () => this.request<{ termos: TermoTemplate[] }>("/v1/admin/termos"),

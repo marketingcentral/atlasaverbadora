@@ -57,6 +57,10 @@ class ServidorRepository(
     suspend fun solicitarCotacaoTelemedicina(matricula: String?) =
         safeApi(gson) { api.solicitarCotacaoTelemedicina(io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaRequest(matricula)) }
 
+    /** Cotações de telemedicina do próprio servidor — para esconder o botão / listar em Em Análise. */
+    suspend fun minhasCotacoesTelemedicina() =
+        safeApi(gson) { api.minhasCotacoesTelemedicina() }
+
     /** Remove as propostas EM ANÁLISE (fase de teste). */
     suspend fun removerPropostasEmAnalise(matricula: String?) = safeApi(gson) { api.removerPropostasEmAnalise(matricula) }
 
