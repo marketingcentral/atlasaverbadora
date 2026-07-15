@@ -941,6 +941,13 @@ export interface PrefeituraFolha {
   dataCorte: string;
   dataRepasse: string | null;
   status: "aberta" | "fechada" | "consolidada";
+  /** Contagem e soma das ADFs materializadas nessa folha (enviadas pela
+   *  averbadora). Permite a prefeitura ver os descontos que precisa aplicar
+   *  na competencia direto na lista. */
+  adfsAplicadas?: number;
+  adfsRecebidas?: number;
+  adfsTotal?: number;
+  valorAplicado?: number;
 }
 export interface PrefeituraConvenio {
   id: string;

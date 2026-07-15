@@ -367,9 +367,32 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 4 — Folha mensal =====
-  .get("/v1/prefeitura/folhas", (c) => {
+  .get("/v1/prefeitura/folhas", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    const rows = folhas.filter((f) => f.prefeituraId === id).map((f) => ({ ...f, movimentacoes: countMovimentacoes(f.id) }));
+    // Sincroniza contratos (contratos aprovados em outro isolate viram ADFs)
+    // antes de contar. Sem isso, folha nao refletia ADFs recem-aplicadas
+    // pela averbadora.
+    await refreshContratos(c.env);
+    const now = new Date().toISOString();
+    const bancoNomeById = (bid: number) => bancos.find((b) => b.id === bid)?.nome ?? `Banco ${bid}`;
+    // Enriquece cada folha com contagem/soma de ADFs aplicadas (o que a
+    // prefeitura ja tem que descontar em folha).
+    const rows = folhas.filter((f) => f.prefeituraId === id).map((f) => {
+      // Materializa ADFs dessa competencia+prefeitura (isolate fresh pode nao ter).
+      ensureAdfs(id, f.competencia, bancoNomeById, now);
+      const adfsFolha = listAdfs(id, f.competencia);
+      const aplicadas = adfsFolha.filter((a) => a.status === "aplicada");
+      const recebidas = adfsFolha.filter((a) => a.status === "recebida");
+      const valorAplicado = aplicadas.reduce((s, a) => s + a.valorParcela, 0);
+      return {
+        ...f,
+        movimentacoes: countMovimentacoes(f.id),
+        adfsAplicadas: aplicadas.length,
+        adfsRecebidas: recebidas.length,
+        adfsTotal: adfsFolha.length,
+        valorAplicado: Math.round(valorAplicado * 100) / 100,
+      };
+    });
     return c.json({ folhas: rows });
   })
   .post("/v1/prefeitura/folhas", async (c) => {

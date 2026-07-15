@@ -7,11 +7,21 @@ import { Modal, Field, inp } from "./_ui";
 
 type FolhaRow = PrefeituraFolha & { movimentacoes: number };
 
+const fmtBRL = (n: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+
 export function PrefeituraFolhas() {
   const qc = useQueryClient();
   const [novaOpen, setNovaOpen] = useState(false);
   const [movFolha, setMovFolha] = useState<FolhaRow | null>(null);
-  const q = useQuery({ queryKey: ["prefeitura", "folhas"], queryFn: () => atlas.prefeitura.folhas() });
+  // Poll 5s — quando a averbadora clica Aplicar em folha em outro isolate,
+  // a coluna "ADFs aplicadas" aqui atualiza em ate 5s.
+  const q = useQuery({
+    queryKey: ["prefeitura", "folhas"],
+    queryFn: () => atlas.prefeitura.folhas(),
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
+  });
 
   const setStatus = useMutation({
     // Consolidar não é ação da prefeitura — só a averbadora consolida (via /averbadora/folhas).
@@ -24,6 +34,32 @@ export function PrefeituraFolhas() {
     { key: "dataCorte", header: "Corte" },
     { key: "dataRepasse", header: "Repasse", render: (f) => f.dataRepasse ?? "—" },
     { key: "movimentacoes", header: "Movimentações", align: "right" },
+    {
+      key: "adfsAplicadas",
+      header: "ADFs aplicadas",
+      align: "right",
+      render: (f) => {
+        const aplic = f.adfsAplicadas ?? 0;
+        const total = f.adfsTotal ?? 0;
+        if (total === 0) return <span style={{ color: "var(--text-dim)" }}>—</span>;
+        return (
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>
+            <b style={{ color: aplic > 0 ? "var(--emerald-500)" : "var(--text)" }}>{aplic}</b>
+            <span style={{ color: "var(--text-dim)" }}> / {total}</span>
+          </span>
+        );
+      },
+    },
+    {
+      key: "valorAplicado",
+      header: "Descontos aplicados",
+      align: "right",
+      render: (f) => {
+        const v = f.valorAplicado ?? 0;
+        if (v === 0) return <span style={{ color: "var(--text-dim)" }}>—</span>;
+        return <span style={{ color: "var(--emerald-500)", fontWeight: 600 }}>{fmtBRL(v)}</span>;
+      },
+    },
     { key: "status", header: "Status", render: (f) => <Pill variant={f.status === "aberta" ? "pendente" : "averbado"}>{f.status}</Pill> },
     {
       key: "acoes",
