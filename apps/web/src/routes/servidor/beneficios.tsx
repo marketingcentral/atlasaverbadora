@@ -15,6 +15,30 @@ const fmtBRL = (n: number) =>
 // (parceiros negociados), nao cartao beneficio.
 type Categoria = "todos" | "alimentacao" | "farmacia" | "supermercado" | "academia" | "saude" | "educacao" | "lazer";
 
+// Palavras-chave por categoria pra inferencia por nome. Quando o admin cadastra
+// "Farmacia Sao Joao" tageado so como "saude", ele ainda aparece na aba Farmacia
+// (o servidor esperava isso — nome fala por si). Case/acento-insensivel.
+const KEYWORDS_POR_CATEGORIA: Partial<Record<Categoria, string[]>> = {
+  farmacia: ["farmacia", "drogaria"],
+  supermercado: ["supermercado", "mercado", "mercearia", "atacadao", "atacado"],
+  academia: ["academia", "crossfit", "studio", "pilates"],
+  saude: ["clinica", "hospital", "consultorio", "medic", "odonto", "dentist", "otica", "laboratorio"],
+  alimentacao: ["restaurante", "lanchonete", "padaria", "cafeteria", "pizzaria", "hamburgueria"],
+  educacao: ["escola", "colegio", "curso", "faculdade", "idiomas"],
+  lazer: ["cinema", "parque", "clube"],
+};
+
+function normalize(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+function matchesCategoriaPorNome(nome: string, tab: Categoria): boolean {
+  const kws = KEYWORDS_POR_CATEGORIA[tab];
+  if (!kws) return false;
+  const n = normalize(nome);
+  return kws.some((k) => n.includes(k));
+}
+
 const CATEGORIAS: { id: Categoria; label: string }[] = [
   { id: "todos", label: "Todos" },
   { id: "farmacia", label: "Farmácia" },
@@ -60,7 +84,7 @@ export function ServidorBeneficios() {
   );
   const filtrados = useMemo(() => {
     if (tab === "todos") return parceiros;
-    return parceiros.filter((p) => p.categorias.includes(tab));
+    return parceiros.filter((p) => p.categorias.includes(tab) || matchesCategoriaPorNome(p.nome, tab));
   }, [parceiros, tab]);
 
   if (!info) return null;
