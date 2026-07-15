@@ -95,10 +95,25 @@ fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel(), onMudou: () -> Unit =
     }
 }
 
+/** Nome do tipo de solicitação — pro usuário identificar o que está em análise. */
+private fun tipoPropostaNome(p: PropostaDto): String {
+    if (p.tipoContrato?.equals("REFIN", ignoreCase = true) == true || p.bancoOrigem != null) return "Portabilidade"
+    return when (p.tipoMargem?.uppercase()) {
+        "CARTAO_CONSIGNADO" -> "Cartão de Crédito Consignado"
+        "CARTAO_BENEFICIOS" -> "Cartão Benefício Consignado"
+        else -> if (p.tipoContrato?.equals("ECONSIGNADO", ignoreCase = true) == true) {
+            "Cartão de Crédito Consignado"
+        } else {
+            "Empréstimo Consignado"
+        }
+    }
+}
+
 @Composable
 private fun PropostaCard(p: PropostaDto) {
     val situacao = p.situacao ?: "—"
     val fase = faseChain(situacao, p.folhaStatus, p.folhaMotivo)
+    val tipoNome = tipoPropostaNome(p)
     AtlasCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -106,9 +121,10 @@ private fun PropostaCard(p: PropostaDto) {
             verticalAlignment = Alignment.Top,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(p.banco ?: "Banco Atlas", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                // Título = TIPO da solicitação (Empréstimo / Cartão de Crédito / Cartão Benefício / Portabilidade).
+                Text(tipoNome, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text(
-                    "${p.id}${p.data?.let { " · criada em $it" } ?: ""}",
+                    "${p.banco ?: "Banco Atlas"} · ${p.id}${p.data?.let { " · criada em $it" } ?: ""}",
                     color = InkMuted,
                     fontSize = 12.sp,
                 )
@@ -118,14 +134,21 @@ private fun PropostaCard(p: PropostaDto) {
         }
 
         Spacer(Modifier.height(16.dp))
+        // Parcelas e taxa mensal SÓ para Empréstimo Consignado. Cartão e Portabilidade não têm.
         Row(modifier = Modifier.fillMaxWidth()) {
-            StatCol("Valor liberado", Format.money(p.valor), accent = true, modifier = Modifier.weight(1f))
-            StatCol("Parcelas", "${p.parcelas}x de ${Format.money(p.parcela)}", modifier = Modifier.weight(1f))
-            StatCol(
-                "Taxa mensal",
-                String.format(Locale("pt", "BR"), "%.2f%%", p.taxaAm),
-                modifier = Modifier.weight(1f),
-            )
+            when (tipoNome) {
+                "Empréstimo Consignado" -> {
+                    StatCol("Valor liberado", Format.money(p.valor), accent = true, modifier = Modifier.weight(1f))
+                    StatCol("Parcelas", "${p.parcelas}x de ${Format.money(p.parcela)}", modifier = Modifier.weight(1f))
+                    StatCol(
+                        "Taxa mensal",
+                        String.format(Locale("pt", "BR"), "%.2f%%", p.taxaAm),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+                "Portabilidade" -> StatCol("Saldo a portar", Format.money(p.saldoDevedorOrigem ?: p.valor), accent = true, modifier = Modifier.weight(1f))
+                else -> StatCol("Limite", Format.money(p.valor), accent = true, modifier = Modifier.weight(1f))
+            }
         }
 
         Spacer(Modifier.height(18.dp))

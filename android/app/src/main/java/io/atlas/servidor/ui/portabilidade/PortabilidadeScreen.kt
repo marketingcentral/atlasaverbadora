@@ -132,6 +132,10 @@ private fun ElegivelCard(e: ElegivelDto, bloqueado: Boolean, onPortar: () -> Uni
             Spacer(Modifier.height(10.dp))
             InfoRow("Saldo devedor", Format.money(e.saldoDevedor))
             InfoRow("Parcela atual", Format.money(e.parcela))
+            // Parcelas pagas (quando a planilha da prefeitura traz o total): pagas/total, ex. 20/60.
+            if (e.totalParcelas > 0) {
+                InfoRow("Parcelas pagas", "${(e.totalParcelas - e.parcelasRestantes).coerceAtLeast(0)}/${e.totalParcelas}")
+            }
             InfoRow("Parcelas restantes", "${e.parcelasRestantes}")
             Spacer(Modifier.height(12.dp))
             AtlasPrimaryButton("Solicitar Portabilidade", onClick = onPortar, enabled = !bloqueado)

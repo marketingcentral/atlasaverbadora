@@ -12,8 +12,8 @@ android {
         applicationId = "io.atlas.servidor"
         minSdk = 24
         targetSdk = 34
-        versionCode = 40
-        versionName = "3.19.0"
+        versionCode = 41
+        versionName = "3.20.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }

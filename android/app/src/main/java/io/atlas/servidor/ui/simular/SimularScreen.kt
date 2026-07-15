@@ -294,6 +294,16 @@ private fun CartaoConsignadoView(vm: SimularViewModel, onSolicitado: () -> Unit,
     val ehBeneficio = vm.produto == Produtos.CARTAO_BENEFICIOS
     val rotMargem = if (ehBeneficio) "SUA MARGEM CARTÃO BENEFÍCIO" else "SUA MARGEM CARTÃO CONSIGNADO"
     val rotBotao = if (ehBeneficio) "Solicitar Cartão Benefício" else "Solicitar Cartão Consignado"
+    val nomeCartao = if (ehBeneficio) "Cartão Benefício Consignado" else "Cartão de Crédito Consignado"
+    var showCartaoTermo by remember { mutableStateOf(false) }
+    if (showCartaoTermo) {
+        CartaoTermoDialog(
+            nomeCartao = nomeCartao,
+            limite = vm.limiteCartao,
+            onAceitar = { showCartaoTermo = false; vm.solicitarCartao(onSolicitado) },
+            onCancelar = { showCartaoTermo = false },
+        )
+    }
     Column(
         modifier = Modifier.fillMaxSize().background(Fundo).verticalScroll(rememberScrollState()).padding(20.dp),
     ) {
@@ -380,7 +390,7 @@ private fun CartaoConsignadoView(vm: SimularViewModel, onSolicitado: () -> Unit,
             Spacer(Modifier.height(20.dp))
             AtlasPrimaryButton(
                 text = rotBotao,
-                onClick = { vm.solicitarCartao(onSolicitado) },
+                onClick = { showCartaoTermo = true },
                 loading = vm.submitting,
             )
         }
@@ -482,6 +492,57 @@ private fun TermoDialog(
                 ),
             ) {
                 Text("Aceitar e reservar", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onCancelar) {
+                Text("Cancelar", color = InkMuted, fontWeight = FontWeight.SemiBold)
+            }
+        },
+    )
+}
+
+/** Popup de confirmação do cartão (crédito consignado / benefício) — mesmo aviso de 48h do empréstimo. */
+@Composable
+private fun CartaoTermoDialog(
+    nomeCartao: String,
+    limite: Double,
+    onAceitar: () -> Unit,
+    onCancelar: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancelar,
+        containerColor = Superficie,
+        title = { Text("Confirmar solicitação", fontWeight = FontWeight.ExtraBold, color = Ink) },
+        text = {
+            androidx.compose.foundation.layout.Column {
+                Text(
+                    "Você está solicitando o $nomeCartao junto ao Banco Atlas:",
+                    color = InkMuted,
+                    fontSize = 14.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                io.atlas.servidor.ui.components.InfoRow("Limite proposto", Format.money(limite))
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Ao confirmar, esta solicitação é ENVIADA ao banco (proposta real) e sua margem fica " +
+                        "em pré-reserva por 48h. Você autoriza o Banco Atlas a entrar em contato para emitir " +
+                        "e ativar o cartão. Registrado com data, hora e CPF para auditoria (LGPD).",
+                    color = InkMuted,
+                    fontSize = 12.5.sp,
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.Button(
+                onClick = onAceitar,
+                shape = RoundedCornerShape(12.dp),
+                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Verde,
+                    contentColor = Superficie,
+                ),
+            ) {
+                Text("Autorizar e enviar", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {

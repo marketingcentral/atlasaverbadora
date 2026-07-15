@@ -63,7 +63,7 @@ fun TelemedicinaScreen(home: HomeViewModel, vm: TelemedicinaViewModel = viewMode
     ) {
         Text("Telemedicina", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
         Text(
-            "Benefícios de saúde do seu cartão benefício consignado.",
+            "Benefícios de saúde e bem-estar para você.",
             color = InkMuted,
             fontSize = 14.sp,
         )
@@ -87,13 +87,6 @@ fun TelemedicinaScreen(home: HomeViewModel, vm: TelemedicinaViewModel = viewMode
                     }
                 }
             }
-        }
-
-        if (info != null) {
-            Spacer(Modifier.height(12.dp))
-            SectionLabel("Cartão Benefício Consignado")
-            Spacer(Modifier.height(12.dp))
-            CartaoBeneficioCard(info)
         }
 
         Spacer(Modifier.height(16.dp))

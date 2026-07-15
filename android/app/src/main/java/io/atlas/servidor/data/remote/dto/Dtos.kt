@@ -124,6 +124,10 @@ data class PropostaDto(
     val folhaMotivo: String? = null,
     val data: String? = null,
     @SerializedName("expira_em") val expiraEm: String? = null,
+    // Portabilidade (quando a proposta é um REFIN vindo de outro banco).
+    val bancoOrigem: String? = null,
+    val contratoOrigem: String? = null,
+    val saldoDevedorOrigem: Double? = null,
 )
 
 data class PropostasResponse(val propostas: List<PropostaDto> = emptyList())
