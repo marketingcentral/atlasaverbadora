@@ -1835,8 +1835,9 @@ export class AtlasClient {
     adf: (competencia?: string) => this.request<{ adfs: PrefeituraAdf[] }>("/v1/prefeitura/adf", { query: competencia ? { competencia } : {} }),
     adfCsvUrl: (competencia: string): string => `${this.opts.baseUrl}/v1/prefeitura/adf/${competencia}/download.csv`,
     adfPdfUrl: (competencia: string): string => `${this.opts.baseUrl}/v1/prefeitura/adf/${competencia}/lote.pdf`,
-    confirmarAdf: (ids: string[]) => this.request<{ aplicadas: number }>("/v1/prefeitura/adf/confirmar", { method: "POST", body: { ids } }),
-    reportarFalhaAdf: (ids: string[], motivo: string) => this.request<{ falhas: number }>("/v1/prefeitura/adf/falha", { method: "POST", body: { ids, motivo } }),
+    // confirmarAdf/reportarFalhaAdf removidos — prefeitura so RECEBE ADF; quem
+    // aplica em folha e a averbadora (atlas.admin.confirmarAdfAdmin/reportarFalhaAdfAdmin).
+    // Endpoints backend `/v1/prefeitura/adf/{confirmar,falha}` retornam 403.
 
     // Relatórios (passo 9)
     relServidoresPorVinculo: () => this.request<{ dados: { vinculo: string; total: number }[] }>("/v1/prefeitura/relatorios/servidores-por-vinculo"),

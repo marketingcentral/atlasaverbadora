@@ -23,6 +23,7 @@ export const BANCO_RESOURCE_GROUPS: {
       { key: "propostas", label: "Propostas (todas)" },
       { key: "emprestimo", label: "Emprestimo" },
       { key: "cartao", label: "Cartao" },
+      { key: "cartao_beneficio", label: "Cartao Beneficio" },
       { key: "portabilidade", label: "Portabilidade" },
     ],
   },
@@ -60,11 +61,11 @@ export const BANCO_TODAS_PERMISSOES: string[] = BANCO_RESOURCE_GROUPS.flatMap((g
 export const BANCO_PRESETS: Record<BancoPerfilLabel, string[]> = {
   admin: ["*"],
   operador: [
-    "visao-geral", "propostas", "emprestimo", "cartao", "portabilidade",
+    "visao-geral", "propostas", "emprestimo", "cartao", "cartao_beneficio", "portabilidade",
     "ofertas", "margem-contratacao", "carteira", "convenios", "conta",
   ],
   consulta: [
-    "visao-geral", "propostas", "emprestimo", "cartao", "portabilidade",
+    "visao-geral", "propostas", "emprestimo", "cartao", "cartao_beneficio", "portabilidade",
     "carteira", "convenios", "conta",
   ],
   relatorios: [

@@ -423,50 +423,8 @@ function SubCard({ label, banco, detalhe, tone }: { label: string; banco: string
   );
 }
 
-/** Tab primaria por produto (aba grande no topo com contador). Segmentada
- *  como pill dentro de um "trilho" — diferente do estilo das tabs de status
- *  (pill flutuante) pra deixar visualmente claro que sao 2 dimensoes. */
-function ProdutoTab({ active, label, count, onClick }: { active: boolean; label: string; count: number; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      style={{
-        padding: "10px 12px",
-        borderRadius: 8,
-        border: "none",
-        background: active ? "var(--surface-solid, var(--surface))" : "transparent",
-        color: active ? "var(--text)" : "var(--text-muted)",
-        fontSize: 14,
-        fontWeight: 700,
-        cursor: "pointer",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 8,
-        boxShadow: active ? "0 1px 2px rgba(0,0,0,.08)" : "none",
-        transition: "background .12s ease, color .12s ease",
-      }}
-    >
-      <span>{label}</span>
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          padding: "2px 8px",
-          borderRadius: 999,
-          background: active ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "var(--bg-elev-2, transparent)",
-          color: active ? "var(--accent)" : "var(--text-dim)",
-          border: active ? "1px solid color-mix(in srgb, var(--accent) 40%, transparent)" : "1px solid var(--border)",
-        }}
-      >
-        {count}
-      </span>
-    </button>
-  );
-}
+/* ProdutoTab removido — produto virou submenu do sidebar (query param
+   ?produto=...), a UI de tabs primaria foi eliminada. */
 
 function Tab({ active, onClick, label, tone }: { active: boolean; onClick: () => void; label: string; tone: "neutro" | "gold" | "emerald" | "danger" }) {
   const activeColor =
