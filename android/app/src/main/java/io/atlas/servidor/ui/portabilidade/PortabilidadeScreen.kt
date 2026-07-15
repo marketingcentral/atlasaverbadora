@@ -128,7 +128,7 @@ private fun ElegivelCard(e: ElegivelDto, bloqueado: Boolean, onPortar: () -> Uni
         Column {
             Text(e.banco, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(2.dp))
-            StatusChip("Empréstimo consignado", ChipTone.Neutro)
+            StatusChip(e.tipo, ChipTone.Neutro)
             Spacer(Modifier.height(10.dp))
             InfoRow("Saldo devedor", Format.money(e.saldoDevedor))
             InfoRow("Parcela atual", Format.money(e.parcela))

@@ -157,10 +157,19 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
   // Elegiveis para portabilidade = emprestimos que o servidor JA TEM em OUTROS
   // bancos (importados pela prefeitura via tombamento + seed de teste), NAO os
   // contratos Atlas. Sao esses que o servidor pode "trazer" pro Banco Atlas.
+  // Rotulo amigavel do TIPO do contrato de origem (vem da coluna TIPO da planilha da prefeitura).
+  const tipoPortLabel = (tipo?: string): string => {
+    const s = (tipo ?? "").toLowerCase();
+    if (/benef/.test(s)) return "Cartão Benefício Consignado";
+    if (/cart/.test(s)) return "Cartão de Crédito Consignado";
+    return "Empréstimo Consignado";
+  };
   const elegiveis = listExternalLoans(e.matricula).map((l) => ({
     id: l.id, banco: l.bancoNome, saldoDevedor: round2(l.saldoDevedor), parcela: round2(l.valorParcela),
     parcelasRestantes: l.parcelasRestantes, totalParcelas: l.totalParcelas, taxaAm: l.taxaAm,
     tipoContrato: "Emprestimo" as "Emprestimo" | "Refin",
+    // Nome do banco (l.bancoNome) e tipo do contrato (l.tipo) vem da planilha importada.
+    tipo: tipoPortLabel(l.tipo),
   }));
   return {
     idMatricula: e.idMatricula, matricula: e.matricula,

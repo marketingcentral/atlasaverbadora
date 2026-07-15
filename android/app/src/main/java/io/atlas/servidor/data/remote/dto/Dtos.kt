@@ -289,4 +289,6 @@ data class ElegivelDto(
     val totalParcelas: Int,
     val taxaAm: Double,
     val tipoContrato: String,
+    /** Rótulo do tipo do contrato de origem (da planilha): Empréstimo/Cartão de Crédito/Cartão Benefício Consignado. */
+    val tipo: String = "Empréstimo Consignado",
 )
