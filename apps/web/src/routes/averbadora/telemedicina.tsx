@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, IconButton, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import type { AdminBeneficio } from "@atlas/sdk";
+import type { AdminBeneficio, TelemedicinaCotacao } from "@atlas/sdk";
 
 /** Tela dedicada de Telemedicina — mesmo padrao de tabs de /banco/ofertas:
  *  "Ativas" x "Encerradas". Encerrar (🗑) = soft-delete (pausar), volta pra
@@ -19,6 +19,22 @@ export function AverbadoraTelemedicina() {
     queryFn: () => atlas.admin.beneficios.interessadosResumo(),
     refetchInterval: 30_000,
   });
+  // Cotações solicitadas pelos servidores no banner "Solicitar Cotação" (com telefone).
+  const cotacoesQ = useQuery({
+    queryKey: ["admin", "telemedicina", "cotacoes"],
+    queryFn: () => atlas.admin.listTelemedicinaCotacoes(),
+    refetchInterval: 30_000,
+  });
+
+  const cotacaoCols: Column<TelemedicinaCotacao>[] = [
+    { key: "criadoEm", header: "Quando", render: (c) => new Date(c.criadoEm).toLocaleString("pt-BR") },
+    { key: "nome", header: "Servidor" },
+    { key: "telefone", header: "Telefone", render: (c) => <strong>{c.telefone || "—"}</strong> },
+    { key: "email", header: "E-mail", render: (c) => c.email || "—" },
+    { key: "cpfMasked", header: "CPF", render: (c) => c.cpfMasked || "—" },
+    { key: "matricula", header: "Matrícula" },
+    { key: "prefeitura", header: "Prefeitura" },
+  ];
 
   const pausar = useMutation({
     mutationFn: (id: string) => atlas.admin.beneficios.pausar(id),
@@ -152,6 +168,24 @@ export function AverbadoraTelemedicina() {
           </>
         )}
       />
+
+      {/* Cotações solicitadas pelos servidores no banner "Solicitar Cotação" — o time
+          da Atlas usa o TELEFONE pra entrar em contato e formalizar o plano. */}
+      <div style={{ marginTop: 8 }}>
+        <h2 style={{ margin: "0 0 4px", fontSize: "1.15rem" }}>
+          Cotações solicitadas {(cotacoesQ.data?.cotacoes.length ?? 0) > 0 ? `(${cotacoesQ.data?.cotacoes.length})` : ""}
+        </h2>
+        <p style={{ color: "var(--text-muted)", margin: "0 0 12px", fontSize: 13 }}>
+          Servidores que pediram cotação de telemedicina no app/web. Entre em contato pelo telefone para formalizar.
+        </p>
+        <DataTable
+          columns={cotacaoCols}
+          rows={cotacoesQ.data?.cotacoes ?? []}
+          rowKey={(c) => c.id}
+          loading={cotacoesQ.isLoading}
+          emptyState="Nenhuma cotação de telemedicina solicitada ainda."
+        />
+      </div>
     </div>
   );
 }

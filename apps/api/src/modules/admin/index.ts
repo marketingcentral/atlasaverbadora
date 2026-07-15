@@ -25,6 +25,7 @@ import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbado
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
+import { refreshCotacoes } from "./telemedicina-cotacoes-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
@@ -651,6 +652,27 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       volumePorConvenio: Object.entries(volumePorConvenio).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
       volumePorBanco: Object.entries(volumePorBanco).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
     });
+  })
+
+  // Cotacoes de telemedicina solicitadas pelos servidores (banner de Beneficios).
+  // A averbadora ve os dados do servidor — principalmente o TELEFONE — pra formalizar.
+  .get("/v1/admin/telemedicina/cotacoes", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const list = await refreshCotacoes(c.env);
+    const cotacoes = [...list]
+      .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))
+      .map((x) => ({
+        id: x.id,
+        nome: x.nome,
+        cpfMasked: x.cpfMasked,
+        telefone: x.telefone,
+        email: x.email,
+        matricula: x.matricula,
+        prefeitura: x.prefeitura,
+        situacao: x.situacao,
+        criadoEm: x.criadoEm,
+      }));
+    return c.json({ cotacoes });
   })
 
   // ===== Manutenção de contas de TESTE =====

@@ -35,6 +35,10 @@ interface ApiService {
     @POST("v1/servidores/me/cartoes")
     suspend fun solicitarCartao(@Body body: io.atlas.servidor.data.remote.dto.SolicitarCartaoRequest): io.atlas.servidor.data.remote.dto.SolicitarCartaoResponse
 
+    /** Solicita cotação de telemedicina — a averbadora recebe os dados do servidor (telefone). */
+    @POST("v1/servidores/me/telemedicina/cotacao")
+    suspend fun solicitarCotacaoTelemedicina(@Body body: io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaRequest): io.atlas.servidor.data.remote.dto.OkResponse
+
     /** Benefícios/parceiros por categoria (ex.: "saude" para a Telemedicina). */
     @GET("v1/servidores/me/beneficios")
     suspend fun beneficios(

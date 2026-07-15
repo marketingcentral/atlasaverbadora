@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Card } from "@atlas/ui/web";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { atlas } from "../../lib/sdk";
 import type { ServidorBeneficio } from "@atlas/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
@@ -33,6 +33,12 @@ export function ServidorSaude() {
     enabled: !!info?.matricula,
   });
   const parceiros = beneficiosQ.data?.beneficios ?? [];
+
+  const [showCotar, setShowCotar] = useState(false);
+  const cotacao = useMutation({
+    mutationFn: () => atlas.servidor.solicitarCotacaoTelemedicina({ matricula: info?.matricula }),
+    onSuccess: () => setShowCotar(false),
+  });
 
   if (!info) return null;
 
@@ -83,11 +89,11 @@ export function ServidorSaude() {
             background: "rgba(255,255,255,.2)", color: "white",
             border: "1px solid rgba(255,255,255,.3)",
           }}>
-            GRATUITO · Sem carência
+            Plano mínimo de 12 meses
           </span>
           <button
             type="button"
-            onClick={() => alert("Fluxo de agendamento — em breve.")}
+            onClick={() => setShowCotar(true)}
             style={{
               padding: "10px 18px", borderRadius: 10,
               background: "white", color: "var(--emerald-600, #059669)",
@@ -95,10 +101,52 @@ export function ServidorSaude() {
               boxShadow: "0 2px 8px rgba(0,0,0,.15)",
             }}
           >
-            Agendar consulta →
+            Solicitar Cotação
           </button>
         </div>
       </article>
+
+      {showCotar && (
+        <div
+          onClick={() => !cotacao.isPending && setShowCotar(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-elev, #fff)", borderRadius: 16, padding: 24, maxWidth: 440, width: "100%", boxShadow: "0 10px 40px rgba(0,0,0,.3)" }}>
+            <h3 style={{ margin: "0 0 8px", fontSize: "1.25rem" }}>Telemedicina — Solicitar Cotação</h3>
+            <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "0 0 10px" }}>
+              Consultas online 24h com médicos parceiros (Clínico Geral, Pediatria, Psicologia e Nutrição).
+              Plano com compromisso mínimo de 12 meses.
+            </p>
+            <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 16px" }}>
+              Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato com você
+              para formalizar a solicitação.
+            </p>
+            {cotacao.isError && (
+              <p style={{ color: "var(--danger, #dc2626)", fontSize: 13, margin: "0 0 12px" }}>
+                Não foi possível enviar. Tente novamente.
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setShowCotar(false)}
+                disabled={cotacao.isPending}
+                style={{ padding: "10px 16px", borderRadius: 10, background: "transparent", border: "1px solid var(--border)", color: "var(--text-muted)", fontWeight: 600, cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => cotacao.mutate()}
+                disabled={cotacao.isPending}
+                style={{ padding: "10px 18px", borderRadius: 10, background: "var(--emerald-500)", color: "white", border: "none", fontWeight: 700, cursor: "pointer" }}
+              >
+                {cotacao.isPending ? "Enviando…" : "Solicitar Cotação"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Parceiros de saúde */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>

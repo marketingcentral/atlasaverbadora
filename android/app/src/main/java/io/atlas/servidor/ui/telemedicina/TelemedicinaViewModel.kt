@@ -19,7 +19,32 @@ class TelemedicinaViewModel : ViewModel() {
     var state by mutableStateOf<UiState<List<BeneficioDto>>>(UiState.Loading)
         private set
 
+    // Cotação de telemedicina: idle → enviando → enviada; erro guarda a mensagem.
+    var cotacaoEnviando by mutableStateOf(false)
+        private set
+    var cotacaoEnviada by mutableStateOf(false)
+        private set
+    var cotacaoErro by mutableStateOf<String?>(null)
+        private set
+
     init { load() }
+
+    /** Envia a cotação de telemedicina (a averbadora recebe os dados do servidor). */
+    fun solicitarCotacao(onSucesso: () -> Unit) {
+        if (cotacaoEnviando) return
+        viewModelScope.launch {
+            cotacaoEnviando = true; cotacaoErro = null
+            try {
+                repo.solicitarCotacaoTelemedicina(prefs.selectedMatricula)
+                cotacaoEnviada = true
+                onSucesso()
+            } catch (e: ApiException) {
+                cotacaoErro = e.userMessage
+            } finally {
+                cotacaoEnviando = false
+            }
+        }
+    }
 
     fun load() {
         viewModelScope.launch {

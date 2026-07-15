@@ -53,6 +53,10 @@ class ServidorRepository(
     suspend fun solicitarPortabilidade(matricula: String?, elegivelId: String? = null) =
         safeApi(gson) { api.solicitarPortabilidade(io.atlas.servidor.data.remote.dto.SolicitarPortabilidadeRequest(matricula, elegivelId)) }
 
+    /** Solicita cotação de telemedicina — a averbadora recebe os dados do servidor (telefone). */
+    suspend fun solicitarCotacaoTelemedicina(matricula: String?) =
+        safeApi(gson) { api.solicitarCotacaoTelemedicina(io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaRequest(matricula)) }
+
     /** Remove as propostas EM ANÁLISE (fase de teste). */
     suspend fun removerPropostasEmAnalise(matricula: String?) = safeApi(gson) { api.removerPropostasEmAnalise(matricula) }
 

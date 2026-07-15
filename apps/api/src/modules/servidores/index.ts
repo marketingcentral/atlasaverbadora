@@ -11,6 +11,7 @@ import { listContratos, criarContratoOuReserva, persistContrato, refreshContrato
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
+import { loadCotacoes, refreshCotacoes, persistCotacao, nextCotacaoId, type TelemedicinaCotacao } from "../admin/telemedicina-cotacoes-store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
@@ -613,6 +614,46 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     };
     await persistClique(c.env, clique);
     return c.json({ ok: true });
+  })
+  // Solicitacao de COTACAO de telemedicina. O servidor confirma o termo no banner de
+  // Beneficios; a Atlas (averbadora) recebe os dados dele (com TELEFONE) pra formalizar.
+  .post("/v1/servidores/me/telemedicina/cotacao", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = await c.req.json().catch(() => ({}));
+    const matAtiva = typeof body?.matricula === "string" ? body.matricula : undefined;
+    const entryAtivo = matAtiva
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
+      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
+    if (!entryAtivo) throw Errors.notFound("matricula");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio);
+    const prefId = conv?.prefeituraId ?? s.prefeitura_id;
+    const pref = prefeituras.find((p) => p.id === prefId);
+    // Dedup: uma cotacao "nova" pendente por servidor+matricula (evita spam de cliques).
+    await refreshCotacoes(c.env);
+    const jaTem = (await loadCotacoes(c.env)).some(
+      (x) => x.servidorId === s.id && x.matricula === entryAtivo.matricula && x.situacao === "nova",
+    );
+    if (jaTem) return c.json({ ok: true, deduplicado: true });
+    const cot: TelemedicinaCotacao = {
+      id: nextCotacaoId(),
+      servidorId: s.id,
+      nome: entryAtivo.nome,
+      cpfMasked: entryAtivo.cpfMasked,
+      telefone: entryAtivo.telefone ?? "",
+      email: entryAtivo.email ?? "",
+      matricula: entryAtivo.matricula,
+      prefeituraId: prefId,
+      prefeitura: pref ? `Prefeitura de ${pref.nome}` : entryAtivo.origem,
+      situacao: "nova",
+      criadoEm: new Date().toISOString(),
+    };
+    await persistCotacao(c.env, cot);
+    pushEvent("info", "servidor.telemedicina_cotacao", `${entryAtivo.nome} solicitou cotacao de telemedicina.`);
+    return c.json({ ok: true, id: cot.id });
   })
   // Vitrine (carrossel) exibido no dashboard do servidor. So banners ativos.
   // Fonte de verdade: admin_vitrine (a averbadora cadastra em /averbadora/vitrine).

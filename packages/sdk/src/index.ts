@@ -23,6 +23,7 @@ export type {
   AdminTombamentoLote, AdminTombamentoLinha, TombamentoStatus,
   AdminBateCarteiraLinha, AdminBateCarteiraResultado,
   AdminAuditEntry, AuditCategoria,
+  TelemedicinaCotacao,
   AdminAverbadoraUser, AverbadoraPerfil,
   AdminApiToken, AdminApiTokenInput,
   AdminWebhook, AdminWebhookInput, AdminWebhookDelivery,

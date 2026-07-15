@@ -688,6 +688,19 @@ export type AuditCategoria =
   | "pre_reserva" | "termo_aceite" | "biometria" | "dados_pessoais"
   | "margem" | "tombamento" | "id_unico" | "convenio_config" | "acesso";
 
+/** Cotacao de telemedicina solicitada por um servidor (banner de Beneficios). */
+export interface TelemedicinaCotacao {
+  id: string;
+  nome: string;
+  cpfMasked: string;
+  telefone: string;
+  email: string;
+  matricula: string;
+  prefeitura: string;
+  situacao: string;
+  criadoEm: string;
+}
+
 export interface AdminAuditEntry {
   id: string;
   ts: string;
@@ -1226,6 +1239,13 @@ export class AtlasClient {
         `/v1/servidores/me/beneficios/${encodeURIComponent(beneficioId)}/clique`,
         { method: "POST", body: input ?? {} },
       ),
+    /** Solicita cotacao de telemedicina — a averbadora recebe os dados do servidor
+     *  (principalmente o telefone) pra entrar em contato e formalizar o plano. */
+    solicitarCotacaoTelemedicina: (input?: { matricula?: string }) =>
+      this.request<{ ok: true; id?: string; deduplicado?: boolean }>(
+        "/v1/servidores/me/telemedicina/cotacao",
+        { method: "POST", body: input ?? {} },
+      ),
     /** Vitrine (carrossel) mostrada no dashboard do servidor — banners ativos
      *  cadastrados pela averbadora em /averbadora/vitrine. */
     vitrine: () =>
@@ -1593,6 +1613,11 @@ export class AtlasClient {
     // Auditoria
     listAuditoria: (q?: { categoria?: AuditCategoria; cpf?: string; matricula?: string; proposta_id?: string; desde?: string; ate?: string; limit?: number }) =>
       this.request<{ entries: AdminAuditEntry[]; categorias: { value: AuditCategoria; label: string }[] }>("/v1/admin/auditoria", { query: q ?? {} }),
+
+    // Cotacoes de telemedicina solicitadas pelos servidores (banner de Beneficios).
+    // A averbadora ve os dados do servidor — principalmente o telefone — pra formalizar.
+    listTelemedicinaCotacoes: () =>
+      this.request<{ cotacoes: TelemedicinaCotacao[] }>("/v1/admin/telemedicina/cotacoes"),
 
     // Templates de TERMOS (aceite in-app do servidor + anuencia da prefeitura)
     listTermos: () => this.request<{ termos: TermoTemplate[] }>("/v1/admin/termos"),
