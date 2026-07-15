@@ -120,23 +120,16 @@ private fun PropostaCard(p: PropostaDto) {
     val fase = faseChain(situacao, p.folhaStatus, p.folhaMotivo)
     val tipoNome = tipoPropostaNome(p)
     AtlasCard {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
-        ) {
-            Column(Modifier.weight(1f)) {
-                // Título = TIPO da solicitação (Empréstimo / Cartão de Crédito / Cartão Benefício / Portabilidade).
-                Text(tipoNome, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text(
-                    "${p.banco ?: "Banco Atlas"} · ${p.id}${p.data?.let { " · criada em $it" } ?: ""}",
-                    color = InkMuted,
-                    fontSize = 12.sp,
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            StatusChip(situacaoCurta(situacao), statusTone(situacao))
-        }
+        // Chip informativo (Em análise/Liberada/…) no TOPO, em linha única — pra todos os produtos.
+        StatusChip(situacaoCurta(situacao), statusTone(situacao))
+        Spacer(Modifier.height(10.dp))
+        // Título = TIPO da solicitação (Empréstimo / Cartão de Crédito / Cartão Benefício / Portabilidade).
+        Text(tipoNome, color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "${p.banco ?: "Banco Atlas"} · ${p.id}${p.data?.let { " · criada em $it" } ?: ""}",
+            color = InkMuted,
+            fontSize = 12.sp,
+        )
 
         Spacer(Modifier.height(16.dp))
         // Parcelas e taxa mensal SÓ para Empréstimo Consignado. Cartão e Portabilidade não têm.
@@ -213,13 +206,10 @@ private fun situacaoCurta(situacao: String): String {
 private fun CotacaoTeleCard(cot: io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaDto) {
     val contatado = cot.situacao.equals("contatado", ignoreCase = true)
     AtlasCard {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-            Column {
-                Text("Telemedicina", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text("Cotação · solicitada em ${cot.criadoEm.take(10)}", color = InkMuted, fontSize = 12.sp)
-            }
-            StatusChip("Em análise", ChipTone.Ambar)
-        }
+        StatusChip("Em análise", ChipTone.Ambar)
+        Spacer(Modifier.height(10.dp))
+        Text("Telemedicina", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        Text("Cotação · solicitada em ${cot.criadoEm.take(10)}", color = InkMuted, fontSize = 12.sp)
         Spacer(Modifier.height(12.dp))
         PassoTele("Cotação solicitada", true)
         PassoTele("Em análise — a Atlas vai entrar em contato", contatado)

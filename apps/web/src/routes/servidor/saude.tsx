@@ -103,7 +103,7 @@ export function ServidorSaude() {
               padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
               background: "rgba(255,255,255,.18)", color: "white", textAlign: "center",
             }}>
-              ⏳ Cotação em análise · a Atlas vai entrar em contato
+              Cotação em análise. Em breve, a equipe da Atlas entrará em contato com você.
             </span>
           ) : (
             <button

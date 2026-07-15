@@ -155,7 +155,7 @@ private fun TelemedicinaBanner(cotacaoPendente: Boolean, onSolicitarCotacao: () 
                     shape = RoundedCornerShape(10.dp),
                 ) {
                     Text(
-                        "⏳ Cotação em análise · a Atlas vai entrar em contato",
+                        "Cotação em análise. Em breve, a equipe da Atlas entrará em contato com você.",
                         color = Superficie,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,

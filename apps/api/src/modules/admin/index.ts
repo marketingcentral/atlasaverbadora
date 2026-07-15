@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -25,7 +25,7 @@ import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbado
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
-import { refreshCotacoes, updateCotacaoSituacao } from "./telemedicina-cotacoes-store.js";
+import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes } from "./telemedicina-cotacoes-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
@@ -658,6 +658,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // A averbadora ve os dados do servidor — principalmente o TELEFONE — pra formalizar.
   .get("/v1/admin/telemedicina/cotacoes", async (c) => {
     requireAdmin(c.get("jwt"));
+    await expireStaleCotacoes(c.env); // cancela as >48h sem contato (libera margem)
     const list = await refreshCotacoes(c.env);
     const cotacoes = [...list]
       .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))
@@ -675,12 +676,38 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ cotacoes });
   })
 
-  // Averbadora ativa o plano de telemedicina do servidor (situacao -> "fechado").
+  // Averbadora ativa o plano de telemedicina: cria um CONTRATO ATIVO de 12 meses
+  // (R$ 50/mes, na margem de EMPRESTIMO) e marca a cotacao como "fechado".
   .post("/v1/admin/telemedicina/cotacoes/:id/ativar", async (c) => {
     requireAdmin(c.get("jwt"));
     const cot = await updateCotacaoSituacao(c.env, c.req.param("id"), "fechado");
     if (!cot) throw Errors.notFound("cotacao");
-    return c.json({ ok: true, situacao: cot.situacao });
+    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === cot.matricula);
+    const conv = entry ? CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio) : undefined;
+    const contrato = criarContratoOuReserva({
+      bancoId: conv?.bancoId ?? 1,
+      servidorId: cot.servidorId,
+      idMatricula: entry?.idMatricula ?? cot.matricula,
+      matricula: cot.matricula,
+      nome: cot.nome,
+      cpfMasked: cot.cpfMasked,
+      convenioId: conv?.id ?? entry?.idConvenio ?? "",
+      convenio: "Telemedicina Atlas",
+      tipoContrato: "EMPRESTIMO", // consome a margem de emprestimo consignado
+      valorFinanciado: 50 * 12,
+      parcelas: 12, // plano de 12 meses
+      taxaAm: 0,
+      cetAm: 0,
+      iof: 0,
+      diasCarencia: 0,
+      valorParcela: 50,
+      codigoVerba: conv?.codigoVerba ?? "",
+      observacoes: "Plano de Telemedicina — 12 meses (R$ 50,00/mês), descontado da margem de empréstimo consignado.",
+      isReserva: false, // contrato ATIVO direto (vai pra Contratos Ativos)
+      ator: "averbadora",
+    });
+    await persistContrato(c.env, contrato.adf);
+    return c.json({ ok: true, situacao: cot.situacao, contratoAdf: contrato.adf });
   })
   // Averbadora cancela a cotacao (situacao -> "cancelado").
   .post("/v1/admin/telemedicina/cotacoes/:id/cancelar", async (c) => {

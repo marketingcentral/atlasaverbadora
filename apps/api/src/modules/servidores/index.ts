@@ -11,7 +11,7 @@ import { listContratos, criarContratoOuReserva, persistContrato, refreshContrato
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
-import { loadCotacoes, refreshCotacoes, persistCotacao, nextCotacaoId, type TelemedicinaCotacao } from "../admin/telemedicina-cotacoes-store.js";
+import { loadCotacoes, refreshCotacoes, persistCotacao, nextCotacaoId, expireStaleCotacoes, type TelemedicinaCotacao } from "../admin/telemedicina-cotacoes-store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
@@ -89,7 +89,16 @@ function mapContratoStatus(situacao: string): "Averbado" | "Em dia" | "Quitado" 
  * Builds the full MatriculaInfo the servidor app consumes, from the real base
  * (SERVIDORES_BUSCA_MOCK + listContratos) — same source of truth as os outros perfis.
  */
-function buildMatriculaInfo(e: ServidorBuscaMock) {
+// Telemedicina: plano de teste R$ 50/mes por 12 meses. A COTACAO reserva a margem
+// de EMPRESTIMO consignado por 48h (o valor tambem sai dessa margem); depois disso,
+// sem contato, a cotacao e cancelada e a margem liberada.
+const TELE_VALOR = 50;
+const TELE_MESES = 12;
+const TELE_TTL_MS = 48 * 60 * 60 * 1000;
+
+/** teleLockEmp = valor (R$) que as cotacoes de telemedicina PENDENTES desta matricula
+ *  travam na margem de EMPRESTIMO (R$ 50 por cotacao ativa dentro das 48h). */
+function buildMatriculaInfo(e: ServidorBuscaMock, teleLockEmp = 0) {
   const conv = CONVENIOS_MOCK.find((cv) => cv.id === e.idConvenio);
   const prefId = conv?.prefeituraId ?? 1;
   const pref = prefeituras.find((p) => p.id === prefId);
@@ -110,6 +119,8 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     const bucket = deriveTipoMargem(ct);
     comprometidoPorTipo[bucket] += ct.valorParcela;
   }
+  // Cotacao de telemedicina pendente reserva a margem de EMPRESTIMO consignado.
+  comprometidoPorTipo.EMPRESTIMO += teleLockEmp;
   // Total comprometido de emprestimo (pra retro-compat no campo comprometido raiz).
   const comprometido = comprometidoPorTipo.EMPRESTIMO;
   const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
@@ -319,13 +330,22 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // Filtra matriculas arquivadas (soft-delete) — a averbadora pode arquivar
     // uma matricula fantasma (ex.: registro criado por import do CSV de exemplo)
     // e a partir daqui ela some do switcher do servidor sem apagar do banco.
+    // Cotacoes de telemedicina do servidor: cada uma pendente (<48h) trava R$ 50 na
+    // margem de EMPRESTIMO. As vencidas (>48h sem contato) sao canceladas e liberam.
+    await refreshCotacoes(c.env);
+    await expireStaleCotacoes(c.env);
+    const cotacoesServidor = (await loadCotacoes(c.env)).filter((x) => x.servidorId === s.id);
+    const teleLockPorMatricula = (matricula: string): number =>
+      cotacoesServidor.filter(
+        (x) => x.matricula === matricula && (x.situacao === "nova" || x.situacao === "contatado"),
+      ).length * TELE_VALOR;
     const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
     const withStatus = await Promise.all(
       entries.map(async (e) => ({ e, status: await getServidorStatus(c.env, e.matricula) })),
     );
     const matriculas = withStatus
       .filter(({ status }) => status !== "arquivado")
-      .map(({ e }) => buildMatriculaInfo(e));
+      .map(({ e }) => buildMatriculaInfo(e, teleLockPorMatricula(e.matricula)));
     return c.json({ matriculas });
   })
   // Ofertas ATIVAS criadas pelos bancos que casam com o perfil do servidor
@@ -663,7 +683,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
-    await refreshCotacoes(c.env);
+    await expireStaleCotacoes(c.env); // cancela as >48h (libera a margem travada)
     const cotacoes = (await loadCotacoes(c.env))
       .filter((x) => x.servidorId === s.id)
       .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))

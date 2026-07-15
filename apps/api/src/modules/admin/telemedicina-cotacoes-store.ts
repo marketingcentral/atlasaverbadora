@@ -56,6 +56,19 @@ export async function updateCotacaoSituacao(env: Env, id: string, situacao: stri
   return cot;
 }
 
+const TTL_MS = 48 * 60 * 60 * 1000;
+/** Cancela cotacoes "nova" com mais de 48h sem contato (libera a margem travada). */
+export async function expireStaleCotacoes(env: Env): Promise<void> {
+  await refreshCotacoes(env);
+  const agora = Date.now();
+  for (const cot of CACHE.list) {
+    if (cot.situacao === "nova" && agora - new Date(cot.criadoEm).getTime() > TTL_MS) {
+      cot.situacao = "cancelado";
+      try { await upsertCollectionRow(env, TABLE, cot.id, cot); } catch { /* fail-safe */ }
+    }
+  }
+}
+
 /** ID: prefixo TMC + segundo + random (random cobre colisoes no mesmo segundo). */
 export function nextCotacaoId(): string {
   const rand = Math.random().toString(36).slice(2, 8).toUpperCase();
