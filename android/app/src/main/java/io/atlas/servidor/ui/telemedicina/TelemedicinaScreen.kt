@@ -85,7 +85,12 @@ fun TelemedicinaScreen(home: HomeViewModel, vm: TelemedicinaViewModel = viewMode
                 onCancelar = { showCotar = false },
             )
         }
-        TelemedicinaBanner(cotacaoPendente = vm.cotacaoPendente, onSolicitarCotacao = { showCotar = true })
+        TelemedicinaBanner(
+            cotacaoPendente = vm.cotacaoPendente,
+            planoProgresso = vm.planoProgresso,
+            planoMesesRestantes = vm.planoMesesRestantes,
+            onSolicitarCotacao = { showCotar = true },
+        )
 
         Spacer(Modifier.height(24.dp))
         SectionLabel("Rede de saúde parceira")
@@ -113,7 +118,12 @@ fun TelemedicinaScreen(home: HomeViewModel, vm: TelemedicinaViewModel = viewMode
 
 /** Destaque verde — Telemedicina (mesmo conteúdo da web) + botão Solicitar Cotação. */
 @Composable
-private fun TelemedicinaBanner(cotacaoPendente: Boolean, onSolicitarCotacao: () -> Unit) {
+private fun TelemedicinaBanner(
+    cotacaoPendente: Boolean,
+    planoProgresso: Float?,
+    planoMesesRestantes: Int,
+    onSolicitarCotacao: () -> Unit,
+) {
     Surface(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)),
         color = Verde,
@@ -148,7 +158,27 @@ private fun TelemedicinaBanner(cotacaoPendente: Boolean, onSolicitarCotacao: () 
                 )
             }
             Spacer(Modifier.height(14.dp))
-            if (cotacaoPendente) {
+            if (planoProgresso != null) {
+                // Plano ATIVO — barra de progresso do plano de 12 meses.
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = Superficie.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(10.dp),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("✓ Plano Ativo", color = Superficie, fontSize = 13.sp, fontWeight = FontWeight.ExtraBold)
+                            Text("faltam $planoMesesRestantes meses", color = Superficie, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Box(Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(999.dp)).background(Superficie.copy(alpha = 0.25f))) {
+                            Box(Modifier.fillMaxWidth(planoProgresso).height(8.dp).clip(RoundedCornerShape(999.dp)).background(Superficie))
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text("Plano de 12 meses · ${(planoProgresso * 100).toInt()}% concluído", color = Superficie.copy(alpha = 0.85f), fontSize = 11.sp)
+                    }
+                }
+            } else if (cotacaoPendente) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     color = Superficie.copy(alpha = 0.18f),

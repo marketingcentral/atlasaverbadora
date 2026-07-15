@@ -5,11 +5,12 @@ import { Button, DataTable, IconButton, Pill, type Column } from "@atlas/ui/web"
 import { atlas } from "../../lib/sdk";
 import type { AdminBeneficio, TelemedicinaCotacao } from "@atlas/sdk";
 
-const SITUACAO_VAR: Record<string, "pendente" | "aceita" | "averbado" | "expirado"> = {
-  nova: "pendente",
-  contatado: "aceita",
-  fechado: "averbado",
-  cancelado: "expirado",
+// Estágio da cotação -> rótulo + cor (Pill). Em análise=âmbar, Ativa=verde, Cancelada=vermelho.
+const SITUACAO_INFO: Record<string, { label: string; variant: "pendente" | "aceita" | "averbado" | "rejeitada" }> = {
+  nova: { label: "Em análise", variant: "pendente" },
+  contatado: { label: "Em contato", variant: "aceita" },
+  fechado: { label: "Ativa", variant: "averbado" },
+  cancelado: { label: "Cancelada", variant: "rejeitada" },
 };
 
 /** Tela dedicada de Telemedicina — mesmo padrao de tabs de /banco/ofertas:
@@ -41,6 +42,14 @@ export function AverbadoraTelemedicina() {
     { key: "cpfMasked", header: "CPF", render: (c) => c.cpfMasked || "—" },
     { key: "matricula", header: "Matrícula" },
     { key: "prefeitura", header: "Prefeitura" },
+    {
+      key: "situacao",
+      header: "Situação",
+      render: (c) => {
+        const info = SITUACAO_INFO[c.situacao] ?? { label: c.situacao, variant: "pendente" as const };
+        return <Pill variant={info.variant}>{info.label}</Pill>;
+      },
+    },
   ];
 
   const pausar = useMutation({

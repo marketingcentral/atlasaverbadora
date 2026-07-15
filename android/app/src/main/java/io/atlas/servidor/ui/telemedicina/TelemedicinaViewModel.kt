@@ -29,6 +29,11 @@ class TelemedicinaViewModel : ViewModel() {
     /** Já existe cotação em andamento (nova/contatado) → esconde o botão, mostra "em análise". */
     var cotacaoPendente by mutableStateOf(false)
         private set
+    /** Progresso (0..1) do plano ATIVO (fechado) — null se não há plano ativo. */
+    var planoProgresso by mutableStateOf<Float?>(null)
+        private set
+    var planoMesesRestantes by mutableStateOf(0)
+        private set
 
     init { load(); carregarCotacoes() }
 
@@ -36,7 +41,19 @@ class TelemedicinaViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 val r = repo.minhasCotacoesTelemedicina()
-                cotacaoPendente = r.cotacoes.any { !it.situacao.equals("fechado", true) && !it.situacao.equals("cancelado", true) }
+                cotacaoPendente = r.cotacoes.any { it.situacao == "nova" || it.situacao == "contatado" }
+                val ativa = r.cotacoes.firstOrNull { it.situacao == "fechado" }
+                if (ativa?.ativadoEm != null) {
+                    val ini = runCatching { java.time.Instant.parse(ativa.ativadoEm).toEpochMilli() }.getOrNull()
+                    if (ini != null) {
+                        val fim = ini + 12L * 30 * 24 * 3600 * 1000
+                        val agora = System.currentTimeMillis()
+                        planoProgresso = ((agora - ini).toFloat() / (fim - ini)).coerceIn(0f, 1f)
+                        planoMesesRestantes = (((fim - agora).toDouble() / (30.0 * 24 * 3600 * 1000)).let { Math.ceil(it) }).toInt().coerceAtLeast(0)
+                    }
+                } else {
+                    planoProgresso = null
+                }
             } catch (_: ApiException) { /* mantém estado */ }
         }
     }

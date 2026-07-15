@@ -112,7 +112,9 @@ fun InicioScreen(
             val info = vm.current()
             // Trava por produto (fonte = servidor): proposta em análise desse produto — mesmo
             // criada na web — bloqueia. Empréstimo em análise não bloqueia o cartão, e vice-versa.
-            val lockEmprestimo = vm.produtoBloqueado(Produtos.EMPRESTIMO)
+            // Telemedicina em análise TAMBÉM bloqueia o empréstimo (48h), sem descontar o valor.
+            val teleEmAnalise = info?.telemedicinaEmAnalise == true
+            val lockEmprestimo = vm.produtoBloqueado(Produtos.EMPRESTIMO) || teleEmAnalise
             val lockCartao = vm.produtoBloqueado(Produtos.CARTAO_CONSIGNADO)
             val lockBeneficio = vm.produtoBloqueado(Produtos.CARTAO_BENEFICIOS)
             Column(
@@ -138,7 +140,7 @@ fun InicioScreen(
                         lockEmprestimo = lockEmprestimo,
                         lockCartao = lockCartao,
                         lockBeneficio = lockBeneficio,
-                        portabilidadeEmAnalise = vm.portabilidadeEmAnalise,
+                        portabilidadeEmAnalise = vm.portabilidadeEmAnalise || teleEmAnalise,
                         onSimularProduto = onSimularProduto,
                         onOpenAnalise = onOpenAnalise,
                     )

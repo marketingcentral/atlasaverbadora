@@ -4,7 +4,7 @@
 // o contrato. Persistido em admin_telemedicina_cotacoes (jsonb collection).
 
 import type { Env } from "../../env.js";
-import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
+import { loadCollection, upsertCollectionRow, deleteCollectionRow } from "../../db/repos.js";
 
 export interface TelemedicinaCotacao {
   /** ID unico: TMC-<timestamp>-<random>. */
@@ -21,6 +21,8 @@ export interface TelemedicinaCotacao {
   situacao: string;
   /** Timestamp ISO. */
   criadoEm: string;
+  /** Quando a averbadora ATIVOU o plano (situacao=fechado) — base da barra de progresso 12 meses. */
+  ativadoEm?: string;
 }
 
 const TABLE = "admin_telemedicina_cotacoes";
@@ -46,14 +48,25 @@ export async function persistCotacao(env: Env, cot: TelemedicinaCotacao): Promis
   CACHE.list.push(cot);
 }
 
-/** Atualiza a situacao de uma cotacao (averbadora: "contatado" | "fechado" | "cancelado"). */
+/** Atualiza a situacao de uma cotacao (averbadora: "contatado" | "fechado" | "cancelado").
+ *  Ao FECHAR (ativar plano), carimba ativadoEm — base da barra de progresso de 12 meses. */
 export async function updateCotacaoSituacao(env: Env, id: string, situacao: string): Promise<TelemedicinaCotacao | null> {
   await refreshCotacoes(env);
   const cot = CACHE.list.find((x) => x.id === id);
   if (!cot) return null;
   cot.situacao = situacao;
+  if (situacao === "fechado" && !cot.ativadoEm) cot.ativadoEm = new Date().toISOString();
   try { await upsertCollectionRow(env, TABLE, cot.id, cot); } catch { /* fail-safe */ }
   return cot;
+}
+
+/** Apaga TODAS as cotacoes (limpeza de testes — averbadora). */
+export async function purgeCotacoes(env: Env): Promise<number> {
+  await refreshCotacoes(env);
+  const ids = CACHE.list.map((x) => x.id);
+  for (const id of ids) { try { await deleteCollectionRow(env, TABLE, id); } catch { /* fail-safe */ } }
+  CACHE.list = [];
+  return ids.length;
 }
 
 const TTL_MS = 48 * 60 * 60 * 1000;

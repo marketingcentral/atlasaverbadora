@@ -3,12 +3,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Pill } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 
-const SITUACAO: Record<string, { label: string; variant: "pendente" | "aceita" | "averbado" | "expirado" }> = {
+const SITUACAO: Record<string, { label: string; variant: "pendente" | "aceita" | "averbado" | "rejeitada" }> = {
   nova: { label: "Em análise", variant: "pendente" },
   contatado: { label: "Em contato", variant: "aceita" },
-  fechado: { label: "Plano ativo", variant: "averbado" },
-  cancelado: { label: "Cancelada", variant: "expirado" },
+  fechado: { label: "Ativa", variant: "averbado" },
+  cancelado: { label: "Cancelada", variant: "rejeitada" },
 };
+
+/** Máscara de telefone: 48991073451 -> (48) 99107-3451. */
+function maskPhone(v: string): string {
+  const d = (v || "").replace(/\D/g, "");
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return v || "—";
+}
 
 /** Detalhe de uma cotação de telemedicina — mesma estrutura de uma proposta de
  *  empréstimo consignado em análise: cabeçalho + status + dados do servidor +
@@ -38,7 +46,7 @@ export function AverbadoraTelemedicinaCotacao() {
   const encerrada = cot?.situacao === "fechado" || cot?.situacao === "cancelado";
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%" }}>
       <button
         type="button"
         onClick={() => nav("/averbadora/telemedicina")}
@@ -64,23 +72,26 @@ export function AverbadoraTelemedicinaCotacao() {
             <Pill variant={st.variant}>{st.label}</Pill>
           </header>
 
-          <section style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 24 }}>
-            <h2 style={{ margin: "0 0 16px", fontSize: "1.1rem" }}>Dados do servidor</h2>
-            <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "12px 20px", margin: 0, fontSize: 15 }}>
-              <dt style={{ color: "var(--text-muted)" }}>Telefone</dt>
-              <dd style={{ margin: 0, fontWeight: 800, fontSize: 17 }}>{cot.telefone || "—"}</dd>
-              <dt style={{ color: "var(--text-muted)" }}>E-mail</dt>
-              <dd style={{ margin: 0 }}>{cot.email || "—"}</dd>
-              <dt style={{ color: "var(--text-muted)" }}>CPF</dt>
-              <dd style={{ margin: 0 }}>{cot.cpfMasked || "—"}</dd>
-              <dt style={{ color: "var(--text-muted)" }}>Matrícula</dt>
-              <dd style={{ margin: 0 }}>{cot.matricula}</dd>
-              <dt style={{ color: "var(--text-muted)" }}>Prefeitura</dt>
-              <dd style={{ margin: 0 }}>{cot.prefeitura}</dd>
-              <dt style={{ color: "var(--text-muted)" }}>Solicitado em</dt>
-              <dd style={{ margin: 0 }}>{new Date(cot.criadoEm).toLocaleString("pt-BR")}</dd>
-              <dt style={{ color: "var(--text-muted)" }}>Plano</dt>
-              <dd style={{ margin: 0 }}>Telemedicina · 12 meses · R$ 50,00/mês (margem de empréstimo consignado)</dd>
+          <section style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 14, padding: 28 }}>
+            <h2 style={{ margin: "0 0 20px", fontSize: "1.15rem" }}>Dados do servidor</h2>
+            {/* Telefone em destaque — é o dado que a averbadora usa pra formalizar. */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 20, marginBottom: 24 }}>
+              <div style={{ flex: "1 1 240px", background: "color-mix(in srgb, var(--emerald-500) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--emerald-500) 30%, transparent)", borderRadius: 12, padding: "16px 20px" }}>
+                <div style={{ fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)", fontWeight: 700 }}>Telefone para contato</div>
+                <div style={{ fontSize: 24, fontWeight: 800, marginTop: 4 }}>{maskPhone(cot.telefone)}</div>
+              </div>
+              <div style={{ flex: "1 1 240px", background: "var(--bg-base, transparent)", border: "1px solid var(--border)", borderRadius: 12, padding: "16px 20px" }}>
+                <div style={{ fontSize: 12, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)", fontWeight: 700 }}>Plano</div>
+                <div style={{ fontSize: 15, fontWeight: 600, marginTop: 6, lineHeight: 1.4 }}>Telemedicina · 12 meses · R$ 50,00/mês</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>Descontado da margem de empréstimo consignado</div>
+              </div>
+            </div>
+            <dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "18px 32px", margin: 0, fontSize: 15 }}>
+              <Field label="E-mail" value={cot.email || "—"} />
+              <Field label="CPF" value={cot.cpfMasked || "—"} />
+              <Field label="Matrícula" value={cot.matricula} />
+              <Field label="Prefeitura" value={cot.prefeitura} />
+              <Field label="Solicitado em" value={new Date(cot.criadoEm).toLocaleString("pt-BR")} />
             </dl>
           </section>
 
@@ -96,6 +107,15 @@ export function AverbadoraTelemedicinaCotacao() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt style={{ color: "var(--text-muted)", fontSize: 12, letterSpacing: "0.04em", textTransform: "uppercase", fontWeight: 700 }}>{label}</dt>
+      <dd style={{ margin: "4px 0 0", fontSize: 15 }}>{value}</dd>
     </div>
   );
 }

@@ -39,9 +39,19 @@ export function ServidorSaude() {
     queryKey: ["servidor", "telemedicina", "minhas-cotacoes"],
     queryFn: () => atlas.servidor.minhasCotacoesTelemedicina(),
   });
-  const cotacaoPendente = (minhasCotacoesQ.data?.cotacoes ?? []).some(
-    (c) => c.situacao !== "fechado" && c.situacao !== "cancelado",
-  );
+  const cotacoes = minhasCotacoesQ.data?.cotacoes ?? [];
+  const cotacaoPendente = cotacoes.some((c) => c.situacao === "nova" || c.situacao === "contatado");
+  const planoAtivo = cotacoes.find((c) => c.situacao === "fechado");
+  const plano = planoAtivo?.ativadoEm
+    ? (() => {
+        const ini = new Date(planoAtivo.ativadoEm!).getTime();
+        const fim = ini + 12 * 30 * 24 * 3600 * 1000;
+        const agora = Date.now();
+        const pct = Math.max(0, Math.min(1, (agora - ini) / (fim - ini)));
+        const restante = Math.max(0, Math.ceil((fim - agora) / (30 * 24 * 3600 * 1000)));
+        return { pct, restante };
+      })()
+    : null;
   const cotacao = useMutation({
     mutationFn: () => atlas.servidor.solicitarCotacaoTelemedicina({ matricula: info?.matricula }),
     onSuccess: () => { setShowCotar(false); minhasCotacoesQ.refetch(); },
@@ -98,7 +108,18 @@ export function ServidorSaude() {
           }}>
             Plano mínimo de 12 meses
           </span>
-          {cotacaoPendente ? (
+          {plano ? (
+            <div style={{ background: "rgba(255,255,255,.18)", borderRadius: 10, padding: 14, minWidth: 240 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 800 }}>
+                <span>✓ Plano Ativo</span>
+                <span>faltam {plano.restante} meses</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,.25)", overflow: "hidden", marginTop: 8 }}>
+                <div style={{ width: `${plano.pct * 100}%`, height: "100%", background: "white" }} />
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.85, marginTop: 6 }}>Plano de 12 meses · {Math.round(plano.pct * 100)}% concluído</div>
+            </div>
+          ) : cotacaoPendente ? (
             <span style={{
               padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
               background: "rgba(255,255,255,.18)", color: "white", textAlign: "center",

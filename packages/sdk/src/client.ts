@@ -699,6 +699,7 @@ export interface TelemedicinaCotacao {
   prefeitura: string;
   situacao: string;
   criadoEm: string;
+  ativadoEm?: string | null;
 }
 
 export interface AdminAuditEntry {
@@ -1249,7 +1250,7 @@ export class AtlasClient {
     /** Cotacoes de telemedicina DO PROPRIO servidor — pra esconder o botao (mostra
      *  "em analise") e listar na aba Em Analise. */
     minhasCotacoesTelemedicina: () =>
-      this.request<{ cotacoes: { id: string; situacao: string; criadoEm: string }[] }>(
+      this.request<{ cotacoes: { id: string; situacao: string; criadoEm: string; ativadoEm?: string | null }[] }>(
         "/v1/servidores/me/telemedicina/cotacoes",
       ),
     /** Vitrine (carrossel) mostrada no dashboard do servidor — banners ativos
@@ -1628,6 +1629,8 @@ export class AtlasClient {
       this.request<{ ok: true; situacao: string }>(`/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/ativar`, { method: "POST" }),
     cancelarCotacaoTelemedicina: (id: string) =>
       this.request<{ ok: true; situacao: string }>(`/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/cancelar`, { method: "POST" }),
+    purgeTelemedicinaCotacoes: () =>
+      this.request<{ ok: true; apagadas: number }>("/v1/admin/telemedicina/cotacoes/purge", { method: "POST" }),
 
     // Templates de TERMOS (aceite in-app do servidor + anuencia da prefeitura)
     listTermos: () => this.request<{ termos: TermoTemplate[] }>("/v1/admin/termos"),

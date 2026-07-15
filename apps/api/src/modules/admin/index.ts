@@ -25,7 +25,7 @@ import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbado
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
-import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes } from "./telemedicina-cotacoes-store.js";
+import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes, purgeCotacoes } from "./telemedicina-cotacoes-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
@@ -672,8 +672,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         prefeitura: x.prefeitura,
         situacao: x.situacao,
         criadoEm: x.criadoEm,
+        ativadoEm: x.ativadoEm ?? null,
       }));
     return c.json({ cotacoes });
+  })
+  // Limpa TODAS as cotacoes de telemedicina (limpeza de testes).
+  .post("/v1/admin/telemedicina/cotacoes/purge", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const apagadas = await purgeCotacoes(c.env);
+    return c.json({ ok: true, apagadas });
   })
 
   // Averbadora ativa o plano de telemedicina: cria um CONTRATO ATIVO de 12 meses

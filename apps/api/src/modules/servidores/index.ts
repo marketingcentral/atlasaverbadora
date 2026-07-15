@@ -89,16 +89,10 @@ function mapContratoStatus(situacao: string): "Averbado" | "Em dia" | "Quitado" 
  * Builds the full MatriculaInfo the servidor app consumes, from the real base
  * (SERVIDORES_BUSCA_MOCK + listContratos) — same source of truth as os outros perfis.
  */
-// Telemedicina: plano de teste R$ 50/mes por 12 meses. A COTACAO reserva a margem
-// de EMPRESTIMO consignado por 48h (o valor tambem sai dessa margem); depois disso,
-// sem contato, a cotacao e cancelada e a margem liberada.
-const TELE_VALOR = 50;
-const TELE_MESES = 12;
-const TELE_TTL_MS = 48 * 60 * 60 * 1000;
-
-/** teleLockEmp = valor (R$) que as cotacoes de telemedicina PENDENTES desta matricula
- *  travam na margem de EMPRESTIMO (R$ 50 por cotacao ativa dentro das 48h). */
-function buildMatriculaInfo(e: ServidorBuscaMock, teleLockEmp = 0) {
+/** teleEmAnalise = ha cotacao de telemedicina PENDENTE (nova/contatado) desta matricula.
+ *  Nesse caso o EMPRESTIMO consignado fica BLOQUEADO (48h), mas o valor NAO e descontado
+ *  da margem — o desconto so acontece quando a averbadora APROVA (cria o contrato). */
+function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   const conv = CONVENIOS_MOCK.find((cv) => cv.id === e.idConvenio);
   const prefId = conv?.prefeituraId ?? 1;
   const pref = prefeituras.find((p) => p.id === prefId);
@@ -119,8 +113,7 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleLockEmp = 0) {
     const bucket = deriveTipoMargem(ct);
     comprometidoPorTipo[bucket] += ct.valorParcela;
   }
-  // Cotacao de telemedicina pendente reserva a margem de EMPRESTIMO consignado.
-  comprometidoPorTipo.EMPRESTIMO += teleLockEmp;
+  // Telemedicina em analise NAO reduz a margem (so bloqueia o produto ate a aprovacao).
   // Total comprometido de emprestimo (pra retro-compat no campo comprometido raiz).
   const comprometido = comprometidoPorTipo.EMPRESTIMO;
   const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
@@ -201,6 +194,9 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleLockEmp = 0) {
     },
     contratos: contratosMock,
     elegiveisPortabilidade: elegiveis,
+    // Ha cotacao de telemedicina em analise -> bloqueia o EMPRESTIMO consignado (48h),
+    // sem descontar o valor (o desconto so vem quando a averbadora aprova).
+    telemedicinaEmAnalise: teleEmAnalise,
   };
 }
 
@@ -335,17 +331,17 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await refreshCotacoes(c.env);
     await expireStaleCotacoes(c.env);
     const cotacoesServidor = (await loadCotacoes(c.env)).filter((x) => x.servidorId === s.id);
-    const teleLockPorMatricula = (matricula: string): number =>
-      cotacoesServidor.filter(
+    const teleEmAnaliseMat = (matricula: string): boolean =>
+      cotacoesServidor.some(
         (x) => x.matricula === matricula && (x.situacao === "nova" || x.situacao === "contatado"),
-      ).length * TELE_VALOR;
+      );
     const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
     const withStatus = await Promise.all(
       entries.map(async (e) => ({ e, status: await getServidorStatus(c.env, e.matricula) })),
     );
     const matriculas = withStatus
       .filter(({ status }) => status !== "arquivado")
-      .map(({ e }) => buildMatriculaInfo(e, teleLockPorMatricula(e.matricula)));
+      .map(({ e }) => buildMatriculaInfo(e, teleEmAnaliseMat(e.matricula)));
     return c.json({ matriculas });
   })
   // Ofertas ATIVAS criadas pelos bancos que casam com o perfil do servidor
@@ -687,7 +683,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const cotacoes = (await loadCotacoes(c.env))
       .filter((x) => x.servidorId === s.id)
       .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))
-      .map((x) => ({ id: x.id, situacao: x.situacao, criadoEm: x.criadoEm }));
+      .map((x) => ({ id: x.id, situacao: x.situacao, criadoEm: x.criadoEm, ativadoEm: x.ativadoEm ?? null }));
     return c.json({ cotacoes });
   })
   // Vitrine (carrossel) exibido no dashboard do servidor. So banners ativos.

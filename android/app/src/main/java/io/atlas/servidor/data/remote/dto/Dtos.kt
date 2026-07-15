@@ -182,7 +182,7 @@ data class BeneficiosResponse(val beneficios: List<BeneficioDto> = emptyList())
 
 data class CotacaoTelemedicinaRequest(val matricula: String? = null)
 
-data class CotacaoTelemedicinaDto(val id: String, val situacao: String, val criadoEm: String)
+data class CotacaoTelemedicinaDto(val id: String, val situacao: String, val criadoEm: String, val ativadoEm: String? = null)
 data class MinhasCotacoesResponse(val cotacoes: List<CotacaoTelemedicinaDto> = emptyList())
 
 data class SolicitarPortabilidadeRequest(val matricula: String? = null, val elegivelId: String? = null)
@@ -239,6 +239,8 @@ data class MatriculaInfoDto(
     val margem: MargemBlockDto,
     val contratos: List<ContratoDto> = emptyList(),
     val elegiveisPortabilidade: List<ElegivelDto> = emptyList(),
+    /** Há cotação de telemedicina em análise → bloqueia o empréstimo consignado (48h). */
+    val telemedicinaEmAnalise: Boolean = false,
 )
 
 data class MargemBlockDto(
