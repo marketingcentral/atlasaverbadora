@@ -1370,7 +1370,13 @@ export class AtlasClient {
     visaoGeral: () =>
       this.request<{
         convenio: { id: string; nome: string; prefeitura: string };
-        kpis: { carteira: { count: number; percentual: number }; novosNoMes: { count: number }; pendencias: { count: number } };
+        kpis: {
+          carteira: { count: number; percentual: number };
+          novosNoMes: { count: number };
+          pendencias: { count: number };
+          propostas: { emAnalise: number; aprovadas: number; formalizadas: number; recusadasExpiradas: number };
+          volumePorConvenio: { nome: string; valor: number }[];
+        };
         dataCorte: { dia: number; mes: string; origem: string; operacoes: string };
       }>("/v1/portal/banco/visao-geral"),
     comunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/portal/banco/comunicados"),

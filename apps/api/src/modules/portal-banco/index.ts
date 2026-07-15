@@ -255,12 +255,36 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   .get("/v1/portal/banco/visao-geral", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
+    // Sincroniza com o PG antes de contar — banco recem-logado num isolate
+    // fresh via zero em tudo mesmo com contratos existentes no banco.
+    await refreshContratos(c.env);
     const activeId = await getActiveConvenioId(c.env, j);
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === activeId);
     // Banco sem convênio próprio: sem contratos e sem dados de outro banco.
     const contratos = conv ? listContratos({ convenioId: activeId }) : [];
     const ativos = contratos.filter((ct) => ct.situacao === "Ativo").length;
     const pendentes = contratos.filter((ct) => ct.situacao.startsWith("Aguardando")).length;
+    // Painel de propostas: buckets alinhados ao ciclo de vida do contrato.
+    // - emAnalise: proposta chegou no banco, aguardando decisao (Aguardando*)
+    // - aprovadas: banco aprovou, ADF pendente (contem "aprov" ou "aguardando averb/adf")
+    // - formalizadas: averbadas em folha (Ativo / Averbado / Formalizado)
+    // - recusadasExpiradas: nao entram na carteira (recus/reprov/rejeit/negad/expir/cancel)
+    let emAnalise = 0, aprovadas = 0, formalizadas = 0, recusadasExpiradas = 0;
+    const volumePorConvenio = new Map<string, number>();
+    for (const ct of contratos) {
+      const s = ct.situacao.toLowerCase();
+      if (s === "expirado" || s === "cancelado" || s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) recusadasExpiradas++;
+      else if (s === "ativo" || s === "averbado" || s === "formalizado") formalizadas++;
+      else if (s.includes("aprov")) aprovadas++;
+      else if (s.startsWith("aguard")) emAnalise++;
+      // Volume: soma o financiado dos contratos que ficam na carteira
+      // (formalizados + aprovados que viram carteira). Agrupa por convenio pra
+      // banco multi-convenio ver a fatia de cada um.
+      if (s === "ativo" || s === "averbado" || s === "formalizado" || s.includes("aprov")) {
+        const nomeConv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId)?.nome ?? ct.convenioId;
+        volumePorConvenio.set(nomeConv, (volumePorConvenio.get(nomeConv) ?? 0) + (ct.valorFinanciado ?? 0));
+      }
+    }
     return c.json({
       convenio: conv
         ? { id: conv.id, nome: conv.nome, prefeitura: conv.prefeitura }
@@ -269,6 +293,8 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         carteira: { count: ativos, percentual: ativos > 0 ? 1 : 0 },
         novosNoMes: { count: contratos.filter((ct) => ct.lancamento.includes("/06/")).length },
         pendencias: { count: pendentes },
+        propostas: { emAnalise, aprovadas, formalizadas, recusadasExpiradas },
+        volumePorConvenio: Array.from(volumePorConvenio.entries()).map(([nome, valor]) => ({ nome, valor: Math.round(valor * 100) / 100 })),
       },
       // Data de corte so faz sentido quando ha convenio (o dia vem do convenio
       // da prefeitura). Banco sem convenio proprio nao tem folha pra bater;
