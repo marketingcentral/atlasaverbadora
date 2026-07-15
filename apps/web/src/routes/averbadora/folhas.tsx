@@ -3,9 +3,19 @@ import { Button, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminFolha } from "@atlas/sdk";
 
+const fmtBRL = (n: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+
 export function AdminFolhas() {
   const qc = useQueryClient();
-  const data = useQuery({ queryKey: ["admin", "folhas"], queryFn: () => atlas.admin.listFolhas() });
+  // Poll 5s enquanto a tela esta aberta — quando o operador clica "Aplicar em
+  // folha" em /averbadora/adf, os contadores aqui atualizam em ate 5s.
+  const data = useQuery({
+    queryKey: ["admin", "folhas"],
+    queryFn: () => atlas.admin.listFolhas(),
+    refetchInterval: 5_000,
+    refetchOnWindowFocus: true,
+  });
 
   const consolidar = useMutation({
     mutationFn: (id: string) => atlas.admin.consolidarFolha(id),
@@ -18,6 +28,32 @@ export function AdminFolhas() {
     { key: "competencia", header: "Competência" },
     { key: "dataCorte", header: "Data corte" },
     { key: "dataRepasse", header: "Data repasse", render: (f) => f.dataRepasse ?? "—" },
+    {
+      key: "adfsAplicadas",
+      header: "ADFs aplicadas",
+      align: "right",
+      render: (f) => {
+        const aplic = f.adfsAplicadas ?? 0;
+        const total = f.adfsTotal ?? 0;
+        if (total === 0) return <span style={{ color: "var(--text-dim)" }}>—</span>;
+        return (
+          <span style={{ fontVariantNumeric: "tabular-nums" }}>
+            <b style={{ color: aplic > 0 ? "var(--emerald-500)" : "var(--text)" }}>{aplic}</b>
+            <span style={{ color: "var(--text-dim)" }}> / {total}</span>
+          </span>
+        );
+      },
+    },
+    {
+      key: "valorAplicado",
+      header: "Valor aplicado",
+      align: "right",
+      render: (f) => {
+        const v = f.valorAplicado ?? 0;
+        if (v === 0) return <span style={{ color: "var(--text-dim)" }}>—</span>;
+        return <span style={{ color: "var(--emerald-500)", fontWeight: 600 }}>{fmtBRL(v)}</span>;
+      },
+    },
     {
       key: "status",
       header: "Status",

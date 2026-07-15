@@ -1354,7 +1354,34 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/folhas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
-    return c.json({ folhas });
+    // Sincroniza contratos antes de contar ADFs (contratos "Aprovado"/"Ativo" viram
+    // ADFs materializadas no _adfs). Sem isso, folhas mostravam 0 ADF ate outro
+    // endpoint tocar refreshContratos.
+    await refreshContratos(c.env);
+    const now = new Date().toISOString();
+    // Materializa ADFs pra todas as competencias que aparecem em folhas
+    // (nao so a atual — a averbadora ve o historico completo).
+    const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
+    const prefIds = prefeituras.map((p) => p.id);
+    const compsUnicas = Array.from(new Set(folhas.map((f) => f.competencia)));
+    for (const comp of compsUnicas) ensureAdfsGlobal(comp, bancoNomeById, now, prefIds);
+    // Enriquece cada folha com contagem/soma de ADFs (aplicadas + recebidas)
+    // por prefeitura+competencia. Assim a averbadora ve os descontos que ja
+    // caiam naquela folha sem sair da tela.
+    const enriched = folhas.map((f) => {
+      const adfsFolha = listAdfsGlobal(f.competencia).filter((a) => a.prefeituraId === f.prefeituraId);
+      const aplicadas = adfsFolha.filter((a) => a.status === "aplicada");
+      const recebidas = adfsFolha.filter((a) => a.status === "recebida");
+      const valorAplicado = aplicadas.reduce((s, a) => s + a.valorParcela, 0);
+      return {
+        ...f,
+        adfsAplicadas: aplicadas.length,
+        adfsRecebidas: recebidas.length,
+        adfsTotal: adfsFolha.length,
+        valorAplicado: Math.round(valorAplicado * 100) / 100,
+      };
+    });
+    return c.json({ folhas: enriched });
   })
   .post("/v1/admin/folhas", async (c) => {
     requireAdmin(c.get("jwt"));

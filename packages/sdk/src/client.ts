@@ -770,6 +770,13 @@ export interface AdminFolha {
   dataCorte: string;
   dataRepasse: string | null;
   status: "aberta" | "fechada" | "consolidada";
+  /** ADFs materializadas nessa competencia+prefeitura. Enriquecidas
+   *  no /v1/admin/folhas — permite a averbadora ver descontos que caiam
+   *  em cada folha direto na lista, sem sair da tela. */
+  adfsAplicadas?: number;
+  adfsRecebidas?: number;
+  adfsTotal?: number;
+  valorAplicado?: number;
 }
 
 export interface AdminFolhaInput {
