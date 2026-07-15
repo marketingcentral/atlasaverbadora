@@ -168,13 +168,25 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
     const tipoMargemInferido = deduceTipoMargem(ct);
     const already = _adfs.find((a) => a.adf === ct.adf && a.competencia === competencia);
     if (already) {
-      already.status = status; // sincroniza status do contrato (cross-isolate)
-      already.motivo = ct.folhaMotivo;
-      already.atualizadoEm = now;
+      // So atualiza atualizadoEm se o status realmente MUDOU. Antes atualizava
+      // em toda chamada do ensureAdfs (a cada request GET /admin/adf), o que
+      // fazia ordem cronologica ficar instavel — tudo mostrava o timestamp
+      // do ultimo refresh, nao do evento real.
+      if (already.status !== status) {
+        already.status = status;
+        already.motivo = ct.folhaMotivo;
+        already.atualizadoEm = now;
+      } else if (already.motivo !== ct.folhaMotivo) {
+        already.motivo = ct.folhaMotivo;
+      }
       // Preenche tipoMargem se veio depois (ADF criado antes desse campo existir).
       if (!already.tipoMargem && tipoMargemInferido) already.tipoMargem = tipoMargemInferido;
       continue;
     }
+    // atualizadoEm inicial = criacao do contrato (garante que ADFs materializadas
+    // no mesmo batch tenham ordem CRONOLOGICA correta). Quando o status mudar,
+    // vira o `now` do evento de mudanca — sempre "quando entrou nesse estado".
+    // Fallback pra `now` se o contrato antigo nao gravou criadoEmIso.
     _adfs.push({
       id: `ADF-${competencia}-${ct.adf}`,
       competencia, prefeituraId, adf: ct.adf, idUnico: issueIdUnico(prefeituraId),
@@ -182,7 +194,7 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
       bancoNome: bancoNomeById(ct.bancoId), valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
       valorFinanciado: ct.valorFinanciado, tipoContrato: ct.tipoContrato,
       tipoMargem: tipoMargemInferido,
-      status, motivo: ct.folhaMotivo, atualizadoEm: now,
+      status, motivo: ct.folhaMotivo, atualizadoEm: ct.criadoEmIso ?? now,
     });
   }
 }
