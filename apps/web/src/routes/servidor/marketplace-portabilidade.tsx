@@ -251,22 +251,11 @@ export function ServidorMarketplacePortabilidade() {
         </section>
       )}
 
-      {/* 2. REDE DE SAUDE — beneficios de categoria "saude" (farmacia, clinica,
-          laboratorio, etc.). Telemedicina exclusiva vive em /servidor/saude. */}
-      {beneficiosSaude.length > 0 ? (
-        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-            Rede de saúde parceira
-          </span>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
-            {beneficiosSaude.map((b) => (
-              <BeneficioCard key={b.id} b={b} />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {/* Secao "Rede de saude parceira" foi removida a pedido do cliente
+          (15/07/2026). Os beneficios de saude vivem exclusivamente na aba
+          /servidor/beneficios agora. */}
 
-      {/* 3. Botao de PORTABILIDADE (destaque medio) */}
+      {/* Botao de PORTABILIDADE (destaque medio) */}
       <AcaoCard
         icone="🔁"
         titulo="Solicitar portabilidade"
