@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Card, Pill, TextField, TextareaField } from "@atlas/ui/web";
+import { Button, Card, Pill, TextField } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { TermoTemplate, TermoTipo } from "@atlas/sdk";
 
@@ -152,7 +152,6 @@ function EditorModal({ termo, onClose, onSaved }: { termo: TermoTemplate; onClos
       </div>
     </div>
   );
-  void TextareaField; // hint no-op
 }
 
 /** Preview do corpo — substitui {{var}} por exemplo em italico e renderiza

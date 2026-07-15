@@ -66,10 +66,15 @@ export function AverbadoraLayout() {
   const location = useLocation();
   const { resolved, setMode } = useThemeMode();
   const parts = location.pathname.split("/").filter(Boolean);
-  const activeKey =
-    (parts[1] === "api" || parts[1] === "comunicados") && parts[2]
-      ? `${parts[1]}-${parts[2]}`
-      : (parts[1] ?? "dashboard");
+  // Menus com subitens: api-*, comunicados-*, email-* (submenus dentro de
+  // /averbadora/emails/*). Sem esse tratamento, activeKey vira "emails" —
+  // chave inexistente em RESOURCE_GROUPS/PRESETS, redirecionando qualquer
+  // nao-supervisor pra dashboard toda vez que abre um sub-item de email.
+  const activeKey = (() => {
+    if (parts[1] === "emails" && parts[2]) return `email-${parts[2]}`;
+    if ((parts[1] === "api" || parts[1] === "comunicados") && parts[2]) return `${parts[1]}-${parts[2]}`;
+    return parts[1] ?? "dashboard";
+  })();
 
   // Le as permissoes granulares do JWT (claim averbadora_permissoes). Se null
   // (dev-user admin@atlas.test) cai como supervisor de fato — permite tudo.
