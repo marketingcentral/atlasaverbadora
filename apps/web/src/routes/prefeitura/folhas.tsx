@@ -14,6 +14,7 @@ export function PrefeituraFolhas() {
   const qc = useQueryClient();
   const [novaOpen, setNovaOpen] = useState(false);
   const [movFolha, setMovFolha] = useState<FolhaRow | null>(null);
+  const [descFolha, setDescFolha] = useState<FolhaRow | null>(null);
   // Poll 5s — quando a averbadora clica Aplicar em folha em outro isolate,
   // a coluna "ADFs aplicadas" aqui atualiza em ate 5s.
   const q = useQuery({
@@ -51,6 +52,7 @@ export function PrefeituraFolhas() {
       align: "right",
       render: (f) => (
         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          <Button size="sm" variant="ghost" onClick={() => setDescFolha(f)}>Ver descontos</Button>
           {f.status === "aberta" ? (
             <>
               <Button size="sm" variant="ghost" onClick={() => setMovFolha(f)}>✎ Movimentar</Button>
@@ -77,7 +79,85 @@ export function PrefeituraFolhas() {
 
       {novaOpen ? <NovaFolha onClose={() => setNovaOpen(false)} onSaved={() => { setNovaOpen(false); qc.invalidateQueries({ queryKey: ["prefeitura"] }); }} /> : null}
       {movFolha ? <MovModal folha={movFolha} onClose={() => setMovFolha(null)} onDone={() => qc.invalidateQueries({ queryKey: ["prefeitura"] })} /> : null}
+      {descFolha ? <DescontosModal folha={descFolha} onClose={() => setDescFolha(null)} /> : null}
     </div>
+  );
+}
+
+function DescontosModal({ folha, onClose }: { folha: FolhaRow; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["prefeitura", "adf", folha.competencia],
+    queryFn: () => atlas.prefeitura.adf(folha.competencia),
+    refetchInterval: 5_000,
+  });
+  const adfs = q.data?.adfs ?? [];
+  const aplicadas = adfs.filter((a) => a.status === "aplicada");
+  const totalDesconto = aplicadas.reduce((s, a) => s + a.valorParcela, 0);
+  const labelProduto = (t?: string) => {
+    if (!t) return "Empréstimo";
+    const u = t.toUpperCase();
+    if (u.includes("BENEF")) return "Cartão Benefício";
+    if (u.includes("CARTAO") || u.includes("ECONSIG")) return "Cartão Consignado";
+    if (u.includes("REFIN")) return "Portabilidade";
+    return "Empréstimo";
+  };
+  return (
+    <Modal title={`Descontos em folha — ${folha.competencia}`} onClose={onClose} maxWidth={880}>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
+        Servidores com desconto averbado nesta competência. A margem já foi confirmada pela averbadora — o valor será debitado no repasse.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, margin: "12px 0" }}>
+        <div style={{ padding: 12, background: "var(--bg-elev-2)", borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", fontWeight: 700 }}>Aplicadas</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--emerald-500)" }}>{aplicadas.length}</div>
+        </div>
+        <div style={{ padding: 12, background: "var(--bg-elev-2)", borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", fontWeight: 700 }}>Total ADFs</div>
+          <div style={{ fontSize: 20, fontWeight: 800 }}>{adfs.length}</div>
+        </div>
+        <div style={{ padding: 12, background: "var(--bg-elev-2)", borderRadius: 8 }}>
+          <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", fontWeight: 700 }}>Descontos</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "var(--emerald-500)" }}>{fmtBRL(totalDesconto)}</div>
+        </div>
+      </div>
+      <div style={{ maxHeight: 380, overflow: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+        {q.isLoading ? (
+          <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>Carregando…</div>
+        ) : adfs.length === 0 ? (
+          <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+            Nenhuma ADF nesta competência ainda. Quando a averbadora aplicar uma proposta em folha, ela aparece aqui.
+          </div>
+        ) : (
+          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "var(--bg-elev-2)", textTransform: "uppercase", fontSize: 11, letterSpacing: ".06em", color: "var(--text-dim)" }}>
+                <th style={{ textAlign: "left", padding: "8px 10px" }}>Servidor</th>
+                <th style={{ textAlign: "left", padding: "8px 10px" }}>Matrícula</th>
+                <th style={{ textAlign: "left", padding: "8px 10px" }}>Produto</th>
+                <th style={{ textAlign: "left", padding: "8px 10px" }}>Banco</th>
+                <th style={{ textAlign: "right", padding: "8px 10px" }}>Parcela</th>
+                <th style={{ textAlign: "center", padding: "8px 10px" }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adfs.map((a) => (
+                <tr key={a.id} style={{ borderTop: "1px solid var(--border)" }}>
+                  <td style={{ padding: "8px 10px" }}>{a.nome}</td>
+                  <td style={{ padding: "8px 10px", fontFamily: "var(--font-mono)" }}>{a.matricula}</td>
+                  <td style={{ padding: "8px 10px" }}>{labelProduto(a.tipoContrato)}</td>
+                  <td style={{ padding: "8px 10px" }}>{a.bancoNome}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtBRL(a.valorParcela)}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                    <Pill variant={a.status === "aplicada" ? "averbado" : a.status === "falha" ? "recusado" : "pendente"}>{a.status}</Pill>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={onClose}>Fechar</Button></div>
+    </Modal>
   );
 }
 
