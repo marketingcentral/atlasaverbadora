@@ -909,6 +909,8 @@ export interface PrefeituraAdf {
   tipoContrato?: string;
   status: "recebida" | "aplicada" | "falha";
   motivo?: string;
+  /** ISO. Recentes primeiro na UI (bumpa a cada troca de status). */
+  atualizadoEm?: string;
 }
 export type PrefeituraArea = "rh" | "financeiro" | "gestor" | "personalizado";
 export interface PrefeituraPerfil {
