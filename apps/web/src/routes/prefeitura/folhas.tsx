@@ -35,22 +35,6 @@ export function PrefeituraFolhas() {
     { key: "dataRepasse", header: "Repasse", render: (f) => f.dataRepasse ?? "—" },
     { key: "movimentacoes", header: "Movimentações", align: "right" },
     {
-      key: "adfsAplicadas",
-      header: "ADFs aplicadas",
-      align: "right",
-      render: (f) => {
-        const aplic = f.adfsAplicadas ?? 0;
-        const total = f.adfsTotal ?? 0;
-        if (total === 0) return <span style={{ color: "var(--text-dim)" }}>—</span>;
-        return (
-          <span style={{ fontVariantNumeric: "tabular-nums" }}>
-            <b style={{ color: aplic > 0 ? "var(--emerald-500)" : "var(--text)" }}>{aplic}</b>
-            <span style={{ color: "var(--text-dim)" }}> / {total}</span>
-          </span>
-        );
-      },
-    },
-    {
       key: "valorAplicado",
       header: "Descontos aplicados",
       align: "right",
