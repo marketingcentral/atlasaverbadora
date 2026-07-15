@@ -11,7 +11,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { bancos, folhas, prefeituras, type FolhaAdmin } from "../admin/index.js";
+import { bancos, folhas, prefeituras, ensureFolhasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
@@ -178,6 +178,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   // ===== Passo 2 — Dashboard (com pendências de upload) =====
   .get("/v1/prefeitura/dashboard", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
     const p = prefeituras.find((x) => x.id === id);
     if (!p) throw Errors.notFound("prefeitura");
     // Sincroniza contratos com o PG antes de calcular KPIs — sem isso, um
@@ -373,6 +374,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   // ===== Passo 4 — Folha mensal =====
   .get("/v1/prefeitura/folhas", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
     // Sincroniza contratos (contratos aprovados em outro isolate viram ADFs)
     // antes de contar. Sem isso, folha nao refletia ADFs recem-aplicadas
     // pela averbadora.
@@ -401,6 +403,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
   .post("/v1/prefeitura/folhas", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
     const p = prefeituras.find((x) => x.id === id)!;
     const body = z.object({
       competencia: z.string().regex(/^\d{6}$/, "competencia YYYYMM"),
@@ -415,11 +418,13 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       competencia: body.competencia, dataCorte: body.dataCorte, dataRepasse: body.dataRepasse ?? null, status: "aberta",
     };
     folhas.push(folha);
+    await persistFolha(c.env, folha); // write-through — sobrevive a redeploy
     appendAudit({ categoria: "margem", acao: "folha_aberta", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Folha ${body.competencia} aberta (corte ${body.dataCorte}).` });
     return c.json({ folha }, 201);
   })
   .patch("/v1/prefeitura/folhas/:id", async (c) => {
     const pid = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
     const f = folhas.find((x) => x.id === c.req.param("id") && x.prefeituraId === pid);
     if (!f) throw Errors.notFound("folha");
     // Prefeitura só pode ir de aberta → fechada. Consolidar é ação da averbadora,
@@ -432,6 +437,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (body.status) f.status = body.status;
     if (body.dataCorte) f.dataCorte = body.dataCorte;
     if (body.dataRepasse !== undefined) f.dataRepasse = body.dataRepasse;
+    await persistFolha(c.env, f);
     appendAudit({ categoria: "margem", acao: "folha_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} -> status=${f.status}.` });
     return c.json({ folha: f });
   })

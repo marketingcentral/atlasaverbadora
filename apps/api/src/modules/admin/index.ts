@@ -307,6 +307,28 @@ export const folhas: FolhaAdmin[] = [
   { id: "F-2026-07-1", prefeituraId: 1, prefeitura: "Palhoca", competencia: "202607", dataCorte: "2026-07-15", dataRepasse: "2026-08-05", status: "fechada" },
   { id: "F-2026-07-2", prefeituraId: 2, prefeitura: "Florianopolis", competencia: "202607", dataCorte: "2026-07-18", dataRepasse: "2026-08-08", status: "fechada" },
 ];
+const FOLHAS_SEED: FolhaAdmin[] = folhas.map((f) => ({ ...f }));
+// Persistência das folhas (write-through + hydrate). Antes o array vivia so
+// em memoria do isolate — folhas abertas via UI da prefeitura sumiam no proximo
+// redeploy. Mesmo padrao usado em vitrine/perfis.
+let _folhasLoad: Promise<void> | null = null;
+export function ensureFolhasLoaded(env: Env): Promise<void> {
+  if (_folhasLoad) return _folhasLoad;
+  _folhasLoad = (async () => {
+    try {
+      await seedCollectionIfEmpty(env, "admin_folhas", FOLHAS_SEED.map((f) => ({ id: f.id, data: f })));
+      const rows = await loadCollection<FolhaAdmin>(env, "admin_folhas");
+      if (rows.length > 0) {
+        folhas.length = 0;
+        folhas.push(...rows);
+      }
+    } catch { _folhasLoad = null; }
+  })();
+  return _folhasLoad;
+}
+export async function persistFolha(env: Env, f: FolhaAdmin): Promise<void> {
+  try { await upsertCollectionRow(env, "admin_folhas", f.id, f); } catch { /* fail-safe */ }
+}
 
 export const vitrine: VitrineBanner[] = [
   { id: "BAN-1", bancoId: 2, bancoNome: "Banco Y", titulo: "Empréstimo a 1,72% a.m.", impressoes: 42000, cliques: 3360, receitaMes: 18000, ativo: true },
@@ -1355,6 +1377,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/folhas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    await ensureFolhasLoaded(c.env);
     // Sincroniza contratos antes de contar ADFs (contratos "Aprovado"/"Ativo" viram
     // ADFs materializadas no _adfs). Sem isso, folhas mostravam 0 ADF ate outro
     // endpoint tocar refreshContratos.
@@ -1385,7 +1408,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ folhas: enriched });
   })
   .post("/v1/admin/folhas", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    await ensureFolhasLoaded(c.env);
     const body = z
       .object({
         id: z.string().optional(),
@@ -1401,18 +1425,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const idx = folhas.findIndex((f) => f.id === body.id);
       if (idx < 0) throw Errors.notFound("folha");
       folhas[idx] = { ...folhas[idx]!, ...body, id: body.id, dataRepasse: body.dataRepasse ?? null };
+      await persistFolha(c.env, folhas[idx]!);
       return c.json({ folha: folhas[idx] });
     }
     const novo: FolhaAdmin = { ...body, id: `F-${Date.now()}`, dataRepasse: body.dataRepasse ?? null };
     folhas.push(novo);
+    await persistFolha(c.env, novo);
     return c.json({ folha: novo });
   })
   .post("/v1/admin/folhas/:id/consolidar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    await ensureFolhasLoaded(c.env);
     const f = folhas.find((x) => x.id === c.req.param("id"));
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
     f.status = "consolidada";
+    await persistFolha(c.env, f);
     return c.json({ folha: f });
   })
 
