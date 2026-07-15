@@ -1,8 +1,5 @@
 import { useEffect, useState } from "react";
 import { Card } from "@atlas/ui/web";
-import { useQuery } from "@tanstack/react-query";
-import { atlas } from "../../lib/sdk";
-import type { ServidorBeneficio } from "@atlas/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
@@ -21,18 +18,6 @@ export function ServidorSaude() {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
-
-  // Nesta tela so aparecem beneficios de TELEMEDICINA (categoria exclusiva).
-  // Farmacia/clinica/laboratorio (categoria "saude" generica) aparecem na
-  // aba Beneficios do MarketPlace, nao aqui. Cliente separou explicitamente
-  // as duas coisas.
-  const beneficiosQ = useQuery({
-    queryKey: ["servidor", "beneficios", "telemedicina", info?.matricula],
-    queryFn: () => atlas.servidor.getMyBeneficios("telemedicina", info?.matricula),
-    refetchOnWindowFocus: true,
-    enabled: !!info?.matricula,
-  });
-  const parceiros = beneficiosQ.data?.beneficios ?? [];
 
   if (!info) return null;
 
@@ -100,22 +85,6 @@ export function ServidorSaude() {
         </div>
       </article>
 
-      {/* Parceiros de saúde */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-          Rede de saúde parceira
-        </span>
-        {parceiros.length === 0 ? (
-          <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
-            Sem parceiros de saúde nesta região — em breve mais opções.
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
-            {parceiros.map((p) => <ParceiroCard key={p.id} parceiro={p} />)}
-          </div>
-        )}
-      </section>
-
       {/* Cartão Benefícios — margem usada nos parceiros de saúde */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
@@ -127,7 +96,7 @@ export function ServidorSaude() {
             <div>
               <div style={{ fontWeight: 700 }}>Seu limite para saúde e bem-estar</div>
               <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-                Compras nos parceiros acima são debitadas do seu limite. Fatura vem na folha.
+                Compras em parceiros de saúde são debitadas do seu limite. Fatura vem na folha.
               </div>
             </div>
           </div>
@@ -143,93 +112,6 @@ export function ServidorSaude() {
       }}>
         <b style={{ color: "var(--text)" }}>ℹ️ Sobre esses benefícios:</b> os benefícios de saúde são oferecidos pelo <b>banco parceiro</b> que disponibiliza seu cartão consignado. Descontos comerciais (alimentação, educação, lazer) estão na aba <b>Descontos e Benefícios</b>.
       </div>
-    </div>
-  );
-}
-
-function ParceiroCard({ parceiro }: { parceiro: ServidorBeneficio }) {
-  const modo = parceiro.modoImagens ?? "nenhum";
-  const imagens = parceiro.imagens ?? [];
-  const temImagens = modo !== "nenhum" && imagens.length > 0;
-  return (
-    <article style={{
-      background: "var(--surface)",
-      border: "1px solid var(--border)",
-      borderRadius: 14,
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column",
-    }}>
-      {temImagens ? <BeneficioImagens imagens={imagens} modo={modo} /> : null}
-      <div style={{ padding: 16, display: "flex", gap: 14, alignItems: "flex-start" }}>
-        <div style={{
-          width: 44, height: 44, borderRadius: 10,
-          background: `color-mix(in srgb, ${parceiro.cor} 15%, transparent)`,
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontSize: 22, flexShrink: 0, overflow: "hidden",
-        }}>
-          {parceiro.icone.startsWith("http")
-            ? <img src={parceiro.icone} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-            : parceiro.icone}
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text)" }}>{parceiro.nome}</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            Saúde · {parceiro.local}
-          </div>
-          <div style={{ marginTop: 10, fontSize: 13, color: "var(--text-muted)" }}>
-            <b style={{ color: "var(--emerald-500)", fontSize: 14 }}>{parceiro.descontoLabel}</b> {parceiro.descontoComplemento}
-          </div>
-          {parceiro.linkAcesso?.url ? (
-            <a
-              href={parceiro.linkAcesso.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => {
-                void atlas.servidor.registrarCliqueBeneficio(parceiro.id, {
-                  matricula: readActiveMatricula()?.matricula,
-                  origemTela: "saude",
-                }).catch(() => undefined);
-              }}
-              style={{
-                display: "inline-block", marginTop: 12,
-                padding: "8px 16px", borderRadius: 8,
-                background: parceiro.cor, color: "white",
-                fontSize: 13, fontWeight: 700, textDecoration: "none",
-              }}
-            >
-              {parceiro.linkAcesso.textoBotao || "Acessar"} →
-            </a>
-          ) : null}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function BeneficioImagens({ imagens, modo }: { imagens: string[]; modo: "unica" | "carrossel" }) {
-  const [idx, setIdx] = useState(0);
-  const total = imagens.length;
-  const atual = modo === "carrossel" ? imagens[Math.min(idx, total - 1)] : imagens[0];
-  if (!atual) return null;
-  return (
-    <div style={{ position: "relative", aspectRatio: "16 / 9", background: "var(--bg-elev-2)" }}>
-      <img src={atual} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }} />
-      {modo === "carrossel" && total > 1 ? (
-        <>
-          <button type="button" onClick={() => setIdx((i) => (i - 1 + total) % total)} aria-label="Anterior"
-            style={{ position: "absolute", top: "50%", left: 8, transform: "translateY(-50%)", width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,.55)", color: "white", border: 0, cursor: "pointer", fontSize: 20, fontWeight: 700 }}>‹</button>
-          <button type="button" onClick={() => setIdx((i) => (i + 1) % total)} aria-label="Próximo"
-            style={{ position: "absolute", top: "50%", right: 8, transform: "translateY(-50%)", width: 32, height: 32, borderRadius: "50%", background: "rgba(0,0,0,.55)", color: "white", border: 0, cursor: "pointer", fontSize: 20, fontWeight: 700 }}>›</button>
-          <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 6 }}>
-            {imagens.map((_, i) => (
-              <button key={i} type="button" onClick={() => setIdx(i)} aria-label={`Ir para imagem ${i + 1}`}
-                style={{ width: 8, height: 8, borderRadius: "50%", border: 0, cursor: "pointer", background: i === Math.min(idx, total - 1) ? "white" : "rgba(255,255,255,.5)" }} />
-            ))}
-          </div>
-        </>
-      ) : null}
     </div>
   );
 }
