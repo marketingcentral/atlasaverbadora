@@ -17,6 +17,7 @@ export type TermoTipo =
   | "portabilidade"
   | "refinanciamento"
   | "cartao_consignado"
+  | "cartao_beneficio"
   | "beneficio_generico"
   | "telemedicina"
   | "lgpd_servidor"
@@ -90,9 +91,21 @@ const SEED: TermoTemplate[] = [
     descricao: "Exibido antes do servidor solicitar cartão consignado.",
     variaveis: ["banco", "limite", "produto"],
     corpo:
-      "**Eu autorizo** a solicitação de {{produto}} com limite de **{{limite}}** junto ao banco **{{banco}}**.\n\n" +
-      "Ciente de que a fatura mensal será descontada em folha até o limite de 5% do meu salário líquido (margem cartão consignado).",
+      "**Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora** a registrar a solicitação de **{{produto}}** junto à minha prefeitura empregadora, com limite proposto de **{{limite}}**, para o banco **{{banco}}**.\n\n" +
+      "Estou ciente de que a fatura mínima mensal será descontada diretamente na folha de pagamento, respeitando o limite regulatório de **5% do meu salário líquido** (margem cartão consignado). Minha margem cartão consignado ficará **indisponível** por **48 horas** enquanto o banco analisa esta solicitação.\n\n" +
+      "**LGPD e log de auditoria.** Este aceite será registrado com data, hora, endereço IP, dispositivo, CPF e identificador desta solicitação para fins legais e de auditoria, conforme a Lei 13.709/2018.",
     versao: "1.0", ativo: true, criadoEm: "2026-07-14T00:00:00.000Z", atualizadoEm: "2026-07-14T00:00:00.000Z",
+  },
+  {
+    id: "cartao_beneficio",
+    titulo: "Termo de autorização — Cartão Benefício Consignado",
+    descricao: "Exibido antes do servidor solicitar cartão benefício (farmácia, mercado, saúde).",
+    variaveis: ["banco", "limite", "produto"],
+    corpo:
+      "**Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora** a registrar a solicitação de **{{produto}}** junto à minha prefeitura empregadora, com limite proposto de **{{limite}}**, para o banco **{{banco}}**.\n\n" +
+      "Estou ciente de que o cartão benefício é **restrito a estabelecimentos categorizados** (farmácia, mercado, saúde e afins) e a fatura mínima mensal será descontada diretamente na folha de pagamento, respeitando o limite regulatório de **5% do meu salário líquido** (margem cartão benefício, bucket separado do cartão consignado). Minha margem cartão benefício ficará **indisponível** por **48 horas** enquanto o banco analisa esta solicitação.\n\n" +
+      "**LGPD e log de auditoria.** Este aceite será registrado com data, hora, endereço IP, dispositivo, CPF e identificador desta solicitação para fins legais e de auditoria, conforme a Lei 13.709/2018.",
+    versao: "1.0", ativo: true, criadoEm: "2026-07-15T00:00:00.000Z", atualizadoEm: "2026-07-15T00:00:00.000Z",
   },
   {
     id: "beneficio_generico",

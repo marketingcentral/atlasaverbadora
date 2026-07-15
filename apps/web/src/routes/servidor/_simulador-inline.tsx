@@ -574,7 +574,17 @@ function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produt
     // Trava e SEPARADA da do emprestimo (margens/produtos independentes).
     setLock(info.idMatricula, lockProduto);
     setClientLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
-    nav(`/servidor/solicitar-cartao?produto=${produto}&banco=${encodeURIComponent(bancoDefault)}&limite=${Math.round(limiteProposto)}`);
+    // Vai pro Termo de Autorizacao (mesma UX do emprestimo — cliente pediu
+    // "colocar o Termo tambem no cartao"). O tipo=cartao_consignado|cartao_beneficio
+    // renderiza os detalhes especificos (limite proposto, sem parcelas/taxa)
+    // e ao aceitar, o termo.tsx chama /me/cartoes (nao /me/propostas).
+    const tipoTermo = produto === "cartao_beneficio" ? "cartao_beneficio" : "cartao_consignado";
+    const params = new URLSearchParams({
+      tipo: tipoTermo,
+      banco: bancoDefault,
+      limite: String(Math.round(limiteProposto)),
+    });
+    nav(`/servidor/termo?${params.toString()}`);
   }
 
   if (locked && lockExpiresAt) {

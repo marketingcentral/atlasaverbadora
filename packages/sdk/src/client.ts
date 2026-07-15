@@ -52,7 +52,7 @@ export interface NovoContratoBody {
 export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios" | "personalizado";
 
 export type TermoTipo =
-  | "emprestimo" | "portabilidade" | "refinanciamento" | "cartao_consignado"
+  | "emprestimo" | "portabilidade" | "refinanciamento" | "cartao_consignado" | "cartao_beneficio"
   | "beneficio_generico" | "telemedicina" | "lgpd_servidor" | "anuencia_prefeitura";
 export interface TermoTemplate {
   id: TermoTipo;

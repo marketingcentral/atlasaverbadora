@@ -6,12 +6,14 @@ import { atlas } from "../../lib/sdk";
 import type { TermoTipo } from "@atlas/sdk";
 import { readActiveMatricula } from "../../lib/matricula-data";
 
-type Tipo = "novo" | "portabilidade" | "refinanciamento";
+type Tipo = "novo" | "portabilidade" | "refinanciamento" | "cartao_consignado" | "cartao_beneficio";
 
 const TIPO_LABEL: Record<Tipo, string> = {
-  novo: "Novo emprestimo",
+  novo: "Novo empréstimo",
   portabilidade: "Portabilidade de divida",
   refinanciamento: "Refinanciamento",
+  cartao_consignado: "Cartão de Crédito Consignado",
+  cartao_beneficio: "Cartão Benefício Consignado",
 };
 
 // Prazos do lock conforme a spec (parametrizavel por convenio em prod).
@@ -19,7 +21,17 @@ const PRAZOS: Record<Tipo, { horas?: number; diasUteis?: number; label: string }
   novo: { horas: 48, label: "48 horas" },
   portabilidade: { diasUteis: 7, label: "7 dias uteis" },
   refinanciamento: { diasUteis: 7, label: "7 dias uteis" },
+  cartao_consignado: { horas: 48, label: "48 horas" },
+  cartao_beneficio: { horas: 48, label: "48 horas" },
 };
+
+/** True se o tipo eh um cartao (consignado ou beneficio) — flow diferente
+ *  de emprestimo: nao tem `valor solicitado` nem `parcelas escolhidas`; tem
+ *  `limite proposto` calculado da margem. Chama POST /me/cartoes em vez de
+ *  criarProposta. */
+function isCartao(t: Tipo): boolean {
+  return t === "cartao_consignado" || t === "cartao_beneficio";
+}
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -35,12 +47,18 @@ export function ServidorTermo() {
   const nav = useNavigate();
   const [search] = useSearchParams();
   const rawTipo = search.get("tipo") ?? "novo";
-  const tipo: Tipo = rawTipo === "portabilidade" || rawTipo === "refinanciamento" ? rawTipo : "novo";
+  const tipo: Tipo = ["portabilidade", "refinanciamento", "cartao_consignado", "cartao_beneficio"].includes(rawTipo)
+    ? (rawTipo as Tipo)
+    : "novo";
   const banco = search.get("banco") ?? "SCred Financeira";
+  // Emprestimo: valor/parcelas/parcela/taxaAm. Cartao: so limite (parcela = 5%
+  // do limite / capado pela margem — calculado no backend).
   const valor = num(search.get("valor"), 25000);
   const parcelas = num(search.get("parcelas"), 48);
   const parcela = num(search.get("parcela"), 750);
   const taxaAm = num(search.get("taxaAm"), 1.8);
+  const limite = num(search.get("limite"), 0);
+  const cartao = isCartao(tipo);
 
   const [aceito, setAceito] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -53,11 +71,23 @@ export function ServidorTermo() {
   // Mapeia tipo local pro TermoTipo do backend (editavel em /averbadora/termos).
   const termoTipo: TermoTipo = tipo === "portabilidade" ? "portabilidade"
     : tipo === "refinanciamento" ? "refinanciamento"
+    : tipo === "cartao_consignado" ? "cartao_consignado"
+    : tipo === "cartao_beneficio" ? "cartao_beneficio"
     : "emprestimo";
-  const vars = useMemo(() => ({
-    tipoLabel, valor: fmtBRL(valor), parcelas: String(parcelas),
-    parcela: fmtBRL(parcela), banco, prazo: prazo.label,
-  }), [tipoLabel, valor, parcelas, parcela, banco, prazo.label]);
+  const vars = useMemo(() => {
+    const base: Record<string, string | number> = { banco, prazo: prazo.label };
+    if (cartao) {
+      // Vars pro template do cartao — bate com as declaradas no termos-store.
+      base.produto = tipoLabel;
+      base.limite = fmtBRL(limite);
+    } else {
+      base.tipoLabel = tipoLabel;
+      base.valor = fmtBRL(valor);
+      base.parcelas = String(parcelas);
+      base.parcela = fmtBRL(parcela);
+    }
+    return base;
+  }, [cartao, tipoLabel, valor, parcelas, parcela, limite, banco, prazo.label]);
   // Puxa o corpo renderizado da API. Fallback (isLoading/erro) cai no texto
   // hardcoded — o servidor NUNCA fica sem termo pra aceitar.
   const termoQ = useQuery({
@@ -75,20 +105,32 @@ export function ServidorTermo() {
     const ip = "189.41." + Math.floor(Math.random() * 200) + "." + Math.floor(Math.random() * 200);
     const device = navigator.userAgent.includes("Mobi") ? "Smartphone (web)" : "Desktop (web)";
 
-    // Cria a proposta no BACKEND (persistido) — é assim que ela chega no portal do
-    // banco e sobrevive ao refresh/troca de perfil. Taxa mensal em fração (1.8% -> 0.018).
+    // Fluxos separados por produto — cartao usa POST /me/cartoes (com tipoMargem
+    // proprio) e emprestimo/portabilidade/refin usa POST /me/propostas.
     try {
-      const res = await atlas.servidor.criarProposta({
-        valor,
-        parcelas,
-        taxaAm: taxaAm / 100,
-        bancoNome: banco,
-        // Vincula a proposta a matricula ativa — sem isso, o backend cai no
-        // fallback (primeira matricula do CPF) e servidor com acumulacao de
-        // cargos ve a proposta criada na matricula errada.
-        matricula: readActiveMatricula()?.matricula,
-      });
-      setDone({ propostaId: res.id, quando, ip, device });
+      if (cartao) {
+        const produtoParam = tipo === "cartao_beneficio" ? "cartao_beneficio" : "cartao_consignado";
+        const res = await atlas.servidor.solicitarCartao({
+          produto: produtoParam,
+          bancoNome: banco,
+          limite,
+          matricula: readActiveMatricula()?.matricula,
+        });
+        setDone({ propostaId: res.protocolo, quando, ip, device });
+      } else {
+        // Emprestimo/Portabilidade/Refin. Taxa mensal em fração (1.8% -> 0.018).
+        const res = await atlas.servidor.criarProposta({
+          valor,
+          parcelas,
+          taxaAm: taxaAm / 100,
+          bancoNome: banco,
+          // Vincula a proposta a matricula ativa — sem isso, o backend cai no
+          // fallback (primeira matricula do CPF) e servidor com acumulacao de
+          // cargos ve a proposta criada na matricula errada.
+          matricula: readActiveMatricula()?.matricula,
+        });
+        setDone({ propostaId: res.id, quando, ip, device });
+      }
     } catch (e) {
       setErro((e as Error).message || "Não foi possível registrar a proposta. Tente novamente.");
     } finally {
@@ -121,11 +163,17 @@ export function ServidorTermo() {
           <div style={{ display: "grid", gap: 8, marginTop: 24, padding: 16, background: "var(--bg-elev-2)", borderRadius: 10, fontSize: ".88rem" }}>
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Comprovante de aceite (log)</div>
             <Row k="Proposta" v={done.propostaId} />
-            <Row k="Operacao" v={tipoLabel} />
+            <Row k="Operação" v={tipoLabel} />
             <Row k="Banco" v={banco} />
-            <Row k="Valor liberado" v={fmtBRL(valor)} />
-            <Row k="Parcelas" v={`${parcelas}x de ${fmtBRL(parcela)}`} />
-            <Row k="Taxa mensal" v={`${taxaAm.toFixed(2)}%`} />
+            {cartao ? (
+              <Row k="Limite proposto" v={fmtBRL(limite)} />
+            ) : (
+              <>
+                <Row k="Valor liberado" v={fmtBRL(valor)} />
+                <Row k="Parcelas" v={`${parcelas}x de ${fmtBRL(parcela)}`} />
+                <Row k="Taxa mensal" v={`${taxaAm.toFixed(2)}%`} />
+              </>
+            )}
             <Row k="Aceito em" v={done.quando.toLocaleString("pt-BR")} />
             <Row k="IP de origem" v={done.ip} />
             <Row k="Dispositivo" v={done.device} />
@@ -170,9 +218,18 @@ export function ServidorTermo() {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px 24px", marginTop: 12 }}>
           <ReadField label="Operação" value={tipoLabel} />
           <ReadField label="Banco" value={banco} />
-          <ReadField label="Valor liberado" value={fmtBRL(valor)} accent />
-          <ReadField label="Parcelas" value={`${parcelas}x de ${fmtBRL(parcela)}`} />
-          <ReadField label="Taxa mensal" value={`${taxaAm.toFixed(2)}%`} />
+          {cartao ? (
+            <>
+              <ReadField label="Limite proposto" value={fmtBRL(limite)} accent />
+              <ReadField label="Fatura mínima estimada" value="5% do limite (descontado em folha)" />
+            </>
+          ) : (
+            <>
+              <ReadField label="Valor liberado" value={fmtBRL(valor)} accent />
+              <ReadField label="Parcelas" value={`${parcelas}x de ${fmtBRL(parcela)}`} />
+              <ReadField label="Taxa mensal" value={`${taxaAm.toFixed(2)}%`} />
+            </>
+          )}
           <ReadField label="Prazo da trava" value={prazo.label} />
         </div>
       </Card>
@@ -197,17 +254,31 @@ export function ServidorTermo() {
           ) : (
             // Fallback enquanto carrega ou se der erro na API — texto minimo hardcoded
             // pra o servidor nunca ficar sem termo pra aceitar.
-            <>
-              <p>
-                <b>Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora</b> a
-                registrar a averbação da minha margem consignável junto à minha prefeitura empregadora para a
-                operação de <b>{tipoLabel}</b>, no valor de <b>{fmtBRL(valor)}</b>, em {parcelas} parcelas de{" "}
-                <b>{fmtBRL(parcela)}</b>, junto ao banco <b>{banco}</b>.
-              </p>
-              <p>
-                Estou ciente de que minha margem ficará <b>indisponível</b> pelo prazo de <b>{prazo.label}</b>.
-              </p>
-            </>
+            cartao ? (
+              <>
+                <p>
+                  <b>Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora</b> a
+                  registrar a solicitação de <b>{tipoLabel}</b>, com limite proposto de <b>{fmtBRL(limite)}</b>,
+                  junto ao banco <b>{banco}</b>.
+                </p>
+                <p>
+                  Estou ciente de que a fatura mínima mensal será descontada em folha até 5% do meu salário
+                  líquido, e minha margem ficará <b>indisponível</b> por <b>{prazo.label}</b>.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  <b>Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora</b> a
+                  registrar a averbação da minha margem consignável junto à minha prefeitura empregadora para a
+                  operação de <b>{tipoLabel}</b>, no valor de <b>{fmtBRL(valor)}</b>, em {parcelas} parcelas de{" "}
+                  <b>{fmtBRL(parcela)}</b>, junto ao banco <b>{banco}</b>.
+                </p>
+                <p>
+                  Estou ciente de que minha margem ficará <b>indisponível</b> pelo prazo de <b>{prazo.label}</b>.
+                </p>
+              </>
+            )
           )}
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".92rem", marginTop: 16, cursor: "pointer" }}>
