@@ -6,6 +6,7 @@ import {
   ContratoMock as Contrato,
   MatriculaInfo,
   readActiveMatricula,
+  hydrateMatriculas,
   STORAGE_KEY_ID,
   STORAGE_KEY_META,
 } from "../../lib/matricula-data";
@@ -124,6 +125,17 @@ export function ServidorContratos() {
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Rehidrata as matriculas do backend em intervalos regulares — o /me/matriculas
+  // devolve `contratos` atualizado (ex.: contrato acabou de virar Ativo). Sem
+  // isso o servidor teria que refresh a pagina pra ver contratos novos, ja que
+  // o info sai do localStorage.
+  useEffect(() => {
+    // Primeira chamada imediata (garante fresh na entrada da tela) + poll 8s.
+    void hydrateMatriculas();
+    const iv = setInterval(() => { void hydrateMatriculas(); }, 8_000);
+    return () => clearInterval(iv);
   }, []);
 
   // Propostas em andamento (o servidor solicitou, o banco ainda nao averbou).

@@ -123,6 +123,10 @@ export interface AdfEntry {
   /** Tipo do contrato do banco — EMPRESTIMO | REFIN | ECONSIGNADO. Serve
    *  pra averbadora rotular no lote como Emprestimo / Portabilidade / Cartao. */
   tipoContrato: string;
+  /** Bucket de margem — distingue Cartao Consignado (CARTAO_CONSIGNADO) de
+   *  Cartao Beneficio (CARTAO_BENEFICIOS). tipoContrato=ECONSIGNADO sozinho
+   *  nao diferencia; sem esse campo os dois viravam "Cartao" generico. */
+  tipoMargem?: string;
   status: AdfStatus;
   motivo?: string;
   atualizadoEm: string;
@@ -153,6 +157,8 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
       already.status = status; // sincroniza status do contrato (cross-isolate)
       already.motivo = ct.folhaMotivo;
       already.atualizadoEm = now;
+      // Preenche tipoMargem se veio depois (ADF criado antes desse campo existir).
+      if (already.tipoMargem === undefined) already.tipoMargem = ct.tipoMargem;
       continue;
     }
     _adfs.push({
@@ -161,6 +167,7 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
       cpfMasked: ct.cpfMasked, matricula: ct.matricula, nome: ct.nome,
       bancoNome: bancoNomeById(ct.bancoId), valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
       valorFinanciado: ct.valorFinanciado, tipoContrato: ct.tipoContrato,
+      tipoMargem: ct.tipoMargem, // pode ser undefined — no fallback vira "Cartao" generico
       status, motivo: ct.folhaMotivo, atualizadoEm: now,
     });
   }
