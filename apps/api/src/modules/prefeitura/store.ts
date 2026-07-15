@@ -147,18 +147,32 @@ function isAverbado(situacao: string): boolean {
  *  O status do ADF é fonte-única do próprio contrato (ct.folhaStatus) — assim a
  *  confirmação da prefeitura persiste e o banco a enxerga. Requer refreshContratos
  *  antes (feito no endpoint) pra ver averbações de outros isolates. */
+/** Deduz tipoMargem quando o contrato nao gravou o campo explicito. Usa
+ *  observacoes ("Cartao Beneficio" | "Cartao Consignado" — texto que o
+ *  criarContratoOuReserva ja escreve) + tipoContrato como sinais.
+ *  So retorna algo pra ECONSIGNADO (o unico caso em que a distincao importa). */
+function deduceTipoMargem(ct: { tipoMargem?: string; tipoContrato?: string; observacoes?: string }): string | undefined {
+  if (ct.tipoMargem) return ct.tipoMargem;
+  if (ct.tipoContrato !== "ECONSIGNADO") return undefined;
+  const obs = (ct.observacoes ?? "").toLowerCase();
+  if (obs.includes("beneficio") || obs.includes("benefício")) return "CARTAO_BENEFICIOS";
+  if (obs.includes("consignado")) return "CARTAO_CONSIGNADO";
+  return undefined;
+}
+
 export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeById: (id: number) => string, now: string): void {
   const convenioIds = new Set(CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefeituraId).map((cv) => cv.id));
   const contratos = listContratos().filter((ct) => convenioIds.has(ct.convenioId) && isAverbado(ct.situacao));
   for (const ct of contratos) {
     const status = (ct.folhaStatus ?? "recebida") as AdfStatus;
+    const tipoMargemInferido = deduceTipoMargem(ct);
     const already = _adfs.find((a) => a.adf === ct.adf && a.competencia === competencia);
     if (already) {
       already.status = status; // sincroniza status do contrato (cross-isolate)
       already.motivo = ct.folhaMotivo;
       already.atualizadoEm = now;
       // Preenche tipoMargem se veio depois (ADF criado antes desse campo existir).
-      if (already.tipoMargem === undefined) already.tipoMargem = ct.tipoMargem;
+      if (!already.tipoMargem && tipoMargemInferido) already.tipoMargem = tipoMargemInferido;
       continue;
     }
     _adfs.push({
@@ -167,7 +181,7 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
       cpfMasked: ct.cpfMasked, matricula: ct.matricula, nome: ct.nome,
       bancoNome: bancoNomeById(ct.bancoId), valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
       valorFinanciado: ct.valorFinanciado, tipoContrato: ct.tipoContrato,
-      tipoMargem: ct.tipoMargem, // pode ser undefined — no fallback vira "Cartao" generico
+      tipoMargem: tipoMargemInferido,
       status, motivo: ct.folhaMotivo, atualizadoEm: now,
     });
   }
