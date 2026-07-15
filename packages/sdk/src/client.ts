@@ -1221,7 +1221,7 @@ export class AtlasClient {
         },
       ),
     /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
-    criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string }) =>
+    criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string; tipo?: "novo" | "portabilidade" | "refinanciamento" }) =>
       this.request<{ id: string; situacao: string; banco: string; valor: number; parcelas: number; parcela: number; expira_em: string | null }>(
         "/v1/servidores/me/propostas",
         { method: "POST", body: input },

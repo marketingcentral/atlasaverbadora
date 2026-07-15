@@ -677,6 +677,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         taxaAm: z.number().positive(),
         matricula: z.string().optional(),
         bancoNome: z.string().optional(),
+        // Tipo da proposta — determina se vira EMPRESTIMO ou REFIN no contrato.
+        // Sem esse campo, portabilidade e refin viravam empréstimo genérico no
+        // /servidor/contratos (aparecia como "Empréstimo consignado" no card).
+        tipo: z.enum(["novo", "portabilidade", "refinanciamento"]).default("novo"),
       })
       .parse(await c.req.json());
     // A matricula ATIVA no app do servidor eh a fonte de verdade — e vem no
@@ -720,7 +724,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       cpfMasked: entry.cpfMasked,
       convenioId: conv?.id ?? entry.idConvenio,
       convenio: conv?.nome ?? "Banco Atlas",
-      tipoContrato: "EMPRESTIMO",
+      // portabilidade/refin viram REFIN no dominio (mesma state-machine);
+      // novo empréstimo vira EMPRESTIMO. tipoMargem em ambos e' EMPRESTIMO
+      // (portabilidade/refin usam a mesma bucket de margem).
+      tipoContrato: body.tipo === "novo" ? "EMPRESTIMO" : "REFIN",
       valorFinanciado: body.valor,
       parcelas: body.parcelas,
       taxaAm: body.taxaAm,

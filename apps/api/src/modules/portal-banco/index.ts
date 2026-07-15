@@ -932,8 +932,11 @@ async function persistir(
   if (!conv || !colaborador) throw Errors.notFound("colaborador_ou_convenio");
   const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxaAm });
   const tipoContrato = tipo === "COMPOSTA" ? "EMPRESTIMO" : tipo === "PORTABILIDADE" ? "REFIN" : (tipo as "EMPRESTIMO" | "REFIN");
+  // Banco sem identidade nao pode criar contrato — antes caia no fallback
+  // bancoId=1 (Banco Atlas), atribuindo silenciosamente o contrato ao Atlas.
+  if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
   return criarContratoOuReserva({
-    bancoId: j.banco_id ?? 1,
+    bancoId: j.banco_id,
     servidorId: 1,
     idMatricula: colaborador.idMatricula,
     matricula: colaborador.matricula,
