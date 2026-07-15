@@ -1217,6 +1217,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .delete("/v1/admin/prefeituras/:id", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
+    requirePermissao(j, "prefeituras");
     const id = Number(c.req.param("id"));
     const p = prefeituras.find((x) => x.id === id);
     if (!p) throw Errors.notFound("prefeitura");
@@ -1700,7 +1701,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // cascata com o status do banco dono (ver syncBancoAccess). Sem rota de
   // toggle/exclusão individual.
   .get("/v1/admin/webhooks/:id/deliveries", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-webhooks");
     return c.json({ deliveries: listDeliveries(c.req.param("id")) });
   })
   .post("/v1/admin/webhooks/fire", authRequired, async (c) => {
@@ -2325,6 +2326,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       modoImagens: body.modoImagens,
       linkAcesso: body.linkAcesso?.url ? body.linkAcesso : undefined,
       todasPrefeiturasParceiras: body.todasPrefeiturasParceiras,
+      duracaoMinimaMeses: body.duracaoMinimaMeses,
     };
     await persistBeneficio(c.env, b);
     // Hook: cria/atualiza o template de e-mail vinculado a este beneficio.
@@ -2358,7 +2360,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // consultor serve pra o operador ver, ajustar e mandar teste pro proprio
   // email. Prox iteracao: os handlers passam a ler daqui.
   .get("/v1/admin/email-templates", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "email-sistema");
     return c.json({ templates: await loadTemplates(c.env) });
   })
   .post("/v1/admin/email-templates", async (c) => {
@@ -2403,7 +2405,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Serve pra UX: o operador nao precisa digitar valor pra cada {{var}} —
   // o front puxa esse endpoint e usa como default.
   .get("/v1/admin/email-templates/:id/preview-vars", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "email-sistema");
     const t = await getTemplate(c.env, c.req.param("id"));
     if (!t) throw Errors.notFound("template");
     return c.json({ vars: exemploVarsRealistas(t) });

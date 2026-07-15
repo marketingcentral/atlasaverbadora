@@ -597,23 +597,16 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const pdf = miniPdf("ATLAS — LOTE DE ADFs (DESCONTOS EM FOLHA)", lines);
     return new Response(pdf, { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="adf-lote-${competencia}.pdf"` } });
   })
-  .post("/v1/prefeitura/adf/confirmar", async (c) => {
-    const id = requirePrefeitura(c.get("jwt"));
-    const body = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
-    await refreshContratos(c.env);
-    const adfs = setAdfStatus(id, body.ids, "aplicada", undefined, new Date().toISOString());
-    for (const adf of adfs) await persistContrato(c.env, adf); // write-through: banco vê "aplicada em folha"
-    appendAudit({ categoria: "margem", acao: "adf_aplicada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${adfs.length} ADFs confirmadas/aplicadas em folha.` });
-    return c.json({ aplicadas: adfs.length });
+  // DESATIVADOS (14/07/2026): "a averbadora que faz a ADF, a prefeitura so recebe".
+  // A UI foi removida em iteracao anterior, mas os endpoints continuavam ativos
+  // — permitiam mudar folhaStatus via CURL com JWT de prefeitura. Agora 403.
+  .post("/v1/prefeitura/adf/confirmar", (c) => {
+    requirePrefeitura(c.get("jwt"));
+    throw Errors.forbidden("Confirmar ADF e' acao exclusiva da averbadora — a prefeitura apenas recebe.");
   })
-  .post("/v1/prefeitura/adf/falha", async (c) => {
-    const id = requirePrefeitura(c.get("jwt"));
-    const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
-    await refreshContratos(c.env);
-    const adfs = setAdfStatus(id, body.ids, "falha", body.motivo, new Date().toISOString());
-    for (const adf of adfs) await persistContrato(c.env, adf);
-    appendAudit({ categoria: "margem", acao: "adf_falha", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
-    return c.json({ falhas: adfs.length });
+  .post("/v1/prefeitura/adf/falha", (c) => {
+    requirePrefeitura(c.get("jwt"));
+    throw Errors.forbidden("Reportar falha de ADF e' acao exclusiva da averbadora — a prefeitura apenas recebe.");
   })
 
   // ===== Passo 9 — Relatórios =====
