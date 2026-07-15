@@ -5,7 +5,7 @@ import { ComunicadoCarrossel } from "@atlas/ui/web";
 import type { Comunicado } from "@atlas/sdk";
 import { atlas } from "../../lib/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
-import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
+import { readActiveMatricula, hydrateMatriculas, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
 const PRODUTO_LABEL: Record<string, string> = {
   EMPRESTIMO: "Empréstimo Consignado",
@@ -80,6 +80,21 @@ export function ServidorDashboard() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  // Re-hidrata margem/contratos do backend ao entrar no dashboard e a cada 8s.
+  // Sem isso, o card de margem aqui mostra o snapshot antigo do localStorage —
+  // servidor que acabou de fazer um "Simular" voltava pro dashboard e nao via
+  // a margem descontada ate deslogar/entrar de novo.
+  useEffect(() => {
+    let stop = false;
+    const tick = async () => {
+      await hydrateMatriculas();
+      if (!stop) setInfo(readActiveMatricula());
+    };
+    void tick();
+    const id = window.setInterval(tick, 8000);
+    return () => { stop = true; window.clearInterval(id); };
+  }, []);
+
   const primeiroNome = useMemo(() => (info?.nome ?? "").split(" ")[0] ?? "", [info?.nome]);
 
   // Comunicados publicados pela averbadora para publico=servidor.
@@ -147,7 +162,10 @@ export function ServidorDashboard() {
 /** Card grande dark com 3 quadrados de margem lado a lado. Herdado do trabalho
  *  do colega: cliente aprovou o formato — mantido como esta. */
 function MinhaMargemPorModalidade({ info }: { info: MatriculaInfo }) {
-  const porTipo = new Map(info.margem.margens_por_tipo.map((m) => [m.tipo, m]));
+  // Defensivo: cache antigo de localStorage pode nao ter `margens_por_tipo` (schema
+  // pre-3-buckets). Fallback pra array vazio evita crash — os cards ainda renderizam
+  // zerados ate a re-hidratacao trazer o shape correto.
+  const porTipo = new Map((info.margem?.margens_por_tipo ?? []).map((m) => [m.tipo, m]));
   const ordem = ["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const;
   const linhas = ordem.map((t) => porTipo.get(t) ?? { tipo: t, total: 0, disponivel: 0 });
 
