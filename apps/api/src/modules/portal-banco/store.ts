@@ -254,27 +254,28 @@ export function normalizeContrato(c: ContratoFull): ContratoFull {
 
 /**
  * A margem do servidor SÓ É COMPROMETIDA quando o banco aceita a proposta —
- * pedido explicito do cliente. Enquanto a proposta esta "Aguardando…" (em analise),
- * a margem SEGUE DISPONIVEL. A UI (fatura minima, "% do limite") ja diz isso
- * ao servidor; o backend agora bate com esse contrato.
+ * pedido explicito e RECORRENTE do cliente. Enquanto a proposta esta
+ * "Aguardando…" (em analise), a margem SEGUE DISPONIVEL. O que impede o
+ * servidor de solicitar 2 propostas sobrepondo margem NAO e o comprometimento
+ * de margem, e sim a trava de 48h por produto (client-side + backend).
  *
  * Estados que COMPROMETEM (bloqueiam margem):
- *   - "Aguardando…" (proposta em analise — bloqueia JA aqui, cliente pediu
- *     explicitamente: evita servidor solicitar 2 propostas sobrepondo margem)
  *   - "Aprovado" (banco aprovou, averbadora ainda nao fez ADF)
  *   - "Ativo" / "Averbado" (operacao vigente ja averbada)
  *   - "Suspenso" (contrato vigente que foi suspenso — margem segue reservada)
  *   - "Formalizado"
  *
- * Estados que NAO COMPROMETEM (banco decidiu negativo OU contrato ja fechado):
- *   - "Expirado", "Cancelado", "Recusado"
- *   - "Quitado"
+ * Estados que NAO COMPROMETEM:
+ *   - "Aguardando…" (em analise — SO tem trava de 48h, sem consumir margem)
+ *   - "Expirado", "Cancelado", "Recusado", "Reprovado", "Rejeitado", "Negado", "Estornado"
+ *   - "Quitado" (contrato ja fechado)
  */
 export function comprometeMargem(situacao: string): boolean {
   const s = situacao.toLowerCase();
   if (s === "expirado" || s === "cancelado" || s === "quitado") return false;
+  if (s.includes("aguard")) return false; // <-- Aguardando NAO compromete margem
   if (s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) return false;
-  return true; // aguard / aprov / ativo / averb / suspens / formaliz -> bloqueia
+  return true; // aprov / ativo / averb / suspens / formaliz -> bloqueia
 }
 
 export function listContratos(filters: { convenioId?: string; matricula?: string; situacao?: string[] } = {}): ContratoFull[] {
