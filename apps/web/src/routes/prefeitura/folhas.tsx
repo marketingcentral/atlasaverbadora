@@ -148,7 +148,7 @@ function DescontosModal({ folha, onClose }: { folha: FolhaRow; onClose: () => vo
                   <td style={{ padding: "8px 10px" }}>{a.bancoNome}</td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtBRL(a.valorParcela)}</td>
                   <td style={{ padding: "8px 10px", textAlign: "center" }}>
-                    <Pill variant={a.status === "aplicada" ? "averbado" : a.status === "falha" ? "recusado" : "pendente"}>{a.status}</Pill>
+                    <Pill variant={a.status === "aplicada" ? "averbado" : a.status === "falha" ? "rejeitada" : "pendente"}>{a.status}</Pill>
                   </td>
                 </tr>
               ))}
