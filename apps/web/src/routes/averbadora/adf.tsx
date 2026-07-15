@@ -15,17 +15,25 @@ type AdfRow = {
   valorParcela: number; totalParcelas: number;
   valorFinanciado?: number;
   tipoContrato?: string;
+  /** Bucket de margem — distingue Cartao Consignado de Cartao Beneficio quando
+   *  tipoContrato=ECONSIGNADO (mesmos os dois; so tipoMargem separa). */
+  tipoMargem?: string;
   status: "recebida" | "aplicada" | "falha"; motivo?: string;
   /** ISO timestamp em que o ADF entrou/mudou de status na averbadora — usado para ordenar recentes no topo. */
   atualizadoEm?: string;
 };
 
-/** Rotulo do produto derivado de tipoContrato do backend. Mesma logica
- *  usada no card do servidor pra manter consistencia entre telas. */
-function produtoLabel(tipoContrato: string | undefined): string {
+/** Rotulo do produto — usa tipoContrato + tipoMargem pra distinguir os 4
+ *  produtos (Emprestimo/Portabilidade/Cartao Consignado/Cartao Beneficio).
+ *  ECONSIGNADO sem tipoMargem cai em "Cartao" (dado antigo). */
+function produtoLabel(tipoContrato: string | undefined, tipoMargem?: string): string {
   const t = (tipoContrato ?? "").toUpperCase();
   if (t === "REFIN") return "Portabilidade";
-  if (t === "ECONSIGNADO") return "Cartão";
+  if (t === "ECONSIGNADO") {
+    if (tipoMargem === "CARTAO_BENEFICIOS") return "Cartão Benefício";
+    if (tipoMargem === "CARTAO_CONSIGNADO") return "Cartão Consignado";
+    return "Cartão";
+  }
   return "Empréstimo";
 }
 
@@ -153,7 +161,7 @@ export function AdminAdf() {
           border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)",
           background: "color-mix(in srgb, var(--accent) 10%, transparent)",
         }}>
-          {produtoLabel(a.tipoContrato)}
+          {produtoLabel(a.tipoContrato, a.tipoMargem)}
         </span>
       ),
     },

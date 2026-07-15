@@ -123,6 +123,10 @@ export interface AdfEntry {
   /** Tipo do contrato do banco — EMPRESTIMO | REFIN | ECONSIGNADO. Serve
    *  pra averbadora rotular no lote como Emprestimo / Portabilidade / Cartao. */
   tipoContrato: string;
+  /** Bucket de margem — distingue Cartao Consignado (CARTAO_CONSIGNADO) de
+   *  Cartao Beneficio (CARTAO_BENEFICIOS). tipoContrato=ECONSIGNADO sozinho
+   *  nao diferencia; sem esse campo os dois viravam "Cartao" generico. */
+  tipoMargem?: string;
   status: AdfStatus;
   motivo?: string;
   atualizadoEm: string;
@@ -143,16 +147,32 @@ function isAverbado(situacao: string): boolean {
  *  O status do ADF é fonte-única do próprio contrato (ct.folhaStatus) — assim a
  *  confirmação da prefeitura persiste e o banco a enxerga. Requer refreshContratos
  *  antes (feito no endpoint) pra ver averbações de outros isolates. */
+/** Deduz tipoMargem quando o contrato nao gravou o campo explicito. Usa
+ *  observacoes ("Cartao Beneficio" | "Cartao Consignado" — texto que o
+ *  criarContratoOuReserva ja escreve) + tipoContrato como sinais.
+ *  So retorna algo pra ECONSIGNADO (o unico caso em que a distincao importa). */
+function deduceTipoMargem(ct: { tipoMargem?: string; tipoContrato?: string; observacoes?: string }): string | undefined {
+  if (ct.tipoMargem) return ct.tipoMargem;
+  if (ct.tipoContrato !== "ECONSIGNADO") return undefined;
+  const obs = (ct.observacoes ?? "").toLowerCase();
+  if (obs.includes("beneficio") || obs.includes("benefício")) return "CARTAO_BENEFICIOS";
+  if (obs.includes("consignado")) return "CARTAO_CONSIGNADO";
+  return undefined;
+}
+
 export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeById: (id: number) => string, now: string): void {
   const convenioIds = new Set(CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefeituraId).map((cv) => cv.id));
   const contratos = listContratos().filter((ct) => convenioIds.has(ct.convenioId) && isAverbado(ct.situacao));
   for (const ct of contratos) {
     const status = (ct.folhaStatus ?? "recebida") as AdfStatus;
+    const tipoMargemInferido = deduceTipoMargem(ct);
     const already = _adfs.find((a) => a.adf === ct.adf && a.competencia === competencia);
     if (already) {
       already.status = status; // sincroniza status do contrato (cross-isolate)
       already.motivo = ct.folhaMotivo;
       already.atualizadoEm = now;
+      // Preenche tipoMargem se veio depois (ADF criado antes desse campo existir).
+      if (!already.tipoMargem && tipoMargemInferido) already.tipoMargem = tipoMargemInferido;
       continue;
     }
     _adfs.push({
@@ -161,6 +181,7 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
       cpfMasked: ct.cpfMasked, matricula: ct.matricula, nome: ct.nome,
       bancoNome: bancoNomeById(ct.bancoId), valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
       valorFinanciado: ct.valorFinanciado, tipoContrato: ct.tipoContrato,
+      tipoMargem: tipoMargemInferido,
       status, motivo: ct.folhaMotivo, atualizadoEm: now,
     });
   }
@@ -211,6 +232,19 @@ export function setAdfStatusGlobal(adfIds: string[], status: AdfStatus, motivo: 
 /** Todas as ADFs de todas as prefeituras (visao averbadora). */
 export function listAdfsGlobal(competencia?: string): AdfEntry[] {
   return _adfs.filter((a) => !competencia || a.competencia === competencia);
+}
+
+/** Remove ADFs pertencentes a matriculas dadas (in-memory). Usado pelo purge
+ *  admin apos deleteContratosByMatriculas + removeContratosByMatricula — sem
+ *  isso o `_adfs` continuaria referenciando contratos que sumiram. */
+export function removeAdfsByMatricula(matriculas: string[]): number {
+  const set = new Set(matriculas);
+  let n = 0;
+  for (let i = _adfs.length - 1; i >= 0; i--) {
+    const a = _adfs[i];
+    if (a && set.has(a.matricula)) { _adfs.splice(i, 1); n++; }
+  }
+  return n;
 }
 
 /** Materializa ADFs para TODAS as prefeituras da competencia. Usado pela averbadora. */

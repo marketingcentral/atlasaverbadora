@@ -189,7 +189,7 @@ export function ServidorMarketplacePortabilidade() {
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
           Portal do servidor
         </span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>MarketPlace</h1>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.8rem", letterSpacing: "-0.02em" }}>Portabilidade</h1>
         <p style={{ color: "var(--text-muted)", margin: "6px 0 0" }}>
           Ofertas dos bancos parceiros para o convênio da <b>{info.prefeitura}</b>. Simule ou solicite portabilidade abaixo.
         </p>

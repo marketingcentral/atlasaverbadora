@@ -38,24 +38,31 @@ function lockProdutoDe(p: ModalidadeSim): LockProduto {
   return "EMPRESTIMO";
 }
 
-/** Verifica se uma proposta (pelo seu tipoContrato do backend) pertence ao
- *  produto travado — usado pra decidir se a proposta conta pra soltar a trava.
- *  Backend usa "EMPRESTIMO" | "REFIN" | "ECONSIGNADO" | (undefined = emprestimo).
+/** Verifica se uma proposta pertence ao produto travado. Prefer tipoMargem
+ *  (fonte da verdade — CARTAO_CONSIGNADO vs CARTAO_BENEFICIOS sao ambos
+ *  tipoContrato=ECONSIGNADO, so o tipoMargem distingue). Se tipoMargem nao
+ *  vier (dados antigos), cai no tipoContrato como fallback.
+ *
  *  - EMPRESTIMO trava: solta com qualquer proposta de credito (emprestimo/refin).
  *  - CARTAO_CONSIGNADO trava: solta so com proposta de cartao consignado.
  *  - CARTAO_BENEFICIOS trava: solta so com proposta de cartao beneficio. */
-function matchesLockProduto(tipoContrato: string | undefined, lockProd: LockProduto): boolean {
+function matchesLockProduto(tipoContrato: string | undefined, lockProd: LockProduto, tipoMargem?: string): boolean {
+  // Se tipoMargem foi informado pelo backend, ele e definitivo.
+  if (tipoMargem) return tipoMargem === lockProd;
+  // Fallback pra propostas antigas sem tipoMargem persistido.
   const t = (tipoContrato ?? "").toUpperCase();
   if (lockProd === "EMPRESTIMO") {
-    // Default (sem tipoContrato) = emprestimo — mantem retrocompat com propostas antigas.
     if (!t) return true;
     return t === "EMPRESTIMO" || t === "REFIN";
   }
   if (lockProd === "CARTAO_CONSIGNADO") {
-    return t.includes("CONSIG") && (t.includes("CARTAO") || t.includes("ECONSIGN"));
+    // Sem tipoMargem, ECONSIGNADO por default e cartao consignado. Beneficio
+    // "antigo" fica identificado como consignado (pouco impacto — dados velhos).
+    return t === "ECONSIGNADO";
   }
-  // CARTAO_BENEFICIOS
-  return t.includes("BENEF");
+  // CARTAO_BENEFICIOS — sem tipoMargem nao da pra distinguir, so por heuristica
+  // frouxa no nome que nao vale a pena (retorna false — errar pra menos).
+  return false;
 }
 
 export function SimuladorInline({
@@ -167,7 +174,7 @@ export function SimuladorInline({
   // situacao que NAO seja aceite/recusa explicita).
   const propostaPendente = useMemo(() => {
     const relevantes = (propostasQ.data?.propostas ?? [])
-      .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto));
+      .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto, p.tipoMargem));
     return relevantes.find((p) => {
       const s = p.situacao.toLowerCase();
       const decidiu =
@@ -518,7 +525,7 @@ function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produt
 
   const propostaPendente = useMemo(() => {
     const relevantes = (propostasQ.data?.propostas ?? [])
-      .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto));
+      .filter((p) => matchesLockProduto(p.tipoContrato, lockProduto, p.tipoMargem));
     return relevantes.find((p) => {
       const s = p.situacao.toLowerCase();
       const decidiu =
@@ -571,7 +578,17 @@ function SimuladorCartao({ info, produto }: { info: MatriculaInfo | null; produt
     // Trava e SEPARADA da do emprestimo (margens/produtos independentes).
     setLock(info.idMatricula, lockProduto);
     setClientLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
-    nav(`/servidor/solicitar-cartao?produto=${produto}&banco=${encodeURIComponent(bancoDefault)}&limite=${Math.round(limiteProposto)}`);
+    // Vai pro Termo de Autorizacao (mesma UX do emprestimo — cliente pediu
+    // "colocar o Termo tambem no cartao"). O tipo=cartao_consignado|cartao_beneficio
+    // renderiza os detalhes especificos (limite proposto, sem parcelas/taxa)
+    // e ao aceitar, o termo.tsx chama /me/cartoes (nao /me/propostas).
+    const tipoTermo = produto === "cartao_beneficio" ? "cartao_beneficio" : "cartao_consignado";
+    const params = new URLSearchParams({
+      tipo: tipoTermo,
+      banco: bancoDefault,
+      limite: String(Math.round(limiteProposto)),
+    });
+    nav(`/servidor/termo?${params.toString()}`);
   }
 
   if (locked && lockExpiresAt) {
