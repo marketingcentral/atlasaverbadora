@@ -6,8 +6,11 @@ import { fmtDateTime, getAllPropostasForMatricula, type Proposta } from "./propo
 import { readActiveIdMatricula } from "./matricula-data";
 
 export type NotifType =
+  | "proposta_enviada"
   | "proposta_em_analise"
   | "proposta_aprovada"
+  | "proposta_aguardando_adf"
+  | "proposta_averbada"
   | "proposta_aguardando_formalizacao"
   | "proposta_recusada"
   | "proposta_cancelada"
@@ -75,67 +78,120 @@ function tempoRelativo(criadaEm: string): string {
   return tentativa.toLocaleDateString("pt-BR");
 }
 
-function notifFromProposta(p: Proposta): Notification | null {
-  // Hash leva direto pro card na pagina de contratos (secao "Em andamento"/Historico).
+/** Emite UMA notificacao POR ETAPA que a proposta ja alcancou — assim o
+ *  servidor ve a timeline inteira no sino ("Proposta enviada" → "Em analise"
+ *  → "Aprovada" → "Aguardando ADF" → "Averbada"). O estado atual determina
+ *  quantas etapas foram alcancadas — nao emite futuras. */
+function notifsFromProposta(p: Proposta): Notification[] {
   const internalHref = `/servidor/contratos#${p.id}`;
-  switch (p.estado) {
-    case "em_analise":
-      return {
-        id: `proposta:${p.id}:em_analise`,
-        type: "proposta_em_analise",
-        titulo: `Proposta ${p.id} em análise`,
-        mensagem: `O ${p.banco} está avaliando sua pré-reserva. Você será avisado quando responder.`,
-        quando: tempoRelativo(p.criadaEm),
-        href: internalHref,
-        lida: false,
-      };
-    case "aprovada":
-      return {
-        id: `proposta:${p.id}:aprovada`,
-        type: "proposta_aprovada",
-        titulo: `Proposta ${p.id} aprovada`,
-        // Assinatura acontece no proprio banco (nao ha formalizacao in-app por enquanto).
-        mensagem: `O ${p.banco} aprovou. Entrará em contato para assinar o contrato.`,
-        quando: tempoRelativo(p.criadaEm),
-        href: internalHref,
-        lida: false,
-      };
-    case "aguardando_formalizacao":
-      return {
-        id: `proposta:${p.id}:aguardando`,
-        type: "proposta_aguardando_formalizacao",
-        titulo: `Aguardando assinatura de ${p.id}`,
-        // O contrato e' assinado diretamente com o banco (canal proprio dele).
-        mensagem: p.expiraEm
-          ? `Assine com o ${p.banco} (por telefone, e-mail ou app do banco). Trava expira em ${fmtDateTime(p.expiraEm)}.`
-          : `Assine com o ${p.banco} — o banco entrará em contato pelo canal dele.`,
-        quando: tempoRelativo(p.criadaEm),
-        href: internalHref,
-        lida: false,
-      };
-    case "recusada":
-      return {
-        id: `proposta:${p.id}:recusada`,
-        type: "proposta_recusada",
-        titulo: `Proposta ${p.id} recusada`,
-        mensagem: p.motivoRecusa ?? `O ${p.banco} recusou sua pré-reserva.`,
-        quando: tempoRelativo(p.criadaEm),
-        href: internalHref,
-        lida: false,
-      };
-    case "cancelada":
-      return {
-        id: `proposta:${p.id}:cancelada`,
-        type: "proposta_cancelada",
-        titulo: `Proposta ${p.id} cancelada`,
-        mensagem: `Sua pré-reserva foi cancelada e a margem voltou a ficar disponível.`,
-        quando: tempoRelativo(p.criadaEm),
-        href: internalHref,
-        lida: false,
-      };
-    default:
-      return null;
+  const quando = tempoRelativo(p.criadaEm);
+  const list: Notification[] = [];
+
+  // ETAPA 1 — Proposta enviada. Sempre emitida (mesmo que ja tenha avancado).
+  list.push({
+    id: `proposta:${p.id}:enviada`,
+    type: "proposta_enviada",
+    titulo: `Proposta ${p.id} enviada`,
+    mensagem: `Sua pré-reserva foi registrada no Atlas e enviada ao ${p.banco}.`,
+    quando,
+    href: internalHref,
+    lida: false,
+  });
+
+  // Fluxos negativos — encerram a timeline aqui.
+  if (p.estado === "recusada") {
+    list.push({
+      id: `proposta:${p.id}:recusada`,
+      type: "proposta_recusada",
+      titulo: `Proposta ${p.id} recusada`,
+      mensagem: p.motivoRecusa ?? `O ${p.banco} recusou sua pré-reserva.`,
+      quando,
+      href: internalHref,
+      lida: false,
+    });
+    return list;
   }
+  if (p.estado === "cancelada" || p.estado === "expirada") {
+    list.push({
+      id: `proposta:${p.id}:cancelada`,
+      type: "proposta_cancelada",
+      titulo: `Proposta ${p.id} cancelada`,
+      mensagem: p.estado === "expirada"
+        ? `Sua pré-reserva expirou (48h sem resposta do banco). Margem liberada.`
+        : `Sua pré-reserva foi cancelada e a margem voltou a ficar disponível.`,
+      quando,
+      href: internalHref,
+      lida: false,
+    });
+    return list;
+  }
+
+  // ETAPA 2 — Em analise pelo banco. Alcancada assim que a proposta existe.
+  list.push({
+    id: `proposta:${p.id}:em_analise`,
+    type: "proposta_em_analise",
+    titulo: `Proposta ${p.id} em análise`,
+    mensagem: `O ${p.banco} está avaliando sua pré-reserva. Você será avisado quando responder.`,
+    quando,
+    href: internalHref,
+    lida: false,
+  });
+
+  // ETAPA 3 — Aprovada pelo banco.
+  if (p.estado === "aprovada" || p.estado === "aguardando_formalizacao" || p.estado === "liberada") {
+    list.push({
+      id: `proposta:${p.id}:aprovada`,
+      type: "proposta_aprovada",
+      titulo: `Proposta ${p.id} aprovada`,
+      mensagem: `O ${p.banco} aprovou sua proposta. A averbadora vai processar a ADF nas próximas horas.`,
+      quando,
+      href: internalHref,
+      lida: false,
+    });
+  }
+
+  // ETAPA 4 — Aguardando ADF da averbadora (apos aprovacao, antes de virar Ativo).
+  if (p.estado === "aprovada") {
+    list.push({
+      id: `proposta:${p.id}:aguardando_adf`,
+      type: "proposta_aguardando_adf",
+      titulo: `Aguardando averbadora aplicar ${p.id}`,
+      mensagem: `A averbadora Atlas vai aplicar sua ADF na folha da prefeitura em breve.`,
+      quando,
+      href: internalHref,
+      lida: false,
+    });
+  }
+
+  // ETAPA 4b — Aguardando assinatura (fluxo pos-formalizacao, se aplicavel).
+  if (p.estado === "aguardando_formalizacao") {
+    list.push({
+      id: `proposta:${p.id}:aguardando_formalizacao`,
+      type: "proposta_aguardando_formalizacao",
+      titulo: `Aguardando assinatura de ${p.id}`,
+      mensagem: p.expiraEm
+        ? `Assine com o ${p.banco} (por telefone, e-mail ou app do banco). Trava expira em ${fmtDateTime(p.expiraEm)}.`
+        : `Assine com o ${p.banco} — o banco entrará em contato pelo canal dele.`,
+      quando,
+      href: internalHref,
+      lida: false,
+    });
+  }
+
+  // ETAPA 5 — Averbacao completa (ADF aplicada em folha).
+  if (p.estado === "liberada") {
+    list.push({
+      id: `proposta:${p.id}:averbada`,
+      type: "proposta_averbada",
+      titulo: `Averbação de ${p.id} confirmada`,
+      mensagem: `Sua ADF foi aplicada na folha da prefeitura. O contrato está ativo e o desconto começa na próxima competência.`,
+      quando,
+      href: internalHref,
+      lida: false,
+    });
+  }
+
+  return list;
 }
 
 /** Notificacao estatica de folha — em prod seria gerada pelo webhook do RH. */
@@ -213,9 +269,8 @@ export function buildNotificationsFromPropostas(
   ofertasBanco: OfertaBancoParaNotif[] = [],
 ): Notification[] {
   const readIds = readReadIds();
-  const derivadas = propostas
-    .map(notifFromProposta)
-    .filter((n): n is Notification => n != null);
+  // Cada proposta pode emitir varias notifs (uma por etapa da timeline).
+  const derivadas = propostas.flatMap(notifsFromProposta);
   const ofertas = ofertasBanco
     .map(notifDeOferta)
     .filter((n): n is Notification => n != null);
