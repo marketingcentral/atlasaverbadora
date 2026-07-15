@@ -737,6 +737,36 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
   })
 
+  // Zera senha + email + telefone de TODAS as matriculas de um CPF (via
+  // clearServidorConta). Depois disso, o login por CPF cai no fallback do
+  // DEV_USERS (senha "teste123") — util pra recuperar contas de teste que
+  // tiveram a senha alterada num fluxo de redefinicao. Nao apaga contratos,
+  // so limpa credenciais/contato.
+  .post("/v1/admin/manutencao/reset-servidor-conta", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const body = z.object({
+      cpfs: z.array(z.string().regex(/^\d{11}$/, "CPF deve ter 11 digitos")).min(1),
+    }).parse(await c.req.json());
+    const contas: Record<string, number> = {};
+    const erros: Record<string, string> = {};
+    for (const cpf of body.cpfs) {
+      try {
+        const n = await clearServidorConta(c.env, cpf);
+        contas[cpf] = n;
+        // Reflete na memoria in-isolate.
+        SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === cpf).forEach((x) => {
+          x.passwordHash = undefined;
+          x.email = undefined;
+          x.telefone = undefined;
+        });
+        // Libera pendencia de primeiro-acesso no KV pra poder cadastrar de novo.
+        if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.delete(`pa:${cpf}`);
+      } catch (e) { erros[cpf] = (e as Error).message; }
+    }
+    pushEvent("info", "admin.reset_servidor_conta", `Reset de conta: CPFs ${body.cpfs.join(", ")} → ${Object.values(contas).reduce((a, b) => a + b, 0)} matriculas zeradas.`);
+    return c.json({ contas, ...(Object.keys(erros).length ? { erros } : {}) });
+  })
+
   // ===== IA (OpenAI) =====
   .get("/v1/admin/ai/config", async (c) => {
     requireAdmin(c.get("jwt"));
