@@ -92,6 +92,13 @@ export function AdminAdf() {
     });
   }, [rows, prefeituraFiltro, busca]);
 
+  // Cliente pediu (15/07/2026): agrupar pendentes (recebida/falha) no TOPO
+  // e aplicadas embaixo — mesma dinamica de /servidor/contratos onde propostas
+  // "em andamento" ficam acima de "contratos averbados". Dentro de cada grupo,
+  // recentes primeiro (a sort ja foi feita acima).
+  const pendentes = useMemo(() => filtradas.filter((a) => a.status !== "aplicada"), [filtradas]);
+  const aplicadas = useMemo(() => filtradas.filter((a) => a.status === "aplicada"), [filtradas]);
+
   const [sel, setSel] = useState<Set<string>>(new Set());
   useEffect(() => { setSel(new Set()); }, [competencia, prefeituraFiltro, busca]);
 
@@ -310,13 +317,37 @@ export function AdminAdf() {
         </Card>
       ) : null}
 
-      <DataTable
-        columns={columns}
-        rows={filtradas}
-        rowKey={(a) => a.id}
-        loading={adfsQ.isLoading}
-        emptyState="Nenhuma ADF nesta competência/prefeitura."
-      />
+      {/* Bloco 1 — Pendentes (recebida / falha). Recentes no topo, aplicadas
+          embaixo. So renderiza se houver algum registro no grupo. */}
+      {pendentes.length > 0 || filtradas.length === 0 ? (
+        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--gold-500)" }}>
+            Pendentes ({pendentes.length}){pendentes.length > 0 ? <span style={{ marginLeft: 8, fontWeight: 400, color: "var(--text-dim)", letterSpacing: 0, textTransform: "none" }}>· aguardando aplicação em folha</span> : null}
+          </h2>
+          <DataTable
+            columns={columns}
+            rows={pendentes}
+            rowKey={(a) => a.id}
+            loading={adfsQ.isLoading}
+            emptyState="Nenhuma ADF nesta competência/prefeitura."
+          />
+        </section>
+      ) : null}
+
+      {/* Bloco 2 — Aplicadas (ja em folha). */}
+      {aplicadas.length > 0 ? (
+        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--emerald-500)" }}>
+            Aplicadas ({aplicadas.length}) <span style={{ marginLeft: 8, fontWeight: 400, color: "var(--text-dim)", letterSpacing: 0, textTransform: "none" }}>· já em folha</span>
+          </h2>
+          <DataTable
+            columns={columns}
+            rows={aplicadas}
+            rowKey={(a) => a.id}
+            loading={adfsQ.isLoading}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }
