@@ -176,10 +176,14 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 2 — Dashboard (com pendências de upload) =====
-  .get("/v1/prefeitura/dashboard", (c) => {
+  .get("/v1/prefeitura/dashboard", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const p = prefeituras.find((x) => x.id === id);
     if (!p) throw Errors.notFound("prefeitura");
+    // Sincroniza contratos com o PG antes de calcular KPIs — sem isso, um
+    // isolate fresh (ou que perdeu writes de outro isolate) retornava zero
+    // descontos/contratos mesmo com propostas ja aprovadas.
+    await refreshContratos(c.env);
     const servidores = servidoresDaPrefeitura(id);
     const contratos = contratosDaPrefeitura(id);
     const convenios = conveniosDaPrefeitura(id);
