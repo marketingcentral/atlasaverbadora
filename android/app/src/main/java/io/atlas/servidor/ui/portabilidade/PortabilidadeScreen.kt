@@ -65,7 +65,7 @@ fun PortabilidadeScreen(
         BackHeader("Portabilidade", onBack)
         Spacer(Modifier.height(8.dp))
         Text(
-            "Traga os empréstimos que você tem em outros bancos para o Banco Atlas e pague menos juros.",
+            "Traga seus empréstimos de outros bancos para o Banco Atlas e pague menos juros.",
             color = InkMuted,
             fontSize = 14.sp,
         )
