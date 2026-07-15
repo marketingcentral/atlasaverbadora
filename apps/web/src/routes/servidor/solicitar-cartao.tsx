@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import { readActiveMatricula } from "../../lib/matricula-data";
+import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -18,7 +18,19 @@ const fmtBRL = (n: number) =>
 export function ServidorSolicitarCartao() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
-  const info = useMemo(() => readActiveMatricula(), []);
+  // Listener de storage: sem isso, trocar matricula no switcher enquanto
+  // esta tela esta aberta continuava mostrando margem/limite da matricula
+  // anterior e o POST subia matricula errada.
+  const [info, setInfo] = useState(() => readActiveMatricula());
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setInfo(readActiveMatricula());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   // ?produto=cartao_consignado|cartao_beneficio — ambos sao produtos validos
   // do app do servidor. A margem/limite lidos abaixo mudam conforme o produto.

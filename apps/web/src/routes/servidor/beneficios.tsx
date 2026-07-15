@@ -119,7 +119,7 @@ export function ServidorBeneficios() {
         {filtrados.length === 0 ? (
           <div style={{ padding: 24, textAlign: "center", color: "var(--text-muted)", fontSize: 14, border: "1px dashed var(--border)", borderRadius: 12 }}>
             {beneficiosQ.data?.beneficios.some((b) => b.categorias.includes("saude")) && !parceiros.length ? (
-              <>Você tem parceiros de <b>Saúde</b> ({beneficiosQ.data.beneficios.filter((b) => b.categorias.includes("saude")).length}) — veja na aba <b>Saúde</b> do menu.<br />Nenhum parceiro comercial disponível para <b>{info.prefeitura}</b> por enquanto.</>
+              <>Você tem parceiros de <b>Saúde</b> ({beneficiosQ.data.beneficios.filter((b) => b.categorias.includes("saude")).length}) — clique na aba <b>Saúde</b> acima para ver.<br />Nenhum outro parceiro comercial disponível para <b>{info.prefeitura}</b> por enquanto.</>
             ) : (
               <>Nenhum parceiro nesta categoria em <b>{info.prefeitura}</b> — em breve mais opções.</>
             )}
@@ -156,7 +156,7 @@ export function ServidorBeneficios() {
         border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
         fontSize: 12.5, color: "var(--text-muted)", lineHeight: 1.5,
       }}>
-        <b style={{ color: "var(--text)" }}>ℹ️ Sobre esses benefícios:</b> descontos comerciais são negociados pela <b>averbadora</b> junto ao comércio local da sua cidade. Benefícios de saúde (telemedicina, farmácia, ótica) estão na aba <b>Saúde</b>.
+        <b style={{ color: "var(--text)" }}>ℹ️ Sobre esses benefícios:</b> descontos comerciais são negociados pela <b>Atlas</b> junto ao comércio local da sua cidade. Benefícios de saúde (telemedicina, farmácia, ótica) estão nas abas <b>Saúde</b> e <b>Telemedicina</b> acima.
       </div>
     </div>
   );

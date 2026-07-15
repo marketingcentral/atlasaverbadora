@@ -123,7 +123,13 @@ export function SimuladorInline({
     // Enquanto a query nao trouxe dado (loading), fallback pra opcoes basicas
     // — evita "flash" de dropdown vazio no primeiro render.
     if (prazoMaxVigente == null) return PARCELAS_TODAS;
-    return PARCELAS_TODAS.filter((p) => p <= prazoMaxVigente);
+    const filtered = PARCELAS_TODAS.filter((p) => p <= prazoMaxVigente);
+    // Edge case: banco reduziu pra prazoMax < 12 (menor opcao fixa disponivel).
+    // Sem fallback o dropdown fica vazio, state trava e todas as metricas
+    // (parcela, CET, maxValor) usam prazo invalido. Cai pro proprio prazoMax
+    // como unica opcao — melhor exibir 1 opcao valida do que travar tudo.
+    if (filtered.length === 0 && prazoMaxVigente > 0) return [prazoMaxVigente];
+    return filtered;
   }, [prazoMaxVigente]);
   // Se o prazo escolhido nao esta mais disponivel, cai pro maior permitido.
   useEffect(() => {

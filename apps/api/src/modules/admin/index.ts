@@ -87,6 +87,16 @@ export function requirePermissao(j: JwtClaims, resourceKey: string): void {
   if (perms.includes("*") || perms.includes(resourceKey)) return;
   throw Errors.forbidden(`Este recurso exige permissao "${resourceKey}". Seu usuario nao tem essa caixa marcada.`);
 }
+/** Variante: aceita QUALQUER uma das keys (OR). Util quando um endpoint serve
+ *  duas telas diferentes (ex.: GET /beneficios usado por /averbadora/beneficios
+ *  E por /averbadora/telemedicina — usuario precisa ter uma OU outra). */
+export function requirePermissaoOneOf(j: JwtClaims, ...resourceKeys: string[]): void {
+  const perms = j.averbadora_permissoes;
+  if (!perms || perms.length === 0) return;
+  if (perms.includes("*")) return;
+  if (resourceKeys.some((k) => perms.includes(k))) return;
+  throw Errors.forbidden(`Este recurso exige uma das permissoes: ${resourceKeys.join(", ")}.`);
+}
 
 /** LEGADO — mantido para retrocompat. Usa averbadora_perfil (label do preset).
  *  Novo codigo deve chamar requirePermissao(j, "<resource-key>") direto. */
@@ -2234,7 +2244,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Servidor consulta em /v1/servidores/me/beneficios (filtrado pela pref dele).
   // ============================================================
   .get("/v1/admin/beneficios", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "beneficios");
+    // Aceita "beneficios" OU "telemedicina" — a tela /averbadora/telemedicina
+    // filtra a mesma lista por categoria=telemedicina, e o usuario com so essa
+    // caixa marcada deve conseguir listar (frontend faz o filtro).
+    const j = c.get("jwt"); requireAdmin(j); requirePermissaoOneOf(j, "beneficios", "telemedicina");
     await refreshBeneficios(c.env);
     const list = await loadBeneficios(c.env);
     return c.json({ beneficios: list });

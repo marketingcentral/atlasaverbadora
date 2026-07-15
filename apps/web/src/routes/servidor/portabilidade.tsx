@@ -302,7 +302,18 @@ function KV({ label, v, accent, muted }: { label: string; v: string; accent?: bo
 function MarketplaceBlock() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["servidor", "portabilidade"], queryFn: () => atlas.portabilidade.minhas(), refetchInterval: 15000 });
-  const [info] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+  const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+  // Listener de storage: sem isso, elegiveisPortabilidade ficava congelado
+  // na matricula da montagem. Trocar matricula no switcher nao atualizava.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setInfo(readActiveMatricula());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const publicar = useMutation({
     mutationFn: (adf: string) => atlas.portabilidade.publicar(adf),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),
