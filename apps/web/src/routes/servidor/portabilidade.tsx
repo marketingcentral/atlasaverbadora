@@ -88,7 +88,9 @@ export function ServidorPortabilidade() {
 
   function consolidar() {
     const params = new URLSearchParams({
-      tipo: modoRefin ? "refin" : "portabilidade",
+      // termo.tsx aceita "refinanciamento" (nao "refin"); enviar a chave errada
+      // faz cair no default "novo" e o backend criar como EMPRESTIMO.
+      tipo: modoRefin ? "refinanciamento" : "portabilidade",
       banco: BANCO_DESTINO.nome,
       valor: String(Math.round(totalSaldo)),
       parcelas: String(novoPrazo),

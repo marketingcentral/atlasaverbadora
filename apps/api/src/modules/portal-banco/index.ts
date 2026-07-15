@@ -329,8 +329,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       .refine((b) => !!b.cpf || !!b.matricula, "cpf_ou_matricula_obrigatorio")
       .parse(await c.req.json());
     // O banco só acessa quem entrou em contato com ele (tem contrato/reserva).
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     await refreshContratos(c.env);
-    const contatos = matriculasContato(j.banco_id ?? 1);
+    const contatos = matriculasContato(j.banco_id);
     const cpfNorm = body.cpf?.replace(/\D/g, "");
     const matchPred = (s: typeof SERVIDORES_BUSCA_MOCK[number]) =>
       cpfNorm ? s.cpf === cpfNorm : body.matricula ? s.matricula === body.matricula : false;
@@ -362,8 +363,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const activeConv = await getActiveConvenioId(c.env, j);
     const activeConvNome = CONVENIOS_MOCK.find((cv) => cv.id === activeConv)?.nome ?? "Sem convênio";
     // Só os servidores que entraram em contato com o banco (não a base da prefeitura).
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     await refreshContratos(c.env);
-    const contatos = matriculasContato(j.banco_id ?? 1);
+    const contatos = matriculasContato(j.banco_id);
     const noConvenio = SERVIDORES_BUSCA_MOCK.filter((s) => contatos.has(s.matricula))
       .slice(0, 6)
       .map((s) => ({ nome: s.nome, matricula: s.matricula, cpf: s.cpf, cpfMasked: s.cpfMasked, idConvenio: s.idConvenio }));
@@ -382,8 +384,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.idMatricula === idMatricula);
     if (!s) throw Errors.notFound("colaborador");
     // Só calcula margem de quem contatou o banco.
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     await refreshContratos(c.env);
-    if (!matriculasContato(j.banco_id ?? 1).has(s.matricula)) {
+    if (!matriculasContato(j.banco_id).has(s.matricula)) {
       throw Errors.forbidden("Este servidor não entrou em contato com o banco.");
     }
     const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
@@ -430,7 +433,8 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // Casos edge (visao geral de convenios, busca de matricula especifica) podem
     // opt-in com ?incluir_todos_convenios=true.
     const incluirTodos = url.searchParams.get("incluir_todos_convenios") === "true";
-    const bancoId = j.banco_id ?? 1;
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const bancoId = j.banco_id;
     const outrosConvenios = incluirTodos
       ? listContratos({}).filter((ct) => {
           if (ct.bancoId !== bancoId) return false;

@@ -38,7 +38,7 @@ const NAV = [
       { key: "email-recuperar-senha", label: "Recuperar senha", href: "/averbadora/emails/recuperar-senha" },
       { key: "email-redefinir-senha", label: "Redefinir senha", href: "/averbadora/emails/redefinir-senha" },
       { key: "email-simulacao", label: "Simulação", href: "/averbadora/emails/simulacao" },
-      { key: "email-beneficio", label: "Benefícios", href: "/averbadora/emails/beneficios" },
+      { key: "email-beneficios", label: "Benefícios", href: "/averbadora/emails/beneficios" },
     ],
   },
   { key: "termos", label: "Termos de aceite", href: "/averbadora/termos", icon: "📜" },

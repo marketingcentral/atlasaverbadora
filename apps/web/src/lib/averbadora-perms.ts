@@ -76,7 +76,7 @@ export const RESOURCE_GROUPS: { titulo: string; recursos: { key: string; label: 
       { key: "email-recuperar-senha", label: "E-mail: recuperar senha" },
       { key: "email-redefinir-senha", label: "E-mail: redefinir senha" },
       { key: "email-simulacao", label: "E-mail: simulacao" },
-      { key: "email-beneficio", label: "E-mail: beneficios" },
+      { key: "email-beneficios", label: "E-mail: beneficios" },
       { key: "termos", label: "Termos (editor)" },
     ],
   },
