@@ -25,7 +25,7 @@ import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbado
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
-import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal } from "../prefeitura/store.js";
+import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
@@ -729,10 +729,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const erros: Record<string, string> = {};
     try { contratosPg = await deleteContratosByMatriculas(c.env, body.matriculas); } catch (e) { erros.postgres = (e as Error).message; }
     const contratosMem = removeContratosByMatricula(body.matriculas);
-    pushEvent("info", "admin.purge_matricula", `Purga de propostas: matriculas ${body.matriculas.join(", ")} → ${contratosPg} apagadas no Postgres, ${contratosMem} na memoria.`);
+    // ADFs materializadas ficam no _adfs in-memory. Sem essa linha, a fila do
+    // ADF da averbadora continua mostrando entradas orfas dos contratos apagados.
+    const adfsMem = removeAdfsByMatricula(body.matriculas);
+    pushEvent("info", "admin.purge_matricula", `Purga: matriculas ${body.matriculas.join(", ")} → ${contratosPg} contratos PG, ${contratosMem} contratos mem, ${adfsMem} ADFs mem.`);
     return c.json({
       matriculas: body.matriculas,
       contratosApagados: { postgres: contratosPg, memoria: contratosMem },
+      adfsApagadas: adfsMem,
       ...(Object.keys(erros).length ? { erros } : {}),
     });
   })
@@ -2468,11 +2472,24 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const pid = Number(prefFiltro);
       list = list.filter((a) => a.prefeituraId === pid);
     }
-    // Enriquece com nome da prefeitura pra UI.
-    const enriched = list.map((a) => ({
-      ...a,
-      prefeituraNome: prefeituras.find((p) => p.id === a.prefeituraId)?.nome ?? `Pref ${a.prefeituraId}`,
-    }));
+    // Enriquece com nome da prefeitura pra UI + preenche tipoMargem a partir
+    // do contrato correspondente EM TEMPO DE LEITURA. Evita depender do _adfs
+    // in-memory ter o campo preenchido (que podia ficar stale entre isolates).
+    const enriched = list.map((a) => {
+      const ct = getContrato(a.adf);
+      // Deduz do contrato: tipoMargem explicito > observacoes (Cartao Consig / Beneficio)
+      let tipoMargem = a.tipoMargem ?? ct?.tipoMargem;
+      if (!tipoMargem && ct?.tipoContrato === "ECONSIGNADO") {
+        const obs = (ct?.observacoes ?? "").toLowerCase();
+        if (obs.includes("beneficio") || obs.includes("benefício")) tipoMargem = "CARTAO_BENEFICIOS";
+        else if (obs.includes("consignado")) tipoMargem = "CARTAO_CONSIGNADO";
+      }
+      return {
+        ...a,
+        tipoMargem,
+        prefeituraNome: prefeituras.find((p) => p.id === a.prefeituraId)?.nome ?? `Pref ${a.prefeituraId}`,
+      };
+    });
     return c.json({ adfs: enriched });
   })
   .post("/v1/admin/adf/confirmar", async (c) => {

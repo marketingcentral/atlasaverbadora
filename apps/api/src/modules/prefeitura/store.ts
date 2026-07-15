@@ -234,6 +234,19 @@ export function listAdfsGlobal(competencia?: string): AdfEntry[] {
   return _adfs.filter((a) => !competencia || a.competencia === competencia);
 }
 
+/** Remove ADFs pertencentes a matriculas dadas (in-memory). Usado pelo purge
+ *  admin apos deleteContratosByMatriculas + removeContratosByMatricula — sem
+ *  isso o `_adfs` continuaria referenciando contratos que sumiram. */
+export function removeAdfsByMatricula(matriculas: string[]): number {
+  const set = new Set(matriculas);
+  let n = 0;
+  for (let i = _adfs.length - 1; i >= 0; i--) {
+    const a = _adfs[i];
+    if (a && set.has(a.matricula)) { _adfs.splice(i, 1); n++; }
+  }
+  return n;
+}
+
 /** Materializa ADFs para TODAS as prefeituras da competencia. Usado pela averbadora. */
 export function ensureAdfsGlobal(competencia: string, bancoNomeById: (id: number) => string, now: string, prefeituraIds: number[]): void {
   for (const pid of prefeituraIds) ensureAdfs(pid, competencia, bancoNomeById, now);
