@@ -345,8 +345,9 @@ export interface ContratoMock {
   convenioId: string;
 }
 
-export const CONTRATOS_MOCK: ContratoMock[] = [
-  { adf: "472600084", situacao: "Aguardando Confirmação do Deferimento", lancamento: "19/06/2026", expiracao: "26/06/2026", cpfMasked: "***.***.***-34", matricula: "843796302", nome: "FERNANDA KELLI TOMAZONI", tipoContrato: "EMPRESTIMO", totalParcelas: 96, valorParcela: 240.18, convenio: "FLORIPA / DELTA GLOBAL", convenioId: "CONV-002" },
-  { adf: "461050084", situacao: "Ativo", lancamento: "25/03/2026", expiracao: null, cpfMasked: "***.***.***-35", matricula: "56571701", nome: "SUZANA DALLARMI", tipoContrato: "EMPRESTIMO", totalParcelas: 84, valorParcela: 312.50, convenio: "JOINVILLE / DELTA GLOBAL", convenioId: "CONV-003" },
-  { adf: "460690084", situacao: "Ativo", lancamento: "18/03/2026", expiracao: null, cpfMasked: "***.***.***-33", matricula: "852029100", nome: "ADRIANA MARQUES DA SILVA", tipoContrato: "EMPRESTIMO", totalParcelas: 120, valorParcela: 15.48, convenio: "PALHOCA / DELTA GLOBAL", convenioId: "CONV-001" },
-];
+// Cliente pediu remocao dos 3 contratos fixture (16/07/2026) pra teste real do
+// zero — antes tinha ADRIANA/SUZANA/FERNANDA que reapareciam via
+// seedContratosIfEmpty depois de deletados. Isso limpa tambem as pre-reservas
+// visiveis em /averbadora/pre-reservas (sao derivadas de contratos).
+// Se restaurar pra demo, reverter este arquivo.
+export const CONTRATOS_MOCK: ContratoMock[] = [];
