@@ -1869,15 +1869,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/health", async (c) => {
     requireAdmin(c.get("jwt"));
-    return c.json({
-      checks: [
-        { servico: "banco SCred /propostas", uptime: 1, p95: 142, ok: true },
-        { servico: "banco Y /propostas", uptime: 0.997, p95: 188, ok: true },
-        { servico: "banco BMG /propostas", uptime: 0.962, p95: 820, ok: false },
-        { servico: "prefeitura Palhoca /folha", uptime: 0.99, p95: 320, ok: true },
-        { servico: "prefeitura Floripa /folha", uptime: 0.982, p95: 800, ok: true },
-      ],
-    });
+    // Cliente pediu limpeza dos 5 checks fixture (16/07/2026) pra teste real
+    // do zero — antes retornava banco SCred/Y/BMG + Palhoca/Floripa hardcoded
+    // com uptime e latencia fake. Quando o monitor real for implementado
+    // (cron worker pingando endpoints + persistindo metricas), popular aqui.
+    return c.json({ checks: [] });
   })
 
   .get("/v1/admin/logs", async (c) => {
