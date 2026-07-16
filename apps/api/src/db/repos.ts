@@ -438,6 +438,17 @@ export async function pruneLogs(env: Env, keep = 2000): Promise<void> {
     DELETE FROM app_logs WHERE id NOT IN (SELECT id FROM app_logs ORDER BY id DESC LIMIT ${keep})`);
 }
 
+/** Zera SO a base de servidores + tudo que depende deles (contratos, ADFs,
+ *  propostas, eventos, consentimentos). NAO toca em bancos/prefeituras/convenios.
+ *  Pedido do cliente 16/07/2026: recomecar essa parte do zero, base 100% vazia.
+ *  RESTART IDENTITY volta sequences de proposta_eventos/contrato_eventos ao 1. */
+export async function purgeServidores(env: Env): Promise<void> {
+  const db = getDb(env);
+  await ensureSchema(env);
+  // Uma unica instrucao com CASCADE: PG resolve dependencias FK sozinho.
+  await db.execute(sql`TRUNCATE servidores, contratos, portal_banco_contratos, propostas, proposta_eventos, contrato_eventos, consentimentos RESTART IDENTITY CASCADE`);
+}
+
 /** Repara linhas com jsonb corrompido (escalar): TRUNCATE + re-seed com o raw cast correto. */
 export async function reseedAll(env: Env, bancosSeed: BancoAdmin[], prefeiturasSeed: PrefeituraAdmin[], servidoresSeed: ServidorBuscaMock[]): Promise<void> {
   const db = getDb(env);
