@@ -92,11 +92,13 @@ export function AdminAdf() {
     });
   }, [rows, prefeituraFiltro, busca]);
 
-  // Cliente pediu (15/07/2026): agrupar pendentes (recebida/falha) no TOPO
-  // e aplicadas embaixo — mesma dinamica de /servidor/contratos onde propostas
-  // "em andamento" ficam acima de "contratos averbados". Dentro de cada grupo,
-  // recentes primeiro (a sort ja foi feita acima).
-  const pendentes = useMemo(() => filtradas.filter((a) => a.status !== "aplicada"), [filtradas]);
+  // Cliente pediu (16/07/2026): tres blocos separados — RECEBIDAS no topo
+  // (sempre visivel, mesmo vazio, pra ADF nova entrar num lugar previsivel),
+  // Falhas no meio (so aparece se tiver), Aplicadas embaixo. Sort desc por
+  // atualizadoEm ja foi feita no filtradas — nova ADF cai automaticamente no
+  // topo do bloco Recebidas.
+  const recebidas = useMemo(() => filtradas.filter((a) => a.status === "recebida"), [filtradas]);
+  const falhas = useMemo(() => filtradas.filter((a) => a.status === "falha"), [filtradas]);
   const aplicadas = useMemo(() => filtradas.filter((a) => a.status === "aplicada"), [filtradas]);
 
   const [sel, setSel] = useState<Set<string>>(new Set());
@@ -317,28 +319,51 @@ export function AdminAdf() {
         </Card>
       ) : null}
 
-      {/* Bloco 1 — Pendentes (recebida / falha). Recentes no topo, aplicadas
-          embaixo. So renderiza se houver algum registro no grupo. */}
-      {pendentes.length > 0 || filtradas.length === 0 ? (
+      {/* Bloco 1 — RECEBIDAS. Sempre visivel (mesmo vazio) pra que uma ADF
+          nova tenha um lugar previsivel pra chegar — sem se misturar com as
+          aplicadas. Recentes no topo (sort desc por atualizadoEm ja aplicado). */}
+      <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--gold-500)" }}>
+          Recebidas ({recebidas.length})
+          <span style={{ marginLeft: 8, fontWeight: 400, color: "var(--text-dim)", letterSpacing: 0, textTransform: "none" }}>
+            · novas ADFs entram no topo desta seção
+          </span>
+        </h2>
+        <DataTable
+          columns={columns}
+          rows={recebidas}
+          rowKey={(a) => a.id}
+          loading={adfsQ.isLoading}
+          emptyState="Nenhuma ADF nova aguardando aplicação nesta competência."
+        />
+      </section>
+
+      {/* Bloco 2 — FALHAS. So aparece se houver algum registro. */}
+      {falhas.length > 0 ? (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--gold-500)" }}>
-            Pendentes ({pendentes.length}){pendentes.length > 0 ? <span style={{ marginLeft: 8, fontWeight: 400, color: "var(--text-dim)", letterSpacing: 0, textTransform: "none" }}>· aguardando aplicação em folha</span> : null}
+          <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--danger-500)" }}>
+            Falhas ({falhas.length})
+            <span style={{ marginLeft: 8, fontWeight: 400, color: "var(--text-dim)", letterSpacing: 0, textTransform: "none" }}>
+              · precisam ser reprocessadas ou corrigidas
+            </span>
           </h2>
           <DataTable
             columns={columns}
-            rows={pendentes}
+            rows={falhas}
             rowKey={(a) => a.id}
             loading={adfsQ.isLoading}
-            emptyState="Nenhuma ADF nesta competência/prefeitura."
           />
         </section>
       ) : null}
 
-      {/* Bloco 2 — Aplicadas (ja em folha). */}
+      {/* Bloco 3 — APLICADAS (ja em folha). So aparece se houver algum. */}
       {aplicadas.length > 0 ? (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--emerald-500)" }}>
-            Aplicadas ({aplicadas.length}) <span style={{ marginLeft: 8, fontWeight: 400, color: "var(--text-dim)", letterSpacing: 0, textTransform: "none" }}>· já em folha</span>
+            Aplicadas ({aplicadas.length})
+            <span style={{ marginLeft: 8, fontWeight: 400, color: "var(--text-dim)", letterSpacing: 0, textTransform: "none" }}>
+              · já em folha
+            </span>
           </h2>
           <DataTable
             columns={columns}
