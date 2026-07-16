@@ -201,11 +201,9 @@ export interface VitrineBanner {
   ativo: boolean;
 }
 
-// Banco padrao unico. O cliente opera hoje so com o Banco Atlas; parceiros
-// adicionais entram pelo botao "Adicionar banco". Cliente pediu remocao do
-// seed "Banco Atlas" (16/07/2026) pra fazer teste real do zero — antes iniciava
-// com um banco pre-cadastrado que reaparecia via seedBancosIfEmpty depois de
-// deletado. Se precisar restaurar o seed pra demo, reverter este commit.
+// Seed vazio: cliente pediu comecar do zero (16/07/2026). Banco Delta ja esta
+// no PG (renomeado via /admin/bancos, id=1). Se o admin deletar TODOS os bancos,
+// nao ha re-populacao automatica via seedBancosIfEmpty.
 export const bancos: BancoAdmin[] = [];
 
 // Snapshot das fixtures iniciais — usado como seed do Postgres na primeira carga.
