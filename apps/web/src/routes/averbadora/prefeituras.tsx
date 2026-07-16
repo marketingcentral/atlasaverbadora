@@ -170,8 +170,16 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
       }));
     },
     onError: (err) => {
-      const msg = err instanceof Error ? err.message : "Falha na consulta";
-      setCnpjError(msg.includes("cnpj_nao_encontrado") ? "CNPJ não encontrado na Receita." : msg);
+      // Backend retorna 400 com details.cnpj = mensagem detalhada; fallback
+      // pra err.message se nao vier no shape esperado.
+      const withDetails = err as { details?: { cnpj?: string }; message?: string; status?: number };
+      const detalhe = withDetails.details?.cnpj;
+      const msg = detalhe ?? withDetails.message ?? "Falha na consulta";
+      if (withDetails.status === 404 || msg.includes("cnpj_nao_encontrado")) {
+        setCnpjError("CNPJ não encontrado na Receita.");
+      } else {
+        setCnpjError(msg);
+      }
     },
   });
   const buscarCnpj = () => {

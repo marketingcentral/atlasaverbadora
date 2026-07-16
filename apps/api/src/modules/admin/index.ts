@@ -191,6 +191,31 @@ export interface PrefeituraAdmin {
   };
 }
 
+// Normaliza resposta do ReceitaWS pro shape que o frontend consome (mesmo da
+// BrasilAPI). Nao mapeia todos os campos — apenas os que a UI usa.
+function mapReceitaWsToBrasilApi(r: Record<string, unknown>): Record<string, unknown> {
+  const s = (k: string) => (typeof r[k] === "string" ? (r[k] as string) : undefined);
+  const cepDigits = s("cep")?.replace(/\D/g, "");
+  return {
+    cnpj: s("cnpj")?.replace(/\D/g, ""),
+    razao_social: s("nome"),
+    nome_fantasia: s("fantasia"),
+    data_inicio_atividade: s("abertura")?.split("/").reverse().join("-"),
+    cnae_fiscal_descricao: (r["atividade_principal"] as { text?: string }[] | undefined)?.[0]?.text,
+    logradouro: s("logradouro"),
+    numero: s("numero"),
+    complemento: s("complemento"),
+    bairro: s("bairro"),
+    cep: cepDigits,
+    municipio: s("municipio"),
+    uf: s("uf"),
+    codigo_municipio_ibge: undefined,
+    ddd_telefone_1: s("telefone"),
+    email: s("email"),
+    descricao_situacao_cadastral: s("situacao"),
+  };
+}
+
 export function sanitizePrefeitura(p: PrefeituraAdmin) {
   const { passwordHash, ...rest } = p;
   return { ...rest, hasPassword: !!passwordHash };
@@ -1439,23 +1464,67 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
   })
-  // Consulta CNPJ via BrasilAPI (base publica que agrega Receita Federal +
-  // Junta Comercial estadual). Nao expoe a origem pro cliente — retorna o
-  // shape completo pra o frontend escolher o que exibir. Sem cache — se
-  // precisar, adicionar KV_CACHE com TTL de 24h.
+  // Consulta CNPJ com fallback multi-provider + cache KV 24h. Ordem:
+  // 1) KV_CACHE (se hit, retorna direto — evita 429)
+  // 2) BrasilAPI (Receita + Junta Comercial, gratuito mas rate-limited 3req/min)
+  // 3) ReceitaWS (fallback, tambem gratuito, limite menor)
+  // Ambos retornam shapes diferentes — normalizamos pro shape do BrasilAPI
+  // (que o frontend ja consome). Se ambos 429/falharem, mensagem clara.
   .get("/v1/admin/prefeituras/consulta-cnpj/:cnpj", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     const raw = c.req.param("cnpj").replace(/\D/g, "");
     if (raw.length !== 14) throw Errors.validation({ cnpj: "CNPJ invalido — envie 14 digitos" });
-    let res: Response;
-    try {
-      res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
-    } catch (e) {
-      throw Errors.validation({ cnpj: `Falha ao consultar CNPJ: ${(e as Error).message}` });
+    const cacheKey = `cnpj:${raw}`;
+    // 1) Cache — CNPJ nao muda com frequencia; 24h e razoavel.
+    if (c.env.KV_CACHE) {
+      const cached = await c.env.KV_CACHE.get(cacheKey);
+      if (cached) return c.json({ dados: JSON.parse(cached) as Record<string, unknown> });
     }
-    if (res.status === 404) throw Errors.notFound("cnpj_nao_encontrado");
-    if (!res.ok) throw Errors.validation({ cnpj: `Consulta falhou (HTTP ${res.status})` });
-    const dados = await res.json() as Record<string, unknown>;
+    // 2) BrasilAPI — provedor primario.
+    let dados: Record<string, unknown> | null = null;
+    let ultimoErro = "";
+    try {
+      const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
+      if (r.status === 404) throw Errors.notFound("cnpj_nao_encontrado");
+      if (r.ok) dados = await r.json() as Record<string, unknown>;
+      else ultimoErro = `BrasilAPI HTTP ${r.status}`;
+    } catch (e) {
+      // Se ja e HttpError (ex.: notFound), rethrow. Erro de fetch: tenta fallback.
+      if ((e as { status?: number }).status === 404) throw e;
+      ultimoErro = `BrasilAPI: ${(e as Error).message}`;
+    }
+    // 3) ReceitaWS — fallback. Retorna nomes de campo em PT (situacao_cadastral,
+    //    razao_social, etc.) — normalizamos pro shape do BrasilAPI.
+    if (!dados) {
+      try {
+        const r = await fetch(`https://receitaws.com.br/v1/cnpj/${raw}`);
+        if (r.ok) {
+          const rw = await r.json() as Record<string, unknown>;
+          if (rw.status === "ERROR") {
+            ultimoErro = `${ultimoErro} + ReceitaWS: ${String(rw.message ?? "erro")}`;
+          } else {
+            dados = mapReceitaWsToBrasilApi(rw);
+          }
+        } else {
+          ultimoErro = `${ultimoErro} + ReceitaWS HTTP ${r.status}`;
+        }
+      } catch (e) {
+        ultimoErro = `${ultimoErro} + ReceitaWS: ${(e as Error).message}`;
+      }
+    }
+    if (!dados) {
+      // Mensagem util pro operador entender que e limite dos provedores,
+      // nao problema no cadastro dele.
+      throw Errors.validation({
+        cnpj: ultimoErro.includes("429")
+          ? "Limite temporario de consulta atingido. Aguarde 1 minuto e tente de novo, ou preencha os campos manualmente."
+          : `Consulta falhou (${ultimoErro}). Preencha manualmente ou tente de novo.`,
+      });
+    }
+    // Cacheia por 24h — proxima consulta ao mesmo CNPJ nao passa pelo provedor.
+    if (c.env.KV_CACHE) {
+      try { await c.env.KV_CACHE.put(cacheKey, JSON.stringify(dados), { expirationTtl: 86400 }); } catch { /* fail-safe */ }
+    }
     return c.json({ dados });
   })
   .post("/v1/admin/prefeituras", async (c) => {
