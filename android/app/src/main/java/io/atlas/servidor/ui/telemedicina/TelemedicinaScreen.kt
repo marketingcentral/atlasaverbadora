@@ -216,6 +216,11 @@ private fun TelemedicinaBanner(
 /** Popup — explica a telemedicina e que a Atlas entra em contato pra formalizar. */
 @Composable
 private fun CotacaoDialog(enviando: Boolean, erro: String?, onSolicitar: () -> Unit, onCancelar: () -> Unit) {
+    // Texto oficial vem da tela Termos de aceite da averbadora (/averbadora/termos → telemedicina).
+    val corpoTermo = io.atlas.servidor.ui.components.rememberTermoCorpo(
+        tipo = "telemedicina",
+        vars = mapOf("meses" to "12", "valor" to "R$ 50,00", "banco" to "Banco Atlas"),
+    )
     AlertDialog(
         onDismissRequest = onCancelar,
         containerColor = Superficie,
@@ -230,7 +235,7 @@ private fun CotacaoDialog(enviando: Boolean, erro: String?, onSolicitar: () -> U
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato " +
+                    corpoTermo ?: "Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato " +
                         "com você para formalizar a solicitação.",
                     color = InkMuted,
                     fontSize = 13.sp,

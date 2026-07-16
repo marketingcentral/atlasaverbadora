@@ -456,6 +456,19 @@ private fun TermoDialog(
     onAceitar: () -> Unit,
     onCancelar: () -> Unit,
 ) {
+    // Texto oficial vem da tela Termos de aceite da averbadora (com as variáveis
+    // substituídas). Fallback local só se a rede falhar, pra não travar o aceite.
+    val corpoTermo = io.atlas.servidor.ui.components.rememberTermoCorpo(
+        tipo = "emprestimo",
+        vars = mapOf(
+            "tipoLabel" to produtoLabel,
+            "valor" to Format.money(valor),
+            "parcelas" to parcelas.toString(),
+            "parcela" to Format.money(parcela),
+            "banco" to "Banco Atlas",
+            "prazo" to parcelas.toString(),
+        ),
+    )
     AlertDialog(
         onDismissRequest = onCancelar,
         containerColor = Superficie,
@@ -473,7 +486,7 @@ private fun TermoDialog(
                 io.atlas.servidor.ui.components.InfoRow("Taxa", Format.rateAm(taxaAm))
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "Ao aceitar, este valor será reservado e sua margem ficará BLOQUEADA por 48h " +
+                    corpoTermo ?: "Ao aceitar, este valor será reservado e sua margem ficará BLOQUEADA por 48h " +
                         "(uma pré-reserva por vez). A taxa é mensal e inclui o CET (juros, IOF e tarifas). " +
                         "O contrato definitivo é disponibilizado pelo banco após a aprovação. Este aceite é " +
                         "registrado com data, hora e CPF para fins de auditoria (LGPD).",
@@ -510,6 +523,15 @@ private fun CartaoTermoDialog(
     onAceitar: () -> Unit,
     onCancelar: () -> Unit,
 ) {
+    // Termo oficial da averbadora — tipo conforme o cartão (crédito consignado / benefício).
+    val corpoTermo = io.atlas.servidor.ui.components.rememberTermoCorpo(
+        tipo = if (nomeCartao.contains("Benefício", ignoreCase = true)) "cartao_beneficio" else "cartao_consignado",
+        vars = mapOf(
+            "tipoLabel" to nomeCartao,
+            "limite" to Format.money(limite),
+            "banco" to "Banco Atlas",
+        ),
+    )
     AlertDialog(
         onDismissRequest = onCancelar,
         containerColor = Superficie,
@@ -525,6 +547,7 @@ private fun CartaoTermoDialog(
                 io.atlas.servidor.ui.components.InfoRow("Limite proposto", Format.money(limite))
                 Spacer(Modifier.height(12.dp))
                 Text(
+                    corpoTermo ?:
                     "Ao confirmar, esta solicitação é ENVIADA ao banco (proposta real) e sua margem fica " +
                         "em pré-reserva por 48h. Você autoriza o Banco Atlas a entrar em contato para emitir " +
                         "e ativar o cartão. Registrado com data, hora e CPF para auditoria (LGPD).",

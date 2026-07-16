@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@atlas/ui/web";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { atlas } from "../../lib/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
 
@@ -8,6 +10,38 @@ const fmtBRL = (n: number) =>
 
 export function ServidorSaude() {
   const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+
+  // Cotação de telemedicina: 3 estados no banner — Solicitar / Em análise / Plano Ativo.
+  const [showCotar, setShowCotar] = useState(false);
+  const minhasCotacoesQ = useQuery({
+    queryKey: ["servidor", "telemedicina", "minhas-cotacoes"],
+    queryFn: () => atlas.servidor.minhasCotacoesTelemedicina(),
+  });
+  const cotacoes = minhasCotacoesQ.data?.cotacoes ?? [];
+  const cotacaoPendente = cotacoes.some((c) => c.situacao === "nova" || c.situacao === "contatado");
+  const planoAtivo = cotacoes.find((c) => c.situacao === "fechado");
+  const plano = planoAtivo?.ativadoEm
+    ? (() => {
+        const ini = new Date(planoAtivo.ativadoEm).getTime();
+        const fim = ini + 12 * 30 * 24 * 3600 * 1000;
+        const agora = Date.now();
+        return {
+          pct: Math.max(0, Math.min(1, (agora - ini) / (fim - ini))),
+          restante: Math.max(0, Math.ceil((fim - agora) / (30 * 24 * 3600 * 1000))),
+        };
+      })()
+    : null;
+  const cotacao = useMutation({
+    mutationFn: () => atlas.servidor.solicitarCotacaoTelemedicina({ matricula: info?.matricula }),
+    onSuccess: () => { setShowCotar(false); minhasCotacoesQ.refetch(); },
+  });
+  // Texto oficial do termo — vem da tela Termos de aceite da averbadora, com as
+  // variáveis já substituídas. Editar lá reflete aqui sem novo deploy.
+  const termoQ = useQuery({
+    queryKey: ["servidor", "termo", "telemedicina"],
+    queryFn: () => atlas.servidor.getTermo("telemedicina", { meses: 12, valor: "R$ 50,00", banco: "Banco Atlas" }),
+    enabled: showCotar,
+  });
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -68,22 +102,83 @@ export function ServidorSaude() {
             background: "rgba(255,255,255,.2)", color: "white",
             border: "1px solid rgba(255,255,255,.3)",
           }}>
-            GRATUITO · Sem carência
+            Plano mínimo de 12 meses
           </span>
-          <button
-            type="button"
-            onClick={() => alert("Fluxo de agendamento — em breve.")}
-            style={{
-              padding: "10px 18px", borderRadius: 10,
-              background: "white", color: "var(--emerald-600, #059669)",
-              fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(0,0,0,.15)",
-            }}
-          >
-            Agendar consulta →
-          </button>
+          {plano ? (
+            <div style={{ background: "rgba(255,255,255,.18)", borderRadius: 10, padding: 14, minWidth: 240 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 800 }}>
+                <span>✓ Plano Ativo</span>
+                <span>faltam {plano.restante} meses</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,.25)", overflow: "hidden", marginTop: 8 }}>
+                <div style={{ width: `${plano.pct * 100}%`, height: "100%", background: "white" }} />
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.85, marginTop: 6 }}>
+                Plano de 12 meses · {Math.round(plano.pct * 100)}% concluído
+              </div>
+            </div>
+          ) : cotacaoPendente ? (
+            <span style={{
+              padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+              background: "rgba(255,255,255,.18)", color: "white", textAlign: "center", maxWidth: 280,
+            }}>
+              Cotação em análise. Em breve, a equipe da Atlas entrará em contato com você.
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowCotar(true)}
+              style={{
+                padding: "10px 18px", borderRadius: 10,
+                background: "white", color: "var(--emerald-600, #059669)",
+                fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,.15)",
+              }}
+            >
+              Solicitar Cotação
+            </button>
+          )}
         </div>
       </article>
+
+      {showCotar && (
+        <div
+          onClick={() => !cotacao.isPending && setShowCotar(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%" }}>
+            <h3 style={{ margin: "0 0 10px", fontSize: "1.25rem" }}>
+              {termoQ.data?.termo.titulo ?? "Telemedicina — Solicitar Cotação"}
+            </h3>
+            {/* Corpo oficial do termo (averbadora). Fallback só se a rede falhar. */}
+            <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "0 0 16px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+              {termoQ.data?.termo.corpo
+                ?? "Consultas online 24h com médicos parceiros. Plano com compromisso mínimo de 12 meses. Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato com você para formalizar a solicitação."}
+            </p>
+            {cotacao.isError && (
+              <p style={{ color: "var(--danger, #dc2626)", fontSize: 13 }}>Não foi possível enviar. Tente novamente.</p>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setShowCotar(false)}
+                disabled={cotacao.isPending}
+                style={{ padding: "10px 16px", borderRadius: 10, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border-strong)", fontWeight: 600, cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => cotacao.mutate()}
+                disabled={cotacao.isPending}
+                style={{ padding: "10px 18px", borderRadius: 10, background: "var(--emerald-500)", color: "white", border: "none", fontWeight: 700, cursor: "pointer" }}
+              >
+                {cotacao.isPending ? "Enviando…" : "Solicitar Cotação"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cartão Benefícios — margem usada nos parceiros de saúde */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>

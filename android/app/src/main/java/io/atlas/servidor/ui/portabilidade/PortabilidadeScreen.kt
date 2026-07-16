@@ -149,6 +149,17 @@ private fun TermoPortabilidade(
     onAceitar: () -> Unit,
     onCancelar: () -> Unit,
 ) {
+    // Texto oficial vem da tela Termos de aceite da averbadora (variáveis substituídas).
+    val corpoTermo = io.atlas.servidor.ui.components.rememberTermoCorpo(
+        tipo = "portabilidade",
+        vars = mapOf(
+            "banco" to e.banco,
+            "saldoDevedor" to Format.money(e.saldoDevedor),
+            "parcela" to Format.money(e.parcela),
+            "parcelas" to e.parcelasRestantes.toString(),
+            "tipoLabel" to e.tipo,
+        ),
+    )
     AlertDialog(
         onDismissRequest = onCancelar,
         containerColor = Superficie,
@@ -163,7 +174,8 @@ private fun TermoPortabilidade(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "⚠️ Ao confirmar, a sua margem de empréstimo consignado será bloqueada por até " +
+                    // Termo oficial da averbadora (/averbadora/termos → portabilidade).
+                    corpoTermo ?: "⚠️ Ao confirmar, a sua margem de empréstimo consignado será bloqueada por até " +
                         "5 dias enquanto o banco analisa. Você autoriza o Banco Atlas a entrar em contato " +
                         "para concluir a portabilidade — a mesma regra de quando você solicita um empréstimo.",
                     color = Ambar,

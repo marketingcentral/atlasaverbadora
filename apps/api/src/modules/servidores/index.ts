@@ -10,6 +10,7 @@ import { listContratos, criarContratoOuReserva, persistContrato, refreshContrato
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
+import { loadCotacoes, refreshCotacoes, persistCotacao, nextCotacaoId, expireStaleCotacoes, type TelemedicinaCotacao } from "../admin/telemedicina-cotacoes-store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
@@ -87,7 +88,10 @@ function mapContratoStatus(situacao: string): "Averbado" | "Em dia" | "Quitado" 
  * Builds the full MatriculaInfo the servidor app consumes, from the real base
  * (SERVIDORES_BUSCA_MOCK + listContratos) — same source of truth as os outros perfis.
  */
-function buildMatriculaInfo(e: ServidorBuscaMock) {
+/** teleEmAnalise = ha cotacao de telemedicina PENDENTE (nova/contatado) desta matricula.
+ *  Nesse caso o EMPRESTIMO consignado fica BLOQUEADO (48h), mas o valor NAO e descontado
+ *  da margem — o desconto so acontece quando a averbadora APROVA (cria o contrato). */
+function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   const conv = CONVENIOS_MOCK.find((cv) => cv.id === e.idConvenio);
   const prefId = conv?.prefeituraId ?? 1;
   const pref = prefeituras.find((p) => p.id === prefId);
@@ -176,6 +180,9 @@ function buildMatriculaInfo(e: ServidorBuscaMock) {
     },
     contratos: contratosMock,
     elegiveisPortabilidade: elegiveis,
+    // Ha cotacao de telemedicina em analise -> bloqueia o EMPRESTIMO consignado (48h),
+    // sem descontar o valor (o desconto so vem quando a averbadora aprova).
+    telemedicinaEmAnalise: teleEmAnalise,
   };
 }
 
@@ -303,13 +310,22 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // Filtra matriculas arquivadas (soft-delete) — a averbadora pode arquivar
     // uma matricula fantasma (ex.: registro criado por import do CSV de exemplo)
     // e a partir daqui ela some do switcher do servidor sem apagar do banco.
+    // Cotacoes de telemedicina do servidor: uma pendente (<48h) BLOQUEIA o emprestimo
+    // consignado (sem descontar). As vencidas (>48h sem contato) sao canceladas e liberam.
+    await refreshCotacoes(c.env);
+    await expireStaleCotacoes(c.env);
+    const cotacoesServidor = (await loadCotacoes(c.env)).filter((x) => x.servidorId === s.id);
+    const teleEmAnaliseMat = (matricula: string): boolean =>
+      cotacoesServidor.some(
+        (x) => x.matricula === matricula && (x.situacao === "nova" || x.situacao === "contatado"),
+      );
     const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
     const withStatus = await Promise.all(
       entries.map(async (e) => ({ e, status: await getServidorStatus(c.env, e.matricula) })),
     );
     const matriculas = withStatus
       .filter(({ status }) => status !== "arquivado")
-      .map(({ e }) => buildMatriculaInfo(e));
+      .map(({ e }) => buildMatriculaInfo(e, teleEmAnaliseMat(e.matricula)));
     return c.json({ matriculas });
   })
   // Ofertas ATIVAS criadas pelos bancos que casam com o perfil do servidor
@@ -592,6 +608,62 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await persistClique(c.env, clique);
     return c.json({ ok: true });
   })
+  // Solicitacao de COTACAO de telemedicina. O servidor confirma o termo no banner de
+  // Beneficios; a Atlas (averbadora) recebe os dados dele (com TELEFONE) pra formalizar.
+  .post("/v1/servidores/me/telemedicina/cotacao", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = await c.req.json().catch(() => ({}));
+    const matAtiva = typeof body?.matricula === "string" ? body.matricula : undefined;
+    const entryAtivo = matAtiva
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
+      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
+    if (!entryAtivo) throw Errors.notFound("matricula");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio);
+    const prefId = conv?.prefeituraId ?? s.prefeitura_id;
+    const pref = prefeituras.find((p) => p.id === prefId);
+    // Dedup: uma cotacao "nova" pendente por servidor+matricula (evita spam de cliques).
+    await refreshCotacoes(c.env);
+    const jaTem = (await loadCotacoes(c.env)).some(
+      (x) => x.servidorId === s.id && x.matricula === entryAtivo.matricula && x.situacao === "nova",
+    );
+    if (jaTem) return c.json({ ok: true, deduplicado: true });
+    const cot: TelemedicinaCotacao = {
+      id: nextCotacaoId(),
+      servidorId: s.id,
+      nome: entryAtivo.nome,
+      cpfMasked: entryAtivo.cpfMasked,
+      telefone: entryAtivo.telefone ?? "",
+      email: entryAtivo.email ?? "",
+      matricula: entryAtivo.matricula,
+      prefeituraId: prefId,
+      prefeitura: pref ? `Prefeitura de ${pref.nome}` : entryAtivo.origem,
+      situacao: "nova",
+      criadoEm: new Date().toISOString(),
+    };
+    await persistCotacao(c.env, cot);
+    pushEvent("info", "servidor.telemedicina_cotacao", `${entryAtivo.nome} solicitou cotacao de telemedicina.`);
+    return c.json({ ok: true, id: cot.id });
+  })
+  // Cotacoes de telemedicina DO PROPRIO servidor — o app/web usa pra esconder o botao
+  // "Solicitar Cotacao" (mostra "em analise"/"Plano Ativo") e listar na aba Em Analise.
+  .get("/v1/servidores/me/telemedicina/cotacoes", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    await refreshCotacoes(c.env);
+    await expireStaleCotacoes(c.env);
+    const cotacoes = (await loadCotacoes(c.env))
+      .filter((x) => x.servidorId === s.id)
+      .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))
+      .map((x) => ({ id: x.id, situacao: x.situacao, criadoEm: x.criadoEm, ativadoEm: x.ativadoEm ?? null }));
+    return c.json({ cotacoes });
+  })
   // Vitrine (carrossel) exibido no dashboard do servidor. So banners ativos.
   // Fonte de verdade: admin_vitrine (a averbadora cadastra em /averbadora/vitrine).
   .get("/v1/servidores/me/vitrine", async (c) => {
@@ -817,6 +889,9 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         taxaAm: round2(ct.taxaAm * 100),
         situacao: ct.situacao,
         tipoContrato: ct.tipoContrato,
+        // Marca o plano de Telemedicina (contrato criado quando a averbadora aprova) —
+        // o front usa pra rotular o card e mostrar o passo a passo proprio.
+        observacoes: ct.observacoes,
         // Bucket de margem — permite o front distinguir Cartao Consignado
         // (CARTAO_CONSIGNADO) de Cartao Beneficio (CARTAO_BENEFICIOS) quando
         // tipoContrato=ECONSIGNADO.
