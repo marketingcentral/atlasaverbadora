@@ -202,11 +202,11 @@ export interface VitrineBanner {
 }
 
 // Banco padrao unico. O cliente opera hoje so com o Banco Atlas; parceiros
-// adicionais entram pelo botao "Adicionar banco". id=1 mantem o vinculo com o
-// login banco@atlas.test (banco_id 1) e com os convenios (bancoId 1).
-export const bancos: BancoAdmin[] = [
-  { id: 1, nome: "Banco Atlas", status: "ativo", adapter: "sandbox", contatoEmail: "integracao@atlas.io", scopes: ["propostas:rw", "margem:r"], mtlsHabilitado: false, ultimoTeste: "2026-06-22T10:00:00Z", ultimoTesteOk: true },
-];
+// adicionais entram pelo botao "Adicionar banco". Cliente pediu remocao do
+// seed "Banco Atlas" (16/07/2026) pra fazer teste real do zero — antes iniciava
+// com um banco pre-cadastrado que reaparecia via seedBancosIfEmpty depois de
+// deletado. Se precisar restaurar o seed pra demo, reverter este commit.
+export const bancos: BancoAdmin[] = [];
 
 // Snapshot das fixtures iniciais — usado como seed do Postgres na primeira carga.
 const BANCOS_SEED: BancoAdmin[] = bancos.map((b) => ({ ...b }));
