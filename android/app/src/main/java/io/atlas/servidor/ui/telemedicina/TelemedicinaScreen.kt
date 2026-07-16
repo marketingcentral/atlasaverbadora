@@ -238,8 +238,8 @@ private fun CotacaoDialog(enviando: Boolean, erro: String?, onSolicitar: () -> U
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    corpoTermo ?: "Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato " +
-                        "com você para formalizar a solicitação.",
+                    io.atlas.servidor.ui.components.markdownParaTexto(corpoTermo ?: "Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato " +
+                        "com você para formalizar a solicitação."),
                     color = InkMuted,
                     fontSize = 13.sp,
                 )

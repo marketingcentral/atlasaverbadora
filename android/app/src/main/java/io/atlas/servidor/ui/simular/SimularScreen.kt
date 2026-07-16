@@ -486,10 +486,10 @@ private fun TermoDialog(
                 io.atlas.servidor.ui.components.InfoRow("Taxa", Format.rateAm(taxaAm))
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    corpoTermo ?: "Ao aceitar, este valor será reservado e sua margem ficará BLOQUEADA por 48h " +
+                    io.atlas.servidor.ui.components.markdownParaTexto(corpoTermo ?: "Ao aceitar, este valor será reservado e sua margem ficará BLOQUEADA por 48h " +
                         "(uma pré-reserva por vez). A taxa é mensal e inclui o CET (juros, IOF e tarifas). " +
                         "O contrato definitivo é disponibilizado pelo banco após a aprovação. Este aceite é " +
-                        "registrado com data, hora e CPF para fins de auditoria (LGPD).",
+                        "registrado com data, hora e CPF para fins de auditoria (LGPD)."),
                     color = InkMuted,
                     fontSize = 12.5.sp,
                 )
@@ -547,10 +547,10 @@ private fun CartaoTermoDialog(
                 io.atlas.servidor.ui.components.InfoRow("Limite proposto", Format.money(limite))
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    corpoTermo ?:
+                    io.atlas.servidor.ui.components.markdownParaTexto(corpoTermo ?:
                     "Ao confirmar, esta solicitação é ENVIADA ao banco (proposta real) e sua margem fica " +
                         "em pré-reserva por 48h. Você autoriza o Banco Atlas a entrar em contato para emitir " +
-                        "e ativar o cartão. Registrado com data, hora e CPF para auditoria (LGPD).",
+                        "e ativar o cartão. Registrado com data, hora e CPF para auditoria (LGPD)."),
                     color = InkMuted,
                     fontSize = 12.5.sp,
                 )

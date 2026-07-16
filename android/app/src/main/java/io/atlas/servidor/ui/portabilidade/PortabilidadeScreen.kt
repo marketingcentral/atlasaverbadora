@@ -174,10 +174,10 @@ private fun TermoPortabilidade(
                 )
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    // Termo oficial da averbadora (/averbadora/termos → portabilidade).
-                    corpoTermo ?: "⚠️ Ao confirmar, a sua margem de empréstimo consignado será bloqueada por até " +
+                    // Termo oficial da averbadora (/averbadora/termos → portabilidade), com **negrito**.
+                    io.atlas.servidor.ui.components.markdownParaTexto(corpoTermo ?: "⚠️ Ao confirmar, a sua margem de empréstimo consignado será bloqueada por até " +
                         "5 dias enquanto o banco analisa. Você autoriza o Banco Atlas a entrar em contato " +
-                        "para concluir a portabilidade — a mesma regra de quando você solicita um empréstimo.",
+                        "para concluir a portabilidade — a mesma regra de quando você solicita um empréstimo."),
                     color = Ambar,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.Medium,

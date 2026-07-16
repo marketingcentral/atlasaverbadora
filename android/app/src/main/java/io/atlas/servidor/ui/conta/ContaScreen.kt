@@ -284,8 +284,14 @@ private fun TermoDialog(tipo: String, onFechar: () -> Unit) {
         title = { Text(titulo, fontWeight = FontWeight.ExtraBold, color = Ink) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
+                // O corpo vem em markdown da averbadora — `**x**` precisa virar negrito
+                // de verdade (antes os asteriscos apareciam literais na tela).
                 Text(
-                    corpo ?: "Carregando…",
+                    if (corpo != null) {
+                        io.atlas.servidor.ui.components.markdownParaTexto(corpo)
+                    } else {
+                        androidx.compose.ui.text.AnnotatedString("Carregando…")
+                    },
                     color = InkMuted,
                     fontSize = 13.sp,
                     lineHeight = 19.sp,
@@ -307,14 +313,18 @@ private fun SuporteDialog(onFechar: () -> Unit) {
         text = {
             Column {
                 Text("Precisa de ajuda com sua margem, contratos ou benefícios?", color = InkMuted, fontSize = 14.sp)
+                Spacer(Modifier.height(16.dp))
+                // Empilhado (rótulo em cima, valor embaixo em largura total): o InfoRow
+                // é lado-a-lado e o e-mail longo quebrava/desalinhava.
+                ContatoSuporte("E-mail", "suporte@atlasaverbadora.com.br")
                 Spacer(Modifier.height(12.dp))
-                InfoRow("E-mail", "suporte@atlasaverbadora.com.br")
-                InfoRow("Telefone", "(48) 3000-0000")
-                Spacer(Modifier.height(12.dp))
+                ContatoSuporte("Telefone", "(48) 3000-0000")
+                Spacer(Modifier.height(16.dp))
                 Text(
                     "Para dúvidas sobre desconto em folha, procure também o RH da sua prefeitura.",
                     color = InkMuted,
                     fontSize = 12.5.sp,
+                    lineHeight = 17.sp,
                 )
             }
         },
@@ -322,4 +332,15 @@ private fun SuporteDialog(onFechar: () -> Unit) {
             TextButton(onClick = onFechar) { Text("Fechar", color = Verde, fontWeight = FontWeight.Bold) }
         },
     )
+}
+
+/** Contato do suporte — rótulo em cima, valor embaixo em largura total (não desalinha
+ *  com e-mail longo, ao contrário do InfoRow lado-a-lado). */
+@Composable
+private fun ContatoSuporte(label: String, value: String) {
+    Column(Modifier.fillMaxWidth()) {
+        Text(label, color = InkMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(2.dp))
+        Text(value, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+    }
 }
