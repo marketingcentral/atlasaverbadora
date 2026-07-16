@@ -11,7 +11,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { bancos, folhas, prefeituras, type FolhaAdmin } from "../admin/index.js";
+import { bancos, folhas, prefeituras, ensureFolhasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
@@ -176,10 +176,15 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 2 — Dashboard (com pendências de upload) =====
-  .get("/v1/prefeitura/dashboard", (c) => {
+  .get("/v1/prefeitura/dashboard", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
     const p = prefeituras.find((x) => x.id === id);
     if (!p) throw Errors.notFound("prefeitura");
+    // Sincroniza contratos com o PG antes de calcular KPIs — sem isso, um
+    // isolate fresh (ou que perdeu writes de outro isolate) retornava zero
+    // descontos/contratos mesmo com propostas ja aprovadas.
+    await refreshContratos(c.env);
     const servidores = servidoresDaPrefeitura(id);
     const contratos = contratosDaPrefeitura(id);
     const convenios = conveniosDaPrefeitura(id);
@@ -367,13 +372,38 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 4 — Folha mensal =====
-  .get("/v1/prefeitura/folhas", (c) => {
+  .get("/v1/prefeitura/folhas", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    const rows = folhas.filter((f) => f.prefeituraId === id).map((f) => ({ ...f, movimentacoes: countMovimentacoes(f.id) }));
+    await ensureFolhasLoaded(c.env);
+    // Sincroniza contratos (contratos aprovados em outro isolate viram ADFs)
+    // antes de contar. Sem isso, folha nao refletia ADFs recem-aplicadas
+    // pela averbadora.
+    await refreshContratos(c.env);
+    const now = new Date().toISOString();
+    const bancoNomeById = (bid: number) => bancos.find((b) => b.id === bid)?.nome ?? `Banco ${bid}`;
+    // Enriquece cada folha com contagem/soma de ADFs aplicadas (o que a
+    // prefeitura ja tem que descontar em folha).
+    const rows = folhas.filter((f) => f.prefeituraId === id).map((f) => {
+      // Materializa ADFs dessa competencia+prefeitura (isolate fresh pode nao ter).
+      ensureAdfs(id, f.competencia, bancoNomeById, now);
+      const adfsFolha = listAdfs(id, f.competencia);
+      const aplicadas = adfsFolha.filter((a) => a.status === "aplicada");
+      const recebidas = adfsFolha.filter((a) => a.status === "recebida");
+      const valorAplicado = aplicadas.reduce((s, a) => s + a.valorParcela, 0);
+      return {
+        ...f,
+        movimentacoes: countMovimentacoes(f.id),
+        adfsAplicadas: aplicadas.length,
+        adfsRecebidas: recebidas.length,
+        adfsTotal: adfsFolha.length,
+        valorAplicado: Math.round(valorAplicado * 100) / 100,
+      };
+    });
     return c.json({ folhas: rows });
   })
   .post("/v1/prefeitura/folhas", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
     const p = prefeituras.find((x) => x.id === id)!;
     const body = z.object({
       competencia: z.string().regex(/^\d{6}$/, "competencia YYYYMM"),
@@ -388,11 +418,13 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       competencia: body.competencia, dataCorte: body.dataCorte, dataRepasse: body.dataRepasse ?? null, status: "aberta",
     };
     folhas.push(folha);
+    await persistFolha(c.env, folha); // write-through — sobrevive a redeploy
     appendAudit({ categoria: "margem", acao: "folha_aberta", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Folha ${body.competencia} aberta (corte ${body.dataCorte}).` });
     return c.json({ folha }, 201);
   })
   .patch("/v1/prefeitura/folhas/:id", async (c) => {
     const pid = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
     const f = folhas.find((x) => x.id === c.req.param("id") && x.prefeituraId === pid);
     if (!f) throw Errors.notFound("folha");
     // Prefeitura só pode ir de aberta → fechada. Consolidar é ação da averbadora,
@@ -405,6 +437,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (body.status) f.status = body.status;
     if (body.dataCorte) f.dataCorte = body.dataCorte;
     if (body.dataRepasse !== undefined) f.dataRepasse = body.dataRepasse;
+    await persistFolha(c.env, f);
     appendAudit({ categoria: "margem", acao: "folha_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} -> status=${f.status}.` });
     return c.json({ folha: f });
   })
@@ -597,23 +630,16 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const pdf = miniPdf("ATLAS — LOTE DE ADFs (DESCONTOS EM FOLHA)", lines);
     return new Response(pdf, { headers: { "content-type": "application/pdf", "content-disposition": `inline; filename="adf-lote-${competencia}.pdf"` } });
   })
-  .post("/v1/prefeitura/adf/confirmar", async (c) => {
-    const id = requirePrefeitura(c.get("jwt"));
-    const body = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
-    await refreshContratos(c.env);
-    const adfs = setAdfStatus(id, body.ids, "aplicada", undefined, new Date().toISOString());
-    for (const adf of adfs) await persistContrato(c.env, adf); // write-through: banco vê "aplicada em folha"
-    appendAudit({ categoria: "margem", acao: "adf_aplicada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${adfs.length} ADFs confirmadas/aplicadas em folha.` });
-    return c.json({ aplicadas: adfs.length });
+  // DESATIVADOS (14/07/2026): "a averbadora que faz a ADF, a prefeitura so recebe".
+  // A UI foi removida em iteracao anterior, mas os endpoints continuavam ativos
+  // — permitiam mudar folhaStatus via CURL com JWT de prefeitura. Agora 403.
+  .post("/v1/prefeitura/adf/confirmar", (c) => {
+    requirePrefeitura(c.get("jwt"));
+    throw Errors.forbidden("Confirmar ADF e' acao exclusiva da averbadora — a prefeitura apenas recebe.");
   })
-  .post("/v1/prefeitura/adf/falha", async (c) => {
-    const id = requirePrefeitura(c.get("jwt"));
-    const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
-    await refreshContratos(c.env);
-    const adfs = setAdfStatus(id, body.ids, "falha", body.motivo, new Date().toISOString());
-    for (const adf of adfs) await persistContrato(c.env, adf);
-    appendAudit({ categoria: "margem", acao: "adf_falha", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
-    return c.json({ falhas: adfs.length });
+  .post("/v1/prefeitura/adf/falha", (c) => {
+    requirePrefeitura(c.get("jwt"));
+    throw Errors.forbidden("Reportar falha de ADF e' acao exclusiva da averbadora — a prefeitura apenas recebe.");
   })
 
   // ===== Passo 9 — Relatórios =====

@@ -127,8 +127,8 @@ function OfertaModal({ intencao, onClose, onSaved }: { intencao: PortabilidadeIn
         </div>
 
         <FormGrid cols={2}>
-          <NumberField label="Sua taxa (% a.m.)" step={0.01} value={taxaPct} onChange={(e) => setTaxaPct(Number(e.target.value))} hint={`Superar ${fmtPct(intencao.taxaAm)} pra ser competitivo.`} required />
-          <NumberField label="Prazo (meses)" value={novoPrazo} onChange={(e) => setNovoPrazo(Number(e.target.value))} min={1} max={120} required />
+          <NumberField label="Sua taxa (% a.m.)" step={0.01} value={taxaPct} onChange={(e) => { const n = Number(e.target.value); setTaxaPct(Number.isFinite(n) ? n : 0); }} hint={`Superar ${fmtPct(intencao.taxaAm)} pra ser competitivo.`} required />
+          <NumberField label="Prazo (meses)" value={novoPrazo} onChange={(e) => { const n = Number(e.target.value); setNovoPrazo(Number.isFinite(n) && n > 0 ? Math.floor(n) : 1); }} min={1} max={120} required />
         </FormGrid>
 
         <div style={{ marginTop: 12, padding: 12, background: "color-mix(in srgb, var(--emerald-500) 10%, transparent)", border: "1px solid var(--emerald-500)", borderRadius: 8, fontSize: 13 }}>
@@ -144,7 +144,7 @@ function OfertaModal({ intencao, onClose, onSaved }: { intencao: PortabilidadeIn
 
         <FormActions>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || taxaPct <= 0 || novoPrazo <= 0}>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || !(taxaPct > 0) || !(novoPrazo > 0) || !Number.isFinite(novaParcela)}>
             {save.isPending ? "Enviando..." : "Enviar oferta"}
           </Button>
         </FormActions>

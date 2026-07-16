@@ -43,7 +43,14 @@ function buildCortes(diaCorte: number, origem: string, operacoes: string) {
 
 export function BancoVisaoGeral() {
   const nav = useNavigate();
-  const visao = useQuery({ queryKey: ["banco", "visao-geral"], queryFn: () => atlas.banco.visaoGeral() });
+  // Poll 8s pra os KPIs (propostas em analise, aprovadas, formalizadas, carteira)
+  // subirem sem F5 quando o servidor manda proposta, cliente aprova, etc.
+  const visao = useQuery({
+    queryKey: ["banco", "visao-geral"],
+    queryFn: () => atlas.banco.visaoGeral(),
+    refetchInterval: 8_000,
+    refetchOnWindowFocus: true,
+  });
   const comunicados = useQuery({ queryKey: ["banco", "comunicados"], queryFn: () => atlas.banco.comunicados() });
   // index do corte selecionado (6 = corte atual, gerado por buildCortes)
   const [corteIdx, setCorteIdx] = useState(6);
@@ -70,19 +77,23 @@ export function BancoVisaoGeral() {
     }
   }
 
-  // Painel de KPIs vem do backend — o seed getAllPropostas() era demo
-  // hardcoded (Maria, Roberto, Jose, etc.) que aparecia identico pra
-  // qualquer banco. Banco novo mostrava painel "cheio" mesmo sem ter
-  // aprovado nada. Removido — usa KPIs do backend (ja isolados por banco).
-  const painel = useMemo(() => ({
-    emAnalise: 0,
-    aprovadas: 0,
-    formalizadas: visao.data?.kpis.carteira.count ?? 0,
-    recusadasExpiradas: 0,
-    volumePorConvenio: new Map<string, number>(),
-  }), [visao.data?.kpis.carteira.count]);
+  // Painel de KPIs vem do backend, ja quebrado por bucket de situacao. Antes
+  // era hardcoded a zero pra emAnalise/aprovadas/recusadas — o painel so mostrava
+  // "formalizadas". Agora sobe conforme propostas caminham no funil.
+  const painel = useMemo(() => {
+    const p = visao.data?.kpis.propostas;
+    const vol = visao.data?.kpis.volumePorConvenio ?? [];
+    return {
+      emAnalise: p?.emAnalise ?? 0,
+      aprovadas: p?.aprovadas ?? 0,
+      formalizadas: p?.formalizadas ?? 0,
+      recusadasExpiradas: p?.recusadasExpiradas ?? 0,
+      volumePorConvenio: new Map(vol.map((v) => [v.nome, v.valor])),
+    };
+  }, [visao.data?.kpis.propostas, visao.data?.kpis.volumePorConvenio]);
 
-  if (visao.isLoading || comunicados.isLoading) {
+  // isPending (nao isLoading) — refetch de fundo nao pisca "Carregando" a cada 8s.
+  if (visao.isPending || comunicados.isPending) {
     return <div style={{ color: "var(--text-muted)" }}>Carregando visão geral...</div>;
   }
   if (visao.error || comunicados.error) {
@@ -155,20 +166,20 @@ export function BancoVisaoGeral() {
           label="Carteira de Contratos"
           value={v.kpis.carteira.count}
           hint={`Percentual: ${(v.kpis.carteira.percentual * 100).toFixed(0)}%`}
-          cta={{ label: "Meus contratos", onClick: () => (window.location.href = "/banco/carteira") }}
+          cta={{ label: "Meus contratos", onClick: () => nav("/banco/carteira") }}
           accent="info"
         />
         <KpiCard
           label="Novos Contratos"
           value={v.kpis.novosNoMes.count}
           hint="Neste mês"
-          cta={{ label: "Ver contratos", onClick: () => (window.location.href = "/banco/carteira") }}
+          cta={{ label: "Ver contratos", onClick: () => nav("/banco/carteira") }}
         />
         <KpiCard
           label="Pendências em Contratos"
           value={v.kpis.pendencias.count}
           hint={v.kpis.pendencias.count > 0 ? "Aguardando ação" : "Tudo em dia"}
-          cta={{ label: "Resolver", onClick: () => (window.location.href = "/banco/carteira") }}
+          cta={{ label: "Resolver", onClick: () => nav("/banco/carteira") }}
           accent={v.kpis.pendencias.count > 0 ? "warn" : "success"}
         />
         {semConvenio ? (

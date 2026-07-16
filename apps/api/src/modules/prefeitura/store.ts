@@ -147,6 +147,17 @@ function isAverbado(situacao: string): boolean {
  *  O status do ADF é fonte-única do próprio contrato (ct.folhaStatus) — assim a
  *  confirmação da prefeitura persiste e o banco a enxerga. Requer refreshContratos
  *  antes (feito no endpoint) pra ver averbações de outros isolates. */
+/** Converte "DD/MM/YYYY" (formato lancamento) pra ISO 8601 "YYYY-MM-DDT00:00:00Z".
+ *  Usado como fallback pra `criadoEmIso` em contratos do seed (sem ISO exato).
+ *  Retorna null se a string nao bate o formato — nesse caso o chamador cai em
+ *  outra estrategia (ex.: `now`). */
+function parseLancamentoAsIso(lancamento: string | undefined): string | null {
+  if (!lancamento) return null;
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(lancamento);
+  if (!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z`;
+}
+
 /** Deduz tipoMargem quando o contrato nao gravou o campo explicito. Usa
  *  observacoes ("Cartao Beneficio" | "Cartao Consignado" — texto que o
  *  criarContratoOuReserva ja escreve) + tipoContrato como sinais.
@@ -168,13 +179,35 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
     const tipoMargemInferido = deduceTipoMargem(ct);
     const already = _adfs.find((a) => a.adf === ct.adf && a.competencia === competencia);
     if (already) {
-      already.status = status; // sincroniza status do contrato (cross-isolate)
-      already.motivo = ct.folhaMotivo;
-      already.atualizadoEm = now;
+      // So atualiza atualizadoEm se o status realmente MUDOU. Antes atualizava
+      // em toda chamada do ensureAdfs (a cada request GET /admin/adf), o que
+      // fazia ordem cronologica ficar instavel — tudo mostrava o timestamp
+      // do ultimo refresh, nao do evento real.
+      if (already.status !== status) {
+        already.status = status;
+        already.motivo = ct.folhaMotivo;
+        already.atualizadoEm = now;
+      } else if (already.motivo !== ct.folhaMotivo) {
+        already.motivo = ct.folhaMotivo;
+      } else if (already.status === "recebida" && ct.criadoEmIso && already.atualizadoEm !== ct.criadoEmIso) {
+        // Backfill: se essa ADF ainda esta em "recebida" (nunca teve mudanca de
+        // status), atualizadoEm deveria ser a criacao do contrato. Se drifted
+        // (bug antigo), corrige — assim a ordem cronologica se restaura sem
+        // precisar purgar+re-materializar.
+        already.atualizadoEm = ct.criadoEmIso;
+      }
       // Preenche tipoMargem se veio depois (ADF criado antes desse campo existir).
       if (!already.tipoMargem && tipoMargemInferido) already.tipoMargem = tipoMargemInferido;
       continue;
     }
+    // atualizadoEm inicial = criacao do contrato (garante que ADFs materializadas
+    // no mesmo batch tenham ordem CRONOLOGICA correta). Quando o status mudar,
+    // vira o `now` do evento de mudanca — sempre "quando entrou nesse estado".
+    // Fallback: se nao tem criadoEmIso (contrato do seed), converte `lancamento`
+    // (DD/MM/YYYY) pra ISO — assim contratos antigos NAO viram "novos" no
+    // sort DESC. So cai em `now` se nem lancamento tem, o que nao deveria
+    // acontecer nunca em contrato real.
+    const iso = ct.criadoEmIso ?? parseLancamentoAsIso(ct.lancamento) ?? now;
     _adfs.push({
       id: `ADF-${competencia}-${ct.adf}`,
       competencia, prefeituraId, adf: ct.adf, idUnico: issueIdUnico(prefeituraId),
@@ -182,7 +215,7 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
       bancoNome: bancoNomeById(ct.bancoId), valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
       valorFinanciado: ct.valorFinanciado, tipoContrato: ct.tipoContrato,
       tipoMargem: tipoMargemInferido,
-      status, motivo: ct.folhaMotivo, atualizadoEm: now,
+      status, motivo: ct.folhaMotivo, atualizadoEm: iso,
     });
   }
 }

@@ -12,22 +12,30 @@ import { STORAGE_KEY_ID, STORAGE_KEY_META, readActiveMatricula } from "../lib/ma
 import { atlas } from "../lib/sdk";
 import type { EstadoProposta, Proposta } from "../lib/propostas-data";
 
-/** Mesmo mapeamento de /servidor/contratos — situacao backend -> estado UI. */
+/** Mesmo mapeamento de /servidor/contratos — situacao backend -> estado UI.
+ *  ORDEM IMPORTA: cancel/recus/reprov/rejeit/negad devem casar antes de qualquer
+ *  outra checagem. E "aprov" deve casar ANTES de "aguard" pois "Aguardando ADF"
+ *  ja e um estado pos-aprovacao. */
 function mapSituacao(situacao: string): EstadoProposta {
   const t = situacao.toLowerCase();
-  if (t.includes("aguard")) return "em_analise";
-  if (t.includes("cancel")) return "cancelada";
-  if (t.includes("recus")) return "recusada";
+  if (t.includes("cancel") || t.includes("estorn")) return "cancelada";
+  if (t.includes("recus") || t.includes("reprov") || t.includes("rejeit") || t.includes("negad")) return "recusada";
   if (t.includes("suspens")) return "cancelada";
   if (t.includes("expir")) return "expirada";
   if (t.includes("quitad")) return "liberada";
   if (t.includes("ativo") || t.includes("averb")) return "liberada";
+  if (t.includes("formaliz")) return "aguardando_formalizacao";
+  if (t.includes("aprov")) return "aprovada"; // banco aprovou, aguarda ADF
+  if (t.includes("aguard")) return "em_analise";
   return "em_analise";
 }
 
 const ICONS: Record<NotifType, string> = {
+  proposta_enviada: "📤",
   proposta_em_analise: "📋",
   proposta_aprovada: "✅",
+  proposta_aguardando_adf: "⏳",
+  proposta_averbada: "🎉",
   proposta_aguardando_formalizacao: "📝",
   proposta_recusada: "❌",
   proposta_cancelada: "🚫",

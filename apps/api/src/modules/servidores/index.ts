@@ -6,12 +6,10 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
-import { ensureTombamentoLoaded, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
-import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato, removeContratosByAdf } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
-import { loadCotacoes, refreshCotacoes, persistCotacao, nextCotacaoId, expireStaleCotacoes, type TelemedicinaCotacao } from "../admin/telemedicina-cotacoes-store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
 import { sha256Hex } from "../admin/api-tokens.js";
@@ -19,7 +17,7 @@ import { enviarCodigo, enviarNotificacao, dispatchTemplateEmail } from "../admin
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, cancelarIntencao, aceitarOferta, getIntencao } from "../admin/portabilidade-store.js";
 import { ensureTermosLoaded, getTermo, renderTermo, type TermoTipo } from "../admin/termos-store.js";
-import { setServidorPassword, setServidorContato, deleteContratosByAdfs } from "../../db/repos.js";
+import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
 function maskEmailSrv(email?: string): string {
@@ -89,10 +87,7 @@ function mapContratoStatus(situacao: string): "Averbado" | "Em dia" | "Quitado" 
  * Builds the full MatriculaInfo the servidor app consumes, from the real base
  * (SERVIDORES_BUSCA_MOCK + listContratos) — same source of truth as os outros perfis.
  */
-/** teleEmAnalise = ha cotacao de telemedicina PENDENTE (nova/contatado) desta matricula.
- *  Nesse caso o EMPRESTIMO consignado fica BLOQUEADO (48h), mas o valor NAO e descontado
- *  da margem — o desconto so acontece quando a averbadora APROVA (cria o contrato). */
-function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
+function buildMatriculaInfo(e: ServidorBuscaMock) {
   const conv = CONVENIOS_MOCK.find((cv) => cv.id === e.idConvenio);
   const prefId = conv?.prefeituraId ?? 1;
   const pref = prefeituras.find((p) => p.id === prefId);
@@ -113,7 +108,6 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
     const bucket = deriveTipoMargem(ct);
     comprometidoPorTipo[bucket] += ct.valorParcela;
   }
-  // Telemedicina em analise NAO reduz a margem (so bloqueia o produto ate a aprovacao).
   // Total comprometido de emprestimo (pra retro-compat no campo comprometido raiz).
   const comprometido = comprometidoPorTipo.EMPRESTIMO;
   const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
@@ -126,18 +120,12 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   // Pendentes ("Aguardando") vivem em "Em análise"; recusados/cancelados/expirados/suspensos
   // no Histórico (via lista de propostas). Sem este filtro, uma proposta pendente ou recusada
   // aparecia como "contrato ativo" — e duplicava no Histórico.
-  // Um contrato so entra em CONTRATOS ATIVOS quando TODAS as etapas concluiram — a
-  // ultima e a ADF aprovada pela prefeitura (folhaStatus="aplicada"). Enquanto qualquer
-  // etapa estiver pendente (banco analisando, ADF aguardando/negada), ele fica em
-  // "Em analise". Recusado/cancelado/expirado vai pro Historico. Vale pra TODOS os
-  // produtos: emprestimo, cartao consignado, cartao beneficio, portabilidade, telemedicina.
-  const isContratoReal = (ct: { situacao: string; folhaStatus?: string }) => {
-    const s = ct.situacao.toLowerCase();
+  const isContratoReal = (situacao: string) => {
+    const s = situacao.toLowerCase();
     if (s.includes("aguard") || s.includes("cancel") || s.includes("recus") || s.includes("expir") || s.includes("suspens")) {
       return false;
     }
-    if (s.includes("quitad")) return true; // ja encerrado — vive no historico
-    return ct.folhaStatus === "aplicada"; // so com a ADF aprovada
+    return true; // ativo / averbado / vigente / quitado
   };
   // Recentes primeiro — cliente pediu contratos averbados em ordem cronologica
   // decrescente (o de hoje aparece no topo, quando chegar outro recente ele
@@ -153,7 +141,7 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   const sortKeyCt = (ct: { criadoEmIso?: string; lancamento: string }): string =>
     ct.criadoEmIso ?? parseLanc(ct.lancamento);
   const contratosMock = contratos
-    .filter((ct) => isContratoReal(ct))
+    .filter((ct) => isContratoReal(ct.situacao))
     .sort((a, b) => sortKeyCt(b).localeCompare(sortKeyCt(a)))
     .map((ct) => ({
       id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
@@ -165,22 +153,10 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
       tipoContrato: ct.tipoContrato,
       tipoMargem: ct.tipoMargem ?? deriveTipoMargem(ct),
     }));
-  // Elegiveis para portabilidade = emprestimos que o servidor JA TEM em OUTROS
-  // bancos (importados pela prefeitura via tombamento + seed de teste), NAO os
-  // contratos Atlas. Sao esses que o servidor pode "trazer" pro Banco Atlas.
-  // Rotulo amigavel do TIPO do contrato de origem (vem da coluna TIPO da planilha da prefeitura).
-  const tipoPortLabel = (tipo?: string): string => {
-    const s = (tipo ?? "").toLowerCase();
-    if (/benef/.test(s)) return "Cartão Benefício Consignado";
-    if (/cart/.test(s)) return "Cartão de Crédito Consignado";
-    return "Empréstimo Consignado";
-  };
-  const elegiveis = listExternalLoans(e.matricula).map((l) => ({
-    id: l.id, banco: l.bancoNome, saldoDevedor: round2(l.saldoDevedor), parcela: round2(l.valorParcela),
-    parcelasRestantes: l.parcelasRestantes, totalParcelas: l.totalParcelas, taxaAm: l.taxaAm,
-    tipoContrato: "Emprestimo" as "Emprestimo" | "Refin",
-    // Nome do banco (l.bancoNome) e tipo do contrato (l.tipo) vem da planilha importada.
-    tipo: tipoPortLabel(l.tipo),
+  const elegiveis = ativos.map((ct) => ({
+    id: ct.adf, banco: bancoNome(ct.bancoId), saldoDevedor: round2(ct.saldoDevedor), parcela: round2(ct.valorParcela),
+    parcelasRestantes: ct.totalParcelas - ct.parcelasPagas, totalParcelas: ct.totalParcelas, taxaAm: ct.taxaAm,
+    tipoContrato: (ct.tipoContrato === "REFIN" ? "Refin" : "Emprestimo") as "Emprestimo" | "Refin",
   }));
   return {
     idMatricula: e.idMatricula, matricula: e.matricula,
@@ -200,9 +176,6 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
     },
     contratos: contratosMock,
     elegiveisPortabilidade: elegiveis,
-    // Ha cotacao de telemedicina em analise -> bloqueia o EMPRESTIMO consignado (48h),
-    // sem descontar o valor (o desconto so vem quando a averbadora aprova).
-    telemedicinaEmAnalise: teleEmAnalise,
   };
 }
 
@@ -325,29 +298,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
-    await ensureTombamentoLoaded(c.env); // emprestimos externos importados (elegiveis p/ portabilidade)
-    await refreshContratos(c.env); // ve propostas/contratos criados em OUTRO isolate (app/web) — margem fresca
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     // Filtra matriculas arquivadas (soft-delete) — a averbadora pode arquivar
     // uma matricula fantasma (ex.: registro criado por import do CSV de exemplo)
     // e a partir daqui ela some do switcher do servidor sem apagar do banco.
-    // Cotacoes de telemedicina do servidor: cada uma pendente (<48h) trava R$ 50 na
-    // margem de EMPRESTIMO. As vencidas (>48h sem contato) sao canceladas e liberam.
-    await refreshCotacoes(c.env);
-    await expireStaleCotacoes(c.env);
-    const cotacoesServidor = (await loadCotacoes(c.env)).filter((x) => x.servidorId === s.id);
-    const teleEmAnaliseMat = (matricula: string): boolean =>
-      cotacoesServidor.some(
-        (x) => x.matricula === matricula && (x.situacao === "nova" || x.situacao === "contatado"),
-      );
     const entries = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf);
     const withStatus = await Promise.all(
       entries.map(async (e) => ({ e, status: await getServidorStatus(c.env, e.matricula) })),
     );
     const matriculas = withStatus
       .filter(({ status }) => status !== "arquivado")
-      .map(({ e }) => buildMatriculaInfo(e, teleEmAnaliseMat(e.matricula)));
+      .map(({ e }) => buildMatriculaInfo(e));
     return c.json({ matriculas });
   })
   // Ofertas ATIVAS criadas pelos bancos que casam com o perfil do servidor
@@ -431,13 +393,6 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // a margem total. Assim o servidor nao consegue solicitar 2 cartoes
     // sobrepondo a mesma margem (fluxo espelho do emprestimo).
     const tipoMargem = body.produto === "cartao_consignado" ? "CARTAO_CONSIGNADO" : "CARTAO_BENEFICIOS";
-    // REGRA 48h / uma solicitacao por produto (autoritativa no servidor — app E web):
-    // ja ha solicitacao deste cartao em analise -> bloqueia nova ate o banco decidir / 48h.
-    const jaPendenteCartao = listContratos({ matricula: entry.matricula })
-      .some((ct) => /aguard/i.test(ct.situacao) && deriveTipoMargem(ct) === tipoMargem);
-    if (jaPendenteCartao) {
-      throw new HttpError(409, "proposta_pendente", "Voce ja tem uma solicitacao deste cartao em analise. Aguarde a decisao do banco ou a liberacao (48h).");
-    }
     const comprometidoBucket = listContratos({ matricula: entry.matricula })
       .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === tipoMargem)
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
@@ -637,61 +592,6 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await persistClique(c.env, clique);
     return c.json({ ok: true });
   })
-  // Solicitacao de COTACAO de telemedicina. O servidor confirma o termo no banner de
-  // Beneficios; a Atlas (averbadora) recebe os dados dele (com TELEFONE) pra formalizar.
-  .post("/v1/servidores/me/telemedicina/cotacao", async (c) => {
-    const j = c.get("jwt");
-    requireRoleInline(j, ["servidor"]);
-    await ensureServidoresLoaded(c.env);
-    const s = resolveServidor(j);
-    if (!s) throw Errors.notFound("servidor");
-    const body = await c.req.json().catch(() => ({}));
-    const matAtiva = typeof body?.matricula === "string" ? body.matricula : undefined;
-    const entryAtivo = matAtiva
-      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
-      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
-    if (!entryAtivo) throw Errors.notFound("matricula");
-    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio);
-    const prefId = conv?.prefeituraId ?? s.prefeitura_id;
-    const pref = prefeituras.find((p) => p.id === prefId);
-    // Dedup: uma cotacao "nova" pendente por servidor+matricula (evita spam de cliques).
-    await refreshCotacoes(c.env);
-    const jaTem = (await loadCotacoes(c.env)).some(
-      (x) => x.servidorId === s.id && x.matricula === entryAtivo.matricula && x.situacao === "nova",
-    );
-    if (jaTem) return c.json({ ok: true, deduplicado: true });
-    const cot: TelemedicinaCotacao = {
-      id: nextCotacaoId(),
-      servidorId: s.id,
-      nome: entryAtivo.nome,
-      cpfMasked: entryAtivo.cpfMasked,
-      telefone: entryAtivo.telefone ?? "",
-      email: entryAtivo.email ?? "",
-      matricula: entryAtivo.matricula,
-      prefeituraId: prefId,
-      prefeitura: pref ? `Prefeitura de ${pref.nome}` : entryAtivo.origem,
-      situacao: "nova",
-      criadoEm: new Date().toISOString(),
-    };
-    await persistCotacao(c.env, cot);
-    pushEvent("info", "servidor.telemedicina_cotacao", `${entryAtivo.nome} solicitou cotacao de telemedicina.`);
-    return c.json({ ok: true, id: cot.id });
-  })
-  // Cotacoes de telemedicina DO PROPRIO servidor — o app/web usa pra esconder o botao
-  // "Solicitar Cotacao" (mostra "em analise") e listar na aba Em Analise.
-  .get("/v1/servidores/me/telemedicina/cotacoes", async (c) => {
-    const j = c.get("jwt");
-    requireRoleInline(j, ["servidor"]);
-    await ensureServidoresLoaded(c.env);
-    const s = resolveServidor(j);
-    if (!s) throw Errors.notFound("servidor");
-    await expireStaleCotacoes(c.env); // cancela as >48h (libera a margem travada)
-    const cotacoes = (await loadCotacoes(c.env))
-      .filter((x) => x.servidorId === s.id)
-      .sort((a, b) => b.criadoEm.localeCompare(a.criadoEm))
-      .map((x) => ({ id: x.id, situacao: x.situacao, criadoEm: x.criadoEm, ativadoEm: x.ativadoEm ?? null }));
-    return c.json({ cotacoes });
-  })
   // Vitrine (carrossel) exibido no dashboard do servidor. So banners ativos.
   // Fonte de verdade: admin_vitrine (a averbadora cadastra em /averbadora/vitrine).
   .get("/v1/servidores/me/vitrine", async (c) => {
@@ -777,13 +677,12 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         taxaAm: z.number().positive(),
         matricula: z.string().optional(),
         bancoNome: z.string().optional(),
-        // Produto solicitado — a logica de credito e a mesma, muda so a margem/rotulo.
-        // Cartao de credito consignado -> ECONSIGNADO; qualquer outro -> EMPRESTIMO.
-        produto: z.enum(["EMPRESTIMO", "CARTAO_CONSIGNADO"]).optional(),
+        // Tipo da proposta — determina se vira EMPRESTIMO ou REFIN no contrato.
+        // Sem esse campo, portabilidade e refin viravam empréstimo genérico no
+        // /servidor/contratos (aparecia como "Empréstimo consignado" no card).
+        tipo: z.enum(["novo", "portabilidade", "refinanciamento"]).default("novo"),
       })
       .parse(await c.req.json());
-    const tipoContrato = body.produto === "CARTAO_CONSIGNADO" ? "ECONSIGNADO" : "EMPRESTIMO";
-    const produtoLabel = body.produto === "CARTAO_CONSIGNADO" ? "cartão de crédito consignado" : "empréstimo consignado";
     // A matricula ATIVA no app do servidor eh a fonte de verdade — e vem no
     // body.matricula. Antes o backend priorizava a matricula do JWT (fixada
     // no login) e o body era so fallback, entao servidor com acumulacao de
@@ -802,22 +701,12 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // SEGURANÇA (server-side): a parcela nunca pode exceder a margem consignável
     // disponível da matrícula. O cliente já limita o valor, mas o backend é a fonte
     // de verdade — sem isto, uma chamada adulterada criaria empréstimo acima da margem.
-    // Valida contra a margem DO PRODUTO: cada bucket tem limite proprio — cartao de
-    // credito consignado nao consome a margem de emprestimo, e vice-versa.
-    const margemTipo = body.produto === "CARTAO_CONSIGNADO" ? "CARTAO_CONSIGNADO" : "EMPRESTIMO";
-    // REGRA 48h / uma solicitacao por produto (AUTORITATIVA no servidor — vale pra app E web):
-    // se ja ha uma proposta EM ANALISE deste produto, bloqueia nova. A reserva expira em 48h
-    // (normalizeContrato) ou some quando o banco decide — ai libera. Sem isto, cada cliente
-    // tinha so a trava local (localStorage), que nao cruzava entre app e web.
-    const jaPendente = listContratos({ matricula: entry.matricula })
-      .some((ct) => /aguard/i.test(ct.situacao) && deriveTipoMargem(ct) === margemTipo);
-    if (jaPendente) {
-      throw new HttpError(409, "proposta_pendente", "Voce ja tem uma solicitacao deste produto em analise. Aguarde a decisao do banco ou a liberacao (48h).");
-    }
+    // Compromete apenas o bucket EMPRESTIMO — cartao consig/beneficio nao
+    // afetam a margem de emprestimo (buckets independentes).
     const comprometidoAtual = listContratos({ matricula: entry.matricula })
-      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === margemTipo)
+      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
       .reduce((acc, ct) => acc + ct.valorParcela, 0);
-    const margemDisp = margemDisponivel(entry.salarioLiquido, comprometidoAtual, margemTipo);
+    const margemDisp = margemDisponivel(entry.salarioLiquido, comprometidoAtual, "EMPRESTIMO");
     if (round2(cet.parcela) > round2(margemDisp) + 0.01) {
       const brl = (n: number) => `R$ ${round2(n).toFixed(2).replace(".", ",")}`;
       throw new HttpError(
@@ -835,7 +724,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       cpfMasked: entry.cpfMasked,
       convenioId: conv?.id ?? entry.idConvenio,
       convenio: conv?.nome ?? "Banco Atlas",
-      tipoContrato,
+      // portabilidade/refin viram REFIN no dominio (mesma state-machine);
+      // novo empréstimo vira EMPRESTIMO. tipoMargem em ambos e' EMPRESTIMO
+      // (portabilidade/refin usam a mesma bucket de margem).
+      tipoContrato: body.tipo === "novo" ? "EMPRESTIMO" : "REFIN",
       valorFinanciado: body.valor,
       parcelas: body.parcelas,
       taxaAm: body.taxaAm,
@@ -846,10 +738,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       codigoVerba: conv?.codigoVerba ?? "",
       observacoes: `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
       isReserva: true,
-      // Bucket explicito por produto: cartao de credito consignado consome a margem
-      // de cartao (nao a de emprestimo). Sem isto, a solicitacao de cartao "ia como
-      // emprestimo" — descontava a margem de emprestimo do servidor.
-      tipoMargem: margemTipo,
+      tipoMargem: "EMPRESTIMO", // explicit bucket — nao confunde com margem de cartao
       ator: `servidor:${s.id}`,
     });
     await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh
@@ -899,92 +788,6 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       201,
     );
   })
-  // Servidor SOLICITA trazer um emprestimo de OUTRO banco (elegivelId) PARA o Banco Atlas —
-  // o BANCO recebe em "Propostas e Portabilidade" como REFIN pendente, com os dados do
-  // contrato de origem (banco/contrato/saldo) e o telefone do servidor pra contato.
-  // Regras: bloqueia a margem de EMPRESTIMO consignado por ate 5 dias (reserva) e NAO
-  // permite solicitar se ja houver emprestimo/portabilidade EM ANALISE.
-  // Path distinto de /me/portabilidade (que e o marketplace de intencoes p/ bancos
-  // concorrentes) — este e' o fluxo "trazer pro Atlas" do app/emulador.
-  .post("/v1/servidores/me/portabilidade/solicitar", async (c) => {
-    const j = c.get("jwt");
-    requireRoleInline(j, ["servidor"]);
-    await ensureServidoresLoaded(c.env);
-    await ensureBancosLoaded(c.env);
-    await ensureTombamentoLoaded(c.env);
-    const s = resolveServidor(j);
-    if (!s) throw Errors.notFound("servidor");
-    const body = z
-      .object({ matricula: z.string().optional(), elegivelId: z.string().optional() })
-      .parse(await c.req.json().catch(() => ({})));
-    const entry =
-      (body.matricula ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === body.matricula) : undefined) ??
-      SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === s.matricula) ??
-      SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf);
-    if (!entry) throw Errors.notFound("matricula");
-    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
-    await refreshContratos(c.env); // sincroniza o contador de adf entre isolates antes de criar
-
-    // Nao permite portabilidade se ja ha emprestimo consignado OU portabilidade EM ANALISE
-    // (mesma regra do emprestimo novo — a margem EMPRESTIMO ja esta pre-reservada).
-    const jaPendenteEmprestimo = listContratos({ matricula: entry.matricula })
-      .some((ct) => /aguard/i.test(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO");
-    if (jaPendenteEmprestimo) {
-      throw new HttpError(
-        409,
-        "proposta_pendente",
-        "Voce ja tem uma solicitacao de emprestimo/portabilidade em analise. Aguarde a resposta do banco para solicitar outra.",
-      );
-    }
-
-    // Empréstimo de origem selecionado (de outro banco) — vem do tombamento/seed.
-    const loan = body.elegivelId ? getExternalLoan(entry.matricula, body.elegivelId) : undefined;
-    const bancoOrigem = loan?.bancoNome ?? "Outro banco";
-    const contratoOrigem = loan?.contratoOrigem;
-    const saldoDevedorOrigem = loan ? round2(loan.saldoDevedor) : undefined;
-    // Valores do contrato de ORIGEM (sem inventar promocao): o banco recebe o saldo/parcela
-    // reais do outro banco e confirma as condicoes depois. NAO calculamos "parcela no Atlas".
-    const valorBase = loan ? round2(loan.saldoDevedor) : round2(margemTotal(entry.salarioLiquido, "EMPRESTIMO"));
-    const parcelasBase = loan?.parcelasRestantes ?? 60;
-    const contrato = criarContratoOuReserva({
-      bancoId: conv?.bancoId ?? 1,
-      servidorId: s.id,
-      idMatricula: entry.idMatricula,
-      matricula: entry.matricula,
-      nome: entry.nome,
-      cpfMasked: entry.cpfMasked,
-      convenioId: conv?.id ?? entry.idConvenio,
-      convenio: conv?.nome ?? "Banco Atlas",
-      tipoContrato: "REFIN",
-      valorFinanciado: valorBase,
-      parcelas: parcelasBase,
-      taxaAm: loan?.taxaAm ?? 0,
-      cetAm: loan?.taxaAm ?? 0,
-      iof: 0,
-      diasCarencia: 30,
-      // Parcela 0 no bucket de margem: a portabilidade BLOQUEIA a margem de emprestimo
-      // (proposta pendente), mas NAO reduz o valor disponivel — a margem so muda quando
-      // o banco confirmar a portabilidade. O valor real da origem vai em saldoDevedorOrigem.
-      valorParcela: 0,
-      codigoVerba: conv?.codigoVerba ?? "",
-      observacoes: loan
-        ? `Portabilidade do contrato ${contratoOrigem} (${bancoOrigem}) — solicitada pelo servidor. Valores a confirmar com o banco.`
-        : "Solicitacao de portabilidade enviada pelo servidor via app — valores a confirmar com o banco.",
-      isReserva: true,
-      reservaDias: 5, // bloqueia a margem de EMPRESTIMO por ate 5 dias
-      bancoOrigem,
-      contratoOrigem,
-      saldoDevedorOrigem,
-      ator: `servidor:${s.id}`,
-    });
-    await persistContrato(c.env, contrato.adf);
-    notifyServidor(c, entry.email, {
-      titulo: `Solicitação de portabilidade ${contrato.adf} enviada`,
-      mensagem: `Sua solicitação de portabilidade${loan ? ` do contrato ${bancoOrigem}` : ""} foi enviada ao ${bancoNome(contrato.bancoId)}. Sua margem de empréstimo fica reservada por até 5 dias e o banco vai entrar em contato.`,
-      detalhes: [{ label: "Situação", valor: contrato.situacao }],
-    });
-    return c.json({ id: contrato.adf, situacao: contrato.situacao }, 201);
-  })
   // Lista as propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
   // Opcionalmente filtra pela matricula ativa — sem esse filtro o servidor
   // com múltiplas matrículas (acumulação de cargos) veria propostas de todas
@@ -1014,10 +817,6 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         taxaAm: round2(ct.taxaAm * 100),
         situacao: ct.situacao,
         tipoContrato: ct.tipoContrato,
-        // Convenio + observacoes identificam o plano de Telemedicina — o front usa pra
-        // rotular o card e mostrar o passo a passo proprio (averbadora + ADF).
-        convenio: ct.convenio,
-        observacoes: ct.observacoes,
         // Bucket de margem — permite o front distinguir Cartao Consignado
         // (CARTAO_CONSIGNADO) de Cartao Beneficio (CARTAO_BENEFICIOS) quando
         // tipoContrato=ECONSIGNADO.
@@ -1051,32 +850,6 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!s) throw Errors.notFound("servidor");
     if (c.env.KV_SESSIONS) await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
     return c.json({ ok: true });
-  })
-  // FASE DE TESTE — remove as propostas EM ANÁLISE do próprio servidor e libera a margem.
-  // Só apaga reservas pendentes ("Aguardando..."), que não comprometem margem: um contrato
-  // já vigente ou quitado NUNCA é removido por aqui. Usado pelos scripts de manutenção/reset.
-  .delete("/v1/servidores/me/propostas", async (c) => {
-    const j = c.get("jwt");
-    requireRoleInline(j, ["servidor"]);
-    await ensureServidoresLoaded(c.env);
-    const s = resolveServidor(j);
-    if (!s) throw Errors.notFound("servidor");
-    await refreshContratos(c.env);
-    const matAtiva = c.req.query("matricula")?.trim();
-    const mats = new Set(
-      SERVIDORES_BUSCA_MOCK
-        .filter((x) => x.cpf === s.cpf && (!matAtiva || x.matricula === matAtiva))
-        .map((e) => e.matricula),
-    );
-    const pendentes = listContratos({})
-      .filter((ct) => mats.has(ct.matricula) && ct.situacao.toLowerCase().includes("aguard"))
-      .map((ct) => ct.adf);
-    if (pendentes.length === 0) return c.json({ removidas: 0, ids: [] });
-
-    const removidasPg = await deleteContratosByAdfs(c.env, pendentes);
-    removeContratosByAdf(pendentes);
-    pushEvent("info", "servidor.propostas_removidas", `Servidor removeu ${pendentes.length} proposta(s) em analise (teste).`);
-    return c.json({ removidas: removidasPg || pendentes.length, ids: pendentes });
   })
   // Envia um código de verificação (test-mode: retorna no corpo) pro e-mail do servidor.
   .post("/v1/servidores/me/codigo", async (c) => {

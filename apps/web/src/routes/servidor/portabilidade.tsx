@@ -88,7 +88,9 @@ export function ServidorPortabilidade() {
 
   function consolidar() {
     const params = new URLSearchParams({
-      tipo: modoRefin ? "refin" : "portabilidade",
+      // termo.tsx aceita "refinanciamento" (nao "refin"); enviar a chave errada
+      // faz cair no default "novo" e o backend criar como EMPRESTIMO.
+      tipo: modoRefin ? "refinanciamento" : "portabilidade",
       banco: BANCO_DESTINO.nome,
       valor: String(Math.round(totalSaldo)),
       parcelas: String(novoPrazo),
@@ -300,7 +302,18 @@ function KV({ label, v, accent, muted }: { label: string; v: string; accent?: bo
 function MarketplaceBlock() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["servidor", "portabilidade"], queryFn: () => atlas.portabilidade.minhas(), refetchInterval: 15000 });
-  const [info] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+  const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
+  // Listener de storage: sem isso, elegiveisPortabilidade ficava congelado
+  // na matricula da montagem. Trocar matricula no switcher nao atualizava.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
+        setInfo(readActiveMatricula());
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
   const publicar = useMutation({
     mutationFn: (adf: string) => atlas.portabilidade.publicar(adf),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),

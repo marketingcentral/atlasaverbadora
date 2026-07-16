@@ -784,6 +784,13 @@ export interface AdminFolha {
   dataCorte: string;
   dataRepasse: string | null;
   status: "aberta" | "fechada" | "consolidada";
+  /** ADFs materializadas nessa competencia+prefeitura. Enriquecidas
+   *  no /v1/admin/folhas — permite a averbadora ver descontos que caiam
+   *  em cada folha direto na lista, sem sair da tela. */
+  adfsAplicadas?: number;
+  adfsRecebidas?: number;
+  adfsTotal?: number;
+  valorAplicado?: number;
 }
 
 export interface AdminFolhaInput {
@@ -916,6 +923,8 @@ export interface PrefeituraAdf {
   tipoContrato?: string;
   status: "recebida" | "aplicada" | "falha";
   motivo?: string;
+  /** ISO. Recentes primeiro na UI (bumpa a cada troca de status). */
+  atualizadoEm?: string;
 }
 export type PrefeituraArea = "rh" | "financeiro" | "gestor" | "personalizado";
 export interface PrefeituraPerfil {
@@ -948,6 +957,13 @@ export interface PrefeituraFolha {
   dataCorte: string;
   dataRepasse: string | null;
   status: "aberta" | "fechada" | "consolidada";
+  /** Contagem e soma das ADFs materializadas nessa folha (enviadas pela
+   *  averbadora). Permite a prefeitura ver os descontos que precisa aplicar
+   *  na competencia direto na lista. */
+  adfsAplicadas?: number;
+  adfsRecebidas?: number;
+  adfsTotal?: number;
+  valorAplicado?: number;
 }
 export interface PrefeituraConvenio {
   id: string;
@@ -1228,7 +1244,7 @@ export class AtlasClient {
         },
       ),
     /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
-    criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string }) =>
+    criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string; tipo?: "novo" | "portabilidade" | "refinanciamento" }) =>
       this.request<{ id: string; situacao: string; banco: string; valor: number; parcelas: number; parcela: number; expira_em: string | null }>(
         "/v1/servidores/me/propostas",
         { method: "POST", body: input },
@@ -1381,7 +1397,13 @@ export class AtlasClient {
     visaoGeral: () =>
       this.request<{
         convenio: { id: string; nome: string; prefeitura: string };
-        kpis: { carteira: { count: number; percentual: number }; novosNoMes: { count: number }; pendencias: { count: number } };
+        kpis: {
+          carteira: { count: number; percentual: number };
+          novosNoMes: { count: number };
+          pendencias: { count: number };
+          propostas: { emAnalise: number; aprovadas: number; formalizadas: number; recusadasExpiradas: number };
+          volumePorConvenio: { nome: string; valor: number }[];
+        };
         dataCorte: { dia: number; mes: string; origem: string; operacoes: string };
       }>("/v1/portal/banco/visao-geral"),
     comunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/portal/banco/comunicados"),

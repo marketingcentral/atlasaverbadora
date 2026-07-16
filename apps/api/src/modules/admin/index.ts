@@ -88,6 +88,16 @@ export function requirePermissao(j: JwtClaims, resourceKey: string): void {
   if (perms.includes("*") || perms.includes(resourceKey)) return;
   throw Errors.forbidden(`Este recurso exige permissao "${resourceKey}". Seu usuario nao tem essa caixa marcada.`);
 }
+/** Variante: aceita QUALQUER uma das keys (OR). Util quando um endpoint serve
+ *  duas telas diferentes (ex.: GET /beneficios usado por /averbadora/beneficios
+ *  E por /averbadora/telemedicina — usuario precisa ter uma OU outra). */
+export function requirePermissaoOneOf(j: JwtClaims, ...resourceKeys: string[]): void {
+  const perms = j.averbadora_permissoes;
+  if (!perms || perms.length === 0) return;
+  if (perms.includes("*")) return;
+  if (resourceKeys.some((k) => perms.includes(k))) return;
+  throw Errors.forbidden(`Este recurso exige uma das permissoes: ${resourceKeys.join(", ")}.`);
+}
 
 /** LEGADO — mantido para retrocompat. Usa averbadora_perfil (label do preset).
  *  Novo codigo deve chamar requirePermissao(j, "<resource-key>") direto. */
@@ -308,6 +318,28 @@ export const folhas: FolhaAdmin[] = [
   { id: "F-2026-07-1", prefeituraId: 1, prefeitura: "Palhoca", competencia: "202607", dataCorte: "2026-07-15", dataRepasse: "2026-08-05", status: "fechada" },
   { id: "F-2026-07-2", prefeituraId: 2, prefeitura: "Florianopolis", competencia: "202607", dataCorte: "2026-07-18", dataRepasse: "2026-08-08", status: "fechada" },
 ];
+const FOLHAS_SEED: FolhaAdmin[] = folhas.map((f) => ({ ...f }));
+// Persistência das folhas (write-through + hydrate). Antes o array vivia so
+// em memoria do isolate — folhas abertas via UI da prefeitura sumiam no proximo
+// redeploy. Mesmo padrao usado em vitrine/perfis.
+let _folhasLoad: Promise<void> | null = null;
+export function ensureFolhasLoaded(env: Env): Promise<void> {
+  if (_folhasLoad) return _folhasLoad;
+  _folhasLoad = (async () => {
+    try {
+      await seedCollectionIfEmpty(env, "admin_folhas", FOLHAS_SEED.map((f) => ({ id: f.id, data: f })));
+      const rows = await loadCollection<FolhaAdmin>(env, "admin_folhas");
+      if (rows.length > 0) {
+        folhas.length = 0;
+        folhas.push(...rows);
+      }
+    } catch { _folhasLoad = null; }
+  })();
+  return _folhasLoad;
+}
+export async function persistFolha(env: Env, f: FolhaAdmin): Promise<void> {
+  try { await upsertCollectionRow(env, "admin_folhas", f.id, f); } catch { /* fail-safe */ }
+}
 
 export const vitrine: VitrineBanner[] = [
   { id: "BAN-1", bancoId: 2, bancoNome: "Banco Y", titulo: "Empréstimo a 1,72% a.m.", impressoes: 42000, cliques: 3360, receitaMes: 18000, ativo: true },
@@ -633,10 +665,32 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       acc[banco] = (acc[banco] ?? 0) + c.valorFinanciado;
       return acc;
     }, {});
+    // Contagem REAL de propostas por banco — antes vinha do Math.random(), que
+    // fazia os numeros dancarem a cada request/refetch e nao batia com nada.
+    const propostasPorBanco = todosContratos.reduce<Record<number, number>>((acc, c) => {
+      acc[c.bancoId] = (acc[c.bancoId] ?? 0) + 1;
+      return acc;
+    }, {});
+    const topBancos = bancos
+      .map((b) => ({ nome: b.nome, propostas: propostasPorBanco[b.id] ?? 0 }))
+      .sort((a, b) => b.propostas - a.propostas)
+      .slice(0, 3);
+    // "Propostas hoje" = contratos criados hoje (criadoEmIso). Antes contava TUDO
+    // desde o inicio dos tempos e chamava de "hoje".
+    const hojeIso = new Date().toISOString().slice(0, 10);
+    const propostasHoje = todosContratos.filter((c) => (c.criadoEmIso ?? "").slice(0, 10) === hojeIso).length;
+    // Conversao = formalizadas / total (bruto — nao considera propostas que nunca
+    // viraram contrato porque nao temos historico delas na base atual). Ainda
+    // assim, muito melhor que o 0.427 hardcoded que o cliente ja viu ha meses.
+    const formalizadas = todosContratos.filter((c) => {
+      const s = c.situacao.toLowerCase();
+      return s === "ativo" || s === "averbado" || s === "formalizado";
+    }).length;
+    const conversao = todosContratos.length > 0 ? Math.round((formalizadas / todosContratos.length) * 1000) / 1000 : 0;
     return c.json({
       kpis: {
-        propostasHoje: todosContratos.length,
-        conversao: 0.427,
+        propostasHoje,
+        conversao,
         ticketMedio: todosContratos.length > 0 ? Math.round((todosContratos.reduce((a, c) => a + c.valorFinanciado, 0) / todosContratos.length) * 100) / 100 : 0,
         bancosAtivos: bancos.filter((b) => b.status === "ativo").length,
         prefeiturasAtivas: prefeituras.filter((p) => p.status === "ativo").length,
@@ -647,7 +701,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         margemTravada: preResumo.margemTotalTravada,
         folhasAbertas,
       },
-      topBancos: bancos.slice(0, 3).map((b) => ({ nome: b.nome, propostas: Math.floor(Math.random() * 500) + 100 })),
+      topBancos,
       topPrefeituras: prefeituras.slice(0, 3).map((p) => ({ nome: `${p.nome}/${p.uf}`, servidores: p.servidoresCount })),
       volumePorConvenio: Object.entries(volumePorConvenio).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
       volumePorBanco: Object.entries(volumePorBanco).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
@@ -730,7 +784,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // contratos/propostas do Diego (993410027) — a conta/login do Diego NÃO é tocada.
   // O roster é FIXO — o endpoint nunca toca um servidor real.
   .post("/v1/admin/manutencao/reset-servidores-teste", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
     await ensureServidoresLoaded(c.env);
     const TESTE: { cpf: string; matricula: string }[] = [
       { cpf: "01844730808", matricula: "700100001" },
@@ -783,7 +839,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // margem". Se a matricula era so uma reserva, some. Se ja era um contrato
   // averbado, tambem some — cuidado: nao existe "undo".
   .post("/v1/admin/manutencao/purge-contratos-matricula", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
     const body = z.object({
       matriculas: z.array(z.string().min(1)).min(1),
     }).parse(await c.req.json());
@@ -809,7 +867,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // tiveram a senha alterada num fluxo de redefinicao. Nao apaga contratos,
   // so limpa credenciais/contato.
   .post("/v1/admin/manutencao/reset-servidor-conta", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
     const body = z.object({
       cpfs: z.array(z.string().regex(/^\d{11}$/, "CPF deve ter 11 digitos")).min(1),
     }).parse(await c.req.json());
@@ -839,7 +899,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(await getAiStatus(c.env));
   })
   .put("/v1/admin/ai/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     const body = z.object({ apiKey: z.string().min(20) }).parse(await c.req.json());
     try {
       const status = await setAiKey(c.env, body.apiKey);
@@ -858,7 +920,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
   })
   .delete("/v1/admin/ai/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     await clearAiKey(c.env);
     appendAudit({
       trace_id: c.get("trace_id"),
@@ -872,7 +936,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.body(null, 204);
   })
   .post("/v1/admin/ai/test", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     return c.json(await testAiKey(c.env));
   })
   // ===== SMTP (envio de e-mails de confirmação) =====
@@ -881,7 +947,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(await getSmtpStatus(c.env));
   })
   .put("/v1/admin/smtp/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     const body = z
       .object({
         host: z.string().optional(),
@@ -907,7 +975,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(status);
   })
   .delete("/v1/admin/smtp/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     await clearSmtpConfig(c.env);
     appendAudit({
       trace_id: c.get("trace_id"),
@@ -922,7 +992,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   // Envia um e-mail de teste com a config SMTP salva — para o operador validar.
   .post("/v1/admin/smtp/test", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     const { to } = z.object({ to: z.string().email() }).parse(await c.req.json());
     const r = await sendMail(c.env, {
       to,
@@ -932,7 +1004,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(r);
   })
   .post("/v1/admin/ai/normalize-csv", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     const body = z.object({
       csv: z.string().min(1).max(200_000),
       expectedHeaders: z.array(z.string()).min(1),
@@ -1000,7 +1074,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // confirmacao explicita no body para NUNCA apagar dados por acidente/automacao/
   // deploy. Sem a frase exata, retorna 400 e nao toca no banco.
   .post("/v1/admin/db/reseed", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
     const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
     if (body.confirmar !== "APAGAR-TUDO-E-RESEMEAR") {
       throw Errors.validation({
@@ -1071,7 +1147,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ banco: sanitizeBanco(novo) });
   })
   .post("/v1/admin/bancos/:id/testar-conexao", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "bancos");
     const b = bancos.find((x) => x.id === Number(c.req.param("id")));
     if (!b) throw Errors.notFound("banco");
     b.ultimoTeste = new Date().toISOString();
@@ -1129,7 +1205,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
   })
   .post("/v1/admin/prefeituras", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     const body = z
       .object({
         id: z.number().int().optional(),
@@ -1183,7 +1259,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ prefeitura: sanitizePrefeitura(novo) });
   })
   .post("/v1/admin/prefeituras/:id/sincronizar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     const p = prefeituras.find((x) => x.id === Number(c.req.param("id")));
     if (!p) throw Errors.notFound("prefeitura");
     const ts = new Date().toISOString();
@@ -1266,7 +1342,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ prefeitura: sanitizePrefeitura(p), resultado: p.ultimaSincResultado });
   })
   .post("/v1/admin/prefeituras/:id/reset-password", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     const p = prefeituras.find((x) => x.id === Number(c.req.param("id")));
     if (!p) throw Errors.notFound("prefeitura");
     const body = z.object({ password: z.string().min(6) }).parse(await c.req.json());
@@ -1279,6 +1355,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .delete("/v1/admin/prefeituras/:id", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
+    requirePermissao(j, "prefeituras");
     const id = Number(c.req.param("id"));
     const p = prefeituras.find((x) => x.id === id);
     if (!p) throw Errors.notFound("prefeitura");
@@ -1290,7 +1367,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .post("/v1/admin/convenios/:id/reativar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const id = c.req.param("id");
     await refreshConvenios(c.env);
     const cv = CONVENIOS_MOCK.find((x) => x.id === id);
@@ -1346,7 +1423,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ servidores: rows, total: rows.length });
   })
   .patch("/v1/admin/servidores/:matricula", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
     await ensureServidorStatusLoaded(c.env);
     const matricula = c.req.param("matricula");
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === matricula);
@@ -1416,10 +1493,39 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/folhas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
-    return c.json({ folhas });
+    await ensureFolhasLoaded(c.env);
+    // Sincroniza contratos antes de contar ADFs (contratos "Aprovado"/"Ativo" viram
+    // ADFs materializadas no _adfs). Sem isso, folhas mostravam 0 ADF ate outro
+    // endpoint tocar refreshContratos.
+    await refreshContratos(c.env);
+    const now = new Date().toISOString();
+    // Materializa ADFs pra todas as competencias que aparecem em folhas
+    // (nao so a atual — a averbadora ve o historico completo).
+    const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
+    const prefIds = prefeituras.map((p) => p.id);
+    const compsUnicas = Array.from(new Set(folhas.map((f) => f.competencia)));
+    for (const comp of compsUnicas) ensureAdfsGlobal(comp, bancoNomeById, now, prefIds);
+    // Enriquece cada folha com contagem/soma de ADFs (aplicadas + recebidas)
+    // por prefeitura+competencia. Assim a averbadora ve os descontos que ja
+    // caiam naquela folha sem sair da tela.
+    const enriched = folhas.map((f) => {
+      const adfsFolha = listAdfsGlobal(f.competencia).filter((a) => a.prefeituraId === f.prefeituraId);
+      const aplicadas = adfsFolha.filter((a) => a.status === "aplicada");
+      const recebidas = adfsFolha.filter((a) => a.status === "recebida");
+      const valorAplicado = aplicadas.reduce((s, a) => s + a.valorParcela, 0);
+      return {
+        ...f,
+        adfsAplicadas: aplicadas.length,
+        adfsRecebidas: recebidas.length,
+        adfsTotal: adfsFolha.length,
+        valorAplicado: Math.round(valorAplicado * 100) / 100,
+      };
+    });
+    return c.json({ folhas: enriched });
   })
   .post("/v1/admin/folhas", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    await ensureFolhasLoaded(c.env);
     const body = z
       .object({
         id: z.string().optional(),
@@ -1435,18 +1541,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const idx = folhas.findIndex((f) => f.id === body.id);
       if (idx < 0) throw Errors.notFound("folha");
       folhas[idx] = { ...folhas[idx]!, ...body, id: body.id, dataRepasse: body.dataRepasse ?? null };
+      await persistFolha(c.env, folhas[idx]!);
       return c.json({ folha: folhas[idx] });
     }
     const novo: FolhaAdmin = { ...body, id: `F-${Date.now()}`, dataRepasse: body.dataRepasse ?? null };
     folhas.push(novo);
+    await persistFolha(c.env, novo);
     return c.json({ folha: novo });
   })
   .post("/v1/admin/folhas/:id/consolidar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    await ensureFolhasLoaded(c.env);
     const f = folhas.find((x) => x.id === c.req.param("id"));
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
     f.status = "consolidada";
+    await persistFolha(c.env, f);
     return c.json({ folha: f });
   })
 
@@ -1516,7 +1626,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ comunicado: novo });
   })
   .post("/v1/admin/comunicados/:id/mover", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "comunicados");
     await refreshComunicados(c.env);
     const id = c.req.param("id");
     const { direction } = z.object({ direction: z.enum(["up", "down"]) }).parse(await c.req.json());
@@ -1533,7 +1643,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ comunicados: COMUNICADOS_MOCK });
   })
   .post("/v1/admin/comunicados/reordenar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "comunicados");
     await refreshComunicados(c.env);
     const { ids } = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
     // Reordena in-place com base na nova ordem. Ids fora da lista sao ignorados;
@@ -1552,7 +1662,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ comunicados: COMUNICADOS_MOCK });
   })
   .delete("/v1/admin/comunicados/:id", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "comunicados");
     await refreshComunicados(c.env);
     const id = c.req.param("id");
     const idx = COMUNICADOS_MOCK.findIndex((x) => x.id === id);
@@ -1613,7 +1723,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ banners: vitrine });
   })
   .post("/v1/admin/vitrine", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "vitrine");
     await ensureVitrineLoaded(c.env);
     const body = z
       .object({
@@ -1735,7 +1845,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // cascata com o status do banco dono (ver syncBancoAccess). Sem rota de
   // toggle/exclusão individual.
   .get("/v1/admin/webhooks/:id/deliveries", authRequired, async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "api-webhooks");
     return c.json({ deliveries: listDeliveries(c.req.param("id")) });
   })
   .post("/v1/admin/webhooks/fire", authRequired, async (c) => {
@@ -1806,7 +1916,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(out);
   })
   .post("/v1/admin/prefeituras/importar", authRequired, async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     const text = await readCsvBody(c);
     const { rows } = parseCsv(text);
     const out: ImportOutcome<PrefeituraAdmin> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
@@ -1845,7 +1955,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(out);
   })
   .post("/v1/admin/convenios/importar", authRequired, async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const text = await readCsvBody(c);
     const { rows } = parseCsv(text);
     await refreshConvenios(c.env);
@@ -1882,7 +1992,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   // ===== Convenios CRUD + Config (passos 5 e 13) =====
   .post("/v1/admin/convenios", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const body = z
       .object({
         id: z.string().optional(),
@@ -1916,7 +2026,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   // Nunca apaga — DESATIVA (ativo=false). Sai das listagens; referências ficam intactas.
   .delete("/v1/admin/convenios/:id", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const id = c.req.param("id");
     await refreshConvenios(c.env);
     const cv = CONVENIOS_MOCK.find((x) => x.id === id);
@@ -1927,17 +2037,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.body(null, 204);
   })
   .get("/v1/admin/convenios/:id/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const id = c.req.param("id");
     if (!CONVENIOS_MOCK.find((cv) => cv.id === id)) throw Errors.notFound("convenio");
     return c.json({ config: getConvenioConfig(id) ?? null });
   })
   .get("/v1/admin/convenios-configs", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     return c.json({ configs: listConvenioConfigs() });
   })
   .post("/v1/admin/convenios/:id/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const id = c.req.param("id");
     if (!CONVENIOS_MOCK.find((cv) => cv.id === id)) throw Errors.notFound("convenio");
     const body = z
@@ -1964,7 +2074,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== ID Único — config + preview/issue (passo 10) =====
   .get("/v1/admin/id-unico/configs", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "id-unico");
     return c.json({
       configs: listIdUnicoConfigs().map((cfg) => ({
         ...cfg,
@@ -1974,7 +2084,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
   })
   .post("/v1/admin/id-unico/configs", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "id-unico");
     const body = z
       .object({
         prefeituraId: z.number().int(),
@@ -1992,7 +2102,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ config: cfg, exemplo: previewIdUnico(cfg.prefeituraId) });
   })
   .post("/v1/admin/id-unico/issue", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "id-unico");
     const body = z.object({ prefeituraId: z.number().int() }).parse(await c.req.json());
     if (!getIdUnicoConfig(body.prefeituraId)) throw Errors.notFound("id_unico_config");
     const id = issueIdUnico(body.prefeituraId);
@@ -2002,7 +2112,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Pre-reservas e travas (passo 8) =====
   .get("/v1/admin/pre-reservas", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "pre-reservas");
     await refreshContratos(c.env); // fluxo real: propostas/reservas criadas pelos servidores
     const all = listContratos({}).map(contratoToPreReserva);
     const url = new URL(c.req.url);
@@ -2017,7 +2127,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ preReservas: list, resumo: resumoPreReservas(all) });
   })
   .post("/v1/admin/pre-reservas/:id/cancelar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "pre-reservas");
     const id = c.req.param("id");
     const body = z.object({ motivo: z.string().min(3).max(200) }).parse(await c.req.json());
     // Cancela a reserva REAL (contrato) — libera a margem e o servidor vê "Cancelada".
@@ -2031,7 +2141,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ preReserva: r });
   })
   .post("/v1/admin/pre-reservas/sweep", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "pre-reservas");
     await refreshContratos(c.env);
     // Expiração é derivada (reserva "Aguardando" com data de expiração vencida).
     const expiradas = listContratos({}).map(contratoToPreReserva).filter((r) => r.status === "expirada").length;
@@ -2056,7 +2166,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ linhas });
   })
   .post("/v1/admin/tombamento/importar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "tombamento");
     const body = z.object({
       prefeituraId: z.number().int(),
       competencia: z.string().regex(/^\d{6}$/, "competencia formato YYYYMM"),
@@ -2093,7 +2203,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   // ===== Bate-de-carteira (passo 11) =====
   .post("/v1/admin/bate-carteira", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "bate-carteira");
     const body = z.object({
       bancoId: z.number().int(),
       competencia: z.string().regex(/^\d{6}$/),
@@ -2218,7 +2328,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Servidor consulta em /v1/servidores/me/beneficios (filtrado pela pref dele).
   // ============================================================
   .get("/v1/admin/beneficios", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "beneficios");
+    // Aceita "beneficios" OU "telemedicina" — a tela /averbadora/telemedicina
+    // filtra a mesma lista por categoria=telemedicina, e o usuario com so essa
+    // caixa marcada deve conseguir listar (frontend faz o filtro).
+    const j = c.get("jwt"); requireAdmin(j); requirePermissaoOneOf(j, "beneficios", "telemedicina");
     await refreshBeneficios(c.env);
     const list = await loadBeneficios(c.env);
     return c.json({ beneficios: list });
@@ -2360,6 +2473,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       modoImagens: body.modoImagens,
       linkAcesso: body.linkAcesso?.url ? body.linkAcesso : undefined,
       todasPrefeiturasParceiras: body.todasPrefeiturasParceiras,
+      duracaoMinimaMeses: body.duracaoMinimaMeses,
     };
     await persistBeneficio(c.env, b);
     // Hook: cria/atualiza o template de e-mail vinculado a este beneficio.
@@ -2369,7 +2483,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ beneficio: b });
   })
   .patch("/v1/admin/beneficios/:id/pausar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "beneficios");
     await refreshBeneficios(c.env);
     const b = (await loadBeneficios(c.env)).find((x) => x.id === c.req.param("id"));
     if (!b) throw Errors.notFound("beneficio");
@@ -2378,7 +2492,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ beneficio: b });
   })
   .patch("/v1/admin/beneficios/:id/reativar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "beneficios");
     await refreshBeneficios(c.env);
     const b = (await loadBeneficios(c.env)).find((x) => x.id === c.req.param("id"));
     if (!b) throw Errors.notFound("beneficio");
@@ -2393,7 +2507,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // consultor serve pra o operador ver, ajustar e mandar teste pro proprio
   // email. Prox iteracao: os handlers passam a ler daqui.
   .get("/v1/admin/email-templates", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "email-sistema");
     return c.json({ templates: await loadTemplates(c.env) });
   })
   .post("/v1/admin/email-templates", async (c) => {
@@ -2438,7 +2552,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Serve pra UX: o operador nao precisa digitar valor pra cada {{var}} —
   // o front puxa esse endpoint e usa como default.
   .get("/v1/admin/email-templates/:id/preview-vars", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j);
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "email-sistema");
     const t = await getTemplate(c.env, c.req.param("id"));
     if (!t) throw Errors.notFound("template");
     return c.json({ vars: exemploVarsRealistas(t) });
@@ -2512,7 +2626,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Cliente disse: "a averbadora que faz a adf, a prefeitura so recebe".
   // ============================================================
   .get("/v1/admin/adf/competencias", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
     await refreshContratos(c.env);
     const now = new Date().toISOString();
     const compAtual = folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", "");
@@ -2521,7 +2635,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ competencias: listAdfCompetenciasGlobal(), competenciaAtual: compAtual });
   })
   .get("/v1/admin/adf", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
     await refreshContratos(c.env);
     const now = new Date().toISOString();
     const url = new URL(c.req.url);
@@ -2555,7 +2669,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ adfs: enriched });
   })
   .post("/v1/admin/adf/confirmar", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
     const body = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
     await refreshContratos(c.env);
     const adfs = setAdfStatusGlobal(body.ids, "aplicada", undefined, new Date().toISOString());
@@ -2619,7 +2733,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ aplicadas: adfs.length });
   })
   .post("/v1/admin/adf/falha", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
     const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
     await refreshContratos(c.env);
     const adfs = setAdfStatusGlobal(body.ids, "falha", body.motivo, new Date().toISOString());
@@ -2647,7 +2761,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   .post("/v1/admin/servidores/importar", authRequired, async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
     const prefId = Number(c.req.query("prefeituraId"));
     if (!Number.isFinite(prefId)) throw Errors.validation({ prefeituraId: "obrigatorio (use ?prefeituraId=N)" });
     const pref = prefeituras.find((p) => p.id === prefId);

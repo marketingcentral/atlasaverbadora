@@ -128,6 +128,10 @@ export function ServidorTermo() {
           // fallback (primeira matricula do CPF) e servidor com acumulacao de
           // cargos ve a proposta criada na matricula errada.
           matricula: readActiveMatricula()?.matricula,
+          // tipo determina se backend cria como EMPRESTIMO (novo) ou REFIN
+          // (portabilidade/refinanciamento). Sem isso, portabilidade/refin
+          // apareciam em /servidor/contratos rotuladas como "Empréstimo".
+          tipo: tipo === "portabilidade" ? "portabilidade" : tipo === "refinanciamento" ? "refinanciamento" : "novo",
         });
         setDone({ propostaId: res.id, quando, ip, device });
       }

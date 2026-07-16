@@ -7,9 +7,19 @@ const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency"
 
 export function PrefeituraDashboard() {
   const nav = useNavigate();
-  const q = useQuery({ queryKey: ["prefeitura", "dashboard"], queryFn: () => atlas.prefeitura.dashboard() });
+  // Poll 8s — KPIs (descontos do mes, contratos, margem) mudam quando o banco
+  // aprova propostas ou a averbadora aplica ADFs em folha. Sem isso, o dashboard
+  // exibia numeros congelados no primeiro fetch da sessao.
+  const q = useQuery({
+    queryKey: ["prefeitura", "dashboard"],
+    queryFn: () => atlas.prefeitura.dashboard(),
+    refetchInterval: 8_000,
+    refetchOnWindowFocus: true,
+  });
 
-  if (q.isLoading) return <Card><span style={{ color: "var(--text-muted)" }}>Carregando…</span></Card>;
+  // `isPending` (nao `isLoading`) — assim o refetch de fundo nao pisca o
+  // "Carregando…" a cada 8s; o card so aparece no primeiro fetch da sessao.
+  if (q.isPending) return <Card><span style={{ color: "var(--text-muted)" }}>Carregando…</span></Card>;
   if (q.error || !q.data) return <Card><span style={{ color: "var(--danger-500)" }}>Erro ao carregar painel.</span></Card>;
 
   const { kpis, folhas, prefeitura, folhaAtual, pendencias } = q.data;

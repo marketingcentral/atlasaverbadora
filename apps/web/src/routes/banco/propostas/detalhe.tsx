@@ -532,7 +532,7 @@ function CcbAnexadoView({ proposta, onAtualizar }: { proposta: BancoProposta; on
   const anexadoEm = proposta.ccbAnexadoEm
     ? new Date(proposta.ccbAnexadoEm).toLocaleString("pt-BR")
     : null;
-  const nomeArq = proposta.ccbKey?.split("/").pop() ?? "contrato.pdf";
+  const nomeArq = proposta.ccbKey?.split("/").pop() ?? "contrato";
   const historico = (proposta.ccbHistorico ?? []).slice().reverse(); // mais recente primeiro
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -558,7 +558,7 @@ function CcbAnexadoView({ proposta, onAtualizar }: { proposta: BancoProposta; on
           onClick={() => proposta.ccbKey && abrir(proposta.ccbKey)}
           disabled={abrindoKey === proposta.ccbKey}
         >
-          {abrindoKey === proposta.ccbKey ? "Abrindo..." : "Abrir PDF"}
+          {abrindoKey === proposta.ccbKey ? "Abrindo..." : "Abrir arquivo"}
         </Button>
         <Button size="sm" variant="ghost" onClick={onAtualizar}>Atualizar contrato</Button>
       </div>
@@ -574,7 +574,7 @@ function CcbAnexadoView({ proposta, onAtualizar }: { proposta: BancoProposta; on
           </summary>
           <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
             {historico.map((h, i) => {
-              const nome = h.key.split("/").pop() ?? "contrato.pdf";
+              const nome = h.key.split("/").pop() ?? "contrato";
               const data = new Date(h.anexadoEm).toLocaleString("pt-BR");
               const versao = historico.length - i; // mais recente = versao maior
               return (
@@ -622,7 +622,7 @@ function AnexarContratoModal({
 
   const enviar = async () => {
     if (!arquivo) {
-      setErro("Selecione o PDF do contrato assinado antes de enviar.");
+      setErro("Selecione o arquivo do contrato assinado antes de enviar.");
       return;
     }
     setErro(null);
@@ -638,12 +638,25 @@ function AnexarContratoModal({
     }
   };
 
+  // Whitelist rigida: PDF, DOCX e Excel (XLS/XLSX). Espelhada no backend em
+  // apps/api/src/modules/portal-banco/index.ts. Alguns navegadores devolvem
+  // type vazio pra DOCX/XLSX — por isso valida tambem pela extensao.
+  const TIPOS_ACEITOS = new Set([
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ]);
+  const EXT_ACEITAS = /\.(pdf|docx|xls|xlsx)$/i;
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
-    if (f && f.type && f.type !== "application/pdf") {
-      setErro("Apenas arquivos PDF.");
-      setArquivo(null);
-      return;
+    if (f) {
+      const extOk = EXT_ACEITAS.test(f.name);
+      if (f.type ? !TIPOS_ACEITOS.has(f.type) : !extOk) {
+        setErro("Apenas arquivos PDF, DOCX ou Excel (XLS/XLSX).");
+        setArquivo(null);
+        return;
+      }
     }
     setErro(null);
     setArquivo(f);
@@ -660,7 +673,7 @@ function AnexarContratoModal({
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {jaTemContrato
             ? "Enviar uma nova versao arquiva a atual no historico — nada e excluido."
-            : "Escolha o PDF do contrato assinado. Depois de anexar voce pode aprovar a proposta."}
+            : "Escolha o arquivo do contrato assinado (PDF, DOCX ou Excel). Depois de anexar voce pode aprovar a proposta."}
         </div>
 
         {/* Upload */}
@@ -673,18 +686,20 @@ function AnexarContratoModal({
           }}>
             <span style={{ fontSize: 24 }}>📄</span>
             <span style={{ fontWeight: 600, fontSize: 14 }}>
-              {arquivo ? arquivo.name : "Clique para selecionar o arquivo (PDF)"}
+              {arquivo ? arquivo.name : "Clique para selecionar o arquivo (PDF, DOCX ou Excel)"}
             </span>
             {arquivo ? (
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                 {(arquivo.size / 1024).toFixed(0)} KB
               </span>
             ) : (
-              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Ou arraste e solte aqui</span>
+              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+                PDF, DOCX ou Excel (XLS/XLSX) · ou arraste e solte aqui
+              </span>
             )}
             <input
               type="file"
-              accept="application/pdf,.pdf"
+              accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.ms-excel,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
               style={{ display: "none" }}
               onChange={onFileChange}
               disabled={enviando}

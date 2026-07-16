@@ -255,12 +255,36 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   .get("/v1/portal/banco/visao-geral", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
+    // Sincroniza com o PG antes de contar — banco recem-logado num isolate
+    // fresh via zero em tudo mesmo com contratos existentes no banco.
+    await refreshContratos(c.env);
     const activeId = await getActiveConvenioId(c.env, j);
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === activeId);
     // Banco sem convênio próprio: sem contratos e sem dados de outro banco.
     const contratos = conv ? listContratos({ convenioId: activeId }) : [];
     const ativos = contratos.filter((ct) => ct.situacao === "Ativo").length;
     const pendentes = contratos.filter((ct) => ct.situacao.startsWith("Aguardando")).length;
+    // Painel de propostas: buckets alinhados ao ciclo de vida do contrato.
+    // - emAnalise: proposta chegou no banco, aguardando decisao (Aguardando*)
+    // - aprovadas: banco aprovou, ADF pendente (contem "aprov" ou "aguardando averb/adf")
+    // - formalizadas: averbadas em folha (Ativo / Averbado / Formalizado)
+    // - recusadasExpiradas: nao entram na carteira (recus/reprov/rejeit/negad/expir/cancel)
+    let emAnalise = 0, aprovadas = 0, formalizadas = 0, recusadasExpiradas = 0;
+    const volumePorConvenio = new Map<string, number>();
+    for (const ct of contratos) {
+      const s = ct.situacao.toLowerCase();
+      if (s === "expirado" || s === "cancelado" || s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) recusadasExpiradas++;
+      else if (s === "ativo" || s === "averbado" || s === "formalizado") formalizadas++;
+      else if (s.includes("aprov")) aprovadas++;
+      else if (s.startsWith("aguard")) emAnalise++;
+      // Volume: soma o financiado dos contratos que ficam na carteira
+      // (formalizados + aprovados que viram carteira). Agrupa por convenio pra
+      // banco multi-convenio ver a fatia de cada um.
+      if (s === "ativo" || s === "averbado" || s === "formalizado" || s.includes("aprov")) {
+        const nomeConv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId)?.nome ?? ct.convenioId;
+        volumePorConvenio.set(nomeConv, (volumePorConvenio.get(nomeConv) ?? 0) + (ct.valorFinanciado ?? 0));
+      }
+    }
     return c.json({
       convenio: conv
         ? { id: conv.id, nome: conv.nome, prefeitura: conv.prefeitura }
@@ -269,6 +293,8 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         carteira: { count: ativos, percentual: ativos > 0 ? 1 : 0 },
         novosNoMes: { count: contratos.filter((ct) => ct.lancamento.includes("/06/")).length },
         pendencias: { count: pendentes },
+        propostas: { emAnalise, aprovadas, formalizadas, recusadasExpiradas },
+        volumePorConvenio: Array.from(volumePorConvenio.entries()).map(([nome, valor]) => ({ nome, valor: Math.round(valor * 100) / 100 })),
       },
       // Data de corte so faz sentido quando ha convenio (o dia vem do convenio
       // da prefeitura). Banco sem convenio proprio nao tem folha pra bater;
@@ -303,8 +329,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       .refine((b) => !!b.cpf || !!b.matricula, "cpf_ou_matricula_obrigatorio")
       .parse(await c.req.json());
     // O banco só acessa quem entrou em contato com ele (tem contrato/reserva).
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     await refreshContratos(c.env);
-    const contatos = matriculasContato(j.banco_id ?? 1);
+    const contatos = matriculasContato(j.banco_id);
     const cpfNorm = body.cpf?.replace(/\D/g, "");
     const matchPred = (s: typeof SERVIDORES_BUSCA_MOCK[number]) =>
       cpfNorm ? s.cpf === cpfNorm : body.matricula ? s.matricula === body.matricula : false;
@@ -336,8 +363,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const activeConv = await getActiveConvenioId(c.env, j);
     const activeConvNome = CONVENIOS_MOCK.find((cv) => cv.id === activeConv)?.nome ?? "Sem convênio";
     // Só os servidores que entraram em contato com o banco (não a base da prefeitura).
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     await refreshContratos(c.env);
-    const contatos = matriculasContato(j.banco_id ?? 1);
+    const contatos = matriculasContato(j.banco_id);
     const noConvenio = SERVIDORES_BUSCA_MOCK.filter((s) => contatos.has(s.matricula))
       .slice(0, 6)
       .map((s) => ({ nome: s.nome, matricula: s.matricula, cpf: s.cpf, cpfMasked: s.cpfMasked, idConvenio: s.idConvenio }));
@@ -356,8 +384,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.idMatricula === idMatricula);
     if (!s) throw Errors.notFound("colaborador");
     // Só calcula margem de quem contatou o banco.
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     await refreshContratos(c.env);
-    if (!matriculasContato(j.banco_id ?? 1).has(s.matricula)) {
+    if (!matriculasContato(j.banco_id).has(s.matricula)) {
       throw Errors.forbidden("Este servidor não entrou em contato com o banco.");
     }
     const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
@@ -404,7 +433,8 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // Casos edge (visao geral de convenios, busca de matricula especifica) podem
     // opt-in com ?incluir_todos_convenios=true.
     const incluirTodos = url.searchParams.get("incluir_todos_convenios") === "true";
-    const bancoId = j.banco_id ?? 1;
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const bancoId = j.banco_id;
     const outrosConvenios = incluirTodos
       ? listContratos({}).filter((ct) => {
           if (ct.bancoId !== bancoId) return false;
@@ -644,15 +674,36 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const isFile = (v: unknown): v is { name: string; size: number; type: string; arrayBuffer: () => Promise<ArrayBuffer> } =>
       typeof v === "object" && v !== null && typeof (v as { size?: unknown }).size === "number" && typeof (v as { arrayBuffer?: unknown }).arrayBuffer === "function";
     if (!isFile(file)) throw Errors.validation({ file: "campo 'file' obrigatorio" });
-    if (file.type && file.type !== "application/pdf") throw Errors.validation({ file: "apenas PDF" });
+    // Whitelist rigida: PDF, DOCX e Excel (XLS/XLSX). Cliente pediu apenas esses
+    // 3 formatos — nao aceita DOC (formato antigo), ODT, RTF, TXT, imagens etc.
+    // Alguns navegadores enviam type vazio pra DOCX/XLSX — cai no fallback por extensao.
+    const ACEITOS = new Set([
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ]);
+    const extOk = /\.(pdf|docx|xls|xlsx)$/i.test(file.name || "");
+    if (file.type ? !ACEITOS.has(file.type) : !extOk) {
+      throw Errors.validation({ file: "apenas PDF, DOCX ou Excel (XLS/XLSX)" });
+    }
     const MAX = 15 * 1024 * 1024; // 15 MB
     if (file.size > MAX) throw Errors.validation({ file: "arquivo maior que 15 MB" });
     const adf = adfRaw.replace(/[^\w.-]/g, "").slice(0, 40);
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const safeName = (file.name || "ccb.pdf").replace(/[^\w.-]/g, "_").slice(0, 60);
+    const safeName = (file.name || "contrato.bin").replace(/[^\w.-]/g, "_").slice(0, 60);
     const key = `ccb/${j.banco_id}/${adf}/${ts}-${safeName}`;
     const buf = await file.arrayBuffer();
-    await c.env.R2_FILES.put(key, buf, { httpMetadata: { contentType: "application/pdf" } });
+    // Preserva o contentType real do arquivo pra que o download/abertura funcione
+    // corretamente no navegador. Fallback pra octet-stream se o browser nao enviou.
+    const lower = safeName.toLowerCase();
+    const storedType = file.type
+      || (lower.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : lower.endsWith(".xls") ? "application/vnd.ms-excel"
+        : lower.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : lower.endsWith(".pdf") ? "application/pdf"
+        : "application/octet-stream");
+    await c.env.R2_FILES.put(key, buf, { httpMetadata: { contentType: storedType } });
     // Grava a chave no contrato pra o operador reabrir a qualquer momento.
     // Isolamento ja garantido acima (owner == banco logado).
     await refreshContratos(c.env);
@@ -661,7 +712,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       setContratoCcb(adf, key, `user:${j.sub}`);
       await persistContrato(c.env, adf);
     }
-    return c.json({ key, size: file.size, contentType: "application/pdf" });
+    return c.json({ key, size: file.size, contentType: storedType });
   })
   .get("/v1/portal/banco/ccb/*", async (c) => {
     const j = c.get("jwt");
@@ -932,8 +983,11 @@ async function persistir(
   if (!conv || !colaborador) throw Errors.notFound("colaborador_ou_convenio");
   const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxaAm });
   const tipoContrato = tipo === "COMPOSTA" ? "EMPRESTIMO" : tipo === "PORTABILIDADE" ? "REFIN" : (tipo as "EMPRESTIMO" | "REFIN");
+  // Banco sem identidade nao pode criar contrato — antes caia no fallback
+  // bancoId=1 (Banco Atlas), atribuindo silenciosamente o contrato ao Atlas.
+  if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
   return criarContratoOuReserva({
-    bancoId: j.banco_id ?? 1,
+    bancoId: j.banco_id,
     servidorId: 1,
     idMatricula: colaborador.idMatricula,
     matricula: colaborador.matricula,

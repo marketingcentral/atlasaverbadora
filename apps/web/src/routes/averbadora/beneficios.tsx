@@ -5,8 +5,15 @@ import { Button, DataTable, IconButton, Pill, type Column } from "@atlas/ui/web"
 import { atlas } from "../../lib/sdk";
 import type { AdminBeneficio, CategoriaBeneficio } from "@atlas/sdk";
 
+// Espelha as opcoes do form (beneficios-form.tsx). Novas categorias
+// (farmacia/supermercado/academia/telemedicina) precisavam entrar aqui
+// tambem senao a coluna Categorias mostrava vazio pros beneficios novos.
 const CATEGORIAS: { id: CategoriaBeneficio; label: string }[] = [
   { id: "saude", label: "Saúde" },
+  { id: "telemedicina", label: "Telemedicina" },
+  { id: "farmacia", label: "Farmácia" },
+  { id: "supermercado", label: "Supermercado" },
+  { id: "academia", label: "Academia" },
   { id: "alimentacao", label: "Alimentação" },
   { id: "educacao", label: "Educação" },
   { id: "lazer", label: "Lazer" },

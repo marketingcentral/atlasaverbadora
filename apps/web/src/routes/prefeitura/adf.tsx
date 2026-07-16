@@ -17,7 +17,19 @@ export function PrefeituraAdf() {
   useEffect(() => { if (!competencia && comps.data?.competenciaAtual) setCompetencia(comps.data.competenciaAtual); }, [comps.data, competencia]);
 
   const adfs = useQuery({ queryKey: ["prefeitura", "adf", competencia], queryFn: () => atlas.prefeitura.adf(competencia), enabled: !!competencia, refetchInterval: 10_000, refetchOnWindowFocus: true });
-  const rows = adfs.data?.adfs ?? [];
+  // Recentes no topo — igual /averbadora/adf. Toda troca de status bumpa
+  // `atualizadoEm` no backend, entao a linha sobe pro topo automaticamente.
+  const rows = useMemo(() => {
+    const base = adfs.data?.adfs ?? [];
+    return [...base].sort((a, b) => {
+      const ta = a.atualizadoEm ?? "";
+      const tb = b.atualizadoEm ?? "";
+      if (ta && tb) return tb.localeCompare(ta);
+      if (ta) return -1;
+      if (tb) return 1;
+      return 0;
+    });
+  }, [adfs.data]);
 
   const totalParcelas = useMemo(() => rows.reduce((s, a) => s + a.valorParcela, 0), [rows]);
   const resumo = useMemo(() => {

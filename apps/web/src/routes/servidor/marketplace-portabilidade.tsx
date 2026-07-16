@@ -2,10 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
-import type { ServidorBeneficio } from "@atlas/sdk";
 import { atlas } from "../../lib/sdk";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID, type MatriculaInfo } from "../../lib/matricula-data";
-import { SimuladorInline } from "./_simulador-inline";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -149,18 +147,6 @@ export function ServidorMarketplacePortabilidade() {
   // ofertas desse tipo antes de renderizar — servidor nao ve nem clica.
   const ofertas = (ofertasQ.data?.ofertas ?? []).filter((o) => o.tipo !== "cartao_beneficio");
 
-  // Beneficios de saude (farmacia, clinica, laboratorio, etc). Categoria
-  // "telemedicina" NAO entra aqui — vai na tela /servidor/saude exclusiva.
-  // Cliente pediu: "os que for de saude e no marketplace, no telemedicina
-  // e apenas telemedicina".
-  const beneficiosSaudeQ = useQuery({
-    queryKey: ["servidor", "beneficios", "saude", matAtiva],
-    queryFn: () => atlas.servidor.getMyBeneficios("saude", matAtiva),
-    enabled: !!matAtiva,
-    refetchOnWindowFocus: true,
-  });
-  const beneficiosSaude = beneficiosSaudeQ.data?.beneficios ?? [];
-
   // Propostas de portabilidade que os bancos criaram pro servidor.
   const propostasQ = useQuery({
     queryKey: ["servidor", "propostas", matAtiva],
@@ -251,22 +237,11 @@ export function ServidorMarketplacePortabilidade() {
         </section>
       )}
 
-      {/* 2. REDE DE SAUDE — beneficios de categoria "saude" (farmacia, clinica,
-          laboratorio, etc.). Telemedicina exclusiva vive em /servidor/saude. */}
-      {beneficiosSaude.length > 0 ? (
-        <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-            Rede de saúde parceira
-          </span>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 12 }}>
-            {beneficiosSaude.map((b) => (
-              <BeneficioCard key={b.id} b={b} />
-            ))}
-          </div>
-        </section>
-      ) : null}
+      {/* Secao "Rede de saude parceira" foi removida a pedido do cliente
+          (15/07/2026). Os beneficios de saude vivem exclusivamente na aba
+          /servidor/beneficios agora. */}
 
-      {/* 3. Botao de PORTABILIDADE (destaque medio) */}
+      {/* Botao de PORTABILIDADE (destaque medio) */}
       <AcaoCard
         icone="🔁"
         titulo="Solicitar portabilidade"
@@ -530,103 +505,6 @@ function pillStyle(tone: "gold" | "emerald" | "danger" | "neutro"): React.CSSPro
     padding: "3px 10px",
     textTransform: "uppercase",
   };
-}
-
-/** Card de beneficio de saude no MarketPlace. Renderiza a imagem (unica ou
- *  carrossel com autoplay 5s) quando o admin subiu imagens; senao mostra o
- *  bloco de icone + nome no formato compacto tradicional. */
-function BeneficioCard({ b }: { b: ServidorBeneficio }) {
-  const imagens = b.imagens ?? [];
-  const modo = b.modoImagens ?? "nenhum";
-  const temImagem = modo !== "nenhum" && imagens.length > 0;
-  const [idx, setIdx] = useState(0);
-
-  // Autoplay do carrossel (5s) — so ativa se modo="carrossel" e >= 2 imagens.
-  useEffect(() => {
-    if (modo !== "carrossel" || imagens.length < 2) return;
-    const t = setInterval(() => setIdx((i) => (i + 1) % imagens.length), 5_000);
-    return () => clearInterval(t);
-  }, [modo, imagens.length]);
-
-  // Hero fixo em 80px pra TODOS os cards ficarem da mesma altura visual
-  // no grid — cliente reclamou que 140px estava grande demais.
-  const HERO_H = 80;
-  return (
-    <Card style={{ padding: 0, overflow: "hidden", display: "flex", flexDirection: "column", height: "100%" }}>
-      {temImagem ? (
-        <div style={{ position: "relative", width: "100%", height: HERO_H, background: "var(--bg-elev-2)", flexShrink: 0 }}>
-          <img
-            src={imagens[idx] ?? imagens[0]}
-            alt=""
-            style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-          />
-          {modo === "carrossel" && imagens.length > 1 ? (
-            <div style={{
-              position: "absolute", bottom: 8, left: 0, right: 0,
-              display: "flex", justifyContent: "center", gap: 6,
-            }}>
-              {imagens.map((_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => setIdx(i)}
-                  aria-label={`Imagem ${i + 1}`}
-                  style={{
-                    width: i === idx ? 16 : 6, height: 6, borderRadius: 3,
-                    border: "none", cursor: "pointer",
-                    background: i === idx ? "var(--gold-500)" : "rgba(255,255,255,.55)",
-                    transition: "width .25s",
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        // Placeholder pros cards sem imagem — gradiente com a cor do beneficio
-        // e emoji gigante centralizado. Mantem altura do hero uniforme.
-        <div style={{
-          width: "100%", height: HERO_H, flexShrink: 0,
-          background: `linear-gradient(135deg, color-mix(in srgb, ${b.cor} 25%, var(--bg-elev-2)), color-mix(in srgb, ${b.cor} 10%, var(--bg-elev)))`,
-          display: "grid", placeItems: "center", fontSize: 36, lineHeight: 1,
-        }}>
-          <span aria-hidden>{b.icone}</span>
-        </div>
-      )}
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10, flex: 1 }}>
-        <div>
-          <div style={{ fontWeight: 700, color: "var(--text)" }}>{b.nome}</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{b.local}</div>
-        </div>
-        {b.descontoLabel ? (
-          <div style={{ fontSize: 14 }}>
-            <b style={{ color: "var(--emerald-500)" }}>{b.descontoLabel}</b>
-            {b.descontoComplemento ? <span style={{ color: "var(--text-muted)" }}> {b.descontoComplemento}</span> : null}
-          </div>
-        ) : null}
-        {b.linkAcesso?.url ? (
-          <div style={{ marginTop: "auto" }}>
-            <a
-              href={b.linkAcesso.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                display: "inline-block",
-                fontSize: 12, fontWeight: 700,
-                padding: "6px 14px", borderRadius: 999,
-                background: `color-mix(in srgb, ${b.cor} 20%, transparent)`,
-                border: `1px solid ${b.cor}`,
-                color: b.cor,
-                textDecoration: "none",
-              }}
-            >
-              {b.linkAcesso.textoBotao ?? "Acessar →"}
-            </a>
-          </div>
-        ) : null}
-      </div>
-    </Card>
-  );
 }
 
 /** Card grande de acao — usado agora so pra "Solicitar portabilidade". */

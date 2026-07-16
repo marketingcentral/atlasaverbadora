@@ -76,13 +76,25 @@ export function BancoLayout() {
   // (?produto=emprestimo|cartao|portabilidade|cartao_beneficio) — usa o valor
   // pra destacar o filho certo no sidebar.
   const activeKey = ((): string => {
-    const last = location.pathname.split("/").pop() ?? "visao-geral";
-    if (last === "propostas") {
+    const parts = location.pathname.split("/").filter(Boolean); // ["banco", "seg", "sub", ...]
+    const seg = parts[1] ?? "visao-geral";
+    const sub = parts[2];
+    // Sub-rotas com parametro (:id, /novo, /:tipo) — mapeia pro item pai
+    // certo do menu, senao activeKey vira o parametro e nada fica destacado.
+    if (seg === "propostas") {
+      // /propostas OU /propostas/:adf — ambos destacam pelo produto do query
       const p = new URLSearchParams(location.search).get("produto");
       if (p === "emprestimo" || p === "cartao" || p === "portabilidade" || p === "cartao_beneficio") return p;
-      return "emprestimo"; // default
+      return "emprestimo";
     }
-    return last;
+    if (seg === "cadastros") {
+      // /cadastros/tabela-emprestimos[/novo|/:id] -> "tabela-emprestimos"
+      // /cadastros/usuarios[/novo|/:id]           -> "usuarios"
+      if (sub === "tabela-emprestimos" || sub === "usuarios") return sub;
+    }
+    if (seg === "margem-contratacao") return "margem-contratacao";
+    if (seg === "relatorios" && sub) return sub; // consignacoes/gerador/faturamento
+    return seg;
   })();
 
   return (
