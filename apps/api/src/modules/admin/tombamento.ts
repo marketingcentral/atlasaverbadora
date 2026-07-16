@@ -84,43 +84,10 @@ function seedLote(input: Omit<TombamentoLote, "id" | "recebidoEm" | "processadoE
   return lote;
 }
 
-seedLote({
-  prefeituraId: 1, prefeituraNome: "Palhoca", competencia: "202605",
-  status: "conciliado", totalLinhas: 312, inseridos: 8, atualizados: 296, divergencias: 8,
-  recebidoPor: "averbadora:admin", observacao: "8 divergencias para revisao.",
-});
-seedLote({
-  prefeituraId: 2, prefeituraNome: "Florianopolis", competencia: "202605",
-  status: "divergente", totalLinhas: 188, inseridos: 4, atualizados: 161, divergencias: 23,
-  recebidoPor: "averbadora:admin", observacao: "23 divergencias — bancos Y e BMG.",
-});
-seedLote({
-  prefeituraId: 3, prefeituraNome: "Joinville", competencia: "202605",
-  status: "conciliado", totalLinhas: 96, inseridos: 1, atualizados: 91, divergencias: 4,
-  recebidoPor: "averbadora:admin",
-});
-
-// Seed a handful of linhas para o lote 1 (Palhoca).
-const sample = [
-  { cpfMasked: "000.***.***-33", matricula: "M-9001", bancoNome: "SCred Financeira", adfBanco: "9000123", valorParcela: 320.5, parcelasRestantes: 70, saldoDevedor: 22435.0, reconciliacao: "ok" as const },
-  { cpfMasked: "000.***.***-44", matricula: "M-9002", bancoNome: "Banco Y", adfBanco: "9000124", valorParcela: 180.0, parcelasRestantes: 58, saldoDevedor: 10440.0, reconciliacao: "divergente" as const, detalheReconciliacao: "valorParcela difere: prefeitura=180,00 / atlas=185,40" },
-  { cpfMasked: "000.***.***-55", matricula: "M-9003", bancoNome: "SCred Financeira", adfBanco: "9000125", valorParcela: 420.0, parcelasRestantes: 84, saldoDevedor: 35280.0, reconciliacao: "novo" as const, detalheReconciliacao: "Contrato nao existia no Atlas — tombado." },
-];
-for (const s of sample) {
-  _linhas.push({
-    loteId: "TB-1-202605",
-    cpfMasked: s.cpfMasked,
-    matricula: s.matricula,
-    bancoNome: s.bancoNome,
-    adfBanco: s.adfBanco,
-    idUnico: previewIdUnico(1),
-    valorParcela: s.valorParcela,
-    parcelasRestantes: s.parcelasRestantes,
-    saldoDevedor: s.saldoDevedor,
-    reconciliacao: s.reconciliacao,
-    detalheReconciliacao: s.detalheReconciliacao,
-  });
-}
+// Cliente pediu remocao dos seeds hardcoded de tombamento (16/07/2026) pra
+// teste real do zero — antes tinha 3 lotes (Palhoca/Floripa/Joinville 202605)
+// + 3 linhas sample de Ana/Joao/Maria, todos orfaos de prefeituras/bancos
+// removidos. Se restaurar pra demo, reverter este bloco.
 
 // Snapshot do seed (antes de qualquer mutação) — semeia o Postgres na 1ª carga.
 const TOMBAMENTO_SEED = _lotes.map((l) => ({ lote: { ...l }, linhas: _linhas.filter((x) => x.loteId === l.id).map((x) => ({ ...x })) }));
