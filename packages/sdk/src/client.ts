@@ -53,7 +53,8 @@ export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios" | "pe
 
 export type TermoTipo =
   | "emprestimo" | "portabilidade" | "refinanciamento" | "cartao_consignado" | "cartao_beneficio"
-  | "beneficio_generico" | "telemedicina" | "lgpd_servidor" | "anuencia_prefeitura";
+  | "beneficio_generico" | "telemedicina" | "lgpd_servidor" | "anuencia_prefeitura"
+  | "termos_uso" | "politica_privacidade";
 export interface TermoTemplate {
   id: TermoTipo;
   titulo: string;
@@ -700,6 +701,9 @@ export interface TelemedicinaCotacao {
   situacao: string;
   criadoEm: string;
   ativadoEm?: string | null;
+  /** Contrato anexado pela averbadora — pre-requisito para ativar o plano. */
+  temContrato?: boolean;
+  contratoNome?: string | null;
 }
 
 export interface AdminAuditEntry {
@@ -1653,6 +1657,26 @@ export class AtlasClient {
       this.request<{ ok: true; situacao: string }>(`/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/cancelar`, { method: "POST" }),
     purgeTelemedicinaCotacoes: () =>
       this.request<{ ok: true; apagadas: number }>("/v1/admin/telemedicina/cotacoes/purge", { method: "POST" }),
+    /** Anexa o contrato da telemedicina (R2). Sem ele o plano nao pode ser ativado. */
+    uploadContratoTelemedicina: (id: string, file: File) => {
+      const fd = new FormData();
+      fd.append("file", file);
+      return this.request<{ ok: true; key: string; nome: string; size: number }>(
+        `/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/contrato`,
+        { method: "POST", body: fd, isFormData: true },
+      );
+    },
+    /** Remove o contrato anexado (arquivo errado) — volta a bloquear a ativacao. */
+    removerContratoTelemedicina: (id: string) =>
+      this.request<{ ok: true }>(`/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/contrato`, { method: "DELETE" }),
+    /** Baixa o contrato anexado da cotacao (envia Authorization). */
+    fetchContratoTelemedicinaBlob: async (id: string): Promise<Blob> => {
+      const token = await this.storage.getAccess();
+      const url = new URL(`/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/contrato`, this.opts.baseUrl).toString();
+      const res = await this.fetchImpl(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error(`Falha ao baixar contrato (${res.status})`);
+      return await res.blob();
+    },
 
     // Templates de TERMOS (aceite in-app do servidor + anuencia da prefeitura)
     listTermos: () => this.request<{ termos: TermoTemplate[] }>("/v1/admin/termos"),

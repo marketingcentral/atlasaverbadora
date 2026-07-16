@@ -21,7 +21,9 @@ export type TermoTipo =
   | "beneficio_generico"
   | "telemedicina"
   | "lgpd_servidor"
-  | "anuencia_prefeitura";
+  | "anuencia_prefeitura"
+  | "termos_uso"
+  | "politica_privacidade";
 
 export interface TermoTemplate {
   id: TermoTipo;
@@ -158,6 +160,36 @@ const SEED: TermoTemplate[] = [
       "**Base legal:** execução de contrato de averbação (Art. 7º, V da LGPD).\n\n" +
       "**Vigência:** enquanto durar o contrato de averbação. A prefeitura pode revogar mediante notificação por escrito com 30 dias de antecedência.",
     versao: "1.0", ativo: true, criadoEm: "2026-07-14T00:00:00.000Z", atualizadoEm: "2026-07-14T00:00:00.000Z",
+  },
+  {
+    id: "termos_uso",
+    titulo: "Termos de Uso",
+    descricao: "Exibido no app/web em Conta → Termos de Uso. Editavel pela averbadora.",
+    variaveis: [],
+    corpo:
+      "**1. Objeto.** A Atlas Averbadora disponibiliza uma plataforma que permite ao servidor público consultar sua margem consignável, simular e solicitar operações de crédito consignado junto a bancos parceiros, além de benefícios conveniados.\n\n" +
+      "**2. Cadastro e acesso.** O acesso é pessoal e intransferível. O servidor é responsável por manter a confidencialidade da sua senha e por todas as operações realizadas em sua conta.\n\n" +
+      "**3. Margem consignável.** A margem exibida é informada pela prefeitura empregadora. A Atlas atua como averbadora e não é responsável por divergências originadas na folha de pagamento.\n\n" +
+      "**4. Solicitações.** Ao solicitar uma operação, o servidor autoriza a reserva da margem correspondente pelo prazo indicado no termo específico do produto. A aprovação final é do banco e a averbação depende da confirmação da prefeitura (ADF).\n\n" +
+      "**5. Responsabilidades.** A Atlas não é instituição financeira e não concede crédito. As condições (taxas, prazos, valores) são definidas pelos bancos parceiros.\n\n" +
+      "**6. Alterações.** Estes Termos podem ser atualizados a qualquer momento. O uso continuado da plataforma após a atualização implica concordância.\n\n" +
+      "Em caso de dúvidas, utilize os canais de suporte disponíveis no aplicativo.",
+    versao: "1.0", ativo: true, criadoEm: "2026-07-16T00:00:00.000Z", atualizadoEm: "2026-07-16T00:00:00.000Z",
+  },
+  {
+    id: "politica_privacidade",
+    titulo: "Política de Privacidade",
+    descricao: "Exibida no app/web em Conta → Política de Privacidade. Editavel pela averbadora.",
+    variaveis: [],
+    corpo:
+      "**1. Controlador e operador.** A prefeitura empregadora é a controladora dos dados funcionais do servidor. A Atlas Averbadora atua como operadora, nos termos da Lei 13.709/2018 (LGPD).\n\n" +
+      "**2. Dados tratados.** Nome, CPF, matrícula, cargo, vínculo, e-mail, telefone, endereço, margem consignável e histórico de operações de crédito consignado.\n\n" +
+      "**3. Finalidades.** Consulta e reserva de margem; registro de propostas e contratos; comunicação com bancos parceiros e com a prefeitura; envio de notificações sobre suas solicitações.\n\n" +
+      "**4. Compartilhamento.** Seus dados são compartilhados com os bancos parceiros estritamente para viabilizar as operações que você solicitar, e com a prefeitura para a averbação em folha.\n\n" +
+      "**5. Segurança.** Os aceites são registrados com data, hora, dispositivo e CPF para fins de auditoria. Os dados trafegam criptografados.\n\n" +
+      "**6. Seus direitos.** Você pode solicitar acesso, correção, portabilidade ou eliminação dos seus dados, bem como revogar consentimentos, pelos canais de suporte.\n\n" +
+      "**7. Retenção.** Os dados são mantidos pelo prazo exigido pela legislação aplicável e pelos contratos vigentes.",
+    versao: "1.0", ativo: true, criadoEm: "2026-07-16T00:00:00.000Z", atualizadoEm: "2026-07-16T00:00:00.000Z",
   },
 ];
 

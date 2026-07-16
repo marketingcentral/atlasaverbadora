@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,10 +45,16 @@ fun SelecionarMatriculaScreen(
         is UiState.Loading -> LoadingBox(Modifier.background(Fundo))
         is UiState.Error -> ErrorBox(s.message, onRetry = vm::load, modifier = Modifier.background(Fundo))
         is UiState.Success -> {
+            // O botão acompanha a lista (fica logo abaixo dos cards) em vez de ser
+            // empurrado pro rodapé por um weight(1f) — com 1 matrícula ele ficava lá
+            // embaixo, atrás da barra do sistema. Com muitas matrículas a tela inteira
+            // rola e o botão vem no fim, naturalmente.
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Fundo)
+                    .verticalScroll(rememberScrollState())
+                    .systemBarsPadding() // título fora da barra de status, botão fora da de navegação
                     .padding(20.dp),
             ) {
                 Text("Selecione a matrícula", color = Ink, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
@@ -59,25 +66,22 @@ fun SelecionarMatriculaScreen(
                 )
                 Spacer(Modifier.height(20.dp))
 
-                Column(
-                    modifier = Modifier.weight(1f).verticalScroll(rememberScrollState()),
-                ) {
-                    s.data.forEach { m ->
-                        MatriculaCard(
-                            info = m,
-                            selected = m.matricula == vm.selected,
-                            onClick = { vm.select(m.matricula) },
-                        )
-                        Spacer(Modifier.height(12.dp))
-                    }
+                s.data.forEach { m ->
+                    MatriculaCard(
+                        info = m,
+                        selected = m.matricula == vm.selected,
+                        onClick = { vm.select(m.matricula) },
+                    )
+                    Spacer(Modifier.height(12.dp))
                 }
 
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(12.dp))
                 AtlasPrimaryButton(
                     text = "Continuar",
                     onClick = { vm.confirm(onContinue) },
                     enabled = vm.selected != null,
                 )
+                Spacer(Modifier.height(16.dp))
             }
         }
     }

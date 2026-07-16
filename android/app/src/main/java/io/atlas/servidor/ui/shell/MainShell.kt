@@ -14,12 +14,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ReceiptLong
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.MedicalServices
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.annotation.DrawableRes
+import androidx.compose.ui.res.painterResource
+import io.atlas.servidor.R
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -63,16 +60,17 @@ import io.atlas.servidor.ui.theme.Verde
 private data class Tab(
     val route: String,
     val label: String,
-    val icon: ImageVector,
+    /** Drawable com os MESMOS traços do emulador (res/drawable/ic_nav_*.xml). */
+    @DrawableRes val icon: Int,
     val destaque: Boolean = false,
 )
 
 private val tabs = listOf(
-    Tab(Routes.TAB_INICIO, "Início", Icons.Filled.Home),
-    Tab(Routes.TAB_CONTRATOS, "Contratos", Icons.AutoMirrored.Filled.ReceiptLong),
-    Tab(Routes.TAB_PORTABILIDADE, "Portabilidade", Icons.Filled.SwapHoriz, destaque = true),
-    Tab(Routes.TAB_TELEMEDICINA, "Benefícios", Icons.Filled.MedicalServices),
-    Tab(Routes.TAB_CONTA, "Conta", Icons.Filled.Person),
+    Tab(Routes.TAB_INICIO, "Início", R.drawable.ic_nav_home),
+    Tab(Routes.TAB_CONTRATOS, "Contratos", R.drawable.ic_nav_doc),
+    Tab(Routes.TAB_PORTABILIDADE, "Portabilidade", R.drawable.ic_nav_store, destaque = true),
+    Tab(Routes.TAB_TELEMEDICINA, "Benefícios", R.drawable.ic_nav_med),
+    Tab(Routes.TAB_CONTA, "Conta", R.drawable.ic_nav_user),
 )
 
 @Composable
@@ -191,7 +189,7 @@ private fun NavItem(tab: Tab, selected: Boolean, onClick: () -> Unit, modifier: 
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(tab.icon, contentDescription = tab.label, tint = tint, modifier = Modifier.size(24.dp))
+        Icon(painterResource(tab.icon), contentDescription = tab.label, tint = tint, modifier = Modifier.size(24.dp))
         Spacer(Modifier.height(4.dp))
         Text(
             tab.label,
@@ -216,7 +214,7 @@ private fun DestaqueItem(tab: Tab, onClick: () -> Unit, modifier: Modifier) {
             modifier = Modifier.size(50.dp).clip(CircleShape).background(Verde),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(tab.icon, contentDescription = tab.label, tint = Superficie, modifier = Modifier.size(26.dp))
+            Icon(painterResource(tab.icon), contentDescription = tab.label, tint = Superficie, modifier = Modifier.size(26.dp))
         }
         Spacer(Modifier.height(4.dp))
         Text(

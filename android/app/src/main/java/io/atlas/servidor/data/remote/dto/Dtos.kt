@@ -183,6 +183,11 @@ data class BeneficioDto(
 )
 data class BeneficiosResponse(val beneficios: List<BeneficioDto> = emptyList())
 
+/** Termo de aceite renderizado — o texto vem da tela Termos de aceite da averbadora,
+ *  com as variáveis {{...}} já substituídas pelo servidor. */
+data class TermoDto(val id: String, val titulo: String, val versao: String? = null, val corpo: String)
+data class TermoResponse(val termo: TermoDto)
+
 data class CotacaoTelemedicinaRequest(val matricula: String? = null)
 
 data class CotacaoTelemedicinaDto(val id: String, val situacao: String, val criadoEm: String, val ativadoEm: String? = null)
@@ -288,6 +293,13 @@ data class ContratoDto(
     // Documento do contrato anexado pelo banco (quando disponível). Enquanto o banco não
     // anexa, fica null e o app mostra o contrato montado a partir dos dados da operação.
     @SerializedName("anexoUrl") val anexoUrl: String? = null,
+    // Identificam o TIPO do contrato ativo (Empréstimo / Cartão / Portabilidade / Telemedicina).
+    val tipoContrato: String? = null,
+    val tipoMargem: String? = null,
+    val observacoes: String? = null,
+    val bancoOrigem: String? = null,
+    /** Nome real do arquivo anexado — usado pra baixar no formato original (xlsx/docx/pdf). */
+    val anexoNome: String? = null,
 )
 
 data class ElegivelDto(

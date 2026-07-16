@@ -43,6 +43,14 @@ interface ApiService {
     @GET("v1/servidores/me/telemedicina/cotacoes")
     suspend fun minhasCotacoesTelemedicina(): io.atlas.servidor.data.remote.dto.MinhasCotacoesResponse
 
+    /** Termo de aceite renderizado — texto configurado em /averbadora/termos.
+     *  `vars` é um JSON com as variáveis ({{valor}}, {{banco}}, …). */
+    @GET("v1/servidores/me/termos/{tipo}")
+    suspend fun getTermo(
+        @retrofit2.http.Path("tipo") tipo: String,
+        @retrofit2.http.Query("vars") vars: String?,
+    ): io.atlas.servidor.data.remote.dto.TermoResponse
+
     /** Benefícios/parceiros por categoria (ex.: "saude" para a Telemedicina). */
     @GET("v1/servidores/me/beneficios")
     suspend fun beneficios(

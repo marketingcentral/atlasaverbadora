@@ -61,6 +61,11 @@ class ServidorRepository(
     suspend fun minhasCotacoesTelemedicina() =
         safeApi(gson) { api.minhasCotacoesTelemedicina() }
 
+    /** Termo de aceite renderizado — o texto vem da tela Termos de aceite da averbadora.
+     *  `vars` vira JSON na query, igual à web (ex.: valor, parcelas, banco). */
+    suspend fun getTermo(tipo: String, vars: Map<String, String> = emptyMap()) =
+        safeApi(gson) { api.getTermo(tipo, if (vars.isEmpty()) null else gson.toJson(vars)) }
+
     /** Remove as propostas EM ANÁLISE (fase de teste). */
     suspend fun removerPropostasEmAnalise(matricula: String?) = safeApi(gson) { api.removerPropostasEmAnalise(matricula) }
 

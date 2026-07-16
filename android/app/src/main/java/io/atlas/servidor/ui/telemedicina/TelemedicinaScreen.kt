@@ -61,6 +61,9 @@ import io.atlas.servidor.ui.theme.VerdeDark
 @Composable
 fun TelemedicinaScreen(home: HomeViewModel, vm: TelemedicinaViewModel = viewModel()) {
     val info = home.current()
+    // Recarrega ao aparecer — reflete a aprovação da averbadora (Plano Ativo + barra)
+    // sem precisar reabrir o app.
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.recarregar() }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -216,6 +219,11 @@ private fun TelemedicinaBanner(
 /** Popup — explica a telemedicina e que a Atlas entra em contato pra formalizar. */
 @Composable
 private fun CotacaoDialog(enviando: Boolean, erro: String?, onSolicitar: () -> Unit, onCancelar: () -> Unit) {
+    // Texto oficial vem da tela Termos de aceite da averbadora (/averbadora/termos → telemedicina).
+    val corpoTermo = io.atlas.servidor.ui.components.rememberTermoCorpo(
+        tipo = "telemedicina",
+        vars = mapOf("meses" to "12", "valor" to "R$ 50,00", "banco" to "Banco Atlas"),
+    )
     AlertDialog(
         onDismissRequest = onCancelar,
         containerColor = Superficie,
@@ -230,8 +238,8 @@ private fun CotacaoDialog(enviando: Boolean, erro: String?, onSolicitar: () -> U
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato " +
-                        "com você para formalizar a solicitação.",
+                    io.atlas.servidor.ui.components.markdownParaTexto(corpoTermo ?: "Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato " +
+                        "com você para formalizar a solicitação."),
                     color = InkMuted,
                     fontSize = 13.sp,
                 )
@@ -364,8 +372,9 @@ private fun EmptyParceiros() {
 private fun InfoNota() {
     Surface(color = VerdeSoftBg(), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
         Text(
-            "ℹ️ Os benefícios de saúde são oferecidos pelo banco parceiro que disponibiliza seu " +
-                "cartão consignado. Descontos comerciais (alimentação, educação, lazer) ficam no Marketplace.",
+            // Texto idêntico ao emulador (referência de layout).
+            "ℹ️ Os benefícios de saúde são oferecidos pelos parceiros do Atlas. " +
+                "Descontos comerciais ficam no Marketplace.",
             color = Ink,
             fontSize = 12.5.sp,
             lineHeight = 17.sp,

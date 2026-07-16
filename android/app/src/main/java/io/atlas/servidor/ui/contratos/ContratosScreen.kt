@@ -82,8 +82,14 @@ fun ContratosScreen(vm: HomeViewModel) {
             } else {
                 // Recusadas/expiradas/canceladas vêm da lista de propostas → Histórico.
                 val recusadas = vm.propostas.filter { terminalHistorico(it.situacao) }
-                val emAnaliseCount = emAnaliseAtivas(vm.propostas).size
-                ContratosContent(info, recusadas, emAnaliseCount, tab, onTab = { tab = it }, onMudou = { vm.load(force = true) })
+                // A cotação de telemedicina não é proposta — soma no contador à parte.
+                val emAnaliseCount = emAnaliseAtivas(vm.propostas).size + vm.cotacoesTelePendentes.size
+                ContratosContent(
+                    info, recusadas, emAnaliseCount, tab,
+                    telesCanceladas = vm.cotacoesTeleCanceladas,
+                    onTab = { tab = it },
+                    onMudou = { vm.load(force = true) },
+                )
             }
         }
     }
@@ -95,6 +101,7 @@ private fun ContratosContent(
     recusadas: List<PropostaDto>,
     emAnaliseCount: Int,
     tab: Int,
+    telesCanceladas: List<io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaDto>,
     onTab: (Int) -> Unit,
     onMudou: () -> Unit,
 ) {
@@ -104,7 +111,8 @@ private fun ContratosContent(
     val recusadasIds = recusadas.map { it.id }.toSet()
     val ativos = info.contratos.filter { !it.status.equals("Quitado", ignoreCase = true) && it.id !in recusadasIds }
     val quitados = info.contratos.filter { it.status.equals("Quitado", ignoreCase = true) && it.id !in recusadasIds }
-    val histCount = quitados.size + recusadas.size
+    // Cotações de telemedicina canceladas antes da aprovação não viram contrato — entram aqui.
+    val histCount = quitados.size + recusadas.size + telesCanceladas.size
 
     Column(
         modifier = Modifier
@@ -145,7 +153,12 @@ private fun ContratosContent(
                 EmptyHint("Nenhum contrato no histórico.")
             } else {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    // Recusadas/expiradas primeiro (mais recentes), depois os quitados.
+                    // Cotações de telemedicina canceladas (não viram contrato), depois as
+                    // recusadas/expiradas (mais recentes) e por fim os quitados.
+                    telesCanceladas.forEach { cot ->
+                        TelemedicinaCanceladaCard(cot)
+                        Spacer(Modifier.height(12.dp))
+                    }
                     recusadas.reversed().forEach { p ->
                         RecusadaCard(p)
                         Spacer(Modifier.height(12.dp))
@@ -269,6 +282,14 @@ private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?) {
         else -> ChipTone.Verde
     }
     AtlasCard {
+        // TIPO do contrato em cima — o servidor precisa saber a que se refere.
+        Text(
+            tipoContratoNome(c),
+            color = Verde,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold,
+        )
+        Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -317,6 +338,39 @@ private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?) {
         )
         Spacer(Modifier.height(12.dp))
         // Baixa o CCB REAL anexado pelo banco na aprovação — igual à web.
-        AtlasSecondaryButton(text = "📄 Baixar Contrato", onClick = { ContratoDownloader.baixar(context, c.id) })
+        AtlasSecondaryButton(text = "📄 Baixar Contrato", onClick = { ContratoDownloader.baixar(context, c.id, c.anexoNome) })
+    }
+}
+
+/** Cotação de telemedicina cancelada/recusada — não virou contrato, vive só no Histórico. */
+@Composable
+private fun TelemedicinaCanceladaCard(cot: io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaDto) {
+    AtlasCard {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Telemedicina", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text("Cotação · solicitada em ${cot.criadoEm.take(10)}", color = InkMuted, fontSize = 13.sp)
+            }
+            StatusChip("Cancelada", ChipTone.Neutro)
+        }
+    }
+}
+
+/** Rótulo do TIPO do contrato ativo — mesma classificação usada em "Em análise". */
+private fun tipoContratoNome(c: ContratoDto): String {
+    if (io.atlas.servidor.ui.components.ehTelemedicina(null, c.observacoes)) return "TELEMEDICINA"
+    if (c.tipoContrato?.equals("REFIN", ignoreCase = true) == true || c.bancoOrigem != null) return "PORTABILIDADE"
+    return when (c.tipoMargem?.uppercase()) {
+        "CARTAO_CONSIGNADO" -> "CARTÃO DE CRÉDITO CONSIGNADO"
+        "CARTAO_BENEFICIOS" -> "CARTÃO BENEFÍCIO CONSIGNADO"
+        else -> if (c.tipoContrato?.equals("ECONSIGNADO", ignoreCase = true) == true) {
+            "CARTÃO DE CRÉDITO CONSIGNADO"
+        } else {
+            "EMPRÉSTIMO CONSIGNADO"
+        }
     }
 }

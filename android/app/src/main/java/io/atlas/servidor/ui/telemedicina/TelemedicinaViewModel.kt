@@ -37,7 +37,10 @@ class TelemedicinaViewModel : ViewModel() {
 
     init { load(); carregarCotacoes() }
 
-    private fun carregarCotacoes() {
+    /** Recarrega ao (re)entrar na tela — reflete a aprovação da averbadora sem reabrir o app. */
+    fun recarregar() { load(); carregarCotacoes() }
+
+    fun carregarCotacoes() {
         viewModelScope.launch {
             try {
                 val r = repo.minhasCotacoesTelemedicina()
