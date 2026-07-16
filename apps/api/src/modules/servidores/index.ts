@@ -166,6 +166,9 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
       // Marca o plano de Telemedicina — o front usa pra rotular o card.
       observacoes: ct.observacoes,
       bancoOrigem: ct.bancoOrigem,
+      // Nome REAL do arquivo anexado (sai da chave do R2). O app usa pra salvar o
+      // download com a extensao original — nada de converter tudo pra .pdf.
+      anexoNome: ct.ccbKey ? (ct.ccbKey.split("/").pop() ?? null) : null,
     }));
   // PORTABILIDADE = so emprestimos que o servidor tem em OUTROS bancos, vindos da base
   // que a PREFEITURA importou (tombamento) + seed de teste. Contratos feitos no Atlas

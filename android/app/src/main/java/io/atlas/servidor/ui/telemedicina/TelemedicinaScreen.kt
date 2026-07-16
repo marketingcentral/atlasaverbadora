@@ -61,6 +61,9 @@ import io.atlas.servidor.ui.theme.VerdeDark
 @Composable
 fun TelemedicinaScreen(home: HomeViewModel, vm: TelemedicinaViewModel = viewModel()) {
     val info = home.current()
+    // Recarrega ao aparecer — reflete a aprovação da averbadora (Plano Ativo + barra)
+    // sem precisar reabrir o app.
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.recarregar() }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -369,8 +372,9 @@ private fun EmptyParceiros() {
 private fun InfoNota() {
     Surface(color = VerdeSoftBg(), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
         Text(
-            "ℹ️ Os benefícios de saúde são oferecidos pelo banco parceiro que disponibiliza seu " +
-                "cartão consignado. Descontos comerciais (alimentação, educação, lazer) ficam no Marketplace.",
+            // Texto idêntico ao emulador (referência de layout).
+            "ℹ️ Os benefícios de saúde são oferecidos pelos parceiros do Atlas. " +
+                "Descontos comerciais ficam no Marketplace.",
             color = Ink,
             fontSize = 12.5.sp,
             lineHeight = 17.sp,

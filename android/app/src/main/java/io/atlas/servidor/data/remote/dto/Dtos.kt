@@ -298,6 +298,8 @@ data class ContratoDto(
     val tipoMargem: String? = null,
     val observacoes: String? = null,
     val bancoOrigem: String? = null,
+    /** Nome real do arquivo anexado — usado pra baixar no formato original (xlsx/docx/pdf). */
+    val anexoNome: String? = null,
 )
 
 data class ElegivelDto(

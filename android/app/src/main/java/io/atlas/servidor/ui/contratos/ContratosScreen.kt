@@ -338,7 +338,7 @@ private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?) {
         )
         Spacer(Modifier.height(12.dp))
         // Baixa o CCB REAL anexado pelo banco na aprovação — igual à web.
-        AtlasSecondaryButton(text = "📄 Baixar Contrato", onClick = { ContratoDownloader.baixar(context, c.id) })
+        AtlasSecondaryButton(text = "📄 Baixar Contrato", onClick = { ContratoDownloader.baixar(context, c.id, c.anexoNome) })
     }
 }
 

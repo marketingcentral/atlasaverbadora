@@ -511,14 +511,9 @@ private fun BannerCarousel(comunicados: List<ComunicadoDto>) {
     }
 }
 
-private fun greeting(): String {
-    val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-    return when {
-        h < 12 -> "Bom dia,"
-        h < 18 -> "Boa tarde,"
-        else -> "Boa noite,"
-    }
-}
+/** Saudação fixa "Olá," — igual ao emulador (referência de layout). Antes variava com a
+ *  hora ("Bom dia/Boa tarde/Boa noite"), o que divergia da tela do emulador. */
+private fun greeting(): String = "Olá,"
 
 private fun initials(name: String): String {
     val parts = name.trim().split(" ").filter { it.isNotBlank() }
