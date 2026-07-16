@@ -7,10 +7,11 @@ import { podeAcessar, readAverbadoraPermissoesFromJwt } from "../../lib/averbado
 
 const NAV = [
   { key: "dashboard", label: "Dashboard", href: "/averbadora/dashboard", icon: "◉" },
-  { key: "bancos", label: "Bancos", href: "/averbadora/bancos", icon: "▦" },
+  // Ordem pedida pelo cliente (16/07/2026): Dashboard > Prefeituras > Bancos > Servidores > Convênios.
   { key: "prefeituras", label: "Prefeituras", href: "/averbadora/prefeituras", icon: "▤" },
-  { key: "convenios", label: "Convênios", href: "/averbadora/convenios", icon: "▣" },
+  { key: "bancos", label: "Bancos", href: "/averbadora/bancos", icon: "▦" },
   { key: "servidores", label: "Servidores", href: "/averbadora/servidores", icon: "◎" },
+  { key: "convenios", label: "Convênios", href: "/averbadora/convenios", icon: "▣" },
   { key: "folhas", label: "Folhas", href: "/averbadora/folhas", icon: "▥" },
   { key: "pre-reservas", label: "Pré-reservas", href: "/averbadora/pre-reservas", icon: "⧖" },
   { key: "tombamento", label: "Tombamento", href: "/averbadora/tombamento", icon: "⇩" },
