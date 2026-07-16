@@ -464,6 +464,15 @@ export async function purgePrefeituras(env: Env): Promise<void> {
   });
 }
 
+/** Zera todos os comunicados (banco + servidor). Cliente pediu (16/07/2026). */
+export async function purgeComunicados(env: Env): Promise<void> {
+  const db = getDb(env);
+  await ensureSchema(env);
+  await db.execute(sql.raw(`TRUNCATE admin_comunicados`)).catch(() => { /* collection pode nao existir */ });
+  // Tabela Drizzle `comunicados` (legacy) tambem — CASCADE limpa dependencias.
+  await db.execute(sql`TRUNCATE comunicados RESTART IDENTITY CASCADE`).catch(() => { /* pode nao existir */ });
+}
+
 /** Zera usuarios do sistema: averbadora (admin_perfis collection), banco
  *  (users + banco_usuarios tables). Dev-users hardcoded em auth/index.ts
  *  (admin@atlas.test, banco@atlas.test) continuam funcionando pra nao trancar

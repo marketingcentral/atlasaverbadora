@@ -10,7 +10,7 @@ import { refreshComunicados, persistComunicados, removerComunicadoPersistido } f
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgePrefeituras, purgeUsuarios, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
@@ -1262,6 +1262,25 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     hydrateUsers([]);
     _perfisLoad = null;
     return c.json({ ok: true, mensagem: "Usuarios averbadora e banco zerados. Dev-users hardcoded preservados." });
+  })
+
+  // ⚠️ OPERACAO DESTRUTIVA: zera todos os comunicados (banco + servidor).
+  // Cliente pediu (16/07/2026).
+  .post("/v1/admin/db/purge-comunicados", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
+    const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
+    if (body.confirmar !== "APAGAR-COMUNICADOS") {
+      throw Errors.validation({
+        confirmar: 'Operacao destrutiva bloqueada. Para confirmar, envie { "confirmar": "APAGAR-COMUNICADOS" }.',
+      });
+    }
+    pushEvent("error", "admin.db.purge_comunicados", `PURGE DE COMUNICADOS confirmado por admin ${j?.sub}: TRUNCATE admin_comunicados.`);
+    if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:comunicados", "1");
+    await purgeComunicados(c.env);
+    COMUNICADOS_MOCK.length = 0;
+    return c.json({ ok: true, mensagem: "Comunicados zerados." });
   })
 
   .post("/v1/admin/bancos", async (c) => {

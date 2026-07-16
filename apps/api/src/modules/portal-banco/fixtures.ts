@@ -38,55 +38,10 @@ export interface ComunicadoMock {
 // so nao resolve o convenio. Se restaurar o seed pra demo, reverter este arquivo.
 export const CONVENIOS_MOCK: ConvenioMock[] = [];
 
-export const COMUNICADOS_MOCK: ComunicadoMock[] = [
-  {
-    id: "COM-1",
-    titulo: "Nova vigencia de tabelas — Julho/2026",
-    corpo: "A partir de 01/07 entra em vigor a nova tabela de taxas. Verifique em Cadastros > Tabela de Empréstimos.",
-    linkLabel: "Acessar Cadastros",
-    linkHref: "/banco/cadastros/tabela-emprestimos",
-    publico: "banco",
-  },
-  {
-    id: "COM-2",
-    titulo: "Servidores municipais podem usar o app Atlas",
-    corpo: "Divulgue o app para os servidores e aumente as conversoes em ofertas pre-aprovadas. Material de divulgacao no portal.",
-    linkLabel: "Materiais",
-    linkHref: "#",
-    publico: "banco",
-  },
-  {
-    id: "COM-3",
-    titulo: "Treinamento UX Atlas vs Consignet",
-    corpo: "Sessao gratuita 15/07 19h. Apresentamos o mapa de equivalencia entre os menus.",
-    publico: "banco",
-  },
-  // === Comunicados de exemplo pro servidor (demonstração do carrossel no dashboard). ===
-  {
-    id: "COM-SRV-1",
-    titulo: "Simule seu empréstimo em 1 minuto",
-    corpo: "Use o simulador do Atlas e veja em segundos a parcela que cabe na sua margem. Sem burocracia, com taxas dos bancos parceiros da sua prefeitura.",
-    linkLabel: "Simular agora",
-    linkHref: "/servidor/simular",
-    publico: "servidor",
-  },
-  {
-    id: "COM-SRV-2",
-    titulo: "Portabilidade: pague menos no seu consignado",
-    corpo: "Já tem um contrato? Compare ofertas de portabilidade e reduza sua parcela mensal sem trocar de banco na folha.",
-    linkLabel: "Ver portabilidade",
-    linkHref: "/servidor/marketplace/portabilidade",
-    publico: "servidor",
-  },
-  {
-    id: "COM-SRV-3",
-    titulo: "Telemedicina 24h incluída no seu cartão",
-    corpo: "Consulta médica online sem sair de casa, sem custo adicional, para você e sua família. Descubra como ativar.",
-    linkLabel: "Acessar Telemedicina",
-    linkHref: "/servidor/saude",
-    publico: "servidor",
-  },
-];
+// Seed vazio: cliente pediu comecar do zero (16/07/2026). Se algum dia
+// precisar restaurar os 6 comunicados de exemplo (3 banco + 3 servidor),
+// reverter este commit.
+export const COMUNICADOS_MOCK: ComunicadoMock[] = [];
 
 export interface ServidorBuscaMock {
   cpf: string;

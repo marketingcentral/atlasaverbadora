@@ -33,18 +33,22 @@ let _seeded: Promise<void> | null = null;
 export async function refreshComunicados(env: Env): Promise<void> {
   try {
     if (!_seeded) {
-      _seeded = seedComunicadosIfEmpty(env).then(() => undefined);
+      // Mesma trava dos outros purges — impede re-seed apos /db/purge-comunicados.
+      const purged = env.KV_CACHE ? await env.KV_CACHE.get("purge:comunicados") : null;
+      _seeded = (purged
+        ? Promise.resolve()
+        : seedComunicadosIfEmpty(env)
+      ).then(() => undefined);
     }
     await _seeded;
     const rows = await loadCollection<ComunicadoRow>(env, TABLE);
-    if (rows.length > 0) {
-      const ordered = [...rows].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
-      COMUNICADOS_MOCK.length = 0;
-      for (const r of ordered) {
-        const { ord: _ord, ...com } = r;
-        void _ord;
-        COMUNICADOS_MOCK.push(com);
-      }
+    // Sempre sincroniza in-memory (mesmo com PG vazio pra refletir purge).
+    const ordered = [...rows].sort((a, b) => (a.ord ?? 0) - (b.ord ?? 0));
+    COMUNICADOS_MOCK.length = 0;
+    for (const r of ordered) {
+      const { ord: _ord, ...com } = r;
+      void _ord;
+      COMUNICADOS_MOCK.push(com);
     }
   } catch {
     _seeded = null;
@@ -66,6 +70,8 @@ export async function persistComunicados(env: Env): Promise<void> {
       const c = COMUNICADOS_MOCK[i]!;
       await upsertCollectionRow(env, TABLE, c.id, { ...c, ord: i });
     }
+    // Criar comunicado libera a trava — base voltou a ser povoada.
+    if (env.KV_CACHE && COMUNICADOS_MOCK.length > 0) await env.KV_CACHE.delete("purge:comunicados");
   } catch {
     /* fail-safe: segue com memoria; sera re-persistido na proxima escrita */
   }
