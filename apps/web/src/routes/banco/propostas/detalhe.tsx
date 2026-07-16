@@ -638,38 +638,22 @@ function AnexarContratoModal({
     }
   };
 
-  // Tipos aceitos — documentos (pdf, doc/docx, odt, rtf, txt) e imagens (scan
-  // do contrato assinado). Whitelist espelhada no backend em
-  // apps/api/src/modules/portal-banco/index.ts.
+  // Whitelist rigida: PDF, DOCX e Excel (XLS/XLSX). Espelhada no backend em
+  // apps/api/src/modules/portal-banco/index.ts. Alguns navegadores devolvem
+  // type vazio pra DOCX/XLSX — por isso valida tambem pela extensao.
   const TIPOS_ACEITOS = new Set([
     "application/pdf",
-    "application/msword",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "application/vnd.oasis.opendocument.text",
-    "application/rtf",
-    "text/rtf",
-    "text/plain",
-    "image/png",
-    "image/jpeg",
-    "image/tiff",
-    "image/heic",
-    "image/heif",
-    "image/webp",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ]);
-  const EXT_ACEITAS = /\.(pdf|doc|docx|odt|rtf|txt|png|jpe?g|tiff?|heic|heif|webp)$/i;
+  const EXT_ACEITAS = /\.(pdf|docx|xls|xlsx)$/i;
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
-    // Aceita PDF, DOC e DOCX. Alguns navegadores devolvem type vazio pra DOC/DOCX,
-    // por isso valida tambem pela extensao. Backend faz validacao definitiva.
     if (f) {
-      const ACEITOS = new Set([
-        "application/pdf",
-        "application/msword",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      ]);
-      const extOk = /\.(pdf|doc|docx)$/i.test(f.name);
-      if (f.type ? !ACEITOS.has(f.type) : !extOk) {
-        setErro("Apenas arquivos PDF, DOC ou DOCX.");
+      const extOk = EXT_ACEITAS.test(f.name);
+      if (f.type ? !TIPOS_ACEITOS.has(f.type) : !extOk) {
+        setErro("Apenas arquivos PDF, DOCX ou Excel (XLS/XLSX).");
         setArquivo(null);
         return;
       }
@@ -689,7 +673,7 @@ function AnexarContratoModal({
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {jaTemContrato
             ? "Enviar uma nova versao arquiva a atual no historico — nada e excluido."
-            : "Escolha o arquivo do contrato assinado (PDF, DOC ou DOCX). Depois de anexar voce pode aprovar a proposta."}
+            : "Escolha o arquivo do contrato assinado (PDF, DOCX ou Excel). Depois de anexar voce pode aprovar a proposta."}
         </div>
 
         {/* Upload */}
@@ -702,7 +686,7 @@ function AnexarContratoModal({
           }}>
             <span style={{ fontSize: 24 }}>📄</span>
             <span style={{ fontWeight: 600, fontSize: 14 }}>
-              {arquivo ? arquivo.name : "Clique para selecionar o arquivo (PDF, DOC ou DOCX)"}
+              {arquivo ? arquivo.name : "Clique para selecionar o arquivo (PDF, DOCX ou Excel)"}
             </span>
             {arquivo ? (
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -710,12 +694,12 @@ function AnexarContratoModal({
               </span>
             ) : (
               <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-                PDF, DOC/DOCX, ODT, RTF, TXT ou imagem · ou arraste e solte aqui
+                PDF, DOCX ou Excel (XLS/XLSX) · ou arraste e solte aqui
               </span>
             )}
             <input
               type="file"
-              accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
+              accept="application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.ms-excel,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
               style={{ display: "none" }}
               onChange={onFileChange}
               disabled={enviando}

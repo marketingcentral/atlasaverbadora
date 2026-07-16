@@ -674,30 +674,34 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const isFile = (v: unknown): v is { name: string; size: number; type: string; arrayBuffer: () => Promise<ArrayBuffer> } =>
       typeof v === "object" && v !== null && typeof (v as { size?: unknown }).size === "number" && typeof (v as { arrayBuffer?: unknown }).arrayBuffer === "function";
     if (!isFile(file)) throw Errors.validation({ file: "campo 'file' obrigatorio" });
-    // Aceita PDF, DOC (.doc, application/msword) e DOCX (application/vnd.openxmlformats...).
-    // Alguns navegadores enviam type vazio pra .doc/.docx — cai no fallback por extensao.
+    // Whitelist rigida: PDF, DOCX e Excel (XLS/XLSX). Cliente pediu apenas esses
+    // 3 formatos — nao aceita DOC (formato antigo), ODT, RTF, TXT, imagens etc.
+    // Alguns navegadores enviam type vazio pra DOCX/XLSX — cai no fallback por extensao.
     const ACEITOS = new Set([
       "application/pdf",
-      "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ]);
-    const extOk = /\.(pdf|doc|docx)$/i.test(file.name || "");
+    const extOk = /\.(pdf|docx|xls|xlsx)$/i.test(file.name || "");
     if (file.type ? !ACEITOS.has(file.type) : !extOk) {
-      throw Errors.validation({ file: "apenas PDF, DOC ou DOCX" });
+      throw Errors.validation({ file: "apenas PDF, DOCX ou Excel (XLS/XLSX)" });
     }
     const MAX = 15 * 1024 * 1024; // 15 MB
     if (file.size > MAX) throw Errors.validation({ file: "arquivo maior que 15 MB" });
     const adf = adfRaw.replace(/[^\w.-]/g, "").slice(0, 40);
     const ts = new Date().toISOString().replace(/[:.]/g, "-");
-    const safeName = (nomeOrig || "contrato.bin").replace(/[^\w.-]/g, "_").slice(0, 60);
+    const safeName = (file.name || "contrato.bin").replace(/[^\w.-]/g, "_").slice(0, 60);
     const key = `ccb/${j.banco_id}/${adf}/${ts}-${safeName}`;
     const buf = await file.arrayBuffer();
     // Preserva o contentType real do arquivo pra que o download/abertura funcione
     // corretamente no navegador. Fallback pra octet-stream se o browser nao enviou.
+    const lower = safeName.toLowerCase();
     const storedType = file.type
-      || (safeName.toLowerCase().endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        : safeName.toLowerCase().endsWith(".doc") ? "application/msword"
-        : safeName.toLowerCase().endsWith(".pdf") ? "application/pdf"
+      || (lower.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : lower.endsWith(".xls") ? "application/vnd.ms-excel"
+        : lower.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : lower.endsWith(".pdf") ? "application/pdf"
         : "application/octet-stream");
     await c.env.R2_FILES.put(key, buf, { httpMetadata: { contentType: storedType } });
     // Grava a chave no contrato pra o operador reabrir a qualquer momento.
