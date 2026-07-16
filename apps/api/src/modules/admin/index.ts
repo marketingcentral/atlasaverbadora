@@ -1204,10 +1204,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     pushEvent("error", "admin.db.purge_servidores", `PURGE DE SERVIDORES confirmado por admin ${j?.sub}: TRUNCATE servidores + contratos + adfs + propostas.`);
-    await purgeServidores(c.env);
-    // Flag no KV impede o seed automatico de re-popular a base — sem isso o
-    // proximo isolate frio roda seedServidoresIfEmpty e o loop fica infinito.
+    // Seta flag ANTES do TRUNCATE pra evitar race com seed em isolate frio.
     if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:servidores", "1");
+    await purgeServidores(c.env);
     SERVIDORES_BUSCA_MOCK.length = 0;
     return c.json({ ok: true, mensagem: "Base de servidores zerada. Bancos/prefeituras/convenios preservados." });
   })
@@ -1226,14 +1225,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     pushEvent("error", "admin.db.purge_prefeituras", `PURGE DE PREFEITURAS confirmado por admin ${j?.sub}: TRUNCATE prefeituras + convenios + folhas + ofertas.`);
-    await purgePrefeituras(c.env);
-    // Trava contra re-seed automatico — sem isso o proximo isolate frio roda
-    // seedPrefeiturasIfEmpty e o purge parece nao ter funcionado.
+    // Seta o flag ANTES do TRUNCATE. Se setar depois, um isolate frio que
+    // chegue no meio pode ver o PG vazio, rodar seedPrefeiturasIfEmpty e
+    // re-popular — race condition observada em 16/07/2026.
     if (c.env.KV_CACHE) {
       await c.env.KV_CACHE.put("purge:prefeituras", "1");
-      // Zerar prefeituras tira o dono dos servidores — trava servidores tambem.
       await c.env.KV_CACHE.put("purge:servidores", "1");
     }
+    await purgePrefeituras(c.env);
     prefeituras.length = 0;
     CONVENIOS_MOCK.length = 0;
     SERVIDORES_BUSCA_MOCK.length = 0;
