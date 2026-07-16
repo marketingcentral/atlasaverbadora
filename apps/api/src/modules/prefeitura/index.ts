@@ -15,6 +15,7 @@ import { bancos, folhas, prefeituras, ensureFolhasLoaded, persistFolha, type Fol
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
+import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig } from "../admin/id-unico.js";
@@ -118,22 +119,49 @@ const VINCULOS = ["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONIS
 // CSV templates são públicos (arquivos de exemplo, sem dados reais) — assim o
 // link de download simples (<a href download>) funciona sem header de auth.
 export const prefeituraPublicRoutes = new Hono<{ Bindings: Env }>()
-  .get("/v1/prefeitura/servidores/csv-template", () => {
-    const csv = buildCsv(
-      ["nome", "cpf", "email", "telefone", "matricula", "cargo", "vinculo", "endereco", "codigoIbge", "salarioLiquido", "idConvenio"],
-      [{ nome: "MARIA DA SILVA", cpf: "00099988877", email: "maria@ex.com", telefone: "48999990000", matricula: "900123", cargo: "Professora", vinculo: "ESTATUTARIO", endereco: "Rua A, 100 - Centro", codigoIbge: 4211900, salarioLiquido: 4200, idConvenio: "CONV-001" }],
-    );
+  .get("/v1/prefeitura/servidores/csv-template", async (c) => {
+    // Dinamico: usa o primeiro convenio realmente cadastrado. Se base vazia,
+    // devolve CSV com header + comentario avisando pra cadastrar convenio antes.
+    // O import ja aceita idConvenio vazio (cai no default da prefeitura), entao
+    // o CSV segue importavel mesmo com placeholder.
+    if (CONVENIOS_MOCK.length === 0) {
+      try { await refreshConvenios(c.env); } catch { /* ignore */ }
+    }
+    const conv = CONVENIOS_MOCK[0];
+    const headers = ["nome", "cpf", "email", "telefone", "matricula", "cargo", "vinculo", "endereco", "codigoIbge", "salarioLiquido", "idConvenio"];
+    if (!conv) {
+      const aviso = `# Cadastre pelo menos 1 convenio antes de importar servidores.\n# Sem convenio, o servidor fica sem prefeitura resolvida.\n${headers.join(",")}\n`;
+      return csvResp("servidores-modelo.csv", aviso);
+    }
+    const cidade = prefeituras.find((p) => p.id === conv.prefeituraId);
+    const csv = buildCsv(headers, [{
+      nome: "EXEMPLO - MARIA DA SILVA", cpf: "99900011122",
+      email: "maria@example.com", telefone: "48999990000",
+      matricula: "EXEMPLO-900123", cargo: "Professora", vinculo: "ESTATUTARIO",
+      endereco: `Rua Exemplo, 100 - Centro, ${cidade?.nome ?? conv.prefeitura}/${cidade?.uf ?? conv.uf}`,
+      codigoIbge: cidade?.municipioIbge ?? 4211900,
+      salarioLiquido: 4200, idConvenio: conv.id,
+    }]);
     return csvResp("servidores-modelo.csv", csv);
   })
   .get("/v1/prefeitura/folhas/movimentacao/csv-template", () => {
-    const csv = buildCsv(
-      ["tipo", "matricula", "cpf", "nome", "cargoNovo", "salarioNovo", "detalhe"],
-      [
-        { tipo: "promocao", matricula: "852029100", cpf: "", nome: "", cargoNovo: "Coordenadora", salarioNovo: 5200, detalhe: "Promoção por antiguidade" },
-        { tipo: "demissao", matricula: "843796302", cpf: "", nome: "", cargoNovo: "", salarioNovo: "", detalhe: "Exoneração" },
-        { tipo: "admissao", matricula: "900500", cpf: "00055566677", nome: "NOVO SERVIDOR", cargoNovo: "Auxiliar", salarioNovo: 2800, detalhe: "Admissão" },
-      ],
-    );
+    // Dinamico: pega matriculas reais da base pra promocao/demissao. Se vazio,
+    // usa placeholders e comentario avisando. Rota publica (sem JWT) — nao
+    // filtra por prefeitura; se precisar escopar por prefeitura, promover a
+    // rota autenticada.
+    const existentes = SERVIDORES_BUSCA_MOCK.slice(0, 2);
+    const headers = ["tipo", "matricula", "cpf", "nome", "cargoNovo", "salarioNovo", "detalhe"];
+    if (existentes.length === 0) {
+      const aviso = `# Base de servidores vazia. Importe servidores antes de rodar movimentacao.\n${headers.join(",")}\n`;
+      return csvResp("movimentacao-modelo.csv", aviso);
+    }
+    const linhas: Array<Record<string, string | number>> = [];
+    linhas.push({ tipo: "promocao", matricula: existentes[0]!.matricula, cpf: "", nome: "", cargoNovo: "Coordenadora", salarioNovo: existentes[0]!.salarioLiquido + 800, detalhe: "Promoção por antiguidade" });
+    if (existentes[1]) {
+      linhas.push({ tipo: "demissao", matricula: existentes[1].matricula, cpf: "", nome: "", cargoNovo: "", salarioNovo: "", detalhe: "Exoneração" });
+    }
+    linhas.push({ tipo: "admissao", matricula: `EXEMPLO-${900_000 + existentes.length}`, cpf: "99900055566", nome: "EXEMPLO - NOVO SERVIDOR", cargoNovo: "Auxiliar", salarioNovo: 2800, detalhe: "Admissão" });
+    const csv = buildCsv(headers, linhas);
     return csvResp("movimentacao-modelo.csv", csv);
   })
   .get("/v1/prefeitura/tombamento/csv-template", () => {

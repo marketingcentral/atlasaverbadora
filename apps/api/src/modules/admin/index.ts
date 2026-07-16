@@ -627,42 +627,69 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
       { nome: "Joinville", uf: "SC", municipioIbge: 4209102, modoIntegracao: "CSV", status: "ativo", loginEmail: "", password: "" },
     ],
   )))
-  .get("/v1/admin/convenios/csv-template", () => csvResponse("convenios-exemplo.csv", buildCsv(
-    ["bancoId", "prefeituraId", "nome", "codigoVerba", "dataCorte", "diaRepasse"],
-    [
-      { bancoId: 1, prefeituraId: 1, nome: "PALHOCA / DELTA GLOBAL", codigoVerba: "1547 - DELTA GLOBAL I", dataCorte: 15, diaRepasse: 5 },
-      { bancoId: 1, prefeituraId: 2, nome: "FLORIPA / DELTA GLOBAL", codigoVerba: "2210 - DELTA GLOBAL II", dataCorte: 18, diaRepasse: 8 },
-    ],
-  )))
-  .get("/v1/admin/servidores/csv-template", () => csvResponse("servidores-exemplo.csv", buildCsv(
-    [
-      "cpf", "matricula", "nome", "dataAdmissao", "dataNascimento",
+  // Convenios: bancoId + prefeituraId TEM que existir no banco. Se hardcoded
+  // (era 1,1 / 1,2), o CSV vira orfao quando a base esta zerada. Gera dinamico:
+  // usa o primeiro banco cadastrado + as primeiras 2 prefeituras. Se algum lado
+  // vazio, retorna template com header + linha comentario avisando.
+  .get("/v1/admin/convenios/csv-template", async (c) => {
+    await Promise.all([ensureBancosLoaded(c.env), ensurePrefeiturasLoaded(c.env)]);
+    const banco = bancos[0];
+    const prefs = prefeituras.slice(0, 2);
+    if (!banco || prefs.length === 0) {
+      const aviso = `# Cadastre pelo menos 1 banco e 1 prefeitura antes de importar convenios.\n# Ainda ${!banco ? "sem banco" : ""}${!banco && prefs.length === 0 ? " e " : ""}${prefs.length === 0 ? "sem prefeitura" : ""} cadastrado.\nbancoId,prefeituraId,nome,codigoVerba,dataCorte,diaRepasse\n`;
+      return csvResponse("convenios-exemplo.csv", aviso);
+    }
+    const linhas = prefs.map((p, i) => ({
+      bancoId: banco.id, prefeituraId: p.id,
+      nome: `${p.nome.toUpperCase()} / ${banco.nome.toUpperCase()}`,
+      codigoVerba: `${1500 + i * 700} - VERBA CONSIGNACAO ${i + 1}`,
+      dataCorte: 15 + i * 3, diaRepasse: 5 + i * 3,
+    }));
+    return csvResponse("convenios-exemplo.csv", buildCsv(
+      ["bancoId", "prefeituraId", "nome", "codigoVerba", "dataCorte", "diaRepasse"],
+      linhas,
+    ));
+  })
+  // Servidores: idConvenio TEM que existir. Se base tem convenios cadastrados,
+  // usa os IDs reais. Se vazia, avisa. CPFs com prefixo "999" pra nao confundir
+  // com CPF real (ja aconteceu de importarem de volta).
+  .get("/v1/admin/servidores/csv-template", async (c) => {
+    await Promise.all([ensureBancosLoaded(c.env), ensurePrefeiturasLoaded(c.env)]);
+    // Leitura leve dos convenios via CONVENIOS_MOCK (populado por refreshConvenios).
+    // Fallback: se vazio, tenta forçar refresh (best-effort).
+    if (CONVENIOS_MOCK.length === 0) {
+      try { await refreshConvenios(c.env); } catch { /* ignore */ }
+    }
+    const convs = CONVENIOS_MOCK.slice(0, 2);
+    const headers = ["cpf", "matricula", "nome", "dataAdmissao", "dataNascimento",
       "vinculo", "situacaoFuncional", "salarioLiquido", "idConvenio",
-      "cargo", "endereco", "email", "telefone", "codigoIbge",
-    ],
-    [
-      // Linhas de EXEMPLO — CPFs e matriculas com prefixo obviamente-fake pra
-      // ninguem confundir com dado real e importar de volta. Aconteceu 1x: alguem
-      // importou o template "como esta" e criou uma matricula fantasma M-9001 na
-      // producao com o mesmo CPF de um servidor real, poluindo o switcher dele.
-      {
-        cpf: "99900011122", matricula: "EXEMPLO-9001", nome: "EXEMPLO - Ana Carolina Silva",
+      "cargo", "endereco", "email", "telefone", "codigoIbge"];
+    if (convs.length === 0) {
+      const aviso = `# Cadastre pelo menos 1 convenio antes de importar servidores.\n# Sem convenio cadastrado, o servidor fica orfao (sem prefeitura resolvida).\n${headers.join(",")}\n`;
+      return csvResponse("servidores-exemplo.csv", aviso);
+    }
+    // Casa cada convenio com sua prefeitura pra pegar codigoIbge/endereco coerentes.
+    const prefById = new Map(prefeituras.map((p) => [p.id, p]));
+    const linhas = convs.map((cv, i) => {
+      const p = prefById.get(cv.prefeituraId);
+      const cidade = p?.nome ?? cv.prefeitura;
+      const uf = p?.uf ?? cv.uf ?? "SC";
+      return {
+        cpf: `9990001112${i}`, matricula: `EXEMPLO-900${i + 1}`,
+        nome: `EXEMPLO - Servidor ${i + 1}`,
         dataAdmissao: "17/04/2017", dataNascimento: "1985-03-12",
-        vinculo: "ESTATUTARIO", situacaoFuncional: "TRABALHANDO", salarioLiquido: 4620.50,
-        idConvenio: "CONV-001",
-        cargo: "Professora II", endereco: "Rua das Palmeiras, 320 - Centro, Palhoca/SC",
-        email: "exemplo1@example.com", telefone: "48991010001", codigoIbge: 4211900,
-      },
-      {
-        cpf: "99900011133", matricula: "EXEMPLO-9002", nome: "EXEMPLO - Joao da Silva Neves",
-        dataAdmissao: "02/02/2010", dataNascimento: "1976-08-22",
-        vinculo: "CLT", situacaoFuncional: "TRABALHANDO", salarioLiquido: 5840,
-        idConvenio: "CONV-002",
-        cargo: "Motorista", endereco: "Rua Central, 45 - Ingleses, Florianopolis/SC",
-        email: "exemplo2@example.com", telefone: "48991020002", codigoIbge: 4205407,
-      },
-    ],
-  )));
+        vinculo: "ESTATUTARIO", situacaoFuncional: "TRABALHANDO",
+        salarioLiquido: 4620.50 + i * 500,
+        idConvenio: cv.id,
+        cargo: i === 0 ? "Professora II" : "Motorista",
+        endereco: `Rua Exemplo, ${100 + i} - Centro, ${cidade}/${uf}`,
+        email: `exemplo${i + 1}@example.com`,
+        telefone: `48991010${String(i + 1).padStart(3, "0")}`,
+        codigoIbge: p?.municipioIbge ?? 4211900,
+      };
+    });
+    return csvResponse("servidores-exemplo.csv", buildCsv(headers, linhas));
+  });
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims; trace_id: string } }>()
   // Escopado ao próprio prefixo — `.use("*")` vazaria para /v1/external/* quando montado em "/".
