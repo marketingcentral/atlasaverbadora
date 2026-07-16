@@ -114,7 +114,9 @@ function tplSimulacao(tipo: SimulacaoTipo, status: SimulacaoStatus, publico: Ema
 }
 
 const SEED: EmailTemplate[] = [
-  ...PERFIS.map(tplPrimeiroAcesso),
+  // Cliente pediu remocao dos 4 templates de primeiro-acesso (16/07/2026)
+  // pra teste real do zero — sem seed, o fluxo cai no fallback hardcoded do
+  // mailer.ts. Se restaurar pra demo, adicionar de volta: ...PERFIS.map(tplPrimeiroAcesso),
   ...PERFIS.map(tplRecuperarSenha),
   ...PERFIS.map(tplRedefinirSenha),
   // Simulacao: so servidor e banco (regra do cliente).
