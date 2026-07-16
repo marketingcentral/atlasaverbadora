@@ -490,6 +490,16 @@ export interface AdminBancoInput {
   mtlsHabilitado?: boolean;
 }
 
+export interface AdminPrefeituraEndereco {
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cep?: string;
+  municipio?: string;
+  uf?: string;
+}
+
 export interface AdminPrefeitura {
   id: number;
   nome: string;
@@ -508,6 +518,14 @@ export interface AdminPrefeitura {
   permiteServidorEditarContato?: boolean;
   /** Texto livre com exclusividades do cartão consignado desta prefeitura. */
   exclusividadesCartaoConsig?: string;
+  // Dados oficiais preenchidos pela consulta CNPJ (BrasilAPI = Receita + Junta Comercial).
+  cnpj?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  dataFundacao?: string;
+  atividade?: string;
+  telefone?: string;
+  endereco?: AdminPrefeituraEndereco;
 }
 
 export interface AdminPrefeituraInput {
@@ -524,6 +542,34 @@ export interface AdminPrefeituraInput {
   folhaSincUrl?: string;
   permiteServidorEditarContato?: boolean;
   exclusividadesCartaoConsig?: string;
+  cnpj?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  dataFundacao?: string;
+  atividade?: string;
+  telefone?: string;
+  endereco?: AdminPrefeituraEndereco;
+}
+
+/** Retorno cru da consulta CNPJ (BrasilAPI). Frontend extrai o que precisa. */
+export interface CnpjLookupResponse {
+  cnpj?: string;
+  razao_social?: string;
+  nome_fantasia?: string;
+  data_inicio_atividade?: string;
+  cnae_fiscal_descricao?: string;
+  logradouro?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cep?: string;
+  municipio?: string;
+  uf?: string;
+  codigo_municipio_ibge?: number;
+  ddd_telefone_1?: string;
+  email?: string;
+  descricao_situacao_cadastral?: string;
+  [k: string]: unknown;
 }
 
 export interface AdminConvenio {
@@ -1588,6 +1634,10 @@ export class AtlasClient {
     listPrefeituras: () => this.request<{ prefeituras: AdminPrefeitura[] }>("/v1/admin/prefeituras"),
     upsertPrefeitura: (p: AdminPrefeituraInput) => this.request<{ prefeitura: AdminPrefeitura }>("/v1/admin/prefeituras", { method: "POST", body: p }),
     sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura; resultado: { novos: number; atualizados: number; erro?: string; ts: string } }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
+    /** Consulta CNPJ via BrasilAPI (Receita + Junta Comercial). Usado no modal
+     *  de cadastro de prefeitura pra prefill automatico dos campos. */
+    consultarCnpjPrefeitura: (cnpj: string) =>
+      this.request<{ dados: CnpjLookupResponse }>(`/v1/admin/prefeituras/consulta-cnpj/${encodeURIComponent(cnpj.replace(/\D/g, ""))}`),
     resetPrefeituraPassword: (id: number, password: string) =>
       this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/reset-password`, { method: "POST", body: { password } }),
     deletePrefeitura: (id: number, confirm: { challengeId: string; codigo: string }) =>

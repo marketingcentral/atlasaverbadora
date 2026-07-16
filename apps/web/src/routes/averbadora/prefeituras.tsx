@@ -106,6 +106,12 @@ export function AdminPrefeituras() {
   );
 }
 
+function formatCnpj(raw: string): string {
+  const d = raw.replace(/\D/g, "").slice(0, 14);
+  if (d.length !== 14) return raw;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12, 14)}`;
+}
+
 function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null; onClose: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState<AdminPrefeituraInput>({
@@ -122,8 +128,61 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
     folhaSincUrl: initial?.folhaSincUrl ?? "",
     permiteServidorEditarContato: initial?.permiteServidorEditarContato ?? false,
     exclusividadesCartaoConsig: initial?.exclusividadesCartaoConsig ?? "",
+    cnpj: initial?.cnpj ?? "",
+    razaoSocial: initial?.razaoSocial ?? "",
+    nomeFantasia: initial?.nomeFantasia ?? "",
+    dataFundacao: initial?.dataFundacao ?? "",
+    atividade: initial?.atividade ?? "",
+    telefone: initial?.telefone ?? "",
+    endereco: initial?.endereco ?? {},
   });
   const [error, setError] = useState<string | null>(null);
+  const [cnpjInput, setCnpjInput] = useState<string>(initial?.cnpj ?? "");
+  const [cnpjError, setCnpjError] = useState<string | null>(null);
+  const [avancado, setAvancado] = useState(false);
+  // Consulta CNPJ — BrasilAPI (Receita + Junta Comercial). Prefill do form.
+  const consulta = useMutation({
+    mutationFn: (cnpj: string) => atlas.admin.consultarCnpjPrefeitura(cnpj),
+    onMutate: () => setCnpjError(null),
+    onSuccess: (r) => {
+      const d = r.dados;
+      setForm((prev) => ({
+        ...prev,
+        cnpj: (d.cnpj as string | undefined) ?? cnpjInput.replace(/\D/g, ""),
+        nome: (d.razao_social as string | undefined) ?? prev.nome,
+        razaoSocial: (d.razao_social as string | undefined) ?? "",
+        nomeFantasia: (d.nome_fantasia as string | undefined) ?? "",
+        dataFundacao: (d.data_inicio_atividade as string | undefined) ?? "",
+        atividade: (d.cnae_fiscal_descricao as string | undefined) ?? "",
+        telefone: (d.ddd_telefone_1 as string | undefined) ?? "",
+        uf: ((d.uf as string | undefined) ?? prev.uf).slice(0, 2).toUpperCase(),
+        municipioIbge: (d.codigo_municipio_ibge as number | undefined) ?? prev.municipioIbge,
+        contatoEmail: prev.contatoEmail || (d.email as string | undefined) || "",
+        endereco: {
+          logradouro: (d.logradouro as string | undefined) ?? "",
+          numero: (d.numero as string | undefined) ?? "",
+          complemento: (d.complemento as string | undefined) ?? "",
+          bairro: (d.bairro as string | undefined) ?? "",
+          cep: (d.cep as string | undefined) ?? "",
+          municipio: (d.municipio as string | undefined) ?? "",
+          uf: (d.uf as string | undefined) ?? "",
+        },
+      }));
+    },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : "Falha na consulta";
+      setCnpjError(msg.includes("cnpj_nao_encontrado") ? "CNPJ não encontrado na Receita." : msg);
+    },
+  });
+  const buscarCnpj = () => {
+    const digits = cnpjInput.replace(/\D/g, "");
+    if (digits.length !== 14) {
+      setCnpjError("CNPJ deve ter 14 dígitos.");
+      return;
+    }
+    consulta.mutate(digits);
+  };
+  const dadosPreenchidos = !!(form.razaoSocial || form.nomeFantasia || form.dataFundacao || form.atividade || form.endereco?.logradouro);
   const save = useMutation({
     mutationFn: () => {
       const payload: AdminPrefeituraInput = { ...form };
@@ -131,6 +190,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
       if (!payload.contatoEmail) delete payload.contatoEmail;
       if (!payload.password) delete payload.password;
       if (!payload.folhaSincUrl) delete payload.folhaSincUrl;
+      if (!payload.cnpj) delete payload.cnpj;
       return atlas.admin.upsertPrefeitura(payload);
     },
     onSuccess: () => {
@@ -142,106 +202,181 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
 
   const senhaHint = initial?.hasPassword
     ? "Deixe em branco para manter a senha atual."
-    : "Mínimo 6 caracteres. Será enviada ao responsável da prefeitura.";
+    : "Mínimo 6 caracteres. Será exigida em todo login da prefeitura.";
 
   return (
     <div onClick={onClose} style={modalBackdrop}>
       <div onClick={(e) => e.stopPropagation()} style={modalCard}>
         <h3 style={{ margin: 0 }}>{initial ? `Editar ${initial.nome}/${initial.uf}` : "Nova prefeitura"}</h3>
-        <FormGrid cols={2}>
-          <TextField label="Nome" value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} required />
-          <TextField label="UF" value={form.uf} maxLength={2} onChange={(e) => setForm({ ...form, uf: e.target.value.toUpperCase() })} required />
-          <NumberField label="Código IBGE" value={form.municipioIbge} onChange={(e) => setForm({ ...form, municipioIbge: Number(e.target.value) })} />
-          <SelectField
-            label="Modo de integração"
-            value={form.modoIntegracao}
-            onChange={(e) => setForm({ ...form, modoIntegracao: e.target.value as AdminPrefeituraInput["modoIntegracao"] })}
-            options={[
-              { value: "REST", label: "REST" },
-              { value: "SOAP", label: "SOAP" },
-              { value: "CSV", label: "CSV" },
-              { value: "MANUAL", label: "MANUAL" },
-            ]}
-          />
-          <TextField
-            label="Login (email de acesso ao /login)"
-            type="email"
-            value={form.loginEmail ?? ""}
-            onChange={(e) => setForm({ ...form, loginEmail: e.target.value })}
-            placeholder="rh@prefeitura.gov.br"
-          />
-          <TextField
-            label="Email de contato do responsável"
-            type="email"
-            value={form.contatoEmail ?? ""}
-            onChange={(e) => setForm({ ...form, contatoEmail: e.target.value })}
-            placeholder="responsavel@prefeitura.gov.br"
-          />
-          <TextField
-            label={initial?.hasPassword ? "Nova senha (opcional)" : "Senha"}
-            type="password"
-            value={form.password ?? ""}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            placeholder={initial?.hasPassword ? "••••••••" : "min. 6 caracteres"}
-            hint={senhaHint}
-          />
-          <SelectField
-            label="Situação"
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as AdminPrefeituraInput["status"] })}
-            options={[
-              { value: "ativo", label: "Ativo" },
-              { value: "pausado", label: "Pausado" },
-            ]}
-          />
-          <NumberField label="Servidores cadastrados" value={form.servidoresCount} onChange={(e) => setForm({ ...form, servidoresCount: Number(e.target.value) })} />
-          <TextField
-            label="URL do CSV da folha (modo CSV)"
-            value={form.folhaSincUrl ?? ""}
-            onChange={(e) => setForm({ ...form, folhaSincUrl: e.target.value })}
-            placeholder="https://prefeitura.gov.br/folha.csv"
-            hint="Deixe em branco se não houver origem automatica. Colunas: cpf, matrícula, nome, cargo, vinculo, salarioLiquido, idConvenio, email, telefone"
-          />
-        </FormGrid>
-        <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, color: "var(--text-muted)", cursor: "pointer", marginTop: 4 }}>
-          <input
-            type="checkbox"
-            checked={form.permiteServidorEditarContato ?? false}
-            onChange={(e) => setForm({ ...form, permiteServidorEditarContato: e.target.checked })}
-            style={{ marginTop: 3 }}
-          />
-          <span>
-            <b style={{ color: "var(--text)" }}>Permitir que servidores editem contato pelo app</b>
-            <br />
-            Se ligado, o servidor pode alterar e-mail e telefone em Meus dados (com selfie de confirmação). Se desligado, a tela mostra os dados como somente-leitura e orienta procurar o RH.
-          </span>
-        </label>
-        <div style={{ marginTop: 4 }}>
+
+        {/* PASSO 1 — Consulta CNPJ. Prefill de todos os campos oficiais via
+            BrasilAPI (base publica que agrega Receita Federal + Junta Comercial). */}
+        <div>
           <label style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
-            Exclusividades do Cartão Consignado (opcional)
+            CNPJ da prefeitura
           </label>
-          <textarea
-            value={form.exclusividadesCartaoConsig ?? ""}
-            onChange={(e) => setForm({ ...form, exclusividadesCartaoConsig: e.target.value })}
-            placeholder="Ex.: Cartão Elo Consignado com 1,5% a.m. exclusivo para servidores da Câmara Municipal de Castro."
-            maxLength={500}
-            rows={3}
-            style={{
-              width: "100%", padding: 10, borderRadius: 8,
-              border: "1px solid var(--border-strong)",
-              background: "var(--bg-elev)", color: "var(--text)",
-              fontSize: 13, resize: "vertical", fontFamily: "inherit",
-              boxSizing: "border-box",
-            }}
-          />
-          <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-            Aparece destacado na aba <b>Cartão de Crédito Consignado</b> do servidor. Vazio = sem exclusividades específicas.
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={cnpjInput}
+              onChange={(e) => setCnpjInput(e.target.value)}
+              onBlur={() => setCnpjInput((v) => formatCnpj(v))}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); buscarCnpj(); } }}
+              placeholder="00.000.000/0000-00"
+              maxLength={18}
+              style={{
+                flex: 1, padding: "10px 12px", borderRadius: 8,
+                border: "1px solid var(--border-strong)",
+                background: "var(--bg-elev)", color: "var(--text)",
+                fontSize: 14, fontFamily: "var(--font-mono)",
+              }}
+            />
+            <Button type="button" onClick={buscarCnpj} disabled={consulta.isPending}>
+              {consulta.isPending ? "Buscando…" : "Pesquisar"}
+            </Button>
           </div>
+          {cnpjError ? <div style={{ color: "var(--danger-500)", fontSize: 12, marginTop: 6 }}>{cnpjError}</div> : null}
+          {!cnpjError && !dadosPreenchidos ? (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+              Consulta pública (Receita + Junta Comercial). Preenche razão social, endereço, atividade e código IBGE automaticamente.
+            </div>
+          ) : null}
         </div>
+
+        {/* PASSO 2 — Dados oficiais (mostrados só depois da consulta ou em edição). */}
+        {dadosPreenchidos ? (
+          <div style={{ padding: 14, background: "var(--bg-elev-2)", borderRadius: 10, border: "1px solid var(--border)" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--emerald-500)", textTransform: "uppercase", marginBottom: 10 }}>
+              ✓ Dados oficiais preenchidos
+            </div>
+            <FormGrid cols={2}>
+              <TextField label="Razão social" value={form.razaoSocial ?? ""} onChange={(e) => setForm({ ...form, razaoSocial: e.target.value, nome: e.target.value })} />
+              <TextField label="Nome fantasia" value={form.nomeFantasia ?? ""} onChange={(e) => setForm({ ...form, nomeFantasia: e.target.value })} />
+              <TextField label="Data de fundação" value={form.dataFundacao ?? ""} onChange={(e) => setForm({ ...form, dataFundacao: e.target.value })} placeholder="AAAA-MM-DD" />
+              <TextField label="Atividade principal" value={form.atividade ?? ""} onChange={(e) => setForm({ ...form, atividade: e.target.value })} />
+              <TextField label="UF" value={form.uf} maxLength={2} onChange={(e) => setForm({ ...form, uf: e.target.value.toUpperCase() })} required />
+              <NumberField label="Código IBGE" value={form.municipioIbge} onChange={(e) => setForm({ ...form, municipioIbge: Number(e.target.value) })} />
+              <TextField label="Telefone" value={form.telefone ?? ""} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
+              <TextField label="CEP" value={form.endereco?.cep ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, cep: e.target.value } })} />
+              <TextField label="Logradouro" value={form.endereco?.logradouro ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, logradouro: e.target.value } })} />
+              <TextField label="Número" value={form.endereco?.numero ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, numero: e.target.value } })} />
+              <TextField label="Bairro" value={form.endereco?.bairro ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, bairro: e.target.value } })} />
+              <TextField label="Município" value={form.endereco?.municipio ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, municipio: e.target.value } })} />
+            </FormGrid>
+          </div>
+        ) : null}
+
+        {/* PASSO 3 — Credenciais de acesso da prefeitura. Email + senha
+            exigidos em todo login (via /login universal). */}
+        <div style={{ padding: 14, background: "color-mix(in srgb, var(--accent) 6%, transparent)", borderRadius: 10, border: "1px solid color-mix(in srgb, var(--accent) 30%, var(--border))" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--accent)", textTransform: "uppercase", marginBottom: 10 }}>
+            🔑 Credenciais de acesso da prefeitura
+          </div>
+          <FormGrid cols={2}>
+            <TextField
+              label="E-mail de login"
+              type="email"
+              value={form.loginEmail ?? ""}
+              onChange={(e) => setForm({ ...form, loginEmail: e.target.value })}
+              placeholder="rh@prefeitura.gov.br"
+              required
+              hint="A prefeitura usa este e-mail em /login toda vez que acessa."
+            />
+            <TextField
+              label={initial?.hasPassword ? "Nova senha (opcional)" : "Senha"}
+              type="password"
+              value={form.password ?? ""}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              placeholder={initial?.hasPassword ? "••••••••" : "min. 6 caracteres"}
+              hint={senhaHint}
+              required={!initial?.hasPassword}
+            />
+          </FormGrid>
+        </div>
+
+        {/* PASSO 4 — Opções avançadas (colapsadas). Preservam funcionalidade
+            legada de integracao/folha/exclusividades sem poluir o novo fluxo. */}
+        <details open={avancado} onToggle={(e) => setAvancado((e.currentTarget as HTMLDetailsElement).open)}>
+          <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", userSelect: "none" }}>
+            Opções avançadas
+          </summary>
+          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 12 }}>
+            <FormGrid cols={2}>
+              <SelectField
+                label="Modo de integração"
+                value={form.modoIntegracao}
+                onChange={(e) => setForm({ ...form, modoIntegracao: e.target.value as AdminPrefeituraInput["modoIntegracao"] })}
+                options={[
+                  { value: "REST", label: "REST" },
+                  { value: "SOAP", label: "SOAP" },
+                  { value: "CSV", label: "CSV" },
+                  { value: "MANUAL", label: "MANUAL" },
+                ]}
+              />
+              <SelectField
+                label="Situação"
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value as AdminPrefeituraInput["status"] })}
+                options={[
+                  { value: "ativo", label: "Ativo" },
+                  { value: "pausado", label: "Pausado" },
+                ]}
+              />
+              <TextField
+                label="E-mail de contato do responsável"
+                type="email"
+                value={form.contatoEmail ?? ""}
+                onChange={(e) => setForm({ ...form, contatoEmail: e.target.value })}
+                placeholder="responsavel@prefeitura.gov.br"
+              />
+              <NumberField label="Servidores cadastrados" value={form.servidoresCount} onChange={(e) => setForm({ ...form, servidoresCount: Number(e.target.value) })} />
+              <TextField
+                label="URL do CSV da folha (modo CSV)"
+                value={form.folhaSincUrl ?? ""}
+                onChange={(e) => setForm({ ...form, folhaSincUrl: e.target.value })}
+                placeholder="https://prefeitura.gov.br/folha.csv"
+              />
+            </FormGrid>
+            <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 13, color: "var(--text-muted)", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={form.permiteServidorEditarContato ?? false}
+                onChange={(e) => setForm({ ...form, permiteServidorEditarContato: e.target.checked })}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <b style={{ color: "var(--text)" }}>Permitir que servidores editem contato pelo app</b>
+                <br />
+                Se ligado, o servidor pode alterar e-mail e telefone em Meus dados. Se desligado, mostra somente-leitura.
+              </span>
+            </label>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+                Exclusividades do Cartão Consignado (opcional)
+              </label>
+              <textarea
+                value={form.exclusividadesCartaoConsig ?? ""}
+                onChange={(e) => setForm({ ...form, exclusividadesCartaoConsig: e.target.value })}
+                placeholder="Ex.: Cartão Elo Consignado com 1,5% a.m. exclusivo."
+                maxLength={500}
+                rows={3}
+                style={{
+                  width: "100%", padding: 10, borderRadius: 8,
+                  border: "1px solid var(--border-strong)",
+                  background: "var(--bg-elev)", color: "var(--text)",
+                  fontSize: 13, resize: "vertical", fontFamily: "inherit",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+          </div>
+        </details>
+
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
-          <Button type="button" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Salvando..." : "Salvar"}</Button>
+          <Button type="button" disabled={save.isPending || !form.nome || !form.loginEmail || (!initial?.hasPassword && !form.password)} onClick={() => save.mutate()}>
+            {save.isPending ? "Salvando..." : "Salvar"}
+          </Button>
         </FormActions>
       </div>
     </div>

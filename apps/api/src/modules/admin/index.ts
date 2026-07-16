@@ -172,6 +172,23 @@ export interface PrefeituraAdmin {
   twoFactorEnabled?: boolean;
   /** RFC 6238 TOTP secret (base32). */
   twoFactorSecret?: string;
+  // Dados do Receita/Junta Comercial preenchidos pela consulta CNPJ no cadastro.
+  // Armazenados no config jsonb pra nao exigir migration.
+  cnpj?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  dataFundacao?: string;
+  atividade?: string;
+  telefone?: string;
+  endereco?: {
+    logradouro?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    cep?: string;
+    municipio?: string;
+    uf?: string;
+  };
 }
 
 export function sanitizePrefeitura(p: PrefeituraAdmin) {
@@ -1422,6 +1439,25 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
   })
+  // Consulta CNPJ via BrasilAPI (base publica que agrega Receita Federal +
+  // Junta Comercial estadual). Nao expoe a origem pro cliente — retorna o
+  // shape completo pra o frontend escolher o que exibir. Sem cache — se
+  // precisar, adicionar KV_CACHE com TTL de 24h.
+  .get("/v1/admin/prefeituras/consulta-cnpj/:cnpj", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
+    const raw = c.req.param("cnpj").replace(/\D/g, "");
+    if (raw.length !== 14) throw Errors.validation({ cnpj: "CNPJ invalido — envie 14 digitos" });
+    let res: Response;
+    try {
+      res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
+    } catch (e) {
+      throw Errors.validation({ cnpj: `Falha ao consultar CNPJ: ${(e as Error).message}` });
+    }
+    if (res.status === 404) throw Errors.notFound("cnpj_nao_encontrado");
+    if (!res.ok) throw Errors.validation({ cnpj: `Consulta falhou (HTTP ${res.status})` });
+    const dados = await res.json() as Record<string, unknown>;
+    return c.json({ dados });
+  })
   .post("/v1/admin/prefeituras", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     const body = z
@@ -1442,6 +1478,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         ),
         permiteServidorEditarContato: z.boolean().optional(),
         exclusividadesCartaoConsig: z.string().max(500).optional().or(z.literal("")),
+        // Campos novos (consulta CNPJ) — armazenados no config jsonb via ...rest.
+        cnpj: z.string().max(14).optional().or(z.literal("")),
+        razaoSocial: z.string().max(200).optional().or(z.literal("")),
+        nomeFantasia: z.string().max(200).optional().or(z.literal("")),
+        dataFundacao: z.string().max(10).optional().or(z.literal("")),
+        atividade: z.string().max(200).optional().or(z.literal("")),
+        telefone: z.string().max(20).optional().or(z.literal("")),
+        endereco: z.object({
+          logradouro: z.string().optional().or(z.literal("")),
+          numero: z.string().optional().or(z.literal("")),
+          complemento: z.string().optional().or(z.literal("")),
+          bairro: z.string().optional().or(z.literal("")),
+          cep: z.string().optional().or(z.literal("")),
+          municipio: z.string().optional().or(z.literal("")),
+          uf: z.string().optional().or(z.literal("")),
+        }).optional(),
       })
       .parse(await c.req.json());
     const { password, loginEmail, ...rest } = body;
