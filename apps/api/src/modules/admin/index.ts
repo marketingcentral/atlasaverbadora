@@ -712,7 +712,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // APENAS 01844730808 cadastrado com smlgordo@gmail.com (senha "teste123"). O roster
   // é FIXO — o endpoint nunca toca um servidor real.
   .post("/v1/admin/manutencao/reset-servidores-teste", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
     await ensureServidoresLoaded(c.env);
     const TESTE: { cpf: string; matricula: string }[] = [
       { cpf: "01844730808", matricula: "700100001" },
@@ -775,7 +777,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // margem". Se a matricula era so uma reserva, some. Se ja era um contrato
   // averbado, tambem some — cuidado: nao existe "undo".
   .post("/v1/admin/manutencao/purge-contratos-matricula", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
     const body = z.object({
       matriculas: z.array(z.string().min(1)).min(1),
     }).parse(await c.req.json());
@@ -801,7 +805,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // tiveram a senha alterada num fluxo de redefinicao. Nao apaga contratos,
   // so limpa credenciais/contato.
   .post("/v1/admin/manutencao/reset-servidor-conta", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
     const body = z.object({
       cpfs: z.array(z.string().regex(/^\d{11}$/, "CPF deve ter 11 digitos")).min(1),
     }).parse(await c.req.json());
@@ -831,7 +837,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(await getAiStatus(c.env));
   })
   .put("/v1/admin/ai/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     const body = z.object({ apiKey: z.string().min(20) }).parse(await c.req.json());
     try {
       const status = await setAiKey(c.env, body.apiKey);
@@ -850,7 +858,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
   })
   .delete("/v1/admin/ai/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     await clearAiKey(c.env);
     appendAudit({
       trace_id: c.get("trace_id"),
@@ -864,7 +874,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.body(null, 204);
   })
   .post("/v1/admin/ai/test", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     return c.json(await testAiKey(c.env));
   })
   // ===== SMTP (envio de e-mails de confirmação) =====
@@ -873,7 +885,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(await getSmtpStatus(c.env));
   })
   .put("/v1/admin/smtp/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     const body = z
       .object({
         host: z.string().optional(),
@@ -899,7 +913,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(status);
   })
   .delete("/v1/admin/smtp/config", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     await clearSmtpConfig(c.env);
     appendAudit({
       trace_id: c.get("trace_id"),
@@ -914,7 +930,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   // Envia um e-mail de teste com a config SMTP salva — para o operador validar.
   .post("/v1/admin/smtp/test", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     const { to } = z.object({ to: z.string().email() }).parse(await c.req.json());
     const r = await sendMail(c.env, {
       to,
@@ -924,7 +942,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json(r);
   })
   .post("/v1/admin/ai/normalize-csv", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
     const body = z.object({
       csv: z.string().min(1).max(200_000),
       expectedHeaders: z.array(z.string()).min(1),
@@ -992,7 +1012,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // confirmacao explicita no body para NUNCA apagar dados por acidente/automacao/
   // deploy. Sem a frase exata, retorna 400 e nao toca no banco.
   .post("/v1/admin/db/reseed", async (c) => {
-    requireAdmin(c.get("jwt"));
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
     const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
     if (body.confirmar !== "APAGAR-TUDO-E-RESEMEAR") {
       throw Errors.validation({

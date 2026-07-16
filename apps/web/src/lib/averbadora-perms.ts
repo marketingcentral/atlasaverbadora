@@ -96,7 +96,8 @@ export const RESOURCE_GROUPS: { titulo: string; recursos: { key: string; label: 
       { key: "api-docs", label: "API — Documentacao" },
       { key: "api-tokens", label: "API — Tokens" },
       { key: "api-webhooks", label: "API — Webhooks" },
-      { key: "configuracoes", label: "Configuracoes" },
+      { key: "configuracoes", label: "Configuracoes", descricao: "SMTP + OpenAI (troca de chaves)" },
+      { key: "manutencao", label: "Manutencao (destrutivo)", descricao: "Purge de contratos, reset de contas, reseed do banco. So supervisor por padrao." },
     ],
   },
 ];
