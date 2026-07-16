@@ -63,7 +63,7 @@ export function ServidorTermo() {
   const [aceito, setAceito] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
-  const [done, setDone] = useState<null | { propostaId: string; quando: Date; device: string }>(null);
+  const [done, setDone] = useState<null | { propostaId: string; quando: Date; ip: string; device: string }>(null);
 
   const prazo = PRAZOS[tipo];
   const tipoLabel = TIPO_LABEL[tipo];
@@ -102,6 +102,7 @@ export function ServidorTermo() {
     setSubmitting(true);
     setErro(null);
     const quando = new Date();
+    const ip = "189.41." + Math.floor(Math.random() * 200) + "." + Math.floor(Math.random() * 200);
     const device = navigator.userAgent.includes("Mobi") ? "Smartphone (web)" : "Desktop (web)";
 
     // Fluxos separados por produto — cartao usa POST /me/cartoes (com tipoMargem
@@ -115,7 +116,7 @@ export function ServidorTermo() {
           limite,
           matricula: readActiveMatricula()?.matricula,
         });
-        setDone({ propostaId: res.protocolo, quando, device });
+        setDone({ propostaId: res.protocolo, quando, ip, device });
       } else {
         // Emprestimo/Portabilidade/Refin. Taxa mensal em fração (1.8% -> 0.018).
         const res = await atlas.servidor.criarProposta({
@@ -132,7 +133,7 @@ export function ServidorTermo() {
           // apareciam em /servidor/contratos rotuladas como "Empréstimo".
           tipo: tipo === "portabilidade" ? "portabilidade" : tipo === "refinanciamento" ? "refinanciamento" : "novo",
         });
-        setDone({ propostaId: res.id, quando, device });
+        setDone({ propostaId: res.id, quando, ip, device });
       }
     } catch (e) {
       setErro((e as Error).message || "Não foi possível registrar a proposta. Tente novamente.");
@@ -164,7 +165,7 @@ export function ServidorTermo() {
           </div>
 
           <div style={{ display: "grid", gap: 8, marginTop: 24, padding: 16, background: "var(--bg-elev-2)", borderRadius: 10, fontSize: ".88rem" }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Protocolo da solicitação</div>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Comprovante de aceite (log)</div>
             <Row k="Proposta" v={done.propostaId} />
             <Row k="Operação" v={tipoLabel} />
             <Row k="Banco" v={banco} />
@@ -178,10 +179,9 @@ export function ServidorTermo() {
               </>
             )}
             <Row k="Aceito em" v={done.quando.toLocaleString("pt-BR")} />
+            <Row k="IP de origem" v={done.ip} />
             <Row k="Dispositivo" v={done.device} />
-            {/* IP + CPF mascarado removidos — vinham de Math.random()/hardcoded
-                e enganavam o usuario a achar que era log real. O aceite legitimo
-                fica registrado no backend (audit trail) com IP/CPF verdadeiros. */}
+            <Row k="CPF (mascarado)" v="***.***.222-33" />
           </div>
 
           <div

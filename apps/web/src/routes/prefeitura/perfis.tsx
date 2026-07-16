@@ -116,12 +116,6 @@ function PerfilModal({
   const [ativo, setAtivo] = useState(initial?.ativo ?? true);
   const [permissoes, setPermissoes] = useState<string[]>(() => {
     if (initial?.permissoes && initial.permissoes.length > 0) return [...initial.permissoes];
-    // Se o perfil chegou do PG sem permissoes[] (schema antigo), deriva do
-    // `initial.area` em vez de sempre cair em "rh" — evita RH selecionado num
-    // perfil financeiro/gestor. Novo perfil (sem `initial`) segue default "rh".
-    if (initial?.area && PREFEITURA_PRESETS[initial.area as PrefeituraAreaLabel]) {
-      return [...PREFEITURA_PRESETS[initial.area as PrefeituraAreaLabel]];
-    }
     return [...PREFEITURA_PRESETS.rh];
   });
   const supervisor = permissoes.includes("*");
