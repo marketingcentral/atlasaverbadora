@@ -23,6 +23,10 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -55,6 +59,17 @@ fun ContaScreen(
 ) {
     if (contaVm.mode != ContaEdit.NONE) {
         ContaEditDialog(contaVm, onSucesso = { vm.load() })
+    }
+
+    // Suporte / Termos de Uso / Políticas de Privacidade — o texto vem da tela
+    // Termos de aceite da averbadora, então editar lá reflete aqui.
+    var termoAberto by remember { mutableStateOf<String?>(null) }
+    termoAberto?.let { tipo ->
+        if (tipo == "suporte") {
+            SuporteDialog(onFechar = { termoAberto = null })
+        } else {
+            TermoDialog(tipo = tipo, onFechar = { termoAberto = null })
+        }
     }
 
     when (val s = vm.matriculasState) {
@@ -114,10 +129,11 @@ fun ContaScreen(
                 SectionLabel("Suporte")
                 Spacer(Modifier.height(8.dp))
                 AtlasCard {
-                    LinkRow("Central de ajuda")
-                    LinkRow("Política de privacidade")
-                    LinkRow("Política de uso")
-                    LinkRow("Falar com alguém")
+                    LinkRow("Suporte") { termoAberto = "suporte" }
+                    RowDivider()
+                    LinkRow("Termos de Uso") { termoAberto = "termos_uso" }
+                    RowDivider()
+                    LinkRow("Políticas de Privacidade") { termoAberto = "politica_privacidade" }
                 }
 
                 Spacer(Modifier.height(28.dp))
@@ -243,11 +259,67 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit, kb: 
 }
 
 @Composable
-private fun LinkRow(text: String) {
-    Text(
-        text = text,
-        color = Ink,
-        fontSize = 15.sp,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+private fun LinkRow(text: String, onClick: (() -> Unit)? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        if (onClick != null) Text("›", color = InkMuted, fontSize = 20.sp)
+    }
+}
+
+/** Termo (Termos de Uso / Política de Privacidade) — corpo vem de /averbadora/termos. */
+@Composable
+private fun TermoDialog(tipo: String, onFechar: () -> Unit) {
+    val corpo = io.atlas.servidor.ui.components.rememberTermoCorpo(tipo)
+    val titulo = if (tipo == "termos_uso") "Termos de Uso" else "Políticas de Privacidade"
+    AlertDialog(
+        onDismissRequest = onFechar,
+        containerColor = Superficie,
+        title = { Text(titulo, fontWeight = FontWeight.ExtraBold, color = Ink) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    corpo ?: "Carregando…",
+                    color = InkMuted,
+                    fontSize = 13.sp,
+                    lineHeight = 19.sp,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onFechar) { Text("Fechar", color = Verde, fontWeight = FontWeight.Bold) }
+        },
+    )
+}
+
+@Composable
+private fun SuporteDialog(onFechar: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onFechar,
+        containerColor = Superficie,
+        title = { Text("Suporte", fontWeight = FontWeight.ExtraBold, color = Ink) },
+        text = {
+            Column {
+                Text("Precisa de ajuda com sua margem, contratos ou benefícios?", color = InkMuted, fontSize = 14.sp)
+                Spacer(Modifier.height(12.dp))
+                InfoRow("E-mail", "suporte@atlasaverbadora.com.br")
+                InfoRow("Telefone", "(48) 3000-0000")
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Para dúvidas sobre desconto em folha, procure também o RH da sua prefeitura.",
+                    color = InkMuted,
+                    fontSize = 12.5.sp,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onFechar) { Text("Fechar", color = Verde, fontWeight = FontWeight.Bold) }
+        },
     )
 }

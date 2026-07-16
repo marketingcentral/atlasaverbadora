@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -25,7 +25,7 @@ import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbado
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
-import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes, purgeCotacoes, setCotacaoContrato, loadCotacoes as loadCotacoesAdmin } from "./telemedicina-cotacoes-store.js";
+import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes, purgeCotacoes, setCotacaoContrato, removeCotacaoContrato, loadCotacoes as loadCotacoesAdmin } from "./telemedicina-cotacoes-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
@@ -782,6 +782,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await setCotacaoContrato(c.env, id, key, safeName);
     return c.json({ ok: true, key, nome: safeName, size: file.size });
   })
+  // Remove o contrato anexado (arquivo errado por engano) — volta a bloquear a ativacao.
+  .delete("/v1/admin/telemedicina/cotacoes/:id/contrato", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const cot = await removeCotacaoContrato(c.env, c.req.param("id"));
+    if (!cot) throw Errors.notFound("cotacao");
+    return c.json({ ok: true });
+  })
   // Baixa o contrato anexado da cotacao.
   .get("/v1/admin/telemedicina/cotacoes/:id/contrato", async (c) => {
     requireAdmin(c.get("jwt"));
@@ -835,6 +842,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       isReserva: false, // contrato ATIVO direto (vai pra Contratos Ativos)
       ator: "averbadora",
     });
+    // O contrato que a averbadora anexou na cotacao vira o "contrato assinado" do
+    // contrato gerado — assim o servidor baixa EXATAMENTE o mesmo arquivo em
+    // "Baixar Contrato" (antes dava "banco ainda nao anexou").
+    setContratoCcb(contrato.adf, pre.contratoKey, `averbadora:${c.get("jwt").sub}`);
     await persistContrato(c.env, contrato.adf);
     return c.json({ ok: true, situacao: cot.situacao, contratoAdf: contrato.adf });
   })

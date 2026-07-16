@@ -293,6 +293,11 @@ data class ContratoDto(
     // Documento do contrato anexado pelo banco (quando disponível). Enquanto o banco não
     // anexa, fica null e o app mostra o contrato montado a partir dos dados da operação.
     @SerializedName("anexoUrl") val anexoUrl: String? = null,
+    // Identificam o TIPO do contrato ativo (Empréstimo / Cartão / Portabilidade / Telemedicina).
+    val tipoContrato: String? = null,
+    val tipoMargem: String? = null,
+    val observacoes: String? = null,
+    val bancoOrigem: String? = null,
 )
 
 data class ElegivelDto(

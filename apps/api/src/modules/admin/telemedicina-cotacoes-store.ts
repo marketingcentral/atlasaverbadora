@@ -75,6 +75,17 @@ export async function setCotacaoContrato(env: Env, id: string, key: string, nome
   return cot;
 }
 
+/** Remove o contrato anexado (anexo errado) — volta a bloquear a ativacao do plano. */
+export async function removeCotacaoContrato(env: Env, id: string): Promise<TelemedicinaCotacao | null> {
+  await refreshCotacoes(env);
+  const cot = CACHE.list.find((x) => x.id === id);
+  if (!cot) return null;
+  delete cot.contratoKey;
+  delete cot.contratoNome;
+  try { await upsertCollectionRow(env, TABLE, cot.id, cot); } catch { /* fail-safe */ }
+  return cot;
+}
+
 /** Apaga TODAS as cotacoes (limpeza de testes — averbadora). */
 export async function purgeCotacoes(env: Env): Promise<number> {
   await refreshCotacoes(env);

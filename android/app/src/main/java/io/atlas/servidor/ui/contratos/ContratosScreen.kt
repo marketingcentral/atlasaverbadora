@@ -82,7 +82,8 @@ fun ContratosScreen(vm: HomeViewModel) {
             } else {
                 // Recusadas/expiradas/canceladas vêm da lista de propostas → Histórico.
                 val recusadas = vm.propostas.filter { terminalHistorico(it.situacao) }
-                val emAnaliseCount = emAnaliseAtivas(vm.propostas).size
+                // A cotação de telemedicina não é proposta — soma no contador à parte.
+                val emAnaliseCount = emAnaliseAtivas(vm.propostas).size + vm.cotacoesTelePendentes.size
                 ContratosContent(
                     info, recusadas, emAnaliseCount, tab,
                     telesCanceladas = vm.cotacoesTeleCanceladas,
@@ -281,6 +282,14 @@ private fun ContratoCard(c: ContratoDto, saldoDevedor: Double?) {
         else -> ChipTone.Verde
     }
     AtlasCard {
+        // TIPO do contrato em cima — o servidor precisa saber a que se refere.
+        Text(
+            tipoContratoNome(c),
+            color = Verde,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.ExtraBold,
+        )
+        Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -347,6 +356,21 @@ private fun TelemedicinaCanceladaCard(cot: io.atlas.servidor.data.remote.dto.Cot
                 Text("Cotação · solicitada em ${cot.criadoEm.take(10)}", color = InkMuted, fontSize = 13.sp)
             }
             StatusChip("Cancelada", ChipTone.Neutro)
+        }
+    }
+}
+
+/** Rótulo do TIPO do contrato ativo — mesma classificação usada em "Em análise". */
+private fun tipoContratoNome(c: ContratoDto): String {
+    if (io.atlas.servidor.ui.components.ehTelemedicina(null, c.observacoes)) return "TELEMEDICINA"
+    if (c.tipoContrato?.equals("REFIN", ignoreCase = true) == true || c.bancoOrigem != null) return "PORTABILIDADE"
+    return when (c.tipoMargem?.uppercase()) {
+        "CARTAO_CONSIGNADO" -> "CARTÃO DE CRÉDITO CONSIGNADO"
+        "CARTAO_BENEFICIOS" -> "CARTÃO BENEFÍCIO CONSIGNADO"
+        else -> if (c.tipoContrato?.equals("ECONSIGNADO", ignoreCase = true) == true) {
+            "CARTÃO DE CRÉDITO CONSIGNADO"
+        } else {
+            "EMPRÉSTIMO CONSIGNADO"
         }
     }
 }

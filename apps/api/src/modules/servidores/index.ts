@@ -6,7 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
-import { ensureTombamentoLoaded, listExternalLoans } from "../admin/tombamento.js";
+import { ensureTombamentoLoaded, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -125,12 +125,18 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   // Pendentes ("Aguardando") vivem em "Em análise"; recusados/cancelados/expirados/suspensos
   // no Histórico (via lista de propostas). Sem este filtro, uma proposta pendente ou recusada
   // aparecia como "contrato ativo" — e duplicava no Histórico.
-  const isContratoReal = (situacao: string) => {
-    const s = situacao.toLowerCase();
+  // Um contrato so entra em CONTRATOS ATIVOS quando TODAS as etapas concluiram — a
+  // ultima e a ADF aprovada pela prefeitura (folhaStatus="aplicada"). Enquanto qualquer
+  // etapa estiver pendente (banco analisando, ADF aguardando/negada), ele fica em
+  // "Em analise". Recusado/cancelado/expirado vai pro Historico. Vale pra TODOS os
+  // produtos: emprestimo, cartao consignado, cartao beneficio, portabilidade, telemedicina.
+  const isContratoReal = (ct: { situacao: string; folhaStatus?: string }) => {
+    const s = ct.situacao.toLowerCase();
     if (s.includes("aguard") || s.includes("cancel") || s.includes("recus") || s.includes("expir") || s.includes("suspens")) {
       return false;
     }
-    return true; // ativo / averbado / vigente / quitado
+    if (s.includes("quitad")) return true; // ja encerrado — vive no historico
+    return ct.folhaStatus === "aplicada"; // so com a ADF aprovada
   };
   // Recentes primeiro — cliente pediu contratos averbados em ordem cronologica
   // decrescente (o de hoje aparece no topo, quando chegar outro recente ele
@@ -146,7 +152,7 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   const sortKeyCt = (ct: { criadoEmIso?: string; lancamento: string }): string =>
     ct.criadoEmIso ?? parseLanc(ct.lancamento);
   const contratosMock = contratos
-    .filter((ct) => isContratoReal(ct.situacao))
+    .filter((ct) => isContratoReal(ct))
     .sort((a, b) => sortKeyCt(b).localeCompare(sortKeyCt(a)))
     .map((ct) => ({
       id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
@@ -157,6 +163,9 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
       // e caia tudo em "Emprestimo consignado" (fallback antigo).
       tipoContrato: ct.tipoContrato,
       tipoMargem: ct.tipoMargem ?? deriveTipoMargem(ct),
+      // Marca o plano de Telemedicina — o front usa pra rotular o card.
+      observacoes: ct.observacoes,
+      bancoOrigem: ct.bancoOrigem,
     }));
   // PORTABILIDADE = so emprestimos que o servidor tem em OUTROS bancos, vindos da base
   // que a PREFEITURA importou (tombamento) + seed de teste. Contratos feitos no Atlas
@@ -1035,6 +1044,75 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
     return c.json({ ok: true });
   })
+  // Solicita a PORTABILIDADE de um emprestimo externo (do tombamento da prefeitura)
+  // para o Banco Atlas. Cria uma reserva REFIN que BLOQUEIA o emprestimo consignado
+  // por ate 5 dias — com valorParcela 0, ou seja, sem reduzir o valor da margem
+  // (o desconto real so acontece quando o banco confirmar a portabilidade).
+  .post("/v1/servidores/me/portabilidade/solicitar", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    await ensureTombamentoLoaded(c.env);
+    await refreshContratos(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    const body = await c.req.json().catch(() => ({}));
+    const matAtiva = typeof body?.matricula === "string" ? body.matricula : undefined;
+    const elegivelId = typeof body?.elegivelId === "string" ? body.elegivelId : undefined;
+    const entry = matAtiva
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
+      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
+    if (!entry) throw Errors.notFound("matricula");
+    // Ja existe emprestimo/portabilidade em analise? Nao deixa abrir outra.
+    const jaPendente = listContratos({ matricula: entry.matricula }).some(
+      (ct) => /aguard/i.test(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO",
+    );
+    if (jaPendente) {
+      throw Errors.validation({ portabilidade: "Você já tem uma solicitação de empréstimo ou portabilidade em análise." });
+    }
+    const loan = elegivelId ? getExternalLoan(entry.matricula, elegivelId) : undefined;
+    if (elegivelId && !loan) throw Errors.notFound("emprestimo externo");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
+    const valorBase = loan ? round2(loan.saldoDevedor) : round2(margemTotal(entry.salarioLiquido, "EMPRESTIMO"));
+    const parcelasBase = loan?.parcelasRestantes ?? 60;
+    const contrato = criarContratoOuReserva({
+      bancoId: conv?.bancoId ?? 1,
+      servidorId: Number(entry.idMatricula.replace(/\D/g, "").slice(-5)) || 1,
+      idMatricula: entry.idMatricula,
+      matricula: entry.matricula,
+      nome: entry.nome,
+      cpfMasked: entry.cpfMasked,
+      convenioId: conv?.id ?? entry.idConvenio,
+      convenio: conv?.nome ?? "Banco Atlas",
+      tipoContrato: "REFIN",
+      valorFinanciado: valorBase,
+      parcelas: parcelasBase,
+      taxaAm: loan?.taxaAm ?? 0,
+      cetAm: loan?.taxaAm ?? 0,
+      iof: 0,
+      diasCarencia: 30,
+      // Parcela 0: a portabilidade BLOQUEIA a margem de emprestimo (proposta pendente),
+      // mas NAO reduz o valor disponivel — so muda quando o banco confirmar.
+      valorParcela: 0,
+      codigoVerba: conv?.codigoVerba ?? "",
+      observacoes: loan
+        ? `Portabilidade do contrato ${loan.contratoOrigem} (${loan.bancoNome}) — solicitada pelo servidor. Valores a confirmar com o banco.`
+        : "Solicitacao de portabilidade enviada pelo servidor — valores a confirmar com o banco.",
+      isReserva: true,
+      reservaDias: 5, // bloqueia a margem de EMPRESTIMO por ate 5 dias
+      bancoOrigem: loan?.bancoNome,
+      contratoOrigem: loan?.contratoOrigem,
+      saldoDevedorOrigem: loan ? round2(loan.saldoDevedor) : undefined,
+      ator: `servidor:${s.id}`,
+    });
+    await persistContrato(c.env, contrato.adf);
+    notifyServidor(c, entry.email, {
+      titulo: `Solicitação de portabilidade ${contrato.adf} enviada`,
+      mensagem: `Sua solicitação de portabilidade${loan ? ` do contrato ${loan.bancoNome}` : ""} foi enviada ao ${bancoNome(contrato.bancoId)}. Sua margem de empréstimo fica reservada por até 5 dias e o banco vai entrar em contato.`,
+      detalhes: [{ label: "Situação", valor: contrato.situacao }],
+    });
+    return c.json({ id: contrato.adf, situacao: contrato.situacao }, 201);
+  })
   // ================== PORTABILIDADE (marketplace) ==================
   // Servidor publica intencao a partir de um contrato ATIVO que ele tem em
   // algum banco. A averbadora ja sabe todos os dados do contrato — o servidor
@@ -1187,10 +1265,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!obj) {
       return c.json({ reason: "arquivo_nao_encontrado_no_r2", key: contrato.ccbKey }, 404);
     }
+    // Baixa EXATAMENTE o arquivo anexado, no formato original (xlsx continua xlsx).
+    // A extensao sai da chave do R2 (que carrega o nome original) — antes o filename
+    // era sempre .pdf, entao um .xlsx baixava como PDF e dava erro ao abrir.
+    const base = (contrato.ccbKey.split("/").pop() ?? "").toLowerCase();
+    const ext = /\.(pdf|docx|xlsx|xls)$/.exec(base)?.[1] ?? "pdf";
     return new Response(obj.body, {
       headers: {
-        "Content-Type": obj.httpMetadata?.contentType ?? "application/pdf",
-        "Content-Disposition": `attachment; filename="contrato-${adf}.pdf"`,
+        "Content-Type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+        "Content-Disposition": `attachment; filename="contrato-${adf}.${ext}"`,
         "Cache-Control": "private, max-age=60",
       },
     });

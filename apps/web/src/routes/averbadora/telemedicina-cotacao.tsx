@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Pill } from "@atlas/ui/web";
@@ -42,12 +43,18 @@ export function AverbadoraTelemedicinaCotacao() {
   });
 
   // Anexo do contrato — pré-requisito pra ativar o plano (mesma regra do CCB do banco).
+  const fileRef = useRef<HTMLInputElement>(null);
   const anexar = useMutation({
     mutationFn: (file: File) => atlas.admin.uploadContratoTelemedicina(id!, file),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "telemedicina", "cotacoes"] }),
   });
+  // Anexou o arquivo errado? Remove e volta a bloquear a ativação.
+  const remover = useMutation({
+    mutationFn: () => atlas.admin.removerContratoTelemedicina(id!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "telemedicina", "cotacoes"] }),
+  });
 
-  const busy = ativar.isPending || cancelar.isPending || anexar.isPending;
+  const busy = ativar.isPending || cancelar.isPending || anexar.isPending || remover.isPending;
   const st = cot ? (SITUACAO[cot.situacao] ?? { label: cot.situacao, variant: "pendente" as const }) : null;
   const encerrada = cot?.situacao === "fechado" || cot?.situacao === "cancelado";
   const temContrato = !!cot?.temContrato;
@@ -102,68 +109,100 @@ export function AverbadoraTelemedicinaCotacao() {
             </dl>
           </section>
 
-          {/* Contrato do plano — obrigatório antes de ativar (mesma regra do CCB do banco). */}
-          <section style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 14, padding: 28 }}>
-            <h2 style={{ margin: "0 0 6px", fontSize: "1.15rem" }}>Contrato do plano</h2>
-            <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "0 0 16px" }}>
-              Anexe o contrato assinado (PDF, DOCX, XLS ou XLSX, até 15 MB). O plano só pode ser ativado depois disso.
-            </p>
-            {temContrato ? (
-              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-                <Pill variant="averbado">Contrato anexado</Pill>
-                <span style={{ fontSize: 14 }}>{cot.contratoNome ?? "contrato"}</span>
-                <Button
-                  variant="ghost"
-                  onClick={async () => {
-                    const blob = await atlas.admin.fetchContratoTelemedicinaBlob(cot.id);
-                    const url = URL.createObjectURL(blob);
-                    window.open(url, "_blank");
-                    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-                  }}
-                >
-                  Ver contrato
+          {/* PRÓXIMO PASSO — mesmo layout do anexo de contrato do banco (empréstimo). */}
+          {!encerrada && (
+            <section style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 14, padding: 24 }}>
+              <span style={{ fontSize: 11, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+                Próximo passo
+              </span>
+              <p style={{ margin: "8px 0 16px", fontSize: 14, color: "var(--text-muted)" }}>
+                {temContrato
+                  ? "Contrato anexado. Você pode ativar o plano ou atualizar o arquivo antes."
+                  : "Anexe o contrato do plano (PDF, DOCX, XLS ou XLSX, até 15 MB) para liberar a ativação."}
+              </p>
+
+              {temContrato && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+                  border: "1px solid color-mix(in srgb, var(--emerald-500) 35%, transparent)",
+                  background: "color-mix(in srgb, var(--emerald-500) 8%, transparent)",
+                  borderRadius: 10, padding: "12px 16px", marginBottom: 16,
+                }}>
+                  <span style={{ fontSize: 20 }}>📄</span>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>Contrato atual</div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{cot.contratoNome ?? "contrato"}</div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={async () => {
+                      const blob = await atlas.admin.fetchContratoTelemedicinaBlob(cot.id);
+                      const url = URL.createObjectURL(blob);
+                      window.open(url, "_blank");
+                      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                    }}
+                  >
+                    Abrir arquivo
+                  </Button>
+                  <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={busy}>
+                    Atualizar contrato
+                  </Button>
+                  <Button variant="ghost" onClick={() => remover.mutate()} disabled={busy}>
+                    {remover.isPending ? "Removendo…" : "Remover"}
+                  </Button>
+                </div>
+              )}
+
+              {/* input escondido — acionado pelos botões acima (mesma UX do banco) */}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".pdf,.docx,.xls,.xlsx"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) anexar.mutate(f);
+                  e.target.value = "";
+                }}
+              />
+
+              <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={busy}>
+                  {anexar.isPending ? "Enviando…" : temContrato ? "Atualizar contrato →" : "Anexar contrato →"}
+                </Button>
+                <Button onClick={() => ativar.mutate()} disabled={busy || !temContrato}>
+                  {ativar.isPending ? "Ativando…" : "Ativar Plano →"}
+                </Button>
+                <Button variant="ghost" onClick={() => cancelar.mutate()} disabled={busy} style={{ marginLeft: "auto" }}>
+                  {cancelar.isPending ? "Cancelando…" : "Recusar"}
                 </Button>
               </div>
-            ) : (
-              <Pill variant="pendente">Contrato pendente</Pill>
-            )}
-            {!encerrada && (
-              <div style={{ marginTop: 16 }}>
-                <input
-                  type="file"
-                  accept=".pdf,.docx,.xls,.xlsx"
-                  disabled={busy}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) anexar.mutate(f);
-                    e.target.value = "";
-                  }}
-                  style={{ fontSize: 14 }}
-                />
-                {anexar.isPending && <span style={{ marginLeft: 10, fontSize: 13, color: "var(--text-muted)" }}>Enviando…</span>}
-                {anexar.isError && (
-                  <p style={{ color: "var(--danger, #dc2626)", fontSize: 13, marginTop: 8 }}>
-                    {(anexar.error as Error)?.message ?? "Falha ao anexar o contrato."}
-                  </p>
-                )}
-              </div>
-            )}
-          </section>
-
-          {!encerrada && (
-            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end", alignItems: "center" }}>
-              {!temContrato && (
-                <span style={{ fontSize: 13, color: "var(--text-muted)", marginRight: "auto" }}>
-                  Anexe o contrato para liberar a ativação do plano.
-                </span>
+              {anexar.isError && (
+                <p style={{ color: "var(--danger, #dc2626)", fontSize: 13, marginTop: 10 }}>
+                  {(anexar.error as Error)?.message ?? "Falha ao anexar o contrato."}
+                </p>
               )}
-              <Button variant="ghost" onClick={() => cancelar.mutate()} disabled={busy}>
-                {cancelar.isPending ? "Cancelando…" : "Cancelar"}
+            </section>
+          )}
+          {encerrada && temContrato && (
+            <section style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 14, padding: 24, display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ fontSize: 20 }}>📄</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Contrato do plano</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{cot.contratoNome ?? "contrato"}</div>
+              </div>
+              <Button
+                variant="ghost"
+                onClick={async () => {
+                  const blob = await atlas.admin.fetchContratoTelemedicinaBlob(cot.id);
+                  const url = URL.createObjectURL(blob);
+                  window.open(url, "_blank");
+                  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+                }}
+              >
+                Abrir arquivo
               </Button>
-              <Button onClick={() => ativar.mutate()} disabled={busy || !temContrato}>
-                {ativar.isPending ? "Ativando…" : "Ativar Plano"}
-              </Button>
-            </div>
+            </section>
           )}
         </>
       )}

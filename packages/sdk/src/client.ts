@@ -53,7 +53,8 @@ export type BancoPerfil = "admin" | "operador" | "consulta" | "relatorios" | "pe
 
 export type TermoTipo =
   | "emprestimo" | "portabilidade" | "refinanciamento" | "cartao_consignado" | "cartao_beneficio"
-  | "beneficio_generico" | "telemedicina" | "lgpd_servidor" | "anuencia_prefeitura";
+  | "beneficio_generico" | "telemedicina" | "lgpd_servidor" | "anuencia_prefeitura"
+  | "termos_uso" | "politica_privacidade";
 export interface TermoTemplate {
   id: TermoTipo;
   titulo: string;
@@ -1665,6 +1666,9 @@ export class AtlasClient {
         { method: "POST", body: fd, isFormData: true },
       );
     },
+    /** Remove o contrato anexado (arquivo errado) — volta a bloquear a ativacao. */
+    removerContratoTelemedicina: (id: string) =>
+      this.request<{ ok: true }>(`/v1/admin/telemedicina/cotacoes/${encodeURIComponent(id)}/contrato`, { method: "DELETE" }),
     /** Baixa o contrato anexado da cotacao (envia Authorization). */
     fetchContratoTelemedicinaBlob: async (id: string): Promise<Blob> => {
       const token = await this.storage.getAccess();
