@@ -10,7 +10,7 @@ import { refreshComunicados, persistComunicados, removerComunicadoPersistido } f
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
@@ -1169,6 +1169,27 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     prefeituras.length = 0; prefeituras.push(...np);
     SERVIDORES_BUSCA_MOCK.length = 0; SERVIDORES_BUSCA_MOCK.push(...ns);
     return c.json({ ok: true, counts: { bancos: nb.length, prefeituras: np.length, servidores: ns.length } });
+  })
+
+  // ⚠️ OPERACAO DESTRUTIVA (escopo cirurgico): zera SO servidores + contratos +
+  // ADFs + propostas + eventos + consentimentos. NAO toca em bancos, prefeituras
+  // ou convenios. Cliente pediu (16/07/2026): "vamos comecar essa parte do zero".
+  .post("/v1/admin/db/purge-servidores", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
+    const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
+    if (body.confirmar !== "APAGAR-SERVIDORES") {
+      throw Errors.validation({
+        confirmar: 'Operacao destrutiva bloqueada. Para confirmar, envie { "confirmar": "APAGAR-SERVIDORES" }. Apaga servidores + contratos + ADFs + propostas + eventos. Bancos/prefeituras/convenios ficam intocados.',
+      });
+    }
+    pushEvent("error", "admin.db.purge_servidores", `PURGE DE SERVIDORES confirmado por admin ${j?.sub}: TRUNCATE servidores + contratos + adfs + propostas.`);
+    await purgeServidores(c.env);
+    // Limpa memoria in-isolate. Outros isolates re-hidratam do PG na proxima
+    // chamada de loadServidores/refreshContratos (padrao ja existente).
+    SERVIDORES_BUSCA_MOCK.length = 0;
+    return c.json({ ok: true, mensagem: "Base de servidores zerada. Bancos/prefeituras/convenios preservados." });
   })
 
   .post("/v1/admin/bancos", async (c) => {
