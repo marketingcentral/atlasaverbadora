@@ -56,8 +56,10 @@ data class FaseInfo(
     val falhaMotivo: String? = null,
 )
 
-/** É um plano de Telemedicina? (convênio "Telemedicina Atlas", criado na aprovação) */
-fun ehTelemedicina(convenio: String?): Boolean = (convenio ?: "").contains("telemedicina", ignoreCase = true)
+/** É um plano de Telemedicina? (contrato criado quando a averbadora aprova a cotação —
+ *  marcado nas observações; o convênio é re-derivado do convenioId e não serve). */
+fun ehTelemedicina(convenio: String?, observacoes: String? = null): Boolean =
+    "${observacoes ?: ""} ${convenio ?: ""}".contains("telemedicina", ignoreCase = true)
 
 /** Cadeia de fases da TELEMEDICINA (cotação → averbadora → ADF). */
 fun teleFaseChain(situacao: String, folhaStatus: String?, motivo: String?): FaseInfo {

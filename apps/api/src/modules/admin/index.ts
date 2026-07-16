@@ -2563,6 +2563,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // aprovou; e' a averbadora que efetiva a averbacao ao aplicar em folha.
     // No fluxo antigo (banco averbava direto) ja eram "Ativo": aqui e' no-op.
     const ator = `averbadora:${c.get("jwt").sub}`;
+    // setAdfStatusGlobal ja carimbou folhaStatus="aplicada" no contrato — e' esse
+    // sinal que CONCLUI o passo a passo e libera a entrada em CONTRATOS ATIVOS.
     for (const adf of adfs) {
       setContratoSituacaoAtivo(adf, ator);
       await persistContrato(c.env, adf);

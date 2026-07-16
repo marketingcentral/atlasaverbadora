@@ -1014,9 +1014,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         taxaAm: round2(ct.taxaAm * 100),
         situacao: ct.situacao,
         tipoContrato: ct.tipoContrato,
-        // Convenio identifica o plano de Telemedicina ("Telemedicina Atlas") — o front
-        // usa pra rotular o card e mostrar o passo a passo proprio da telemedicina.
+        // Convenio + observacoes identificam o plano de Telemedicina — o front usa pra
+        // rotular o card e mostrar o passo a passo proprio (averbadora + ADF).
         convenio: ct.convenio,
+        observacoes: ct.observacoes,
         // Bucket de margem — permite o front distinguir Cartao Consignado
         // (CARTAO_CONSIGNADO) de Cartao Beneficio (CARTAO_BENEFICIOS) quando
         // tipoContrato=ECONSIGNADO.

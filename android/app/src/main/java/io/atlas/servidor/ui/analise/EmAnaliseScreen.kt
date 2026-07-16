@@ -57,7 +57,7 @@ import java.util.Locale
  *  e as recusadas/expiradas/canceladas (vão pro Histórico). */
 /** Cadeia de fases da proposta — telemedicina tem a sua (averbadora + ADF). */
 fun faseDe(p: PropostaDto): FaseInfo =
-    if (ehTelemedicina(p.convenio)) teleFaseChain(p.situacao ?: "—", p.folhaStatus, p.folhaMotivo)
+    if (ehTelemedicina(p.convenio, p.observacoes)) teleFaseChain(p.situacao ?: "—", p.folhaStatus, p.folhaMotivo)
     else faseChain(p.situacao ?: "—", p.folhaStatus, p.folhaMotivo)
 
 /** Em análise = qualquer solicitação que ainda NÃO concluiu todas as etapas (a última é a
@@ -114,7 +114,7 @@ fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel(), onMudou: () -> Unit =
 
 /** Nome do tipo de solicitação — pro usuário identificar o que está em análise. */
 private fun tipoPropostaNome(p: PropostaDto): String {
-    if (ehTelemedicina(p.convenio)) return "Telemedicina"
+    if (ehTelemedicina(p.convenio, p.observacoes)) return "Telemedicina"
     if (p.tipoContrato?.equals("REFIN", ignoreCase = true) == true || p.bancoOrigem != null) return "Portabilidade"
     return when (p.tipoMargem?.uppercase()) {
         "CARTAO_CONSIGNADO" -> "Cartão de Crédito Consignado"
@@ -164,7 +164,7 @@ private fun PropostaCard(p: PropostaDto) {
         }
 
         Spacer(Modifier.height(18.dp))
-        FaseTimeline(fase, if (ehTelemedicina(p.convenio)) TELE_FASES else FASES)
+        FaseTimeline(fase, if (ehTelemedicina(p.convenio, p.observacoes)) TELE_FASES else FASES)
 
         p.expiraEm?.takeIf { !fase.concluido && fase.falhaPasso == null }?.let {
             Spacer(Modifier.height(8.dp))
