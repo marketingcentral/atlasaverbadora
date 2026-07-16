@@ -38,6 +38,11 @@ import io.atlas.servidor.ui.components.FaseTimeline
 import io.atlas.servidor.ui.components.LoadingBox
 import io.atlas.servidor.ui.components.StatusChip
 import io.atlas.servidor.ui.components.faseChain
+import io.atlas.servidor.ui.components.FaseInfo
+import io.atlas.servidor.ui.components.FASES
+import io.atlas.servidor.ui.components.TELE_FASES
+import io.atlas.servidor.ui.components.ehTelemedicina
+import io.atlas.servidor.ui.components.teleFaseChain
 import io.atlas.servidor.ui.components.terminalHistorico
 import io.atlas.servidor.ui.theme.Ambar
 import io.atlas.servidor.ui.theme.Divider
@@ -50,11 +55,18 @@ import java.util.Locale
 
 /** Propostas realmente EM ANDAMENTO. Saem daqui: as concluídas (viram contrato ativo)
  *  e as recusadas/expiradas/canceladas (vão pro Histórico). */
+/** Cadeia de fases da proposta — telemedicina tem a sua (averbadora + ADF). */
+fun faseDe(p: PropostaDto): FaseInfo =
+    if (ehTelemedicina(p.convenio)) teleFaseChain(p.situacao ?: "—", p.folhaStatus, p.folhaMotivo)
+    else faseChain(p.situacao ?: "—", p.folhaStatus, p.folhaMotivo)
+
+/** Em análise = qualquer solicitação que ainda NÃO concluiu todas as etapas (a última é a
+ *  ADF aprovada). Só depois de concluída ela sai daqui para Contratos Ativos. */
 fun emAnaliseAtivas(propostas: List<PropostaDto>): List<PropostaDto> = propostas.filter {
     val sit = (it.situacao ?: "").lowercase()
     !terminalHistorico(it.situacao) &&
         !sit.contains("quitad") &&
-        !faseChain(it.situacao ?: "—", it.folhaStatus, it.folhaMotivo).concluido
+        !faseDe(it).concluido
 }
 
 /** Conteúdo da aba "Em análise" (dentro de Contratos). Sem título de página — o pai já tem.
@@ -102,6 +114,7 @@ fun EmAnaliseContent(vm: EmAnaliseViewModel = viewModel(), onMudou: () -> Unit =
 
 /** Nome do tipo de solicitação — pro usuário identificar o que está em análise. */
 private fun tipoPropostaNome(p: PropostaDto): String {
+    if (ehTelemedicina(p.convenio)) return "Telemedicina"
     if (p.tipoContrato?.equals("REFIN", ignoreCase = true) == true || p.bancoOrigem != null) return "Portabilidade"
     return when (p.tipoMargem?.uppercase()) {
         "CARTAO_CONSIGNADO" -> "Cartão de Crédito Consignado"
@@ -117,7 +130,7 @@ private fun tipoPropostaNome(p: PropostaDto): String {
 @Composable
 private fun PropostaCard(p: PropostaDto) {
     val situacao = p.situacao ?: "—"
-    val fase = faseChain(situacao, p.folhaStatus, p.folhaMotivo)
+    val fase = faseDe(p)
     val tipoNome = tipoPropostaNome(p)
     AtlasCard {
         // Chip informativo (Em análise/Liberada/…) no TOPO, em linha única — pra todos os produtos.
@@ -145,12 +158,13 @@ private fun PropostaCard(p: PropostaDto) {
                     )
                 }
                 "Portabilidade" -> StatCol("Saldo a portar", Format.money(p.saldoDevedorOrigem ?: p.valor), accent = true, modifier = Modifier.weight(1f))
+                "Telemedicina" -> StatCol("Plano", "${Format.money(p.parcela)}/mês · 12 meses", accent = true, modifier = Modifier.weight(1f))
                 else -> StatCol("Limite", Format.money(p.valor), accent = true, modifier = Modifier.weight(1f))
             }
         }
 
         Spacer(Modifier.height(18.dp))
-        FaseTimeline(fase)
+        FaseTimeline(fase, if (ehTelemedicina(p.convenio)) TELE_FASES else FASES)
 
         p.expiraEm?.takeIf { !fase.concluido && fase.falhaPasso == null }?.let {
             Spacer(Modifier.height(8.dp))
@@ -204,24 +218,13 @@ private fun situacaoCurta(situacao: String): String {
 /** Cartão da cotação de telemedicina em análise — passo a passo próprio (não é proposta de banco). */
 @Composable
 private fun CotacaoTeleCard(cot: io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaDto) {
-    val contatado = cot.situacao.equals("contatado", ignoreCase = true)
     AtlasCard {
         StatusChip("Em análise", ChipTone.Ambar)
         Spacer(Modifier.height(10.dp))
         Text("Telemedicina", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         Text("Cotação · solicitada em ${cot.criadoEm.take(10)}", color = InkMuted, fontSize = 12.sp)
-        Spacer(Modifier.height(12.dp))
-        PassoTele("Cotação solicitada", true)
-        PassoTele("Em análise — a Atlas vai entrar em contato", contatado)
-        PassoTele("Plano ativado", false)
-    }
-}
-
-@Composable
-private fun PassoTele(label: String, feito: Boolean) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-        Box(Modifier.size(16.dp).clip(CircleShape).background(if (feito) Verde else Divider))
-        Spacer(Modifier.width(8.dp))
-        Text(label, color = if (feito) Ink else InkMuted, fontSize = 13.sp)
+        Spacer(Modifier.height(18.dp))
+        // Cotação ainda na averbadora → 1ª etapa ("Em Análise") é a ativa.
+        FaseTimeline(FaseInfo(ativo = 0, concluido = false), TELE_FASES)
     }
 }

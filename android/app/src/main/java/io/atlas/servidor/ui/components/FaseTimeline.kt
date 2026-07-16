@@ -38,6 +38,16 @@ val FASES = listOf(
     Fase("Autorização completa", "Desconto confirmado em folha. Tudo certo!"),
 )
 
+// Telemedicina tem passo a passo PRÓPRIO — quem aprova é a averbadora (não o banco),
+// e depois ainda depende da ADF da prefeitura.
+val TELE_FASES = listOf(
+    Fase("Em Análise", "A equipe da Atlas vai entrar em contato com você."),
+    Fase("Aprovado pela Averbadora", "A Atlas aprovou seu plano de telemedicina."),
+    Fase("Aguardando aprovação de ADF", "A prefeitura vai confirmar o desconto em folha."),
+    Fase("ADF Aprovada", "Desconto confirmado em folha pela prefeitura."),
+    Fase("Autorização completa", "Plano ativo. Tudo certo!"),
+)
+
 data class FaseInfo(
     val ativo: Int,
     val concluido: Boolean,
@@ -45,6 +55,25 @@ data class FaseInfo(
     val falhaLabel: String? = null,
     val falhaMotivo: String? = null,
 )
+
+/** É um plano de Telemedicina? (convênio "Telemedicina Atlas", criado na aprovação) */
+fun ehTelemedicina(convenio: String?): Boolean = (convenio ?: "").contains("telemedicina", ignoreCase = true)
+
+/** Cadeia de fases da TELEMEDICINA (cotação → averbadora → ADF). */
+fun teleFaseChain(situacao: String, folhaStatus: String?, motivo: String?): FaseInfo {
+    val s = situacao.lowercase()
+    if (s.contains("cancel") || s.contains("recus") || s.contains("suspens")) {
+        return FaseInfo(1, false, falhaPasso = 1, falhaLabel = "Cotação cancelada", falhaMotivo = motivo)
+    }
+    if (s.contains("expir")) {
+        return FaseInfo(1, false, falhaPasso = 1, falhaLabel = "Cotação expirada sem contato")
+    }
+    return when (folhaStatus?.lowercase()) {
+        "aplicada" -> FaseInfo(4, concluido = true)
+        "falha" -> FaseInfo(2, false, falhaPasso = 2, falhaLabel = "ADF negada pela prefeitura", falhaMotivo = motivo)
+        else -> FaseInfo(2, false) // aprovado pela averbadora, aguardando ADF
+    }
+}
 
 /** Situação terminal de REPROVA (recusada/expirada/cancelada/suspensa) — sai da análise
  *  e vai para o Histórico (não confundir com quitado, que vem dos contratos). */
@@ -73,15 +102,15 @@ fun faseChain(situacao: String, folhaStatus: String?, motivo: String?): FaseInfo
 
 /** "Menuzinho" vertical do processo em tempo real, com bolinhas conectadas por trilha. */
 @Composable
-fun FaseTimeline(fase: FaseInfo) {
+fun FaseTimeline(fase: FaseInfo, fases: List<Fase> = FASES) {
     Column {
         SectionLabel("Acompanhamento em tempo real")
         Spacer(Modifier.height(12.dp))
-        FASES.forEachIndexed { i, f ->
+        fases.forEachIndexed { i, f ->
             val isFalha = fase.falhaPasso == i
             val done = !isFalha && (fase.concluido || i < fase.ativo)
             val active = !isFalha && !fase.concluido && i == fase.ativo
-            val last = i == FASES.lastIndex
+            val last = i == fases.lastIndex
 
             val circleColor = when {
                 isFalha -> DangerRed

@@ -126,12 +126,18 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   // Pendentes ("Aguardando") vivem em "Em análise"; recusados/cancelados/expirados/suspensos
   // no Histórico (via lista de propostas). Sem este filtro, uma proposta pendente ou recusada
   // aparecia como "contrato ativo" — e duplicava no Histórico.
-  const isContratoReal = (situacao: string) => {
-    const s = situacao.toLowerCase();
+  // Um contrato so entra em CONTRATOS ATIVOS quando TODAS as etapas concluiram — a
+  // ultima e a ADF aprovada pela prefeitura (folhaStatus="aplicada"). Enquanto qualquer
+  // etapa estiver pendente (banco analisando, ADF aguardando/negada), ele fica em
+  // "Em analise". Recusado/cancelado/expirado vai pro Historico. Vale pra TODOS os
+  // produtos: emprestimo, cartao consignado, cartao beneficio, portabilidade, telemedicina.
+  const isContratoReal = (ct: { situacao: string; folhaStatus?: string }) => {
+    const s = ct.situacao.toLowerCase();
     if (s.includes("aguard") || s.includes("cancel") || s.includes("recus") || s.includes("expir") || s.includes("suspens")) {
       return false;
     }
-    return true; // ativo / averbado / vigente / quitado
+    if (s.includes("quitad")) return true; // ja encerrado — vive no historico
+    return ct.folhaStatus === "aplicada"; // so com a ADF aprovada
   };
   // Recentes primeiro — cliente pediu contratos averbados em ordem cronologica
   // decrescente (o de hoje aparece no topo, quando chegar outro recente ele
@@ -147,7 +153,7 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   const sortKeyCt = (ct: { criadoEmIso?: string; lancamento: string }): string =>
     ct.criadoEmIso ?? parseLanc(ct.lancamento);
   const contratosMock = contratos
-    .filter((ct) => isContratoReal(ct.situacao))
+    .filter((ct) => isContratoReal(ct))
     .sort((a, b) => sortKeyCt(b).localeCompare(sortKeyCt(a)))
     .map((ct) => ({
       id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
@@ -1008,6 +1014,9 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         taxaAm: round2(ct.taxaAm * 100),
         situacao: ct.situacao,
         tipoContrato: ct.tipoContrato,
+        // Convenio identifica o plano de Telemedicina ("Telemedicina Atlas") — o front
+        // usa pra rotular o card e mostrar o passo a passo proprio da telemedicina.
+        convenio: ct.convenio,
         // Bucket de margem — permite o front distinguir Cartao Consignado
         // (CARTAO_CONSIGNADO) de Cartao Beneficio (CARTAO_BENEFICIOS) quando
         // tipoContrato=ECONSIGNADO.

@@ -118,6 +118,8 @@ data class PropostaDto(
     val taxaAm: Double = 0.0, // já em % (ex.: 1.79)
     val situacao: String? = null,
     val tipoContrato: String? = null,
+    /** Convênio — identifica o plano de Telemedicina ("Telemedicina Atlas"). */
+    val convenio: String? = null,
     /** Bucket de margem exato (EMPRESTIMO | CARTAO_CONSIGNADO | CARTAO_BENEFICIOS). */
     val tipoMargem: String? = null,
     val folhaStatus: String? = null,
