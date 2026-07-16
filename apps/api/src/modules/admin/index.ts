@@ -265,9 +265,16 @@ export function ensurePrefeiturasLoaded(env: Env): Promise<void> {
   _prefeiturasLoad = (async () => {
     try {
       await ensureSchema(env);
-      await seedPrefeiturasIfEmpty(env, PREFEITURAS_SEED);
+      // Trava de purge: se o admin fez /db/purge-prefeituras, o flag
+      // "purge:prefeituras" fica no KV pra impedir o seed automatico repopular
+      // as prefeituras que o admin acabou de zerar. Sem a trava, o proximo
+      // isolate frio re-seedaria e o loop ficaria infinito.
+      const purged = env.KV_CACHE ? await env.KV_CACHE.get("purge:prefeituras") : null;
+      if (!purged) await seedPrefeiturasIfEmpty(env, PREFEITURAS_SEED);
       const loaded = await loadPrefeituras(env);
-      if (loaded.length) { prefeituras.length = 0; prefeituras.push(...loaded); }
+      // Sempre sincroniza in-memory com o PG (mesmo que loaded esteja vazio).
+      prefeituras.length = 0;
+      if (loaded.length) prefeituras.push(...loaded);
     } catch (e) {
       _prefeiturasLoad = null;
       pushEvent("warn", "db.prefeituras.hydrate_failed", `Falha ao hidratar prefeituras: ${(e as Error).message}. Usando fixtures.`);
@@ -276,7 +283,12 @@ export function ensurePrefeiturasLoaded(env: Env): Promise<void> {
   return _prefeiturasLoad;
 }
 async function persistPrefeitura(env: Env, p: PrefeituraAdmin): Promise<void> {
-  try { await upsertPrefeitura(env, p); } catch (e) { pushEvent("warn", "db.prefeituras.write_failed", `Falha ao persistir prefeitura ${p.id}: ${(e as Error).message}`); }
+  try {
+    await upsertPrefeitura(env, p);
+    // Qualquer prefeitura recem-criada/editada libera o purge lock —
+    // significa que o admin voltou a povoar a base manualmente.
+    if (env.KV_CACHE) await env.KV_CACHE.delete("purge:prefeituras");
+  } catch (e) { pushEvent("warn", "db.prefeituras.write_failed", `Falha ao persistir prefeitura ${p.id}: ${(e as Error).message}`); }
 }
 
 // Servidores dependem de prefeituras (FK) — hidratar depois delas.
@@ -286,16 +298,23 @@ export function ensureServidoresLoaded(env: Env): Promise<void> {
   _servidoresLoad = (async () => {
     try {
       await ensurePrefeiturasLoaded(env);
-      await seedServidoresIfEmpty(env, SERVIDORES_SEED);
+      // Mesma trava de purge — impede re-seed apos /db/purge-servidores.
+      const purged = env.KV_CACHE ? await env.KV_CACHE.get("purge:servidores") : null;
+      if (!purged) await seedServidoresIfEmpty(env, SERVIDORES_SEED);
       const loaded = await loadServidores(env);
       if (loaded.length) {
         // As contas de teste vêm SEMPRE do seed (com passwordHash correto), sobrescrevendo
         // qualquer versão do Postgres — um import/reseed da folha real pode ter removido ou
         // estragado o hash delas. Assim Diego/Mariana nunca quebram no login/primeiro acesso.
         const filtered: ServidorBuscaMock[] = loaded.filter((s) => !TEST_CPFS.has(s.cpf));
-        const testAccounts = SERVIDORES_SEED.filter((s) => TEST_CPFS.has(s.cpf));
+        // Test accounts so voltam se o purge nao esta ativo — assim base 100%
+        // vazia realmente fica vazia (nem CPFs de demo entram).
+        const testAccounts = purged ? [] : SERVIDORES_SEED.filter((s) => TEST_CPFS.has(s.cpf));
         SERVIDORES_BUSCA_MOCK.length = 0;
         SERVIDORES_BUSCA_MOCK.push(...filtered, ...testAccounts);
+      } else {
+        // Base vazia (post-purge) — reflete in-memory.
+        SERVIDORES_BUSCA_MOCK.length = 0;
       }
     } catch (e) {
       _servidoresLoad = null;
@@ -1186,8 +1205,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     pushEvent("error", "admin.db.purge_servidores", `PURGE DE SERVIDORES confirmado por admin ${j?.sub}: TRUNCATE servidores + contratos + adfs + propostas.`);
     await purgeServidores(c.env);
-    // Limpa memoria in-isolate. Outros isolates re-hidratam do PG na proxima
-    // chamada de loadServidores/refreshContratos (padrao ja existente).
+    // Flag no KV impede o seed automatico de re-popular a base — sem isso o
+    // proximo isolate frio roda seedServidoresIfEmpty e o loop fica infinito.
+    if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:servidores", "1");
     SERVIDORES_BUSCA_MOCK.length = 0;
     return c.json({ ok: true, mensagem: "Base de servidores zerada. Bancos/prefeituras/convenios preservados." });
   })
@@ -1207,9 +1227,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     pushEvent("error", "admin.db.purge_prefeituras", `PURGE DE PREFEITURAS confirmado por admin ${j?.sub}: TRUNCATE prefeituras + convenios + folhas + ofertas.`);
     await purgePrefeituras(c.env);
-    // Limpa memoria in-isolate.
+    // Trava contra re-seed automatico — sem isso o proximo isolate frio roda
+    // seedPrefeiturasIfEmpty e o purge parece nao ter funcionado.
+    if (c.env.KV_CACHE) {
+      await c.env.KV_CACHE.put("purge:prefeituras", "1");
+      // Zerar prefeituras tira o dono dos servidores — trava servidores tambem.
+      await c.env.KV_CACHE.put("purge:servidores", "1");
+    }
     prefeituras.length = 0;
     CONVENIOS_MOCK.length = 0;
+    SERVIDORES_BUSCA_MOCK.length = 0;
     return c.json({ ok: true, mensagem: "Prefeituras, convenios, folhas e ofertas zerados. Bancos preservados." });
   })
 
@@ -1454,7 +1481,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       else { SERVIDORES_BUSCA_MOCK.push(rec); novos++; upserts.push(rec); }
     }
     // Write-through: persiste no PG (best-effort — falhas nao quebram a sync).
-    try { for (const s of upserts) await upsertServidor(c.env, s); } catch { /* fail-safe */ }
+    try {
+      for (const s of upserts) await upsertServidor(c.env, s);
+      // Import CSV com dados de verdade libera o purge lock — base voltou a ser povoada.
+      if (upserts.length > 0 && c.env.KV_CACHE) await c.env.KV_CACHE.delete("purge:servidores");
+    } catch { /* fail-safe */ }
     p.servidoresCount = SERVIDORES_BUSCA_MOCK.filter((s) => s.prefeituraId === p.id).length;
     p.ultimaSincronizacao = ts;
     p.ultimaSincResultado = { novos, atualizados, ts };
