@@ -29,11 +29,14 @@ export interface ComunicadoMock {
   publico: ComunicadoPublico;
 }
 
-export const CONVENIOS_MOCK: ConvenioMock[] = [
-  { id: "CONV-001", bancoId: 1, prefeituraId: 1, nome: "PALHOCA / DELTA GLOBAL", prefeitura: "Palhoca", uf: "SC", codigoVerba: "1547 - DELTA GLOBAL I", dataCorte: 15, diaRepasse: 5 },
-  { id: "CONV-002", bancoId: 1, prefeituraId: 2, nome: "FLORIPA / DELTA GLOBAL", prefeitura: "Florianopolis", uf: "SC", codigoVerba: "2210 - DELTA GLOBAL II", dataCorte: 18, diaRepasse: 8 },
-  { id: "CONV-003", bancoId: 1, prefeituraId: 3, nome: "JOINVILLE / DELTA GLOBAL", prefeitura: "Joinville", uf: "SC", codigoVerba: "2310 - DELTA GLOBAL III", dataCorte: 20, diaRepasse: 10 },
-];
+// Cliente pediu remocao do seed dos 3 convenios (16/07/2026) pra teste real do
+// zero — antes tinha PALHOCA/FLORIPA/JOINVILLE que reapareciam via
+// seedCollectionIfEmpty depois de deletados. Sem entradas aqui, CONVENIOS_SEED
+// em convenios-store.ts fica vazio e a seed nao dispara.
+// Nota: SERVIDORES_BUSCA_MOCK abaixo ainda tem idConvenio: "CONV-001|002|003"
+// como referencia orfa — nao quebra endpoints (prefeituraIdDe tem fallback),
+// so nao resolve o convenio. Se restaurar o seed pra demo, reverter este arquivo.
+export const CONVENIOS_MOCK: ConvenioMock[] = [];
 
 export const COMUNICADOS_MOCK: ComunicadoMock[] = [
   {
