@@ -464,6 +464,18 @@ export async function purgePrefeituras(env: Env): Promise<void> {
   });
 }
 
+/** Zera usuarios do sistema: averbadora (admin_perfis collection), banco
+ *  (users + banco_usuarios tables). Dev-users hardcoded em auth/index.ts
+ *  (admin@atlas.test, banco@atlas.test) continuam funcionando pra nao trancar
+ *  o login. Perfis da prefeitura vivem so em memoria, sem persistencia.
+ *  Cliente pediu (16/07/2026): recomecar cadastro de usuarios do zero. */
+export async function purgeUsuarios(env: Env): Promise<void> {
+  const db = getDb(env);
+  await ensureSchema(env);
+  await db.execute(sql`TRUNCATE users, banco_usuarios RESTART IDENTITY CASCADE`);
+  await db.execute(sql.raw(`TRUNCATE admin_perfis`)).catch(() => { /* collection pode nao existir */ });
+}
+
 /** Repara linhas com jsonb corrompido (escalar): TRUNCATE + re-seed com o raw cast correto. */
 export async function reseedAll(env: Env, bancosSeed: BancoAdmin[], prefeiturasSeed: PrefeituraAdmin[], servidoresSeed: ServidorBuscaMock[]): Promise<void> {
   const db = getDb(env);

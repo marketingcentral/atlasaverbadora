@@ -10,7 +10,7 @@ import { refreshComunicados, persistComunicados, removerComunicadoPersistido } f
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgePrefeituras, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgePrefeituras, purgeUsuarios, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
@@ -382,7 +382,9 @@ export function ensurePerfisLoaded(env: Env): Promise<void> {
   _perfisLoad = (async () => {
     try {
       const seed = exportUsersRaw();
-      await seedCollectionIfEmpty(env, "admin_perfis", seed.map((u) => ({ id: String(u.id), data: u })));
+      // Mesma trava dos outros purges — impede re-seed apos /db/purge-usuarios.
+      const purged = env.KV_CACHE ? await env.KV_CACHE.get("purge:usuarios") : null;
+      if (!purged) await seedCollectionIfEmpty(env, "admin_perfis", seed.map((u) => ({ id: String(u.id), data: u })));
       const rows = await loadCollection<AverbadoraUser>(env, "admin_perfis");
       // Migracao suave: se o PG ja tem os 5 seed users MAS sem passwordHash
       // (populados antes de existir seed com senha), preenche o hash do seed
@@ -402,7 +404,11 @@ export function ensurePerfisLoaded(env: Env): Promise<void> {
 }
 /** Persiste TODOS os usuários (lista pequena) — write-through após qualquer mutação. */
 async function persistPerfis(env: Env): Promise<void> {
-  try { for (const u of exportUsersRaw()) await upsertCollectionRow(env, "admin_perfis", String(u.id), u); } catch { /* fail-safe */ }
+  try {
+    for (const u of exportUsersRaw()) await upsertCollectionRow(env, "admin_perfis", String(u.id), u);
+    // Criar/editar usuario libera o purge lock — base voltou a ser povoada.
+    if (env.KV_CACHE && exportUsersRaw().length > 0) await env.KV_CACHE.delete("purge:usuarios");
+  } catch { /* fail-safe */ }
 }
 // Persistência do status do servidor (ativo/bloqueado/arquivado) — o override em memória.
 let _servidorStatusLoad: Promise<void> | null = null;
@@ -1231,6 +1237,31 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     CONVENIOS_MOCK.length = 0;
     SERVIDORES_BUSCA_MOCK.length = 0;
     return c.json({ ok: true, mensagem: "Prefeituras, convenios, folhas e ofertas zerados. Bancos preservados." });
+  })
+
+  // ⚠️ OPERACAO DESTRUTIVA: zera usuarios da averbadora (admin_perfis) +
+  // usuarios do banco (users, banco_usuarios). Dev-users hardcoded em
+  // auth/index.ts (admin@atlas.test, banco@atlas.test) continuam funcionando
+  // pra nao trancar o login. Perfis de prefeitura vivem so em memoria — sem
+  // persistencia. Cliente pediu (16/07/2026): recomecar cadastro do zero.
+  .post("/v1/admin/db/purge-usuarios", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
+    const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
+    if (body.confirmar !== "APAGAR-USUARIOS") {
+      throw Errors.validation({
+        confirmar: 'Operacao destrutiva bloqueada. Para confirmar, envie { "confirmar": "APAGAR-USUARIOS" }. Apaga usuarios da averbadora e do banco. Dev-users (admin@atlas.test, banco@atlas.test) continuam funcionando.',
+      });
+    }
+    pushEvent("error", "admin.db.purge_usuarios", `PURGE DE USUARIOS confirmado por admin ${j?.sub}: TRUNCATE users + banco_usuarios + admin_perfis.`);
+    // Trava contra re-seed antes do TRUNCATE (evita race com isolate frio).
+    if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:usuarios", "1");
+    await purgeUsuarios(c.env);
+    // Limpa memoria in-isolate: users da averbadora.
+    hydrateUsers([]);
+    _perfisLoad = null;
+    return c.json({ ok: true, mensagem: "Usuarios averbadora e banco zerados. Dev-users hardcoded preservados." });
   })
 
   .post("/v1/admin/bancos", async (c) => {

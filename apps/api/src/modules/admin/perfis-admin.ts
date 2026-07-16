@@ -94,13 +94,12 @@ export function exportUsersRaw(): AverbadoraUser[] {
   return _users;
 }
 /** Substitui os usuários em memória pelos hidratados do Postgres.
- *  Migra permissoes derivando do perfil se ausente. */
+ *  Migra permissoes derivando do perfil se ausente.
+ *  Aceita array vazio: usado por /db/purge-usuarios pra zerar in-memory. */
 export function hydrateUsers(rows: AverbadoraUser[]): void {
-  if (rows.length) {
-    rows.forEach(ensurePermissoes);
-    _users.length = 0;
-    _users.push(...rows);
-  }
+  rows.forEach(ensurePermissoes);
+  _users.length = 0;
+  _users.push(...rows);
 }
 
 export function listAverbadoraUsers(): Omit<AverbadoraUser, "passwordHash" | "twoFactorSecret">[] {
