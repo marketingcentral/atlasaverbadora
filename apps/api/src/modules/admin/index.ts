@@ -1521,6 +1521,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
           : `Consulta falhou (${ultimoErro}). Preencha manualmente ou tente de novo.`,
       });
     }
+    // Enriquecimento: se IBGE veio vazio (fallback ReceitaWS), busca em
+    // BrasilAPI /ibge/municipios/{uf} (endpoint diferente, rate limit
+    // independente do /cnpj) e casa por nome do municipio.
+    if (!dados.codigo_municipio_ibge && dados.uf && dados.municipio) {
+      try {
+        const r = await fetch(`https://brasilapi.com.br/api/ibge/municipios/v1/${dados.uf}`);
+        if (r.ok) {
+          const municipios = await r.json() as { nome: string; codigo_ibge: string }[];
+          const alvo = String(dados.municipio).toUpperCase().trim();
+          const match = municipios.find((m) => m.nome.toUpperCase() === alvo);
+          if (match) dados.codigo_municipio_ibge = Number(match.codigo_ibge);
+        }
+      } catch { /* fail-safe: IBGE fica vazio, admin resubmete depois */ }
+    }
     // Cacheia por 24h — proxima consulta ao mesmo CNPJ nao passa pelo provedor.
     if (c.env.KV_CACHE) {
       try { await c.env.KV_CACHE.put(cacheKey, JSON.stringify(dados), { expirationTtl: 86400 }); } catch { /* fail-safe */ }

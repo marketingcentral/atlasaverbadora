@@ -112,6 +112,69 @@ function formatCnpj(raw: string): string {
   return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12, 14)}`;
 }
 
+// Estilo aplicado nos campos "read-only" (dados oficiais do CNPJ). Deixa claro
+// visualmente que o operador nao deve alterar — cor cinza + cursor bloqueado
+// + fundo mais escuro. Copia/paste continua funcionando (readOnly, nao disabled).
+const readOnlyInputStyle: React.CSSProperties = {
+  background: "var(--bg-elev-2)",
+  color: "var(--text-muted)",
+  cursor: "not-allowed",
+};
+
+/** Input de senha com toggle de visualizacao (olho). Mantem semantica HTML
+ *  correta: type=password por padrao, alterna pra text ao clicar no botao. */
+function PasswordFieldWithToggle({
+  label, value, onChange, placeholder, hint, required,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  hint?: string;
+  required?: boolean;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+        {label}{required ? <span style={{ color: "var(--danger-500)" }}> *</span> : null}
+      </label>
+      <div style={{ position: "relative" }}>
+        <input
+          type={show ? "text" : "password"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          required={required}
+          style={{
+            width: "100%", padding: "10px 44px 10px 12px", borderRadius: 8,
+            border: "1px solid var(--border-strong)",
+            background: "var(--bg-elev)", color: "var(--text)",
+            fontSize: 14, boxSizing: "border-box",
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => setShow((s) => !s)}
+          aria-label={show ? "Ocultar senha" : "Mostrar senha"}
+          title={show ? "Ocultar senha" : "Mostrar senha"}
+          style={{
+            position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+            width: 32, height: 32, borderRadius: 6,
+            border: "none", background: "transparent",
+            color: "var(--text-muted)", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16,
+          }}
+        >
+          {show ? "🙈" : "👁"}
+        </button>
+      </div>
+      {hint ? <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{hint}</div> : null}
+    </div>
+  );
+}
+
 function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null; onClose: () => void }) {
   const qc = useQueryClient();
   const [form, setForm] = useState<AdminPrefeituraInput>({
@@ -250,25 +313,31 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
           ) : null}
         </div>
 
-        {/* PASSO 2 — Dados oficiais (mostrados só depois da consulta ou em edição). */}
+        {/* PASSO 2 — Dados oficiais (mostrados só depois da consulta ou em edição).
+            Todos read-only exceto telefone — os dados vem da Receita/Junta Comercial
+            e sao a fonte da verdade. Se precisar corrigir algo (exceto telefone),
+            atualize la e refaca a consulta. */}
         {dadosPreenchidos ? (
           <div style={{ padding: 14, background: "var(--bg-elev-2)", borderRadius: 10, border: "1px solid var(--border)" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--emerald-500)", textTransform: "uppercase", marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--emerald-500)", textTransform: "uppercase", marginBottom: 4 }}>
               ✓ Dados oficiais preenchidos
             </div>
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 10 }}>
+              Somente leitura — provenientes da Receita/Junta Comercial. Apenas o telefone pode ser editado.
+            </div>
             <FormGrid cols={2}>
-              <TextField label="Razão social" value={form.razaoSocial ?? ""} onChange={(e) => setForm({ ...form, razaoSocial: e.target.value, nome: e.target.value })} />
-              <TextField label="Nome fantasia" value={form.nomeFantasia ?? ""} onChange={(e) => setForm({ ...form, nomeFantasia: e.target.value })} />
-              <TextField label="Data de fundação" value={form.dataFundacao ?? ""} onChange={(e) => setForm({ ...form, dataFundacao: e.target.value })} placeholder="AAAA-MM-DD" />
-              <TextField label="Atividade principal" value={form.atividade ?? ""} onChange={(e) => setForm({ ...form, atividade: e.target.value })} />
-              <TextField label="UF" value={form.uf} maxLength={2} onChange={(e) => setForm({ ...form, uf: e.target.value.toUpperCase() })} required />
-              <NumberField label="Código IBGE" value={form.municipioIbge} onChange={(e) => setForm({ ...form, municipioIbge: Number(e.target.value) })} />
-              <TextField label="Telefone" value={form.telefone ?? ""} onChange={(e) => setForm({ ...form, telefone: e.target.value })} />
-              <TextField label="CEP" value={form.endereco?.cep ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, cep: e.target.value } })} />
-              <TextField label="Logradouro" value={form.endereco?.logradouro ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, logradouro: e.target.value } })} />
-              <TextField label="Número" value={form.endereco?.numero ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, numero: e.target.value } })} />
-              <TextField label="Bairro" value={form.endereco?.bairro ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, bairro: e.target.value } })} />
-              <TextField label="Município" value={form.endereco?.municipio ?? ""} onChange={(e) => setForm({ ...form, endereco: { ...form.endereco, municipio: e.target.value } })} />
+              <TextField label="Razão social" value={form.razaoSocial ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="Nome fantasia" value={form.nomeFantasia ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="Data de fundação" value={form.dataFundacao ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="Atividade principal" value={form.atividade ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="UF" value={form.uf} readOnly style={readOnlyInputStyle} onChange={() => undefined} required />
+              <NumberField label="Código IBGE" value={form.municipioIbge} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="Telefone" value={form.telefone ?? ""} onChange={(e) => setForm({ ...form, telefone: e.target.value })} placeholder="(00) 00000-0000" hint="Editável — pode ajustar se o telefone oficial estiver desatualizado" />
+              <TextField label="CEP" value={form.endereco?.cep ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="Logradouro" value={form.endereco?.logradouro ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="Número" value={form.endereco?.numero ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="Bairro" value={form.endereco?.bairro ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
+              <TextField label="Município" value={form.endereco?.municipio ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
             </FormGrid>
           </div>
         ) : null}
@@ -289,11 +358,10 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
               required
               hint="A prefeitura usa este e-mail em /login toda vez que acessa."
             />
-            <TextField
+            <PasswordFieldWithToggle
               label={initial?.hasPassword ? "Nova senha (opcional)" : "Senha"}
-              type="password"
               value={form.password ?? ""}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              onChange={(v) => setForm({ ...form, password: v })}
               placeholder={initial?.hasPassword ? "••••••••" : "min. 6 caracteres"}
               hint={senhaHint}
               required={!initial?.hasPassword}
