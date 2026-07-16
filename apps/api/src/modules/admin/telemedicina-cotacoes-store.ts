@@ -23,6 +23,10 @@ export interface TelemedicinaCotacao {
   criadoEm: string;
   /** Quando a averbadora ATIVOU o plano (situacao=fechado) — base da barra de progresso 12 meses. */
   ativadoEm?: string;
+  /** Chave do contrato anexado no R2. A averbadora SO consegue ativar o plano depois
+   *  de anexar o contrato — mesma regra do CCB no fluxo de emprestimo. */
+  contratoKey?: string;
+  contratoNome?: string;
 }
 
 const TABLE = "admin_telemedicina_cotacoes";
@@ -56,6 +60,17 @@ export async function updateCotacaoSituacao(env: Env, id: string, situacao: stri
   if (!cot) return null;
   cot.situacao = situacao;
   if (situacao === "fechado" && !cot.ativadoEm) cot.ativadoEm = new Date().toISOString();
+  try { await upsertCollectionRow(env, TABLE, cot.id, cot); } catch { /* fail-safe */ }
+  return cot;
+}
+
+/** Anexa o contrato (chave R2) na cotacao — pre-requisito pra ativar o plano. */
+export async function setCotacaoContrato(env: Env, id: string, key: string, nome: string): Promise<TelemedicinaCotacao | null> {
+  await refreshCotacoes(env);
+  const cot = CACHE.list.find((x) => x.id === id);
+  if (!cot) return null;
+  cot.contratoKey = key;
+  cot.contratoNome = nome;
   try { await upsertCollectionRow(env, TABLE, cot.id, cot); } catch { /* fail-safe */ }
   return cot;
 }

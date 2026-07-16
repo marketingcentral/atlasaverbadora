@@ -25,7 +25,7 @@ import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbado
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
-import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes, purgeCotacoes } from "./telemedicina-cotacoes-store.js";
+import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes, purgeCotacoes, setCotacaoContrato, loadCotacoes as loadCotacoesAdmin } from "./telemedicina-cotacoes-store.js";
 import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
@@ -727,6 +727,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         situacao: x.situacao,
         criadoEm: x.criadoEm,
         ativadoEm: x.ativadoEm ?? null,
+        // Contrato anexado? Sem ele a averbadora nao consegue ativar o plano.
+        temContrato: !!x.contratoKey,
+        contratoNome: x.contratoNome ?? null,
       }));
     return c.json({ cotacoes });
   })
@@ -737,10 +740,75 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ ok: true, apagadas });
   })
 
+  // Averbadora anexa o CONTRATO da telemedicina (R2) — mesma regra do CCB do banco:
+  // sem contrato anexado, o plano NAO pode ser ativado.
+  .post("/v1/admin/telemedicina/cotacoes/:id/contrato", async (c) => {
+    requireAdmin(c.get("jwt"));
+    if (!c.env.R2_FILES) throw Errors.validation({ r2: "R2 binding indisponivel — configuracao Cloudflare pendente." });
+    const id = c.req.param("id");
+    await refreshCotacoes(c.env);
+    const existe = (await loadCotacoesAdmin(c.env)).find((x) => x.id === id);
+    if (!existe) throw Errors.notFound("cotacao");
+    const form = await c.req.formData().catch(() => null);
+    if (!form) throw Errors.validation({ body: "Envie multipart/form-data com o campo file." });
+    const file = form.get("file");
+    const isFile = (v: unknown): v is { name: string; size: number; type: string; arrayBuffer: () => Promise<ArrayBuffer> } =>
+      typeof v === "object" && v !== null && typeof (v as { size?: unknown }).size === "number"
+      && typeof (v as { arrayBuffer?: unknown }).arrayBuffer === "function";
+    if (!isFile(file)) throw Errors.validation({ file: "campo 'file' obrigatorio" });
+    // Mesma whitelist do CCB: PDF, DOCX, XLS, XLSX.
+    const ACEITOS = new Set([
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ]);
+    const extOk = /\.(pdf|docx|xls|xlsx)$/i.test(file.name || "");
+    if (file.type ? !ACEITOS.has(file.type) : !extOk) {
+      throw Errors.validation({ file: "apenas PDF, DOCX ou Excel (XLS/XLSX)" });
+    }
+    if (file.size > 15 * 1024 * 1024) throw Errors.validation({ file: "arquivo maior que 15 MB" });
+    const safeName = (file.name || "contrato.pdf").replace(/[^\w.-]/g, "_").slice(0, 60);
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    const key = `telemedicina/${id}/${ts}-${safeName}`;
+    const lower = safeName.toLowerCase();
+    const storedType = file.type
+      || (lower.endsWith(".xlsx") ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : lower.endsWith(".xls") ? "application/vnd.ms-excel"
+        : lower.endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : lower.endsWith(".pdf") ? "application/pdf"
+        : "application/octet-stream");
+    await c.env.R2_FILES.put(key, await file.arrayBuffer(), { httpMetadata: { contentType: storedType } });
+    await setCotacaoContrato(c.env, id, key, safeName);
+    return c.json({ ok: true, key, nome: safeName, size: file.size });
+  })
+  // Baixa o contrato anexado da cotacao.
+  .get("/v1/admin/telemedicina/cotacoes/:id/contrato", async (c) => {
+    requireAdmin(c.get("jwt"));
+    if (!c.env.R2_FILES) throw Errors.notFound("r2");
+    await refreshCotacoes(c.env);
+    const cot = (await loadCotacoesAdmin(c.env)).find((x) => x.id === c.req.param("id"));
+    if (!cot?.contratoKey) throw Errors.notFound("contrato");
+    const obj = await c.env.R2_FILES.get(cot.contratoKey);
+    if (!obj) throw Errors.notFound("arquivo");
+    return new Response(obj.body, {
+      headers: {
+        "content-type": obj.httpMetadata?.contentType ?? "application/octet-stream",
+        "content-disposition": `attachment; filename="${cot.contratoNome ?? "contrato.pdf"}"`,
+      },
+    });
+  })
   // Averbadora ativa o plano de telemedicina: cria um CONTRATO ATIVO de 12 meses
   // (R$ 50/mes, na margem de EMPRESTIMO) e marca a cotacao como "fechado".
+  // EXIGE contrato anexado antes — mesma regra do CCB no fluxo de emprestimo.
   .post("/v1/admin/telemedicina/cotacoes/:id/ativar", async (c) => {
     requireAdmin(c.get("jwt"));
+    await refreshCotacoes(c.env);
+    const pre = (await loadCotacoesAdmin(c.env)).find((x) => x.id === c.req.param("id"));
+    if (!pre) throw Errors.notFound("cotacao");
+    if (!pre.contratoKey) {
+      throw Errors.validation({ contrato: "Anexe o contrato antes de ativar o plano." });
+    }
     const cot = await updateCotacaoSituacao(c.env, c.req.param("id"), "fechado");
     if (!cot) throw Errors.notFound("cotacao");
     const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === cot.matricula);

@@ -42,6 +42,10 @@ class HomeViewModel : ViewModel() {
         private set
 
     // Propostas cruas (fonte do banco) — usadas pelo Histórico de Contratos (recusadas).
+    /** Cotações de telemedicina canceladas/recusadas — vão para o Histórico (não viram contrato). */
+    var cotacoesTeleCanceladas by mutableStateOf<List<io.atlas.servidor.data.remote.dto.CotacaoTelemedicinaDto>>(emptyList())
+        private set
+
     var propostas by mutableStateOf<List<io.atlas.servidor.data.remote.dto.PropostaDto>>(emptyList())
         private set
 
@@ -128,6 +132,11 @@ class HomeViewModel : ViewModel() {
      *  esperar as 48h. */
     private suspend fun reconcileReserva() {
         try {
+            // Cotações de telemedicina canceladas entram no Histórico (não viram contrato).
+            try {
+                cotacoesTeleCanceladas = repo.minhasCotacoesTelemedicina().cotacoes
+                    .filter { it.situacao == "cancelado" }
+            } catch (_: ApiException) { /* mantém */ }
             val r = repo.getPropostas(selectedMatricula)
             propostas = r.propostas
             notifRaw = io.atlas.servidor.domain.Notificacoes.fromPropostas(r.propostas)

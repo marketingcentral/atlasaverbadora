@@ -6,6 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
+import { ensureTombamentoLoaded, listExternalLoans } from "../admin/tombamento.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -157,11 +158,25 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
       tipoContrato: ct.tipoContrato,
       tipoMargem: ct.tipoMargem ?? deriveTipoMargem(ct),
     }));
-  const elegiveis = ativos.map((ct) => ({
-    id: ct.adf, banco: bancoNome(ct.bancoId), saldoDevedor: round2(ct.saldoDevedor), parcela: round2(ct.valorParcela),
-    parcelasRestantes: ct.totalParcelas - ct.parcelasPagas, totalParcelas: ct.totalParcelas, taxaAm: ct.taxaAm,
-    tipoContrato: (ct.tipoContrato === "REFIN" ? "Refin" : "Emprestimo") as "Emprestimo" | "Refin",
-  }));
+  // PORTABILIDADE = so emprestimos que o servidor tem em OUTROS bancos, vindos da base
+  // que a PREFEITURA importou (tombamento) + seed de teste. Contratos feitos no Atlas
+  // (app/web) NAO entram aqui — nao se porta um contrato pro banco onde ele ja esta.
+  const tipoPortLabel = (tipo?: string): string => {
+    const s = (tipo ?? "").toLowerCase();
+    if (/benef/.test(s)) return "Cartão Benefício Consignado";
+    if (/cart/.test(s)) return "Cartão de Crédito Consignado";
+    return "Empréstimo Consignado";
+  };
+  const elegiveis = listExternalLoans(e.matricula)
+    // Blindagem: nada do proprio Banco Atlas entra na portabilidade.
+    .filter((l) => !/banco atlas|^atlas$/i.test(l.bancoNome ?? ""))
+    .map((l) => ({
+      id: l.id, banco: l.bancoNome, saldoDevedor: round2(l.saldoDevedor), parcela: round2(l.valorParcela),
+      parcelasRestantes: l.parcelasRestantes, totalParcelas: l.totalParcelas, taxaAm: l.taxaAm,
+      tipoContrato: "Emprestimo" as "Emprestimo" | "Refin",
+      // Nome do banco e tipo do contrato vem da planilha importada pela prefeitura.
+      tipo: tipoPortLabel(l.tipo),
+    }));
   return {
     idMatricula: e.idMatricula, matricula: e.matricula,
     prefeitura: pref ? `Prefeitura de ${pref.nome}` : e.origem, prefeitura_id: prefId, servidor_id: servidorId,
@@ -305,6 +320,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
+    await ensureTombamentoLoaded(c.env); // emprestimos externos importados pela prefeitura (portabilidade)
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     // Filtra matriculas arquivadas (soft-delete) — a averbadora pode arquivar
