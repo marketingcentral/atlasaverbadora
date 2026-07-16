@@ -114,12 +114,13 @@ function tplSimulacao(tipo: SimulacaoTipo, status: SimulacaoStatus, publico: Ema
 }
 
 const SEED: EmailTemplate[] = [
-  // Cliente pediu remocao dos templates fixos (primeiro-acesso + recuperar-senha)
-  // em 16/07/2026 pra teste real do zero — sem seed, o fluxo cai no fallback
-  // hardcoded do mailer.ts. Se restaurar pra demo, adicionar de volta:
+  // Cliente pediu remocao dos 3 grupos de templates fixos (primeiro-acesso +
+  // recuperar-senha + redefinir-senha) em 16/07/2026 pra teste real do zero
+  // — sem seed, os 3 fluxos caem no fallback hardcoded do mailer.ts. Se
+  // restaurar pra demo, adicionar de volta:
   //   ...PERFIS.map(tplPrimeiroAcesso),
   //   ...PERFIS.map(tplRecuperarSenha),
-  ...PERFIS.map(tplRedefinirSenha),
+  //   ...PERFIS.map(tplRedefinirSenha),
   // Simulacao: so servidor e banco (regra do cliente).
   ...SIM_TIPOS.flatMap((t) => SIM_STATUS.flatMap((s) => [
     tplSimulacao(t, s, "servidor"),
