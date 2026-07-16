@@ -84,50 +84,11 @@ function seed(input: SeedInput): PreReserva {
   };
 }
 
-// Sample data covering ativa, perto de expirar, confirmada, expirada.
-_preReservas.push(
-  seed({
-    bancoId: 1, bancoNome: "SCred Financeira", prefeituraId: 1, prefeituraNome: "Palhoca",
-    convenioId: "CONV-001", convenioNome: "PALHOCA / DELTA GLOBAL",
-    servidorCpfMasked: "000.***.***-33", servidorNome: "Ana Carolina Silva", matricula: "M-9001",
-    tipoOperacao: "EMPRESTIMO", valorMargem: 18400, valorParcela: 320.5, parcelas: 72, hoursOffset: -8,
-  }),
-  seed({
-    bancoId: 2, bancoNome: "Banco Y", prefeituraId: 2, prefeituraNome: "Florianopolis",
-    convenioId: "CONV-002", convenioNome: "FLORIPA / DELTA GLOBAL",
-    servidorCpfMasked: "000.***.***-44", servidorNome: "Joao da Silva Neves", matricula: "M-9002",
-    tipoOperacao: "REFIN", valorMargem: 9200, valorParcela: 180, parcelas: 60, hoursOffset: -47,
-  }),
-  seed({
-    bancoId: 1, bancoNome: "SCred Financeira", prefeituraId: 1, prefeituraNome: "Palhoca",
-    convenioId: "CONV-001", convenioNome: "PALHOCA / DELTA GLOBAL",
-    servidorCpfMasked: "000.***.***-55", servidorNome: "Maria Lima", matricula: "M-9003",
-    tipoOperacao: "PORTABILIDADE", valorMargem: 25600, valorParcela: 420, parcelas: 84, hoursOffset: -24,
-  }),
-  seed({
-    bancoId: 3, bancoNome: "Banco BMG", prefeituraId: 3, prefeituraNome: "Joinville",
-    convenioId: "CONV-003", convenioNome: "JOINVILLE / DELTA GLOBAL",
-    servidorCpfMasked: "000.***.***-66", servidorNome: "Carlos Souza", matricula: "M-9004",
-    tipoOperacao: "EMPRESTIMO", valorMargem: 14200, valorParcela: 295, parcelas: 60, hoursOffset: -72,
-  }),
-);
-
-// One confirmed sample.
-const confirmed = _preReservas[0];
-if (confirmed) {
-  const confirmedTime = new Date(new Date(confirmed.criadoEm).getTime() + 6 * 3600_000);
-  _preReservas.push({
-    ...confirmed,
-    id: confirmed.id + "-CONF",
-    idUnico: issueIdUnico(confirmed.prefeituraId, confirmedTime),
-    criadoEm: new Date(new Date(confirmed.criadoEm).getTime() - 3600_000 * 4).toISOString(),
-    expiraEm: confirmed.expiraEm,
-    status: "confirmada",
-    finalizadoEm: confirmedTime.toISOString(),
-    finalizadoPor: "banco:SCred Financeira",
-    motivoFinalizacao: "Contrato emitido — ADF 9000123",
-  });
-}
+// Cliente pediu remocao dos seeds hardcoded de pre-reservas (16/07/2026) pra
+// teste real do zero — antes tinha 4 sample entries (Ana/Joao/Maria/Carlos)
+// referenciando prefeituras 1/2/3 e bancos 1/2/3 ja removidos. Alem de serem
+// orfas, elas quebravam o startup do isolate ao chamar issueIdUnico com
+// configs vazias (id_unico_config_missing). Se restaurar pra demo, reverter.
 
 export function listPreReservas(filter: {
   status?: PreReservaStatus;

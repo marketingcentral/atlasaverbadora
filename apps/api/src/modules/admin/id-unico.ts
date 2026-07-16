@@ -20,11 +20,11 @@ export interface IdUnicoConfig {
   atualizadoEm: string;
 }
 
-const _configs: IdUnicoConfig[] = [
-  { prefeituraId: 1, prefixo: "PLH", formato: "SEQ", larguraSeq: 6, proximoSeq: 1, separador: "-", atualizadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
-  { prefeituraId: 2, prefixo: "FLN", formato: "YYYYMM_SEQ", larguraSeq: 5, proximoSeq: 1, separador: "-", atualizadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
-  { prefeituraId: 3, prefixo: "JNV", formato: "SEQ_HASH", larguraSeq: 5, proximoSeq: 1, separador: "-", atualizadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
-];
+// Cliente pediu remocao dos 3 configs fixture (PLH/FLN/JNV para prefeituraId
+// 1/2/3) em 16/07/2026 pra teste real do zero — as prefeituras seed ja foram
+// removidas, entao essas configs eram orfas. Configs novas entram via
+// /averbadora/id-unico > editar (POST /admin/id-unico).
+const _configs: IdUnicoConfig[] = [];
 
 export function listIdUnicoConfigs(): IdUnicoConfig[] {
   return _configs.slice();
