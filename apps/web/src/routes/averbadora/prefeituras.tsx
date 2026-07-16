@@ -383,12 +383,22 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
   );
 }
 
+// Backdrop cobre a viewport toda. overflow-y no proprio backdrop garante que
+// modal maior que a tela role NELE (nao no body de tras). padding vertical
+// evita que o modal cole nas bordas quando ocupa a altura maxima.
 const modalBackdrop: React.CSSProperties = {
   position: "fixed", inset: 0, background: "rgba(10,22,40,.6)",
-  display: "grid", placeItems: "center", zIndex: 100, backdropFilter: "blur(6px)",
+  display: "flex", alignItems: "flex-start", justifyContent: "center",
+  padding: "24px 16px", overflowY: "auto",
+  zIndex: 100, backdropFilter: "blur(6px)",
 };
+// maxHeight impede o card de exceder a viewport; overflowY:auto faz o proprio
+// card rolar quando o conteudo passa (fluxo CNPJ + dados + credenciais +
+// opcoes avancadas fica alto num modal so).
 const modalCard: React.CSSProperties = {
   background: "var(--bg-elev)", border: "1px solid var(--border-strong)",
-  borderRadius: 14, padding: 24, maxWidth: 640, width: "calc(100% - 48px)",
+  borderRadius: 14, padding: 24, maxWidth: 640, width: "calc(100% - 32px)",
+  maxHeight: "calc(100vh - 48px)", overflowY: "auto",
   display: "flex", flexDirection: "column", gap: 16, boxShadow: "var(--shadow-lg)",
+  margin: "auto",
 };
