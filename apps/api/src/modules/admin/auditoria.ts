@@ -102,54 +102,8 @@ export function auditCategorias(): { value: AuditCategoria; label: string }[] {
   ];
 }
 
-// Seed entries — realistic mix to demonstrate the report.
-appendAudit({
-  ts: new Date(Date.now() - 1000 * 60 * 14).toISOString(),
-  categoria: "pre_reserva", acao: "criada", cpf: "000.***.***-33", matricula: "M-9001",
-  propostaId: "PR-1A2B3C4D", idUnico: "PLH-000001",
-  ip: "200.150.21.4", deviceId: "ios-9a3e1c", userId: "banco:1", userRole: "banco",
-  detalhes: "Pre-reserva criada via portal banco. Margem travada por 48h.",
-});
-appendAudit({
-  ts: new Date(Date.now() - 1000 * 60 * 22).toISOString(),
-  categoria: "termo_aceite", acao: "termo_consignado_v3", cpf: "000.***.***-33", matricula: "M-9001",
-  propostaId: "PR-1A2B3C4D", termoAceito: "v3-2026-01",
-  ip: "200.150.21.4", deviceId: "ios-9a3e1c", userId: "servidor:1", userRole: "servidor",
-  detalhes: "Servidor aceitou Termo de Consignacao v3 (autorizacao de averbacao).",
-});
-appendAudit({
-  ts: new Date(Date.now() - 1000 * 60 * 22).toISOString(),
-  categoria: "biometria", acao: "facematch_ok", cpf: "000.***.***-33", matricula: "M-9001",
-  propostaId: "PR-1A2B3C4D", deviceId: "ios-9a3e1c", userId: "servidor:1", userRole: "servidor",
-  detalhes: "Biometria facial aprovada (score=0.97). Acao: aceite de termo.",
-});
-appendAudit({
-  ts: new Date(Date.now() - 1000 * 60 * 90).toISOString(),
-  categoria: "dados_pessoais", acao: "email_alterado", cpf: "000.***.***-44", matricula: "M-9002",
-  userId: "averbadora:200", userRole: "averbadora",
-  detalhes: "Email alterado: antigo=joao@old.com -> novo=joao@new.com (mudanca aprovada por admin).",
-});
-appendAudit({
-  ts: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-  categoria: "margem", acao: "margem_liberada", cpf: "000.***.***-66", matricula: "M-9004",
-  propostaId: "PR-XYZ", idUnico: "JNV-00001-AB12CD",
-  detalhes: "Pre-reserva expirada (TTL 48h). Margem retornou para disponivel: R$ 14.200,00.",
-});
-appendAudit({
-  ts: new Date(Date.now() - 1000 * 60 * 200).toISOString(),
-  categoria: "tombamento", acao: "lote_processado",
-  detalhes: "Lote TB-1-202605 (Palhoca): 312 linhas, 8 inseridos, 296 atualizados, 8 divergencias.",
-});
-appendAudit({
-  ts: new Date(Date.now() - 1000 * 60 * 300).toISOString(),
-  categoria: "id_unico", acao: "config_atualizada",
-  userId: "averbadora:200", userRole: "averbadora",
-  detalhes: "Config ID unico de Palhoca atualizada: prefixo=PLH, formato=SEQ, largura=6.",
-});
-appendAudit({
-  ts: new Date(Date.now() - 1000 * 60 * 360).toISOString(),
-  categoria: "acesso", acao: "login_ok",
-  userId: "averbadora:200", userRole: "averbadora",
-  ip: "201.10.50.21", userAgent: "Mozilla/5.0 (Macintosh)",
-  detalhes: "Login com 2FA OK no painel da averbadora.",
-});
+// Cliente pediu remocao dos 8 seed entries de auditoria (16/07/2026) pra
+// teste real do zero — eram registros demo (PR-1A2B3C4D, Lote TB-1-202605,
+// login "averbadora:200") orfaos de dados ja removidos. Entradas reais
+// continuam chegando via appendAudit em cada acao do sistema.
+// Se restaurar pra demo, reverter este bloco.
