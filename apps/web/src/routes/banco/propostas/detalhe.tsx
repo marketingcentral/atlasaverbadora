@@ -659,11 +659,17 @@ function AnexarContratoModal({
   const EXT_ACEITAS = /\.(pdf|doc|docx|odt|rtf|txt|png|jpe?g|tiff?|heic|heif|webp)$/i;
   const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] ?? null;
+    // Aceita PDF, DOC e DOCX. Alguns navegadores devolvem type vazio pra DOC/DOCX,
+    // por isso valida tambem pela extensao. Backend faz validacao definitiva.
     if (f) {
-      const okType = !f.type || TIPOS_ACEITOS.has(f.type);
-      const okExt = EXT_ACEITAS.test(f.name);
-      if (!okType && !okExt) {
-        setErro("Formato nao aceito. Envie PDF, DOC/DOCX, ODT, RTF, TXT ou imagem (PNG/JPG/TIFF/HEIC/WEBP).");
+      const ACEITOS = new Set([
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ]);
+      const extOk = /\.(pdf|doc|docx)$/i.test(f.name);
+      if (f.type ? !ACEITOS.has(f.type) : !extOk) {
+        setErro("Apenas arquivos PDF, DOC ou DOCX.");
         setArquivo(null);
         return;
       }
@@ -683,7 +689,7 @@ function AnexarContratoModal({
         <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
           {jaTemContrato
             ? "Enviar uma nova versao arquiva a atual no historico — nada e excluido."
-            : "Escolha o arquivo do contrato assinado. Aceita PDF, DOC/DOCX, ODT, RTF, TXT ou imagem (PNG/JPG/TIFF/HEIC/WEBP)."}
+            : "Escolha o arquivo do contrato assinado (PDF, DOC ou DOCX). Depois de anexar voce pode aprovar a proposta."}
         </div>
 
         {/* Upload */}
@@ -696,7 +702,7 @@ function AnexarContratoModal({
           }}>
             <span style={{ fontSize: 24 }}>📄</span>
             <span style={{ fontWeight: 600, fontSize: 14 }}>
-              {arquivo ? arquivo.name : "Clique para selecionar o arquivo"}
+              {arquivo ? arquivo.name : "Clique para selecionar o arquivo (PDF, DOC ou DOCX)"}
             </span>
             {arquivo ? (
               <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
@@ -709,7 +715,7 @@ function AnexarContratoModal({
             )}
             <input
               type="file"
-              accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.oasis.opendocument.text,.odt,application/rtf,text/rtf,.rtf,text/plain,.txt,image/png,.png,image/jpeg,.jpg,.jpeg,image/tiff,.tif,.tiff,image/heic,.heic,image/heif,.heif,image/webp,.webp"
+              accept="application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
               style={{ display: "none" }}
               onChange={onFileChange}
               disabled={enviando}

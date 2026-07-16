@@ -674,23 +674,17 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const isFile = (v: unknown): v is { name: string; size: number; type: string; arrayBuffer: () => Promise<ArrayBuffer> } =>
       typeof v === "object" && v !== null && typeof (v as { size?: unknown }).size === "number" && typeof (v as { arrayBuffer?: unknown }).arrayBuffer === "function";
     if (!isFile(file)) throw Errors.validation({ file: "campo 'file' obrigatorio" });
-    // Whitelist de tipos aceitos para contrato assinado. Espelhado no front
-    // em apps/web/src/routes/banco/propostas/detalhe.tsx (TIPOS_ACEITOS).
-    const TIPOS_OK = new Set<string>([
+    // Aceita PDF, DOC (.doc, application/msword) e DOCX (application/vnd.openxmlformats...).
+    // Alguns navegadores enviam type vazio pra .doc/.docx — cai no fallback por extensao.
+    const ACEITOS = new Set([
       "application/pdf",
       "application/msword",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.oasis.opendocument.text",
-      "application/rtf", "text/rtf",
-      "text/plain",
-      "image/png", "image/jpeg", "image/tiff", "image/heic", "image/heif", "image/webp",
     ]);
-    const EXT_OK = /\.(pdf|doc|docx|odt|rtf|txt|png|jpe?g|tiff?|heic|heif|webp)$/i;
-    const nomeOrig = file.name || "";
-    const tipoOrig = file.type || "";
-    const tipoOk = !tipoOrig || TIPOS_OK.has(tipoOrig);
-    const extOk = EXT_OK.test(nomeOrig);
-    if (!tipoOk && !extOk) throw Errors.validation({ file: "tipo de arquivo nao aceito (use PDF, DOC/DOCX, ODT, RTF, TXT ou imagem)" });
+    const extOk = /\.(pdf|doc|docx)$/i.test(file.name || "");
+    if (file.type ? !ACEITOS.has(file.type) : !extOk) {
+      throw Errors.validation({ file: "apenas PDF, DOC ou DOCX" });
+    }
     const MAX = 15 * 1024 * 1024; // 15 MB
     if (file.size > MAX) throw Errors.validation({ file: "arquivo maior que 15 MB" });
     const adf = adfRaw.replace(/[^\w.-]/g, "").slice(0, 40);
@@ -698,9 +692,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const safeName = (nomeOrig || "contrato.bin").replace(/[^\w.-]/g, "_").slice(0, 60);
     const key = `ccb/${j.banco_id}/${adf}/${ts}-${safeName}`;
     const buf = await file.arrayBuffer();
-    // ContentType preservado do upload (fallback pra PDF por retrocompat).
-    const contentType = tipoOrig || "application/octet-stream";
-    await c.env.R2_FILES.put(key, buf, { httpMetadata: { contentType } });
+    // Preserva o contentType real do arquivo pra que o download/abertura funcione
+    // corretamente no navegador. Fallback pra octet-stream se o browser nao enviou.
+    const storedType = file.type
+      || (safeName.toLowerCase().endsWith(".docx") ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : safeName.toLowerCase().endsWith(".doc") ? "application/msword"
+        : safeName.toLowerCase().endsWith(".pdf") ? "application/pdf"
+        : "application/octet-stream");
+    await c.env.R2_FILES.put(key, buf, { httpMetadata: { contentType: storedType } });
     // Grava a chave no contrato pra o operador reabrir a qualquer momento.
     // Isolamento ja garantido acima (owner == banco logado).
     await refreshContratos(c.env);
@@ -709,7 +708,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       setContratoCcb(adf, key, `user:${j.sub}`);
       await persistContrato(c.env, adf);
     }
-    return c.json({ key, size: file.size, contentType });
+    return c.json({ key, size: file.size, contentType: storedType });
   })
   .get("/v1/portal/banco/ccb/*", async (c) => {
     const j = c.get("jwt");
