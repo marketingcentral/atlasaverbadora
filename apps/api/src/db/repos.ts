@@ -449,6 +449,21 @@ export async function purgeServidores(env: Env): Promise<void> {
   await db.execute(sql`TRUNCATE servidores, contratos, portal_banco_contratos, propostas, proposta_eventos, contrato_eventos, consentimentos RESTART IDENTITY CASCADE`);
 }
 
+/** Zera prefeituras + tudo que gira em torno delas: convenios (Drizzle + collection),
+ *  folhas (Drizzle + collection), ofertas (collection), tabelas de emprestimo.
+ *  Bancos ficam intocados (mas sem convenio pra operar).
+ *  Pedido do cliente 16/07/2026: "prefeituras + convenios + folhas + ofertas + anuencias".
+ *  Anuencias vivem so em memoria — sem persistencia pra apagar. */
+export async function purgePrefeituras(env: Env): Promise<void> {
+  const db = getDb(env);
+  await ensureSchema(env);
+  await db.execute(sql`TRUNCATE prefeituras, convenios, convenio_tabelas_emprestimo, folhas RESTART IDENTITY CASCADE`);
+  // Collections genericas (tabelas jsonb chave-valor) — TRUNCATE separado.
+  await db.execute(sql.raw(`TRUNCATE admin_convenios, admin_ofertas, admin_folhas`)).catch(() => {
+    // Se alguma nao existir ainda (nunca foi seedada), ignora.
+  });
+}
+
 /** Repara linhas com jsonb corrompido (escalar): TRUNCATE + re-seed com o raw cast correto. */
 export async function reseedAll(env: Env, bancosSeed: BancoAdmin[], prefeiturasSeed: PrefeituraAdmin[], servidoresSeed: ServidorBuscaMock[]): Promise<void> {
   const db = getDb(env);
