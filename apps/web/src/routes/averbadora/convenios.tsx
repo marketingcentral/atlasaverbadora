@@ -113,6 +113,12 @@ export function AdminConvenios() {
         onImported={() => qc.invalidateQueries({ queryKey: ["admin", "convenios"] })}
       />
 
+      <MatrizConvenios
+        bancos={bancos.data?.bancos ?? []}
+        prefeituras={prefeituras.data?.prefeituras ?? []}
+        convenios={data.data?.convenios ?? []}
+      />
+
       <DataTable
         columns={columns}
         rows={data.data?.convenios ?? []}
@@ -156,6 +162,153 @@ export function AdminConvenios() {
         />
       ) : null}
     </div>
+  );
+}
+
+/** Matriz visual banco × prefeitura pra selecionar convenios em massa.
+ *  Clique numa celula vazia CRIA convenio com padroes (nome auto, dataCorte 15,
+ *  diaRepasse 5). Clique numa celula marcada DESATIVA (soft) o convenio ativo
+ *  daquele par. Prefeituras/bancos novos aparecem automaticamente. */
+function MatrizConvenios({
+  bancos, prefeituras, convenios,
+}: {
+  bancos: AdminBanco[];
+  prefeituras: AdminPrefeitura[];
+  convenios: AdminConvenio[];
+}) {
+  const qc = useQueryClient();
+  const [pending, setPending] = useState<string | null>(null); // "bancoId:prefId" em progresso
+
+  // Mapa (bancoId:prefeituraId) -> convenio ativo desse par, se existir.
+  const cell = useMemo(() => {
+    const m = new Map<string, AdminConvenio>();
+    for (const c of convenios) {
+      if (!c.ativo) continue;
+      m.set(`${c.bancoId}:${c.prefeituraId}`, c);
+    }
+    return m;
+  }, [convenios]);
+
+  const create = useMutation({
+    mutationFn: (v: { bancoId: number; prefeituraId: number; nome: string }) =>
+      atlas.admin.upsertConvenio({
+        bancoId: v.bancoId, prefeituraId: v.prefeituraId,
+        nome: v.nome, codigoVerba: "PADRAO",
+        dataCorte: 15, diaRepasse: 5,
+      }),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "convenios"] });
+      setPending(null);
+    },
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => atlas.admin.deleteConvenio(id),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "convenios"] });
+      setPending(null);
+    },
+  });
+
+  const toggle = (banco: AdminBanco, pref: AdminPrefeitura) => {
+    const key = `${banco.id}:${pref.id}`;
+    if (pending) return;
+    setPending(key);
+    const existing = cell.get(key);
+    if (existing) {
+      remove.mutate(existing.id);
+    } else {
+      create.mutate({
+        bancoId: banco.id, prefeituraId: pref.id,
+        nome: `${pref.nome.toUpperCase()} / ${banco.nome.toUpperCase()}`,
+      });
+    }
+  };
+
+  if (bancos.length === 0 || prefeituras.length === 0) {
+    return (
+      <div style={{
+        padding: 16, borderRadius: 12, border: "1px dashed var(--border-strong)",
+        background: "var(--bg-elev)", fontSize: 13, color: "var(--text-muted)",
+      }}>
+        Cadastre pelo menos <b>1 banco</b> e <b>1 prefeitura</b> antes de criar convênios.
+        <div style={{ marginTop: 4, color: "var(--text-dim)" }}>
+          {bancos.length === 0 ? "Nenhum banco cadastrado. " : null}
+          {prefeituras.length === 0 ? "Nenhuma prefeitura cadastrada." : null}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <section style={{
+      padding: 16, borderRadius: 12, border: "1px solid var(--border-strong)",
+      background: "var(--surface)", display: "flex", flexDirection: "column", gap: 12,
+    }}>
+      <div>
+        <div style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+          Matriz de convênios
+        </div>
+        <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+          Marque as células pra criar/desativar convênios com valores padrão. Ajustes finos (verba, corte, prazo) no botão ✎ da linha abaixo.
+        </div>
+      </div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ borderCollapse: "collapse", width: "auto", minWidth: "100%", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: "1px solid var(--border)", color: "var(--text-dim)", fontWeight: 600 }}>
+                Prefeitura ↓ / Banco →
+              </th>
+              {bancos.map((b) => (
+                <th key={b.id} style={{
+                  padding: "8px 12px", textAlign: "center",
+                  borderBottom: "1px solid var(--border)",
+                  color: "var(--text)", fontWeight: 700, minWidth: 120,
+                }}>
+                  {b.nome}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {prefeituras.map((p) => (
+              <tr key={p.id}>
+                <td style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", fontWeight: 600 }}>
+                  {p.nome}<span style={{ color: "var(--text-dim)", fontWeight: 400 }}>/{p.uf}</span>
+                </td>
+                {bancos.map((b) => {
+                  const key = `${b.id}:${p.id}`;
+                  const on = cell.has(key);
+                  const busy = pending === key;
+                  return (
+                    <td key={b.id} style={{ padding: "6px", borderBottom: "1px solid var(--border)", textAlign: "center" }}>
+                      <button
+                        type="button"
+                        onClick={() => toggle(b, p)}
+                        disabled={busy}
+                        title={on ? "Desativar convênio" : "Ativar convênio com padrões (verba PADRAO, corte 15, repasse 5)"}
+                        style={{
+                          width: 32, height: 32, borderRadius: 8,
+                          border: `1px solid ${on ? "var(--emerald-500)" : "var(--border-strong)"}`,
+                          background: on ? "color-mix(in srgb, var(--emerald-500) 20%, transparent)" : "transparent",
+                          color: on ? "var(--emerald-500)" : "var(--text-dim)",
+                          cursor: busy ? "wait" : "pointer",
+                          fontSize: 16, fontWeight: 700,
+                          opacity: busy ? 0.5 : 1,
+                          transition: "background .12s, border-color .12s",
+                        }}
+                      >
+                        {busy ? "…" : on ? "✓" : ""}
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 
