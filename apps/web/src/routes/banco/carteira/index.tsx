@@ -54,7 +54,12 @@ function parseLancamento(raw: string | null | undefined): number {
 
 /** Linha da carteira = Contrato + status do ADF na folha da prefeitura (folhaStatus),
  *  pra mostrar "Aplicada em folha" quando a prefeitura confirma (Passo 6). */
-type CarteiraRow = Contrato & { folhaStatus?: "recebida" | "aplicada" | "falha" };
+type CarteiraRow = Contrato & {
+  folhaStatus?: "recebida" | "aplicada" | "falha";
+  /** R2 key do CCB real (anexado pelo banco em /banco/propostas/:id). null se
+   *  o contrato foi criado sem anexo — nesse caso a coluna CCB mostra "—". */
+  ccbKey?: string | null;
+};
 
 function folhaPill(f?: "recebida" | "aplicada" | "falha"): { label: string; variant: "emdia" | "aceita" | "rejeitada" } {
   if (f === "aplicada") return { label: "Aplicada em folha", variant: "emdia" };
@@ -111,7 +116,11 @@ export function BancoCarteira() {
             const t = parseLancamento(ct.lancamento);
             return t > 0 ? new Date(t).toISOString() : new Date().toISOString();
           })(),
-          ccbUrl: `https://formaliza.banco.com.br/ccb/${ct.adf}.pdf`,
+          // Nao existe URL publica de CCB — o arquivo real esta em R2 privado e
+          // e acessado via atlas.banco.fetchCcbBlob(ccbKey). Antes esta linha
+          // apontava pra "https://formaliza.banco.com.br/ccb/..." que era 404.
+          ccbUrl: "",
+          ccbKey: ct.ccbKey ?? null,
           folhaStatus: ct.folhaStatus, // Passo 6: prefeitura confirmou em folha?
         };
       })
@@ -153,7 +162,10 @@ export function BancoCarteira() {
       status: CONTRATO_STATUS_LABEL[c.status],
       proximaParcela: c.proximaParcela,
       adf: getAdf(c.idUnico)?.numero ?? "",
-      ccb: c.ccbUrl,
+      // No CSV, exporta o nome do arquivo CCB (ultima parte do R2 key) ou
+      // "—" quando nao ha CCB anexado. Antes exportava uma URL fake que nunca
+      // resolvia — usuario baixava CSV e todos os links davam 404.
+      ccb: c.ccbKey ? (c.ccbKey.split("/").pop() ?? c.ccbKey) : "—",
     }));
 
   const columns: Column<CarteiraRow>[] = [
@@ -184,11 +196,7 @@ export function BancoCarteira() {
     {
       key: "ccb",
       header: "CCB",
-      render: (r) => (
-        <a href={r.ccbUrl} target="_blank" rel="noreferrer" style={{ color: "var(--accent)", fontSize: 13 }}>
-          PDF
-        </a>
-      ),
+      render: (r) => <CcbCell ccbKey={r.ccbKey ?? null} />,
     },
     {
       key: "adf",
@@ -269,5 +277,34 @@ export function BancoCarteira() {
 
       <DataTable columns={columns} rows={contratos} rowKey={(r) => r.idUnico} emptyState="Nenhum contrato com esses filtros." />
     </div>
+  );
+}
+
+/** Celula da coluna CCB — se o contrato tem arquivo anexado (ccbKey), oferece
+ *  botao "Abrir" que baixa o blob autenticado do R2 e abre em nova aba.
+ *  Sem ccbKey, mostra "—" (contrato averbado antes do upload virar obrigatorio,
+ *  ou contrato de reserva que ainda nao teve anexo). */
+function CcbCell({ ccbKey }: { ccbKey: string | null }) {
+  const [abrindo, setAbrindo] = useState(false);
+  if (!ccbKey) return <span style={{ color: "var(--text-dim)", fontSize: 13 }}>—</span>;
+  const abrir = async () => {
+    setAbrindo(true);
+    try {
+      const blob = await atlas.banco.fetchCcbBlob(ccbKey);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      // Revoga em 30s pra nao vazar memoria em sessoes longas.
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    } catch {
+      // Silencioso — o operador ve que nada abriu; pode reabrir na pagina de detalhe
+      // da proposta, que tem tratamento de erro visivel.
+    } finally {
+      setAbrindo(false);
+    }
+  };
+  return (
+    <Button size="sm" variant="ghost" onClick={abrir} disabled={abrindo}>
+      {abrindo ? "..." : "Abrir"}
+    </Button>
   );
 }

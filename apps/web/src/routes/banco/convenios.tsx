@@ -8,10 +8,22 @@ import { fmtBRL } from "../../lib/banco-propostas";
 // (atlas.banco.convenios()) para não divergir; os números são derivados dos
 // contratos reais do banco (atlas.banco.contratos()).
 export function BancoConvenios() {
-  const conveniosQ = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
+  // Poll 15s — contadores (ativos/aguardando/volume) mudam conforme propostas
+  // aprovam e ADFs sao aplicadas. Antes so atualizava em F5.
+  const conveniosQ = useQuery({
+    queryKey: ["banco", "convenios"],
+    queryFn: () => atlas.banco.convenios(),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
   // Visao geral dos convenios: precisa dos contratos de TODOS os convenios do banco
   // (nao so do ativo), pra somar por convenio corretamente. Opt-in explicito.
-  const contratosQ = useQuery({ queryKey: ["banco", "contratos", "convenios-view"], queryFn: () => atlas.banco.contratos({ incluirTodosConvenios: true }) });
+  const contratosQ = useQuery({
+    queryKey: ["banco", "contratos", "convenios-view"],
+    queryFn: () => atlas.banco.contratos({ incluirTodosConvenios: true }),
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+  });
 
   const cards = useMemo(() => {
     const convenios = conveniosQ.data?.convenios ?? [];
@@ -52,7 +64,7 @@ export function BancoConvenios() {
         </p>
       </header>
 
-      {conveniosQ.isLoading ? (
+      {conveniosQ.isPending ? (
         <div style={{ color: "var(--text-muted)" }}>Carregando convênios…</div>
       ) : conveniosQ.error ? (
         <div style={{ color: "var(--danger-500)" }}>Erro ao carregar convênios.</div>
