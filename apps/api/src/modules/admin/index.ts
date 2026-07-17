@@ -1882,6 +1882,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/servidores", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
+    // Sincroniza SERVIDORES_BUSCA_MOCK com o PG a CADA request — sem isso,
+    // isolate warm segurava a lista velha e servidor recem-importado em outro
+    // isolate sumia. Padrao equivalente ao refreshContratos/refreshConvenios.
+    await ensureServidoresLoaded(c.env);
+    try {
+      const loaded = await loadServidores(c.env);
+      const inMemoryTests = SERVIDORES_BUSCA_MOCK.filter((s) => TEST_CPFS.has(s.cpf));
+      const merged = [
+        ...loaded.filter((s) => !TEST_CPFS.has(s.cpf)),
+        ...inMemoryTests,
+      ];
+      SERVIDORES_BUSCA_MOCK.length = 0;
+      SERVIDORES_BUSCA_MOCK.push(...merged);
+    } catch { /* fail-safe: usa in-memory */ }
     await ensureServidorStatusLoaded(c.env);
     const url = new URL(c.req.url);
     const prefeituraId = url.searchParams.get("prefeitura_id");

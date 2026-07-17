@@ -197,7 +197,12 @@ export function AdminServidores() {
           prefeituraId={prefSelecionada.id}
           prefeituraNome={`${prefSelecionada.nome}/${prefSelecionada.uf}`}
           onClose={() => setImportOpen(false)}
-          onSuccess={() => qc.invalidateQueries({ queryKey: ["admin", "servidores"] })}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ["admin", "servidores"] });
+            // Fecha o modal apos import bem sucedido — usuario nao precisa
+            // clicar em Fechar. Se houver erros, deixa aberto pra revisar.
+            setImportOpen(false);
+          }}
         />
       ) : null}
 
@@ -341,7 +346,10 @@ function ImportModal({
     mutationFn: (csv: string) => atlas.admin.importCsv("servidores", csv, { prefeituraId }),
     onSuccess: (r) => {
       setResult(r);
-      if (r.inserted + r.updated > 0) onSuccess();
+      // Fecha o modal quando o import foi 100% sucesso (algo entrou e nenhum
+      // erro). Se ha erros, mantem aberto pra o operador ler as linhas que
+      // falharam antes de fechar manualmente.
+      if (r.inserted + r.updated > 0 && r.errors.length === 0) onSuccess();
     },
   });
 
