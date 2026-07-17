@@ -342,6 +342,20 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       const salarioStr = rawSal.replace(/R\$\s*/i, "").replace(/\./g, "").replace(",", ".").trim();
       const salario = Number(salarioStr);
       const ibge = Number(r.codigoIbge);
+      // Datas: aceita DD/MM/YYYY (folha real) OU YYYY-MM-DD (ISO). Converte BR→ISO
+      // porque data_nascimento e coluna date do PG e rejeita string BR. Bug
+      // reproducao (17/07/2026): import CSV do municipio de Capistrano/CE dava
+      // "date/time field value out of range" e o servidor sumia silencioso.
+      const toIsoDate = (raw: string | undefined): string => {
+        const s = (raw ?? "").trim();
+        if (!s) return "";
+        const brMatch = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+        if (brMatch) return `${brMatch[3]}-${brMatch[2]}-${brMatch[1]}`;
+        // ISO ja valido ou algo estranho — deixa passar (PG valida).
+        return s;
+      };
+      const dataAdmissao = toIsoDate(r.dataAdmissao);
+      const dataNascimento = toIsoDate(r.dataNascimento);
       // Identidade é (prefeituraId, matricula) — nunca só CPF. Assim o mesmo CPF
       // pode ser cadastrado em outra prefeitura (acumulação de cargos) sem colisão.
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === id);
@@ -350,7 +364,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       const rec: ServidorBuscaMock = {
         cpf, cpfMasked: `${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)}`,
         matricula: r.matricula!, idMatricula: `MAT-${r.matricula!}`, prefeituraId: id, nome: r.nome!,
-        dataAdmissao: r.dataAdmissao ?? "", dataNascimento: r.dataNascimento ?? "",
+        dataAdmissao, dataNascimento,
         vinculo, origem: p.nome, situacaoFuncional: r.situacaoFuncional ?? "TRABALHANDO",
         salarioLiquido: Number.isFinite(salario) ? salario : 0, idConvenio,
         cargo: r.cargo, codigoIbge: Number.isFinite(ibge) ? ibge : p.municipioIbge,

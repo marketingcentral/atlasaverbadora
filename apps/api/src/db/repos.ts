@@ -247,14 +247,29 @@ export async function loadServidores(env: Env): Promise<ServidorBuscaMock[]> {
   return rows.map((r) => r.data as unknown as ServidorBuscaMock).filter((s) => s && s.cpf);
 }
 
+/** Normaliza data pra ISO YYYY-MM-DD ou null. Aceita:
+ *   "1976-06-22" (ja ISO) | "22/06/1976" (BR) | "" | undefined
+ *  Qualquer outra coisa vira null (evita "date/time field value out of range").
+ *  Salvamos o valor bruto tambem em `data` jsonb pra nao perder informacao. */
+function toIsoDateOrNull(raw: string | undefined): string | null {
+  const s = (raw ?? "").trim();
+  if (!s) return null;
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (iso) return s;
+  const br = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  if (br) return `${br[3]}-${br[2]}-${br[1]}`;
+  return null;
+}
+
 export async function upsertServidor(env: Env, s: ServidorBuscaMock): Promise<void> {
   // MERGE shallow no jsonb (servidores.data || EXCLUDED.data): chaves antigas
   // que NÃO estão no novo objeto sobrevivem — passwordHash, email/telefone
   // definidos no primeiro-acesso não são apagados por re-import de CSV
   // que venha sem essas colunas.
+  const nascimento = toIsoDateOrNull(s.dataNascimento);
   await getDb(env).execute(sql`
     INSERT INTO servidores (prefeitura_id, nome, cpf, matricula, vinculo, situacao_funcional, status, data_nascimento, salario_base, data)
-    VALUES (${prefeituraIdOf(s)}, ${s.nome}, ${s.cpf}, ${s.matricula}, ${mapVinculo(s.vinculo)}::vinculo, ${mapSituacao(s.situacaoFuncional)}::situacao_funcional, 'ativo'::servidor_status, ${s.dataNascimento || null}, ${String(s.salarioLiquido)}, ${s as unknown as Record<string, unknown>}::jsonb)
+    VALUES (${prefeituraIdOf(s)}, ${s.nome}, ${s.cpf}, ${s.matricula}, ${mapVinculo(s.vinculo)}::vinculo, ${mapSituacao(s.situacaoFuncional)}::situacao_funcional, 'ativo'::servidor_status, ${nascimento}, ${String(s.salarioLiquido)}, ${s as unknown as Record<string, unknown>}::jsonb)
     ON CONFLICT (cpf, matricula) DO UPDATE SET prefeitura_id = EXCLUDED.prefeitura_id, nome = EXCLUDED.nome, vinculo = EXCLUDED.vinculo, situacao_funcional = EXCLUDED.situacao_funcional, status = EXCLUDED.status, data_nascimento = EXCLUDED.data_nascimento, salario_base = EXCLUDED.salario_base, data = COALESCE(servidores.data, '{}'::jsonb) || EXCLUDED.data`);
 }
 
