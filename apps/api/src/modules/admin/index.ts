@@ -131,6 +131,23 @@ export interface BancoAdmin {
   twoFactorEnabled?: boolean;
   /** RFC 6238 TOTP secret (base32). */
   twoFactorSecret?: string;
+  // Dados do Receita/Junta Comercial preenchidos pela consulta CNPJ no cadastro.
+  // Mesmo padrao usado em PrefeituraAdmin. Armazenados no config jsonb.
+  cnpj?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  dataFundacao?: string;
+  atividade?: string;
+  telefone?: string;
+  endereco?: {
+    logradouro?: string;
+    numero?: string;
+    complemento?: string;
+    bairro?: string;
+    cep?: string;
+    municipio?: string;
+    uf?: string;
+  };
 }
 
 // Strip secrets before returning over the wire.
@@ -1286,6 +1303,24 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Limpa APENAS a tabela de prefeituras (sem cascatear pra convenios/folhas
   // /ofertas). Protegido por senha compartilhada em env.ADMIN_PURGE_PASSWORD.
   // Usado pelo botao "Limpar Base" em /averbadora/prefeituras.
+  // Limpa APENAS a tabela de bancos. Protegido pela mesma senha compartilhada
+  // (env.ADMIN_PURGE_PASSWORD) — mesma logica do /prefeituras/limpar-base.
+  .post("/v1/admin/bancos/limpar-base", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "bancos");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha de operacoes destrutivas nao configurada no ambiente. Contate o operador da plataforma." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const antes = bancos.length;
+    for (const b of [...bancos]) {
+      try { await deleteBancoRow(c.env, b.id); } catch { /* segue */ }
+    }
+    bancos.length = 0;
+    pushEvent("info", "admin.bancos.limpar", `Base de bancos zerada por admin ${j?.sub} (${antes} removidos).`);
+    return c.json({ ok: true, removidos: antes });
+  })
   .post("/v1/admin/prefeituras/limpar-base", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
@@ -1390,6 +1425,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         password: z.string().min(6).optional(),
         scopes: z.array(z.string()).default([]),
         mtlsHabilitado: z.boolean().default(false),
+        // Campos novos (consulta CNPJ) — armazenados no config jsonb via ...rest.
+        cnpj: z.string().max(14).optional().or(z.literal("")),
+        razaoSocial: z.string().max(200).optional().or(z.literal("")),
+        nomeFantasia: z.string().max(200).optional().or(z.literal("")),
+        dataFundacao: z.string().max(10).optional().or(z.literal("")),
+        atividade: z.string().max(200).optional().or(z.literal("")),
+        telefone: z.string().max(20).optional().or(z.literal("")),
+        endereco: z.object({
+          logradouro: z.string().optional().or(z.literal("")),
+          numero: z.string().optional().or(z.literal("")),
+          complemento: z.string().optional().or(z.literal("")),
+          bairro: z.string().optional().or(z.literal("")),
+          cep: z.string().optional().or(z.literal("")),
+          municipio: z.string().optional().or(z.literal("")),
+          uf: z.string().optional().or(z.literal("")),
+        }).optional(),
       })
       .parse(await c.req.json());
     const { password, loginEmail, ...rest } = body;
@@ -1494,7 +1545,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // Ambos retornam shapes diferentes — normalizamos pro shape do BrasilAPI
   // (que o frontend ja consome). Se ambos 429/falharem, mensagem clara.
   .get("/v1/admin/prefeituras/consulta-cnpj/:cnpj", async (c) => {
-    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
+    // Reutilizado tambem pelo cadastro de bancos — mesma consulta CNPJ.
+    // Aceita quem tem permissao em prefeituras OU bancos (nao amarra ao path).
+    const j = c.get("jwt"); requireAdmin(j); requirePermissaoOneOf(j, "prefeituras", "bancos");
     const raw = c.req.param("cnpj").replace(/\D/g, "");
     if (raw.length !== 14) throw Errors.validation({ cnpj: "CNPJ invalido — envie 14 digitos" });
     // v2: bump apos adicionar enriquecimento IBGE — invalida entradas antigas

@@ -90,6 +90,14 @@ function rowToBanco(row: typeof bancosTable.$inferSelect): BancoAdmin {
     mtlsHabilitado: Boolean(cfg.mtlsHabilitado),
     ultimoTeste: cfg.ultimoTeste as string | undefined,
     ultimoTesteOk: cfg.ultimoTesteOk as boolean | undefined,
+    // Campos do cadastro por CNPJ — hidratados do jsonb (mesma estrategia do PrefeituraAdmin).
+    cnpj: cfg.cnpj as string | undefined,
+    razaoSocial: cfg.razaoSocial as string | undefined,
+    nomeFantasia: cfg.nomeFantasia as string | undefined,
+    dataFundacao: cfg.dataFundacao as string | undefined,
+    atividade: cfg.atividade as string | undefined,
+    telefone: cfg.telefone as string | undefined,
+    endereco: cfg.endereco as BancoAdmin["endereco"] | undefined,
   };
 }
 
@@ -100,7 +108,25 @@ export async function loadBancos(env: Env): Promise<BancoAdmin[]> {
 
 export async function upsertBanco(env: Env, b: BancoAdmin): Promise<void> {
   const dom = b.loginEmail ? [b.loginEmail.split("@")[1] ?? ""] : [];
-  const cfg = { contatoEmail: b.contatoEmail, loginEmail: b.loginEmail, passwordHash: b.passwordHash, scopes: b.scopes, mtlsHabilitado: b.mtlsHabilitado, ultimoTeste: b.ultimoTeste, ultimoTesteOk: b.ultimoTesteOk };
+  // Persiste TODOS os campos extras (CNPJ, telefone, endereco, razao social).
+  // Antes so persistia contato/login/scopes — dados oficiais do CNPJ sumiam
+  // no cold-start.
+  const cfg = {
+    contatoEmail: b.contatoEmail,
+    loginEmail: b.loginEmail,
+    passwordHash: b.passwordHash,
+    scopes: b.scopes,
+    mtlsHabilitado: b.mtlsHabilitado,
+    ultimoTeste: b.ultimoTeste,
+    ultimoTesteOk: b.ultimoTesteOk,
+    cnpj: b.cnpj,
+    razaoSocial: b.razaoSocial,
+    nomeFantasia: b.nomeFantasia,
+    dataFundacao: b.dataFundacao,
+    atividade: b.atividade,
+    telefone: b.telefone,
+    endereco: b.endereco,
+  };
   // Array jsonb: postgres-js encoda arrays como array-PG (nao JSON). Envolve num
   // objeto (que ele JSON-encoda corretamente, inclusive arrays aninhados) e extrai.
   const domWrap = { v: dom } as unknown as Record<string, unknown>;

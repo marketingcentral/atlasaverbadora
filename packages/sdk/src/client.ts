@@ -476,6 +476,14 @@ export interface AdminBanco {
   mtlsHabilitado: boolean;
   ultimoTeste?: string;
   ultimoTesteOk?: boolean;
+  // Dados oficiais preenchidos pela consulta CNPJ (BrasilAPI + fallback).
+  cnpj?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  dataFundacao?: string;
+  atividade?: string;
+  telefone?: string;
+  endereco?: AdminPrefeituraEndereco;
 }
 
 export interface AdminBancoInput {
@@ -488,6 +496,13 @@ export interface AdminBancoInput {
   password?: string;
   scopes?: string[];
   mtlsHabilitado?: boolean;
+  cnpj?: string;
+  razaoSocial?: string;
+  nomeFantasia?: string;
+  dataFundacao?: string;
+  atividade?: string;
+  telefone?: string;
+  endereco?: AdminPrefeituraEndereco;
 }
 
 export interface AdminPrefeituraEndereco {
@@ -1638,10 +1653,13 @@ export class AtlasClient {
     limparBasePrefeituras: (senha: string) =>
       this.request<{ ok: true; removidas: number }>("/v1/admin/prefeituras/limpar-base", { method: "POST", body: { senha } }),
     sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura; resultado: { novos: number; atualizados: number; erro?: string; ts: string } }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
-    /** Consulta CNPJ via BrasilAPI (Receita + Junta Comercial). Usado no modal
-     *  de cadastro de prefeitura pra prefill automatico dos campos. */
+    /** Consulta CNPJ via BrasilAPI (Receita + Junta Comercial). Usado nos
+     *  modais de cadastro de prefeitura E de banco — endpoint reaproveitado. */
     consultarCnpjPrefeitura: (cnpj: string) =>
       this.request<{ dados: CnpjLookupResponse }>(`/v1/admin/prefeituras/consulta-cnpj/${encodeURIComponent(cnpj.replace(/\D/g, ""))}`),
+    /** Zera a base de bancos. Exige senha compartilhada (env ADMIN_PURGE_PASSWORD). */
+    limparBaseBancos: (senha: string) =>
+      this.request<{ ok: true; removidos: number }>("/v1/admin/bancos/limpar-base", { method: "POST", body: { senha } }),
     resetPrefeituraPassword: (id: number, password: string) =>
       this.request<{ prefeitura: AdminPrefeitura }>(`/v1/admin/prefeituras/${id}/reset-password`, { method: "POST", body: { password } }),
     deletePrefeitura: (id: number, confirm: { challengeId: string; codigo: string }) =>
