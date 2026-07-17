@@ -152,7 +152,10 @@ const _adfs: AdfEntry[] = [];
  *  Reservas ("Aguardando"), cancelados e quitados NAO viram ADF pendente. */
 function isAverbado(situacao: string): boolean {
   const s = situacao.toLowerCase();
-  return s === "ativo" || s.includes("averb") || s.includes("aprov");
+  // Inclui "cobranca direta" pra que a ADF continue visivel na averbadora
+  // apos cascade de desligamento (com status interrompida_desligamento) —
+  // sem isso o historico sumia da tela.
+  return s === "ativo" || s.includes("averb") || s.includes("aprov") || s.includes("cobran");
 }
 
 /** Materializa ADFs a partir dos contratos AVERBADOS da prefeitura (1 ADF por contrato).
