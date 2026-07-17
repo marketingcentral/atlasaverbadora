@@ -5,6 +5,11 @@ import { atlas } from "../../lib/sdk";
 import type { AdminPreReserva, PreReservaStatus } from "@atlas/sdk";
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const DT_BR = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: "America/Sao_Paulo",
+  day: "2-digit", month: "2-digit", year: "numeric",
+  hour: "2-digit", minute: "2-digit", second: "2-digit",
+});
 
 export function AdminPreReservas() {
   const qc = useQueryClient();
@@ -63,7 +68,12 @@ export function AdminPreReservas() {
         );
       },
     },
-    { key: "criadoEm", header: "Criada", render: (r) => new Date(r.criadoEm).toLocaleString("pt-BR") },
+    { key: "criadoEm", header: "Criada", render: (r) => (
+        <span title={`Expira em ${DT_BR.format(new Date(r.expiraEm))} (BRT)`}>
+          {DT_BR.format(new Date(r.criadoEm))}
+        </span>
+      ),
+    },
   ];
 
   return (
