@@ -298,43 +298,48 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
         <h3 style={{ margin: 0 }}>{initial ? `Editar ${initial.nome}/${initial.uf}` : "Nova prefeitura"}</h3>
 
         {/* PASSO 1 — Consulta CNPJ. Prefill de todos os campos oficiais via
-            BrasilAPI (base publica que agrega Receita Federal + Junta Comercial). */}
-        <div>
-          <label style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
-            CNPJ da prefeitura
-          </label>
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
-              value={cnpjInput}
-              onChange={(e) => setCnpjInput(e.target.value)}
-              onBlur={() => setCnpjInput((v) => formatCnpj(v))}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); buscarCnpj(); } }}
-              placeholder="00.000.000/0000-00"
-              maxLength={18}
-              style={{
-                flex: 1, padding: "10px 12px", borderRadius: 8,
-                border: "1px solid var(--border-strong)",
-                background: "var(--bg-elev)", color: "var(--text)",
-                fontSize: 14, fontFamily: "var(--font-mono)",
-              }}
-            />
-            <Button type="button" onClick={buscarCnpj} disabled={consulta.isPending}>
-              {consulta.isPending ? "Buscando…" : "Pesquisar"}
-            </Button>
-          </div>
-          {cnpjError ? <div style={{ color: "var(--danger-500)", fontSize: 12, marginTop: 6 }}>{cnpjError}</div> : null}
-          {!cnpjError && !dadosPreenchidos ? (
-            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
-              Consulta pública (Receita + Junta Comercial). Preenche razão social, endereço, atividade e código IBGE automaticamente.
+            BrasilAPI (base publica que agrega Receita Federal + Junta Comercial).
+            Escondido em modo edicao — CNPJ ja esta persistido no cadastro
+            original. Se precisar rebuscar (dados oficiais mudaram), edite o
+            CNPJ direto no PG e recarregue. */}
+        {!initial ? (
+          <div>
+            <label style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+              CNPJ da prefeitura
+            </label>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={cnpjInput}
+                onChange={(e) => setCnpjInput(e.target.value)}
+                onBlur={() => setCnpjInput((v) => formatCnpj(v))}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); buscarCnpj(); } }}
+                placeholder="00.000.000/0000-00"
+                maxLength={18}
+                style={{
+                  flex: 1, padding: "10px 12px", borderRadius: 8,
+                  border: "1px solid var(--border-strong)",
+                  background: "var(--bg-elev)", color: "var(--text)",
+                  fontSize: 14, fontFamily: "var(--font-mono)",
+                }}
+              />
+              <Button type="button" onClick={buscarCnpj} disabled={consulta.isPending}>
+                {consulta.isPending ? "Buscando…" : "Pesquisar"}
+              </Button>
             </div>
-          ) : null}
-        </div>
+            {cnpjError ? <div style={{ color: "var(--danger-500)", fontSize: 12, marginTop: 6 }}>{cnpjError}</div> : null}
+            {!cnpjError && !dadosPreenchidos ? (
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 6 }}>
+                Consulta pública (Receita + Junta Comercial). Preenche razão social, endereço, atividade e código IBGE automaticamente.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
-        {/* PASSO 2 — Dados oficiais (mostrados só depois da consulta ou em edição).
-            Todos read-only exceto telefone — os dados vem da Receita/Junta Comercial
-            e sao a fonte da verdade. Se precisar corrigir algo (exceto telefone),
-            atualize la e refaca a consulta. */}
-        {dadosPreenchidos ? (
+        {/* PASSO 2 — Dados oficiais. Aparece:
+            - No cadastro: apos consulta CNPJ bem-sucedida (dadosPreenchidos=true)
+            - Em edicao: SEMPRE (mesmo se vazios — cadastros antigos nao tinham
+              o campo salvo; permite pelo menos editar telefone) */}
+        {(dadosPreenchidos || initial) ? (
           <div style={{ padding: 14, background: "var(--bg-elev-2)", borderRadius: 10, border: "1px solid var(--border)" }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--emerald-500)", textTransform: "uppercase", marginBottom: 4 }}>
               ✓ Dados oficiais preenchidos
