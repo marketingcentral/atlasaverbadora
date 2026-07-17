@@ -3157,7 +3157,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ============================================================
   .get("/v1/admin/adf/competencias", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
-    await refreshContratos(c.env);
+    // Isolate novo/redeploy: precisa recarregar prefeituras (pra ensureAdfsGlobal
+    // iterar) + convenios (pra ensureAdfs conseguir mapear convenioId -> prefeitura)
+    // + bancos (pra resolver banco_id -> nome). Sem isso, contratos aprovados
+    // pelo banco nunca viravam ADF (bug 17/07/2026: 1 aprovada no banco, 0 em ADF).
+    await Promise.all([
+      refreshContratos(c.env),
+      refreshConvenios(c.env),
+      ensurePrefeiturasLoaded(c.env),
+      ensureBancosLoaded(c.env),
+    ]);
     const now = new Date().toISOString();
     const compAtual = folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", "");
     // Materializa para TODAS as prefeituras da competencia atual.
@@ -3166,7 +3175,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   .get("/v1/admin/adf", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
-    await refreshContratos(c.env);
+    await Promise.all([
+      refreshContratos(c.env),
+      refreshConvenios(c.env),
+      ensurePrefeiturasLoaded(c.env),
+      ensureBancosLoaded(c.env),
+    ]);
     const now = new Date().toISOString();
     const url = new URL(c.req.url);
     const competencia = url.searchParams.get("competencia") ?? undefined;

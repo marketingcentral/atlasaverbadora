@@ -400,11 +400,14 @@ export interface PrefeituraPerfil {
   criadoEm: string;
 }
 
-const _perfis: PrefeituraPerfil[] = [
-  { id: 1, prefeituraId: 1, nome: "Coordenação RH", email: "rh@palhoca.sc.gov.br", area: "rh", permissoes: [...PREFEITURA_PRESETS.rh], ativo: true, twofaEnabled: true, totpSecret: "JBSWY3DPEHPK3PXP", criadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
-  { id: 2, prefeituraId: 1, nome: "Setor Financeiro", email: "financeiro@palhoca.sc.gov.br", area: "financeiro", permissoes: [...PREFEITURA_PRESETS.financeiro], ativo: true, twofaEnabled: false, criadoEm: new Date("2026-06-01T00:00:00Z").toISOString() },
-];
-let _perfilSeq = 3;
+// Cliente pediu remocao dos 2 perfis hardcoded (Coordenacao RH / Setor
+// Financeiro, ambos com prefeituraId=1 apontando pra Palhoca ja removida) em
+// 17/07/2026. Motivo: quando a prefeitura seed sumiu, esses perfis viraram
+// orfaos e "vazaram" pra proxima prefeitura que herdasse id=1 (Capistrano).
+// Perfis novos entram exclusivamente via UI (POST /prefeitura/perfis) atrelados
+// ao prefeituraId do JWT — que corresponde ao CNPJ do login.
+const _perfis: PrefeituraPerfil[] = [];
+let _perfilSeq = 1;
 
 /** Migra perfis hidratados do PG sem permissoes[] — deriva da area. Idempotente. */
 export function ensurePerfilPermissoes(p: PrefeituraPerfil): void {
