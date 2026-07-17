@@ -61,15 +61,17 @@ export function AdminPrefeituras() {
     { key: "modoIntegracao", header: "Integração" },
     {
       key: "acesso",
-      header: "Acesso /login",
-      render: (p) =>
-        p.loginEmail && p.hasPassword ? (
-          <span style={{ color: "var(--emerald-500)" }}>{p.loginEmail}</span>
-        ) : p.loginEmail ? (
-          <span style={{ color: "var(--danger-500)" }} title="Login cadastrado mas sem senha">{p.loginEmail} (sem senha)</span>
-        ) : (
-          <span style={{ color: "var(--text-dim)" }}>—</span>
-        ),
+      header: "Login",
+      render: (p) => p.loginEmail
+        ? <span style={{ color: "var(--emerald-500)" }}>{p.loginEmail}</span>
+        : <span style={{ color: "var(--text-dim)" }}>—</span>,
+    },
+    {
+      key: "senha",
+      header: "Senha",
+      render: (p) => p.hasPassword
+        ? <span style={{ color: "var(--emerald-500)" }} title="Senha configurada">✓ cadastrada</span>
+        : <span style={{ color: "var(--danger-500)" }} title="Sem senha — login nao funciona">— não configurada</span>,
     },
     {
       key: "telefone",
