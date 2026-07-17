@@ -35,13 +35,14 @@ export function AppShellAdmin({
   return (
     <div
       style={{
-        minHeight: "100vh",
+        height: "100vh",
         display: "grid",
         gridTemplateColumns: "260px 1fr",
         gridTemplateRows: "64px 1fr",
         gridTemplateAreas: `"sidebar topbar" "sidebar main"`,
         background: "var(--bg)",
         color: "var(--text)",
+        overflow: "hidden",
       }}
     >
       <aside
@@ -49,15 +50,26 @@ export function AppShellAdmin({
           gridArea: "sidebar",
           background: "var(--bg-elev)",
           borderRight: "1px solid var(--border)",
-          padding: "20px 16px",
           display: "flex",
           flexDirection: "column",
-          gap: 16,
+          minHeight: 0,
         }}
       >
-        {brand}
-        {convenioSlot}
-        <nav style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <div style={{ padding: "20px 16px 12px", display: "flex", flexDirection: "column", gap: 16, flexShrink: 0 }}>
+          {brand}
+          {convenioSlot}
+        </div>
+        <nav
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+            padding: "0 16px 20px",
+            overflowY: "auto",
+            flex: 1,
+            minHeight: 0,
+          }}
+        >
           {nav.map((item) => (
             <NavLeaf key={item.href ?? item.key} item={item} activeKey={activeKey} activeHref={activeHref} onNavigate={onNavigate} />
           ))}
