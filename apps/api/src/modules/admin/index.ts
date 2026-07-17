@@ -384,6 +384,50 @@ async function persistServidor(env: Env, s: typeof SERVIDORES_BUSCA_MOCK[number]
   try { await upsertServidor(env, s); } catch (e) { pushEvent("warn", "db.servidores.write_failed", `Falha ao persistir servidor ${s.matricula}: ${(e as Error).message}`); }
 }
 
+/** Parse de numero em formato BR ou US. Aceita:
+ *   "R$ 5.000,50" | "5.000,50" | "5000,50" | "5000.50" | "5000" | 5000
+ *   Retorna NaN se input vazio/invalido — chamador decide fallback. */
+function parseNumberBr(v: unknown): number {
+  if (typeof v === "number") return v;
+  if (v == null) return NaN;
+  const s = String(v).trim();
+  if (!s) return NaN;
+  // Remove tudo que nao e digito, virgula, ponto ou sinal (elimina "R$", espacos, etc).
+  const clean = s.replace(/[^\d,.\-]/g, "");
+  if (!clean) return NaN;
+  // Se tem virgula E ponto: assume ponto como milhar, virgula como decimal (BR).
+  // Se so tem virgula: e decimal BR. So ponto: pode ser milhar (US) ou decimal.
+  const hasComma = clean.includes(",");
+  const hasDot = clean.includes(".");
+  let normalized = clean;
+  if (hasComma && hasDot) {
+    normalized = clean.replace(/\./g, "").replace(",", ".");
+  } else if (hasComma) {
+    normalized = clean.replace(",", ".");
+  }
+  // (so ponto: mantem — Number("5.000") = 5 (milhar) OU decimal, ambiguo; assume decimal)
+  const n = Number(normalized);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+/** Mapeia codigos numericos comuns de vinculo (usados por planilhas de RH) pra
+ *  os literais que o sistema entende. Retorna undefined se nao reconhecer — o
+ *  chamador cai no default "ESTATUTARIO". */
+function mapVinculo(raw: unknown): "CLT" | "ESTATUTARIO" | "COMISSIONADO" | undefined {
+  if (raw == null) return undefined;
+  const v = String(raw).trim().toUpperCase();
+  if (!v) return undefined;
+  if (v === "ESTATUTARIO" || v === "CLT" || v === "COMISSIONADO") return v;
+  // Codigos numericos: convencao "1=Estatutario, 2=CLT, 3=Comissionado".
+  if (v === "1") return "ESTATUTARIO";
+  if (v === "2") return "CLT";
+  if (v === "3") return "COMISSIONADO";
+  // Variantes textuais comuns.
+  if (v.startsWith("EST")) return "ESTATUTARIO";
+  if (v.startsWith("COM")) return "COMISSIONADO";
+  return undefined;
+}
+
 // Cliente pediu remocao do seed das 4 folhas fixture (16/07/2026) pra teste
 // real do zero — antes tinha F-2026-06-1/06-2/07-1/07-2 (Palhoca+Floripa) que
 // reapareciam via seedCollectionIfEmpty depois de deletadas. Prefeituras
@@ -1858,6 +1902,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       cargo: s.cargo ?? "",
       endereco: s.endereco ?? "",
       codigoIbge: s.codigoIbge ?? null,
+      dataAdmissao: s.dataAdmissao ?? "",
+      dataNascimento: s.dataNascimento ?? "",
       hasPassword: !!s.passwordHash,
     }));
     if (prefeituraId) {
@@ -3252,8 +3298,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (!idConvenio) { out.errors.push({ line, message: `prefeitura ${pref.nome} nao possui convenios cadastrados` }); return; }
       // Identidade (prefeituraId, matricula) — permite mesmo CPF em outra prefeitura.
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === prefId);
-      const salario = Number(r.salarioLiquido);
-      const ibge = Number(r.codigoIbge);
+      // Salario: aceita formato BR ("R$ 5.000,50", "5.000,50") e US ("5000.50").
+      // Antes o Number() cru retornava NaN pra qualquer coisa com R$ ou virgula
+      // decimal — resultado: import trazia salario zerado.
+      const salario = parseNumberBr(r.salarioLiquido);
+      const ibge = Number((r.codigoIbge ?? "").toString().replace(/\D/g, ""));
+      // Vinculo: aceita string canonica (ESTATUTARIO/CLT/etc) OU codigo numerico
+      // usado por planilhas de RH (1=Estatutario, 2=CLT, 3=Comissionado, ...).
+      const vinculo = mapVinculo(r.vinculo) ?? "ESTATUTARIO";
       const s: ServidorBuscaMock = {
         cpf,
         cpfMasked: cpf.slice(0, 3) + ".***.***-" + cpf.slice(-2),
@@ -3263,12 +3315,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         nome: r.nome!,
         dataAdmissao: r.dataAdmissao ?? "",
         dataNascimento: r.dataNascimento ?? "",
-        vinculo: (r.vinculo ?? "ESTATUTARIO") as ServidorBuscaMock["vinculo"],
+        vinculo,
         origem: pref.nome,
-        situacaoFuncional: (r.situacaoFuncional ?? "TRABALHANDO") as ServidorBuscaMock["situacaoFuncional"],
-        salarioLiquido: Number.isFinite(salario) ? salario : 0,
+        situacaoFuncional: (r.situacaoFuncional?.trim() || "TRABALHANDO") as ServidorBuscaMock["situacaoFuncional"],
+        salarioLiquido: Number.isFinite(salario) && salario > 0 ? salario : 0,
         idConvenio,
-        codigoIbge: Number.isFinite(ibge) ? ibge : undefined,
+        codigoIbge: Number.isFinite(ibge) && ibge > 0 ? ibge : undefined,
       };
       // Só entra em `s` se o CSV trouxe valor — evita zerar contato/endereço
       // que o servidor definiu no primeiro acesso.

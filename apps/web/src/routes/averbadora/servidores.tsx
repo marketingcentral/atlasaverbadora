@@ -43,15 +43,26 @@ export function AdminServidores() {
   const prefSelecionada = (prefeituras.data?.prefeituras ?? []).find((p) => String(p.id) === prefId);
   const podeImportar = !!prefSelecionada;
 
+  // Colunas do CSV exemplo: cpf, matricula, nome, dataAdmissao, dataNascimento,
+  // vinculo, situacaoFuncional, salarioLiquido, idConvenio, cargo, endereco,
+  // email, telefone, codigoIbge. Todas visiveis aqui pra o operador conferir o
+  // import por linha (tabela horizontal com scroll).
   const columns: Column<AdminServidor>[] = [
     { key: "nome", header: "Nome" },
-    { key: "matricula", header: "Matrícula" },
+    { key: "matricula", header: "Matrícula", mono: true },
     { key: "cpf", header: "CPF", mono: true, render: (s) => fmtCpf(s.cpf) },
-    { key: "cargo", header: "Cargo", render: (s) => s.cargo || "—" },
+    { key: "cargo", header: "Cargo", render: (s) => s.cargo || <span style={{ color: "var(--text-dim)" }}>—</span> },
     { key: "origem", header: "Origem" },
     { key: "vinculo", header: "Vínculo" },
-    { key: "situacaoFuncional", header: "Situação funcional" },
-    { key: "salarioLiquido", header: "Salário líq.", align: "right", render: (s) => fmtBRL(s.salarioLiquido) },
+    { key: "situacaoFuncional", header: "Situação funcional", render: (s) => s.situacaoFuncional || <span style={{ color: "var(--text-dim)" }}>—</span> },
+    { key: "salarioLiquido", header: "Salário líq.", align: "right", render: (s) => s.salarioLiquido > 0 ? fmtBRL(s.salarioLiquido) : <span style={{ color: "var(--danger-500)" }}>R$ 0,00</span> },
+    { key: "idConvenio", header: "Convênio", mono: true, render: (s) => s.idConvenio || <span style={{ color: "var(--text-dim)" }}>—</span> },
+    { key: "email", header: "E-mail", render: (s) => s.email || <span style={{ color: "var(--text-dim)" }}>—</span> },
+    { key: "telefone", header: "Telefone", render: (s) => s.telefone || <span style={{ color: "var(--text-dim)" }}>—</span> },
+    { key: "dataAdmissao", header: "Admissão", render: (s) => s.dataAdmissao || <span style={{ color: "var(--text-dim)" }}>—</span> },
+    { key: "dataNascimento", header: "Nascimento", render: (s) => s.dataNascimento || <span style={{ color: "var(--text-dim)" }}>—</span> },
+    { key: "endereco", header: "Endereço", render: (s) => s.endereco || <span style={{ color: "var(--text-dim)" }}>—</span> },
+    { key: "codigoIbge", header: "IBGE", mono: true, render: (s) => s.codigoIbge ? String(s.codigoIbge) : <span style={{ color: "var(--text-dim)" }}>—</span> },
     { key: "status", header: "Status", render: (s) => <Pill variant={s.status === "ativo" ? "averbado" : s.status === "bloqueado" ? "rejeitada" : "expirado"}>{s.status}</Pill> },
     { key: "acoes", header: "", render: (s) => <IconButton title="Editar" onClick={() => setEditing(s)}>✎</IconButton> },
   ];

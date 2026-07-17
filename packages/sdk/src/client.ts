@@ -820,6 +820,9 @@ export interface AdminServidor {
   cargo?: string;
   endereco?: string;
   codigoIbge?: number | null;
+  /** DD/MM/AAAA — do CSV importado. Formato livre (nao normalizamos). */
+  dataAdmissao?: string;
+  dataNascimento?: string;
   /** true se o servidor já tem senha cadastrada; o plaintext nunca é retornado. */
   hasPassword: boolean;
 }
