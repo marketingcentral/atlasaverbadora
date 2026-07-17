@@ -539,11 +539,18 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const owner = getContrato(adf);
     if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
     // Fluxo novo (pedido do cliente): banco so aprova DEPOIS de anexar o
-    // contrato assinado. Sem CCB, aprovar retorna 422.
+    // contrato assinado — MAS so quando a prefeitura exige CCB (config por
+    // prefeitura). Se a prefeitura tem exigeCcb=false, deixa aprovar sem PDF.
+    // Bug identificado 17/07/2026: bloqueio era hardcoded, ignorava a config.
     if (acao === "aprovar" && !owner.ccbKey) {
-      throw Errors.validation({
-        contrato: "anexe o contrato assinado antes de aprovar a proposta.",
-      });
+      const conv = CONVENIOS_MOCK.find((cv) => cv.id === owner.convenioId);
+      const pref = conv ? prefeituras.find((p) => p.id === conv.prefeituraId) : undefined;
+      const exigeCcb = pref?.exigeCcb === true;
+      if (exigeCcb) {
+        throw Errors.validation({
+          contrato: `anexe o contrato assinado antes de aprovar a proposta (${pref?.nome ?? "prefeitura"} exige CCB).`,
+        });
+      }
     }
     const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
     if (!r) throw Errors.notFound("contrato");
