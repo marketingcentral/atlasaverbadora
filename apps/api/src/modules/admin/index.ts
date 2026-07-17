@@ -369,10 +369,14 @@ export function ensureServidoresLoaded(env: Env): Promise<void> {
         const testAccounts = purged ? [] : SERVIDORES_SEED.filter((s) => TEST_CPFS.has(s.cpf));
         SERVIDORES_BUSCA_MOCK.length = 0;
         SERVIDORES_BUSCA_MOCK.push(...filtered, ...testAccounts);
-      } else {
-        // Base vazia (post-purge) — reflete in-memory.
-        SERVIDORES_BUSCA_MOCK.length = 0;
       }
+      // NAO limpar SERVIDORES_BUSCA_MOCK quando loaded.length === 0. Se um
+      // isolate importou servidores in-memory mas o write ao PG falhou (ou
+      // ainda esta em andamento), zerar aqui apaga a unica copia viva do
+      // servidor recem-cadastrado — o primeiro acesso quebrava com "servidor
+      // nao encontrado". Regra do cliente: dados so somem por pedido explicito.
+      // A verificacao de PG vazio + purge continua bloqueando o SEED
+      // automatico (linha acima), o que ja resolve o "base zerada" pedida.
     } catch (e) {
       _servidoresLoad = null;
       pushEvent("warn", "db.servidores.hydrate_failed", `Falha ao hidratar servidores: ${(e as Error).message}. Usando fixtures.`);

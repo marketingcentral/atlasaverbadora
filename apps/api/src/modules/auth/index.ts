@@ -12,7 +12,7 @@ import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded } from "../admin/index.js";
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
 import { verifyTotp } from "../../_shared/totp.js";
-import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf } from "../../db/repos.js";
+import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf, loadServidores } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
 function maskEmail(email?: string): string {
@@ -407,7 +407,20 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     const digits = cpf.replace(/\D/g, "");
     if (digits.length !== 11) throw Errors.validation({ cpf: "CPF deve ter 11 dígitos" });
     await ensureServidoresLoaded(c.env);
-    const s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
+    let s = SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === digits);
+    // Fallback direto no PG — cobre o caso de o servidor ter sido importado em
+    // outro isolate que ainda nao propagou pra este. Antes retornava
+    // "servidor nao encontrado" mesmo com o registro persistido no banco.
+    if (!s) {
+      try {
+        const rows = await loadServidores(c.env);
+        const found = rows.find((x) => x.cpf === digits);
+        if (found) {
+          SERVIDORES_BUSCA_MOCK.push(found);
+          s = found;
+        }
+      } catch { /* fail-safe */ }
+    }
     if (!s) return c.json({ encontrado: false });
     // "Ja tem senha" considera AMBOS: passwordHash real (Postgres) E DEV_USERS
     // (senha de seed). Sem isso, servidores sandbox como Adriana passariam pelo

@@ -38,6 +38,10 @@ import { MATRICULA_REGEX, normalizeMatricula } from "../../_shared/matricula.js"
  */
 async function persistServidorPref(env: Env, s: ServidorBuscaMock): Promise<void> {
   await upsertServidor(env, s);
+  // Prefeitura acabou de povoar a base — libera o purge lock pra o proximo
+  // isolate frio hidratar o servidor recem-importado normalmente (sem essa
+  // linha, primeiro-acesso desse CPF cai em "servidor nao encontrado").
+  if (env.KV_CACHE) await env.KV_CACHE.delete("purge:servidores");
 }
 
 function requirePrefeitura(j: JwtClaims): number {
