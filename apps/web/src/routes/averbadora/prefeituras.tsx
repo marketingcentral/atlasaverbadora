@@ -306,8 +306,11 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
     : "Mínimo 6 caracteres. Será exigida em todo login da prefeitura.";
 
   return (
-    <div onClick={onClose} style={modalBackdrop}>
-      <div onClick={(e) => e.stopPropagation()} style={modalCard}>
+    <div
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={modalBackdrop}
+    >
+      <div onMouseDown={(e) => e.stopPropagation()} style={modalCard}>
         <h3 style={{ margin: 0 }}>{initial ? `Editar ${initial.nome}/${initial.uf}` : "Nova prefeitura"}</h3>
 
         {/* PASSO 1 — Consulta CNPJ. Prefill de todos os campos oficiais via
@@ -573,8 +576,11 @@ function LimparBaseModal({ onClose, onDone }: { onClose: () => void; onDone: () 
     }
   };
   return (
-    <div onClick={enviando ? undefined : onClose} style={modalBackdrop}>
-      <div onClick={(e) => e.stopPropagation()} style={{ ...modalCard, maxWidth: 460 }}>
+    <div
+      onMouseDown={enviando ? undefined : (e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={modalBackdrop}
+    >
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ ...modalCard, maxWidth: 460 }}>
         <h3 style={{ margin: 0, color: "var(--danger-500)" }}>⚠ Limpar Base de Prefeituras</h3>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0 }}>
           Esta ação vai <b style={{ color: "var(--danger-500)" }}>remover TODAS as prefeituras</b> cadastradas. Convênios, folhas e servidores associados NÃO são apagados neste botão — só a tabela de prefeituras. Ação irreversível.

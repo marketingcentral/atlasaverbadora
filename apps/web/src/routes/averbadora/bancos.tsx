@@ -287,8 +287,11 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
     : "Mínimo 6 caracteres. Será exigida em todo login do banco.";
 
   return (
-    <div onClick={onClose} style={modalBackdrop}>
-      <div onClick={(e) => e.stopPropagation()} style={modalCard}>
+    <div
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={modalBackdrop}
+    >
+      <div onMouseDown={(e) => e.stopPropagation()} style={modalCard}>
         <h3 style={{ margin: 0 }}>{initial ? `Editar ${initial.nome}` : "Novo banco"}</h3>
 
         {/* PASSO 1 — Consulta CNPJ. Escondido em edicao. */}
@@ -488,8 +491,11 @@ function LimparBaseBancosModal({ onClose, onDone }: { onClose: () => void; onDon
     }
   };
   return (
-    <div onClick={enviando ? undefined : onClose} style={modalBackdrop}>
-      <div onClick={(e) => e.stopPropagation()} style={{ ...modalCard, maxWidth: 460 }}>
+    <div
+      onMouseDown={enviando ? undefined : (e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={modalBackdrop}
+    >
+      <div onMouseDown={(e) => e.stopPropagation()} style={{ ...modalCard, maxWidth: 460 }}>
         <h3 style={{ margin: 0, color: "var(--danger-500)" }}>⚠ Limpar Base de Bancos</h3>
         <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0 }}>
           Esta ação vai <b style={{ color: "var(--danger-500)" }}>remover TODOS os bancos</b> cadastrados. Convênios, contratos e webhooks associados NÃO são apagados neste botão. Ação irreversível.
