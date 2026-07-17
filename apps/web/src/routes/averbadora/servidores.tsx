@@ -346,10 +346,15 @@ function ImportModal({
     mutationFn: (csv: string) => atlas.admin.importCsv("servidores", csv, { prefeituraId }),
     onSuccess: (r) => {
       setResult(r);
-      // Fecha o modal quando o import foi 100% sucesso (algo entrou e nenhum
-      // erro). Se ha erros, mantem aberto pra o operador ler as linhas que
-      // falharam antes de fechar manualmente.
-      if (r.inserted + r.updated > 0 && r.errors.length === 0) onSuccess();
+      // Fecha o modal so quando o import foi 100% sucesso:
+      // - algo entrou (inserted + updated > 0)
+      // - sem erros de validacao (errors.length === 0)
+      // - sem falhas de persistencia no PG (persistFailures.length === 0)
+      // Se ha qualquer falha, mantem aberto pra o operador ler antes.
+      const persistFails = (r.persistFailures ?? []).length;
+      if (r.inserted + r.updated > 0 && r.errors.length === 0 && persistFails === 0) {
+        onSuccess();
+      }
     },
   });
 
@@ -504,6 +509,7 @@ function ImportModal({
             <div>
               <b>{result.inserted}</b> inseridos · <b>{result.updated}</b> atualizados
               {result.errors.length > 0 ? <> · <span style={{ color: "var(--danger-500)" }}>{result.errors.length} erros</span></> : null}
+              {(result.persistFailures ?? []).length > 0 ? <> · <span style={{ color: "var(--danger-500)" }}>{result.persistFailures!.length} falhas de persistência</span></> : null}
             </div>
             {result.errors.length > 0 ? (
               <ul style={{ marginTop: 8, paddingLeft: 16, color: "var(--danger-500)", fontSize: 12 }}>
@@ -512,6 +518,19 @@ function ImportModal({
                 ))}
                 {result.errors.length > 8 ? <li>… e mais {result.errors.length - 8} erros</li> : null}
               </ul>
+            ) : null}
+            {(result.persistFailures ?? []).length > 0 ? (
+              <>
+                <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, color: "var(--danger-500)", textTransform: "uppercase" }}>
+                  Não gravou no banco (some no próximo reload):
+                </div>
+                <ul style={{ marginTop: 4, paddingLeft: 16, color: "var(--danger-500)", fontSize: 12 }}>
+                  {result.persistFailures!.slice(0, 5).map((pf, i) => (
+                    <li key={i}><b>{pf.matricula}</b>: {pf.message}</li>
+                  ))}
+                  {result.persistFailures!.length > 5 ? <li>… e mais {result.persistFailures!.length - 5}</li> : null}
+                </ul>
+              </>
             ) : null}
           </div>
         ) : null}

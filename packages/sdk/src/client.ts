@@ -1059,6 +1059,10 @@ export interface CsvImportOutcome {
   skipped: number;
   errors: { line: number; message: string }[];
   rows: unknown[];
+  /** Linhas que passaram na validacao mas o INSERT no PG falhou. Import
+   *  reporta inserted/updated com base na memoria — se aqui vier != vazio,
+   *  a linha nao ficou persistida e some no proximo reload. */
+  persistFailures?: { matricula: string; message: string }[];
 }
 
 export interface AdminWebhookDelivery {
