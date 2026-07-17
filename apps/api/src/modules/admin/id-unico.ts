@@ -42,6 +42,44 @@ export function upsertIdUnicoConfig(input: Omit<IdUnicoConfig, "atualizadoEm">):
   return next;
 }
 
+/**
+ * Deriva um prefixo padrao a partir do nome da prefeitura + UF. Ex: "MUNICIPIO
+ * DE CAPISTRANO" / CE -> "CAP". Se sobrar <3 chars, completa com a UF. So
+ * letras/digitos maiusculos — o Regex do POST /admin/id-unico/configs exige.
+ */
+export function derivePrefixoFromPrefeitura(nome: string, uf?: string): string {
+  const cleaned = (nome || "")
+    .toUpperCase()
+    .replace(/^(MUNICIPIO|MUNICÍPIO|PREFEITURA)\s+(DE|DO|DA|DOS|DAS)?\s+/u, "")
+    .replace(/[^A-Z0-9\s]/g, "")
+    .trim();
+  const words = cleaned.split(/\s+/).filter(Boolean);
+  let prefixo = "";
+  if (words.length === 1) prefixo = words[0]!.slice(0, 3);
+  else prefixo = words.map((w) => w[0]!).join("").slice(0, 3);
+  if (prefixo.length < 3 && uf) prefixo = (prefixo + uf.toUpperCase()).slice(0, 3);
+  if (prefixo.length < 2) prefixo = (prefixo + "AAA").slice(0, 3);
+  return prefixo;
+}
+
+/**
+ * Retorna a config da prefeitura, criando uma default caso ainda nao exista.
+ * Chamado pelo GET /admin/id-unico/configs e sempre que uma prefeitura eh
+ * cadastrada — evita "Nenhum item encontrado" logo apos o cadastro.
+ */
+export function ensureIdUnicoConfig(prefeituraId: number, nome: string, uf?: string): IdUnicoConfig {
+  const existing = getIdUnicoConfig(prefeituraId);
+  if (existing) return existing;
+  return upsertIdUnicoConfig({
+    prefeituraId,
+    prefixo: derivePrefixoFromPrefeitura(nome, uf),
+    formato: "SEQ",
+    larguraSeq: 6,
+    proximoSeq: 1,
+    separador: "-",
+  });
+}
+
 function shortHash(seed: string): string {
   // FNV-1a 32-bit — deterministic 6-hex-char hash, enough as a public collision-free check digit.
   let h = 2166136261;

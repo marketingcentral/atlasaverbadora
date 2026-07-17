@@ -15,7 +15,7 @@ import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
 import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
-import { getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
+import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
@@ -1744,6 +1744,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       passwordHash: password ? await sha256Hex(password) : undefined,
     };
     prefeituras.push(novo);
+    // Cria a config de ID unico default (prefixo derivado do nome/UF, SEQ 6 digitos)
+    // — evita "Nenhum item encontrado" logo apos o cadastro; averbadora pode
+    // ajustar depois via POST /admin/id-unico/configs.
+    ensureIdUnicoConfig(novo.id, novo.nome, novo.uf);
     pushEvent("info", "admin", `Prefeitura "${novo.nome}/${novo.uf}" criada${password ? " com credencial de acesso" : ""}`);
     await persistPrefeitura(c.env, novo);
     return c.json({ prefeitura: sanitizePrefeitura(novo) });
@@ -2581,6 +2585,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ===== ID Único — config + preview/issue (passo 10) =====
   .get("/v1/admin/id-unico/configs", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "id-unico");
+    // Recarrega prefeituras do PG — isolate novo pode ter lista vazia in-memory.
+    await ensurePrefeiturasLoaded(c.env);
+    // Garante que toda prefeitura tem uma config default gerada — em isolates
+    // que subiram depois do cadastro, ou apos redeploy, a lista in-memory volta
+    // vazia e o auto-create do POST /prefeituras nao se aplica retroativamente.
+    for (const p of prefeituras) ensureIdUnicoConfig(p.id, p.nome, p.uf);
     return c.json({
       configs: listIdUnicoConfigs().map((cfg) => ({
         ...cfg,
