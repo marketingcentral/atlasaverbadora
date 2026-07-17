@@ -14,10 +14,14 @@ import {
 import { atlas } from "../../lib/sdk";
 import type { AdminBanco, AdminBancoInput } from "@atlas/sdk";
 
+// Formata CNPJ progressivamente. Mesma logica do prefeituras.tsx.
 function formatCnpj(raw: string): string {
   const d = raw.replace(/\D/g, "").slice(0, 14);
-  if (d.length !== 14) return raw;
-  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12, 14)}`;
+  if (d.length <= 2) return d;
+  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
+  if (d.length <= 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
 
 // Mesmo estilo do modal de prefeituras — leitura desativada com visual claro.
@@ -296,8 +300,7 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 value={cnpjInput}
-                onChange={(e) => setCnpjInput(e.target.value)}
-                onBlur={() => setCnpjInput((v) => formatCnpj(v))}
+                onChange={(e) => setCnpjInput(formatCnpj(e.target.value))}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); buscarCnpj(); } }}
                 placeholder="00.000.000/0000-00"
                 maxLength={18}

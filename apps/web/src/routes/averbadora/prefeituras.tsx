@@ -130,10 +130,16 @@ export function AdminPrefeituras() {
   );
 }
 
+// Formata CNPJ progressivamente. Aplica os pontos/barras/hifen conforme o
+// usuario digita — nao espera atingir 14 digitos pra mascarar. Aceita input
+// parcial (usado no onChange do input) e completo (usado na tabela).
 function formatCnpj(raw: string): string {
   const d = raw.replace(/\D/g, "").slice(0, 14);
-  if (d.length !== 14) return raw;
-  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12, 14)}`;
+  if (d.length <= 2) return d;
+  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
+  if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
+  if (d.length <= 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
+  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
 }
 
 // Estilo aplicado nos campos "read-only" (dados oficiais do CNPJ). Deixa claro
@@ -317,8 +323,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 value={cnpjInput}
-                onChange={(e) => setCnpjInput(e.target.value)}
-                onBlur={() => setCnpjInput((v) => formatCnpj(v))}
+                onChange={(e) => setCnpjInput(formatCnpj(e.target.value))}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); buscarCnpj(); } }}
                 placeholder="00.000.000/0000-00"
                 maxLength={18}
