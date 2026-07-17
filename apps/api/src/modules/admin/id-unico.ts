@@ -105,8 +105,17 @@ export function previewIdUnico(prefeituraId: number, now: Date = new Date()): st
  * caller must persist the resulting ID against the operation it refers to.
  */
 export function issueIdUnico(prefeituraId: number, now: Date = new Date()): string {
-  const c = getIdUnicoConfig(prefeituraId);
-  if (!c) throw new Error(`id_unico_config_missing:${prefeituraId}`);
+  // Se a prefeitura foi cadastrada antes do commit que cria config default
+  // automatica (50db4e9, 17/07/2026), o config nao existe e emitir ID quebrava
+  // com "id_unico_config_missing". Cria default on-demand aqui pra nao travar
+  // a materializacao de ADF. Admin pode editar prefixo depois em /averbadora/id-unico.
+  let c = getIdUnicoConfig(prefeituraId);
+  if (!c) {
+    c = upsertIdUnicoConfig({
+      prefeituraId, prefixo: "ADF", formato: "SEQ",
+      larguraSeq: 6, proximoSeq: 1, separador: "-",
+    });
+  }
   const id = renderId(c, c.proximoSeq, now);
   c.proximoSeq += 1;
   c.atualizadoEm = now.toISOString();
