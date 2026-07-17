@@ -39,9 +39,25 @@ export function AdminPrefeituras() {
   });
   const [editing, setEditing] = useState<AdminPrefeitura | "new" | null>(null);
 
+  // Colunas espelham os campos do CSV exemplo (nome, uf, municipioIbge,
+  // modoIntegracao, status, loginEmail) + campos extras uteis do fluxo de
+  // cadastro por CNPJ (CNPJ, Telefone, contadores operacionais).
   const columns: Column<AdminPrefeitura>[] = [
     { key: "status", header: "Situação", render: (p) => <Pill variant={p.status === "ativo" ? "averbado" : p.status === "inativo" ? "expirado" : "pendente"}>{p.status}</Pill> },
-    { key: "nome", header: "Prefeitura", render: (p) => `${p.nome}/${p.uf}` },
+    { key: "nome", header: "Nome" },
+    { key: "uf", header: "UF", mono: true },
+    {
+      key: "municipioIbge",
+      header: "Código IBGE",
+      mono: true,
+      render: (p) => p.municipioIbge > 0 ? p.municipioIbge : <span style={{ color: "var(--danger-500)" }}>—</span>,
+    },
+    {
+      key: "cnpj",
+      header: "CNPJ",
+      mono: true,
+      render: (p) => p.cnpj ? formatCnpj(p.cnpj) : <span style={{ color: "var(--text-dim)" }}>—</span>,
+    },
     { key: "modoIntegracao", header: "Integração" },
     {
       key: "acesso",
@@ -54,6 +70,11 @@ export function AdminPrefeituras() {
         ) : (
           <span style={{ color: "var(--text-dim)" }}>—</span>
         ),
+    },
+    {
+      key: "telefone",
+      header: "Telefone",
+      render: (p) => p.telefone || <span style={{ color: "var(--text-dim)" }}>—</span>,
     },
     { key: "servidoresCount", header: "Servidores", align: "right", render: (p) => p.servidoresCount.toLocaleString("pt-BR") },
     {

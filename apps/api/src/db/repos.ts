@@ -140,6 +140,17 @@ function rowToPrefeitura(row: typeof prefeiturasTable.$inferSelect): PrefeituraA
     ultimaSincronizacao: row.ultimaSincronizacao ? new Date(row.ultimaSincronizacao).toISOString() : undefined,
     exigeCcb: Boolean(cfg.exigeCcb),
     exigeBanco2FA: Boolean(cfg.exigeBanco2FA),
+    // Campos extras do fluxo de cadastro por CNPJ — hidratados do jsonb.
+    // Antes ficavam so em memoria do POST e sumiam no cold-start do isolate.
+    cnpj: cfg.cnpj as string | undefined,
+    razaoSocial: cfg.razaoSocial as string | undefined,
+    nomeFantasia: cfg.nomeFantasia as string | undefined,
+    dataFundacao: cfg.dataFundacao as string | undefined,
+    atividade: cfg.atividade as string | undefined,
+    telefone: cfg.telefone as string | undefined,
+    endereco: cfg.endereco as PrefeituraAdmin["endereco"] | undefined,
+    permiteServidorEditarContato: cfg.permiteServidorEditarContato as boolean | undefined,
+    exclusividadesCartaoConsig: cfg.exclusividadesCartaoConsig as string | undefined,
   };
 }
 
@@ -149,7 +160,26 @@ export async function loadPrefeituras(env: Env): Promise<PrefeituraAdmin[]> {
 }
 
 export async function upsertPrefeitura(env: Env, p: PrefeituraAdmin): Promise<void> {
-  const cfg = { loginEmail: p.loginEmail, contatoEmail: p.contatoEmail, passwordHash: p.passwordHash, servidoresCount: p.servidoresCount, exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false };
+  // Persiste TODOS os campos extras no config jsonb (CNPJ, telefone, endereco,
+  // razao social etc). Antes so persistia loginEmail/passwordHash/etc — os
+  // dados oficiais preenchidos pela consulta CNPJ sumiam no cold-start.
+  const cfg = {
+    loginEmail: p.loginEmail,
+    contatoEmail: p.contatoEmail,
+    passwordHash: p.passwordHash,
+    servidoresCount: p.servidoresCount,
+    exigeCcb: p.exigeCcb ?? false,
+    exigeBanco2FA: p.exigeBanco2FA ?? false,
+    cnpj: p.cnpj,
+    razaoSocial: p.razaoSocial,
+    nomeFantasia: p.nomeFantasia,
+    dataFundacao: p.dataFundacao,
+    atividade: p.atividade,
+    telefone: p.telefone,
+    endereco: p.endereco,
+    permiteServidorEditarContato: p.permiteServidorEditarContato,
+    exclusividadesCartaoConsig: p.exclusividadesCartaoConsig,
+  };
   const sync = p.ultimaSincronizacao ? new Date(p.ultimaSincronizacao).toISOString() : null;
   await getDb(env).execute(sql`
     INSERT INTO prefeituras (id, nome, uf, municipio_ibge, modo_integracao, status, ultima_sincronizacao, config)
