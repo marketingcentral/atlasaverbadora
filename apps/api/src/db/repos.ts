@@ -452,6 +452,17 @@ export async function upsertContrato(env: Env, c: ContratoLike): Promise<void> {
     ON CONFLICT (adf) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
 }
 
+/** Apaga servidores cujas matrículas estão na lista dada. Não cascateia — chame
+ *  deleteContratosByMatriculas antes se houver dependências. Retorna quantas
+ *  linhas foram removidas. Usado para expurgar contas de teste (Diego/Mariana). */
+export async function deleteServidoresByMatriculas(env: Env, matriculas: string[]): Promise<number> {
+  if (matriculas.length === 0) return 0;
+  const lista = sql.join(matriculas.map((m) => sql`${m}`), sql`, `);
+  const rows = (await getDb(env).execute(sql`
+    DELETE FROM servidores WHERE matricula IN (${lista}) RETURNING matricula`)) as unknown as { matricula: string }[];
+  return rows.length;
+}
+
 /** Apaga contratos/reservas cujas matrículas estão na lista dada. Usado para
  *  zerar os empréstimos de contas de teste. Retorna quantas linhas foram removidas. */
 export async function deleteContratosByMatriculas(env: Env, matriculas: string[]): Promise<number> {

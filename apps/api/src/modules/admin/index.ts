@@ -10,7 +10,7 @@ import { refreshComunicados, persistComunicados, removerComunicadoPersistido } f
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
@@ -312,9 +312,11 @@ export const prefeituras: PrefeituraAdmin[] = [];
 
 const PREFEITURAS_SEED: PrefeituraAdmin[] = prefeituras.map((p) => ({ ...p }));
 const SERVIDORES_SEED = SERVIDORES_BUSCA_MOCK.map((s) => ({ ...s }));
-// CPFs de contas de teste que devem SEMPRE existir no login, mesmo que um import/reseed
-// da folha real as remova do banco (a hidratação faz merge, não replace, para elas).
-const TEST_CPFS = new Set(["37534239800", "12345678909"]);
+// Cliente pediu (17/07/2026) remocao TOTAL da whitelist de contas de teste —
+// Diego (37534239800) / Mariana (12345678909) nao voltam mais via merge. Base
+// zerada = zerada, sem excecao pra QA. Se um dia precisar, criar via cadastro
+// normal + import CSV.
+const TEST_CPFS = new Set<string>();
 
 let _prefeiturasLoad: Promise<void> | null = null;
 export function ensurePrefeiturasLoaded(env: Env): Promise<void> {
@@ -1328,6 +1330,29 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ⚠️ OPERACAO DESTRUTIVA (escopo cirurgico): zera SO servidores + contratos +
   // ADFs + propostas + eventos + consentimentos. NAO toca em bancos, prefeituras
   // ou convenios. Cliente pediu (16/07/2026): "vamos comecar essa parte do zero".
+  // Delete cirurgico por matricula(s) — protegido por ADMIN_PURGE_PASSWORD.
+  // Usado pra expurgar contas de teste especificas (Diego/Mariana em 17/07/2026)
+  // sem zerar a base inteira via /db/purge-servidores. Body: { senha, matriculas[] }.
+  .post("/v1/admin/servidores/delete-matriculas", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "servidores");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string; matriculas?: string[] };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha de operacoes destrutivas nao configurada." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const mats = (body.matriculas ?? []).filter(Boolean);
+    if (mats.length === 0) throw Errors.validation({ matriculas: "Informe pelo menos uma matricula." });
+    const removidosContratos = await deleteContratosByMatriculas(c.env, mats).catch(() => 0);
+    const removidosServidores = await deleteServidoresByMatriculas(c.env, mats).catch(() => 0);
+    // Sincroniza in-memory tambem — evita o servidor sumir do PG mas continuar
+    // aparecendo em outros isolates warm ate o proximo reload.
+    for (let i = SERVIDORES_BUSCA_MOCK.length - 1; i >= 0; i--) {
+      if (mats.includes(SERVIDORES_BUSCA_MOCK[i]!.matricula)) SERVIDORES_BUSCA_MOCK.splice(i, 1);
+    }
+    pushEvent("info", "admin.servidores.delete", `Delete cirurgico por admin ${j?.sub}: matriculas=${mats.join(",")} (${removidosServidores} servidores + ${removidosContratos} contratos).`);
+    return c.json({ ok: true, removidosServidores, removidosContratos });
+  })
   .post("/v1/admin/db/purge-servidores", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);

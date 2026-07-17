@@ -88,7 +88,19 @@ export function prefeituraIdDe(s: Pick<ServidorBuscaMock, "prefeituraId" | "idCo
   return s.prefeituraId ?? CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 1;
 }
 
-export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
+// Cliente pediu (17/07/2026) remocao TOTAL dos seeds de servidores — incluindo
+// Diego (993410027) e Mariana (778102055) que ate entao eram protegidos por
+// TEST_CPFS. Regra do cliente: "se eu mando apagar todos, e todos, sem excecao
+// de conta de teste". Servidores novos entram exclusivamente via import CSV ou
+// endpoint admin. NAO restaurar sem pedido explicito.
+export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [];
+
+// Seeds antigos preservados aqui como referencia de shape — NAO EXPORTAR/USAR.
+// Se por engano algum PR adicionar esses seeds de volta ao array acima, a UI
+// vai mostrar 3+ servidores fake e regressao contra a regra do cliente vira
+// obvia. Mantido para servir de exemplo em documentacao/tests.
+/*
+const _SEEDS_HISTORICO_REFERENCIA = [
   {
     cpf: "00011122233",
     cpfMasked: "***.***.***-33",
@@ -284,6 +296,7 @@ export const SERVIDORES_BUSCA_MOCK: ServidorBuscaMock[] = [
     idConvenio: "CONV-001", cargo: "Contadora", endereco: "Rua Central, 109 - Palhoca/SC", codigoIbge: 4211900,
   },
 ];
+*/
 
 export interface ContratoMock {
   adf: string;
