@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  CsvImportPanel,
   DataTable,
   FormActions,
   FormGrid,
@@ -96,13 +95,10 @@ export function AdminPrefeituras() {
         <Button onClick={() => setEditing("new")}>+ Adicionar prefeitura</Button>
       </header>
 
-      <CsvImportPanel
-        title="Importar prefeituras"
-        columnsHint="Colunas: nome, uf, municipioIbge, modoIntegracao (REST|SOAP|CSV|MANUAL), status, loginEmail, password (min 6)"
-        templateUrl={atlas.admin.csvTemplateUrl("prefeituras")}
-        onImport={async (csv) => atlas.admin.importCsv("prefeituras", csv)}
-        onImported={() => qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] })}
-      />
+      {/* CsvImportPanel removido a pedido do cliente (17/07/2026) — cadastro
+          agora e SEMPRE via CNPJ (BrasilAPI + fallback), com dados oficiais
+          da Receita/Junta Comercial. CSV import criava prefeituras placeholder
+          "Palhoca/Joinville" quando importado sem editar. */}
 
       <DataTable
         columns={columns}
