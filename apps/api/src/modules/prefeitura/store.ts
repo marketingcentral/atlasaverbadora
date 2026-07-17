@@ -4,7 +4,7 @@
 // across the platform (they touch the same servidores/folhas the bancos read).
 
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
-import { listContratos, setContratoFolhaStatus } from "../portal-banco/store.js";
+import { listContratos, setContratoFolhaStatus, setContratoDesligamento, listContratosAtivosDaMatricula } from "../portal-banco/store.js";
 import { issueIdUnico } from "../admin/id-unico.js";
 
 // ============================================================
@@ -42,7 +42,7 @@ export function countMovimentacoes(folhaId: string): number {
 export function applyMovimentacao(input: {
   folhaId: string; prefeituraId: number; tipo: MovimentacaoTipo; matricula: string;
   cargoNovo?: string; salarioNovo?: number; detalhe?: string; nomeNovo?: string; cpf?: string;
-}, now: string): { ok: true; mov: Movimentacao } | { ok: false; error: string } {
+}, now: string): { ok: true; mov: Movimentacao; contratosAtingidos: string[] } | { ok: false; error: string } {
   const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === input.matricula && prefeituraIdDe(x) === input.prefeituraId);
 
   // Admissão pode criar um servidor novo se não existir.
@@ -65,9 +65,21 @@ export function applyMovimentacao(input: {
   if (!target) return { ok: false, error: `matricula ${input.matricula} nao encontrada` };
 
   // Aplica o efeito real da movimentação.
+  const contratosAtingidos: string[] = [];
   switch (input.tipo) {
-    case "demissao": target.situacaoFuncional = "DESLIGADO"; break;
-    case "aposentadoria": target.situacaoFuncional = "APOSENTADO"; break;
+    case "demissao":
+    case "aposentadoria": {
+      target.situacaoFuncional = input.tipo === "demissao" ? "DESLIGADO" : "APOSENTADO";
+      // Cascade F6: servidor desligado -> ADFs param na folha + contratos viram
+      // "Em cobranca direta". Banco assume cobranca fora da folha. Idempotente.
+      const motivo = input.tipo === "demissao" ? "Servidor desligado" : "Servidor aposentado";
+      const ativos = listContratosAtivosDaMatricula(target.matricula);
+      for (const ct of ativos) {
+        setContratoDesligamento(ct.adf, motivo);
+        contratosAtingidos.push(ct.adf);
+      }
+      break;
+    }
     case "promocao":
       if (input.cargoNovo) target.cargo = input.cargoNovo;
       if (input.salarioNovo != null) target.salarioLiquido = input.salarioNovo;
@@ -87,7 +99,7 @@ export function applyMovimentacao(input: {
     cargoNovo: input.cargoNovo, salarioNovo: input.salarioNovo, criadoEm: now,
   };
   _movimentacoes.push(mov);
-  return { ok: true, mov };
+  return { ok: true, mov, contratosAtingidos };
 }
 
 function defaultDetalhe(t: MovimentacaoTipo): string {
@@ -103,7 +115,7 @@ function prefeituraNome(_id: number): string {
 // ADF — descontos em folha gerados pelos bancos
 // ============================================================
 
-export type AdfStatus = "recebida" | "aplicada" | "falha";
+export type AdfStatus = "recebida" | "aplicada" | "falha" | "interrompida_desligamento";
 
 export interface AdfEntry {
   id: string;

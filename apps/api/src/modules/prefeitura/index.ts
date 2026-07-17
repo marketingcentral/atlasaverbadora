@@ -543,6 +543,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (!res.ok) return void out.errors.push({ line, message: res.error });
       out.inserted++;
       out.rows.push({ matricula: r.matricula, tipo });
+      // Cascade F6: desligamento/aposentadoria pode ter afetado contratos ativos.
+      // Persiste cada contrato afetado pra que o banco (outro isolate) veja o
+      // novo status "Em cobranca direta" e pare de esperar averbacao.
+      for (const adf of res.contratosAtingidos) {
+        void persistContrato(c.env, adf).catch(() => { /* fail-safe */ });
+      }
     });
     appendAudit({ categoria: "margem", acao: "folha_movimentacao", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia}: ${out.inserted} movimentações, ${out.errors.length} erros. Margem recalculada.` });
     return c.json(out);

@@ -32,7 +32,7 @@ export interface ContratoFull extends ContratoMock {
    *  em contratos averbados. "recebida" = prefeitura ainda não confirmou; "aplicada"
    *  = desconto entrou em folha; "falha" = prefeitura reprovou. Persistido no contrato
    *  pra ser fonte única (prefeitura confirma, banco vê). */
-  folhaStatus?: "recebida" | "aplicada" | "falha";
+  folhaStatus?: "recebida" | "aplicada" | "falha" | "interrompida_desligamento";
   folhaMotivo?: string;
   /** R2 key do arquivo de contrato (CCB) atual anexado pelo banco. Serve pra
    *  reabrir via GET /v1/portal/banco/ccb/<key>. Requerido antes do banco poder
@@ -315,12 +315,47 @@ export function removeContratosByMatricula(matriculas: string[]): number {
 
 /** Marca o status do ADF na folha (chamado pela prefeitura). Fonte única = contrato.
  *  Retorna o contrato atualizado (o chamador persiste via persistContrato). */
-export function setContratoFolhaStatus(adf: string, status: "recebida" | "aplicada" | "falha", motivo?: string): ContratoFull | undefined {
+export function setContratoFolhaStatus(adf: string, status: "recebida" | "aplicada" | "falha" | "interrompida_desligamento", motivo?: string): ContratoFull | undefined {
   const c = _contratos.get(adf);
   if (!c) return undefined;
   c.folhaStatus = status;
   c.folhaMotivo = motivo;
   return c;
+}
+
+/** Marca contrato como 'Em cobranca direta' — usado quando o servidor desliga
+ *  da prefeitura (demissao/aposentadoria). ADF associada para de descontar em
+ *  folha (folhaStatus interrompida_desligamento) e o banco assume cobranca
+ *  fora da folha. Idempotente: nao regride Cancelado/Quitado. */
+export function setContratoDesligamento(adf: string, motivo: string): ContratoFull | undefined {
+  const c = _contratos.get(adf);
+  if (!c) return undefined;
+  const s = c.situacao.toLowerCase();
+  if (s.includes("cancel") || s.includes("quit") || s.includes("cobranca direta")) return c;
+  const de = c.situacao;
+  c.situacao = "Em cobrança direta";
+  c.folhaStatus = "interrompida_desligamento";
+  c.folhaMotivo = motivo;
+  _eventos.push({
+    id: _eventoId++, contratoId: adf,
+    evento: "desligamento_servidor",
+    deEstado: de, paraEstado: c.situacao,
+    ator: "sistema:cascade",
+    motivo, criadoEm: new Date().toISOString(),
+  });
+  return c;
+}
+
+/** Lista contratos ativos de uma matricula (pra cascade de desligamento). */
+export function listContratosAtivosDaMatricula(matricula: string): ContratoFull[] {
+  const out: ContratoFull[] = [];
+  for (const c of _contratos.values()) {
+    if (c.matricula !== matricula) continue;
+    const s = c.situacao.toLowerCase();
+    // "Ativo" (averbado) ou "Aprovado" (banco aprovou, aguardando averbadora)
+    if (s === "ativo" || s.includes("aprov")) out.push(c);
+  }
+  return out;
 }
 
 /** Marca o contrato como averbado (situacao "Ativo") — usado pela averbadora
