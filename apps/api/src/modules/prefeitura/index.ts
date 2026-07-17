@@ -309,12 +309,34 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       }
       r.matricula = matricula;
       if (!r.cargo) return void out.errors.push({ line, message: "cargo obrigatorio" });
-      const vinculo = (r.vinculo || "ESTATUTARIO").toUpperCase();
-      if (!VINCULOS.includes(vinculo as (typeof VINCULOS)[number])) return void out.errors.push({ line, message: `vinculo invalido (${VINCULOS.join("/")})` });
+      // Vinculo: aceita enum textual (CLT/ESTATUTARIO/...) OU codigo numerico
+      // comum das folhas municipais (1=ESTATUTARIO, 2=CLT, 3=COMISSIONADO,
+      // 4=APOSENTADO, 5=PENSIONISTA). Vazio -> ESTATUTARIO (padrao servidor
+      // municipal). Cliente pediu tolerancia (16/07/2026) — CSVs reais da
+      // folha vem com codigo.
+      const rawVinc = (r.vinculo ?? "").toString().trim();
+      const CODIGO_VINCULO: Record<string, (typeof VINCULOS)[number]> = {
+        "1": "ESTATUTARIO", "2": "CLT", "3": "COMISSIONADO", "4": "APOSENTADO", "5": "PENSIONISTA",
+      };
+      let vinculo: (typeof VINCULOS)[number];
+      if (!rawVinc) vinculo = "ESTATUTARIO";
+      else if (CODIGO_VINCULO[rawVinc]) vinculo = CODIGO_VINCULO[rawVinc]!;
+      else {
+        const upper = rawVinc.toUpperCase();
+        if (!VINCULOS.includes(upper as (typeof VINCULOS)[number])) {
+          return void out.errors.push({ line, message: `vinculo invalido "${rawVinc}" — use ${VINCULOS.join("/")} ou codigo 1..5 (1=Estatutario, 2=CLT, 3=Comissionado, 4=Aposentado, 5=Pensionista)` });
+        }
+        vinculo = upper as (typeof VINCULOS)[number];
+      }
       let idConvenio = (r.idConvenio ?? "").trim();
       if (!conveniosPref.some((cv) => cv.id === idConvenio)) idConvenio = defaultConvenioId;
       if (!idConvenio) return void out.errors.push({ line, message: `${p.nome} nao possui convenios` });
-      const salario = Number(r.salarioLiquido);
+      // Salario: aceita "3692.30", "3692,30", "R$ 3.692,30" (formato BR do
+      // relatorio de folha). Normaliza tirando R$/espaco, trocando . por
+      // nada e , por . antes de Number().
+      const rawSal = (r.salarioLiquido ?? "").toString().trim();
+      const salarioStr = rawSal.replace(/R\$\s*/i, "").replace(/\./g, "").replace(",", ".").trim();
+      const salario = Number(salarioStr);
       const ibge = Number(r.codigoIbge);
       // Identidade é (prefeituraId, matricula) — nunca só CPF. Assim o mesmo CPF
       // pode ser cadastrado em outra prefeitura (acumulação de cargos) sem colisão.
