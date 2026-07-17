@@ -285,6 +285,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/prefeitura/servidores/importar", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const p = prefeituras.find((x) => x.id === id)!;
+    // Hidrata convenios do PG — mesmo bug do endpoint admin (isolate fresh
+    // via CONVENIOS_MOCK vazio e devolvia "prefeitura sem convenios").
+    await refreshConvenios(c.env);
     const conveniosPref = conveniosDaPrefeitura(id);
     const defaultConvenioId = conveniosPref[0]?.id ?? "";
     const { rows } = parseCsv(await readCsvBody(c));

@@ -3221,6 +3221,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!Number.isFinite(prefId)) throw Errors.validation({ prefeituraId: "obrigatorio (use ?prefeituraId=N)" });
     const pref = prefeituras.find((p) => p.id === prefId);
     if (!pref) throw Errors.notFound("prefeitura");
+    // Hidrata convenios do PG antes de filtrar — isolate fresh via CONVENIOS_MOCK
+    // vazio mesmo com convenios persistidos, e a importacao devolvia erro
+    // "prefeitura nao possui convenios" mentindo pro usuario.
+    await refreshConvenios(c.env);
     const conveniosPref = CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefId);
     const defaultConvenioId = conveniosPref[0]?.id ?? "";
     const text = await readCsvBody(c);
