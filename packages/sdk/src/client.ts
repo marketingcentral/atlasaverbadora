@@ -1456,6 +1456,7 @@ export class AtlasClient {
 
   // ============ Portal Banco ============
   readonly banco = {
+    me: () => this.request<{ id: number; nome: string }>("/v1/portal/banco/me"),
     convenios: () => this.request<{ convenios: { id: string; nome: string; prefeitura: string; uf: string; exigeCcb: boolean; exigeBanco2FA: boolean; maxParcelas: number }[]; activeId: string }>("/v1/portal/banco/convenios"),
     setConvenioAtivo: (convenioId: string) =>
       this.request<{ activeId: string }>("/v1/portal/banco/convenio-ativo", { method: "POST", body: { convenioId } }),
@@ -1612,6 +1613,7 @@ export class AtlasClient {
 
   // ============ Admin (Averbadora) ============
   readonly admin = {
+    me: () => this.request<{ id: string; nome: string; email: string; perfil: string }>("/v1/admin/me"),
     // ===== IA (OpenAI) =====
     aiConfig: () =>
       this.request<{ hasKey: boolean; keyPrefix: string | null; keySuffix: string | null; updatedAt: string | null }>("/v1/admin/ai/config"),

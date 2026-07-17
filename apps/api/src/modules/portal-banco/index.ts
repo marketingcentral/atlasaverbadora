@@ -186,6 +186,15 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   // Escopado ao próprio prefixo — `.use("*")` vazaria para /v1/external/* quando montado em "/".
   .use("/v1/portal/banco/*", authRequired)
 
+  // Identidade do banco logado — usado no header do portal pra mostrar nome.
+  .get("/v1/portal/banco/me", (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const b = bancos.find((x) => x.id === j.banco_id);
+    return c.json({ id: j.banco_id, nome: b?.nome ?? `Banco ${j.banco_id}` });
+  })
+
   // --------- Convenio switcher ----------
   .get("/v1/portal/banco/convenios", async (c) => {
     const j = c.get("jwt");

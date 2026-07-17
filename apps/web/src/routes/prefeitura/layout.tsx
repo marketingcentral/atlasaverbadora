@@ -40,7 +40,12 @@ export function PrefeituraLayout() {
       topbarSlot={
         <>
           <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Portal da prefeitura</div>
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {me.data ? (
+              <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 600 }} title="Prefeitura logada">
+                {me.data.prefeitura.nome}/{me.data.prefeitura.uf}
+              </span>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
             </Button>

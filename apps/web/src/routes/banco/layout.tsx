@@ -53,6 +53,7 @@ export function BancoLayout() {
   const qc = useQueryClient();
 
   const convenios = useQuery({ queryKey: ["banco", "convenios"], queryFn: () => atlas.banco.convenios() });
+  const meQ = useQuery({ queryKey: ["banco", "me"], queryFn: () => atlas.banco.me(), staleTime: 60_000 });
   // Overlay reativo: fica visivel enquanto as queries ["banco"] estao em voo
   // (piso 800ms pra evitar flash, teto 5s como fail-safe). Fecha assim que
   // tudo carregou — nao mais o setTimeout fixo de 3s.
@@ -112,7 +113,12 @@ export function BancoLayout() {
       topbarSlot={
         <>
           <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{location.pathname}</div>
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {meQ.data ? (
+              <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 600 }} title="Banco logado">
+                {meQ.data.nome}
+              </span>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
             </Button>

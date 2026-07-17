@@ -2707,6 +2707,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ entries, categorias: auditCategorias() });
   })
 
+  // Identidade do averbadora logado — usado no header do painel pra mostrar nome.
+  .get("/v1/admin/me", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    await ensurePerfisLoaded(c.env);
+    const u = listAverbadoraUsers().find((x) => String(x.id) === j.sub);
+    return c.json({
+      id: j.sub,
+      nome: u?.nome ?? "Averbadora",
+      email: u?.email ?? "",
+      perfil: u?.perfil ?? j.averbadora_perfil ?? "supervisor",
+    });
+  })
+
   // ===== Perfis admin (passo 1: perfis + 2FA) =====
   .get("/v1/admin/perfis", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");

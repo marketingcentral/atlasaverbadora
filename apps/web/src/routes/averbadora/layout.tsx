@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { AppShellAdmin, Button, useThemeMode } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { AtlasBrand } from "../../components/AtlasBrand";
@@ -110,13 +111,20 @@ export function AverbadoraLayout() {
       .filter((x): x is NonNullable<typeof x> => x !== null);
   }, [permissoes]);
 
+  const meQ = useQuery({ queryKey: ["admin", "me"], queryFn: () => atlas.admin.me(), staleTime: 60_000 });
+
   return (
     <AppShellAdmin
       brand={<AtlasBrand sub="Averbadora" />}
       topbarSlot={
         <>
           <div style={{ fontSize: 13, color: "var(--text-muted)" }}>{location.pathname}</div>
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            {meQ.data ? (
+              <span style={{ fontSize: 13, color: "var(--text)", fontWeight: 600 }} title={`${meQ.data.email} (${meQ.data.perfil})`}>
+                {meQ.data.nome}
+              </span>
+            ) : null}
             <Button variant="ghost" size="sm" onClick={() => setMode(resolved === "dark" ? "light" : "dark")}>
               {resolved === "dark" ? "Tema claro" : "Tema escuro"}
             </Button>
