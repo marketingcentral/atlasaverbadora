@@ -457,10 +457,11 @@ export async function persistFolha(env: Env, f: FolhaAdmin): Promise<void> {
   try { await upsertCollectionRow(env, "admin_folhas", f.id, f); } catch { /* fail-safe */ }
 }
 
-export const vitrine: VitrineBanner[] = [
-  { id: "BAN-1", bancoId: 2, bancoNome: "Banco Y", titulo: "Empréstimo a 1,72% a.m.", impressoes: 42000, cliques: 3360, receitaMes: 18000, ativo: true },
-  { id: "BAN-2", bancoId: 1, bancoNome: "SCred Financeira", titulo: "Portabilidade com troco", impressoes: 28000, cliques: 1400, receitaMes: 9200, ativo: true },
-];
+// Cliente pediu remocao dos 2 banners de vitrine fixture (17/07/2026) — R$
+// 18.000 (BAN-1 Banco Y) + R$ 9.200 (BAN-2 SCred) = R$ 27.200 apareciam como
+// "Receita vitrine (mes)" no dashboard mesmo sem receita real. Se restaurar
+// pra demo, reverter este bloco.
+export const vitrine: VitrineBanner[] = [];
 const VITRINE_SEED: VitrineBanner[] = vitrine.map((v) => ({ ...v }));
 // Persistência da vitrine (write-through + hydrate; fail-safe pras fixtures).
 let _vitrineLoad: Promise<void> | null = null;
