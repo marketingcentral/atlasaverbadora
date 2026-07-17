@@ -4,6 +4,49 @@ import { Button, Card, Input } from "@atlas/ui/web";
 import { atlas } from "../lib/sdk";
 import { AtlasLogo } from "../components/AtlasBrand";
 
+/** Input de senha com botao "mostrar/ocultar". Wrapper simples em cima do
+ *  Input do design system — sem precisar mexer no @atlas/ui. Cada campo tem
+ *  seu proprio toggle (mais explicito que um switch global). */
+function PasswordInput({
+  label, value, onChange, autoComplete = "new-password",
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  autoComplete?: string;
+}) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: "relative" }}>
+      <Input
+        label={label}
+        type={show ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
+        required
+        style={{ paddingRight: 44 }}
+      />
+      <button
+        type="button"
+        onClick={() => setShow((s) => !s)}
+        aria-label={show ? "Ocultar senha" : "Mostrar senha"}
+        title={show ? "Ocultar senha" : "Mostrar senha"}
+        style={{
+          position: "absolute", right: 8, bottom: 8,
+          width: 32, height: 32, borderRadius: 8,
+          border: "none", background: "transparent",
+          color: "var(--text-muted)", cursor: "pointer",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 18, lineHeight: 1,
+        }}
+      >
+        {show ? "🙈" : "👁"}
+      </button>
+    </div>
+  );
+}
+
 type Step = "cpf" | "email" | "codigo" | "ok";
 
 interface PrefeituraInfo {
@@ -206,22 +249,8 @@ export function PrimeiroAcessoPage() {
               <p style={{ margin: "-6px 0 0", fontSize: ".76rem", color: "var(--text-dim)" }}>
                 Ficará no seu cadastro para que os bancos parceiros possam entrar em contato quando necessário.
               </p>
-              <Input
-                label="Nova senha"
-                type="password"
-                value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-                autoComplete="new-password"
-                required
-              />
-              <Input
-                label="Confirmar senha"
-                type="password"
-                value={senha2}
-                onChange={(e) => setSenha2(e.target.value)}
-                autoComplete="new-password"
-                required
-              />
+              <PasswordInput label="Nova senha" value={senha} onChange={setSenha} />
+              <PasswordInput label="Confirmar senha" value={senha2} onChange={setSenha2} />
               <div
                 style={{
                   maxHeight: 140, overflow: "auto", padding: 12,
