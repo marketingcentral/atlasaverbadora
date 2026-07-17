@@ -37,6 +37,7 @@ export function AdminPrefeituras() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] }),
   });
   const [editing, setEditing] = useState<AdminPrefeitura | "new" | null>(null);
+  const [limparAberto, setLimparAberto] = useState(false);
 
   // Colunas espelham os campos do CSV exemplo (nome, uf, municipioIbge,
   // modoIntegracao, status, loginEmail) + campos extras uteis do fluxo de
@@ -92,7 +93,10 @@ export function AdminPrefeituras() {
           </span>
           <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Prefeituras afiliadas</h1>
         </div>
-        <Button onClick={() => setEditing("new")}>+ Adicionar prefeitura</Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button variant="ghost" onClick={() => setLimparAberto(true)}>🗑 Limpar Base</Button>
+          <Button onClick={() => setEditing("new")}>+ Adicionar prefeitura</Button>
+        </div>
       </header>
 
       {/* CsvImportPanel removido a pedido do cliente (17/07/2026) — cadastro
@@ -119,6 +123,7 @@ export function AdminPrefeituras() {
       />
 
       {editing ? <PrefeituraModal initial={editing === "new" ? null : editing} onClose={() => setEditing(null)} /> : null}
+      {limparAberto ? <LimparBaseModal onClose={() => setLimparAberto(false)} onDone={() => { setLimparAberto(false); qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] }); }} /> : null}
     </div>
   );
 }
@@ -536,3 +541,81 @@ const modalCard: React.CSSProperties = {
   display: "flex", flexDirection: "column", gap: 16, boxShadow: "var(--shadow-lg)",
   margin: "auto",
 };
+
+/** Modal de confirmacao para zerar a tabela de prefeituras. Exige senha
+ *  compartilhada configurada em env (ADMIN_PURGE_PASSWORD). Backend
+ *  valida — front so passa a senha digitada. */
+function LimparBaseModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const [senha, setSenha] = useState("");
+  const [showSenha, setShowSenha] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const executar = async () => {
+    if (!senha) { setErro("Informe a senha."); return; }
+    setEnviando(true);
+    setErro(null);
+    try {
+      const r = await atlas.admin.limparBasePrefeituras(senha);
+      alert(`Base zerada. ${r.removidas} prefeitura(s) removida(s).`);
+      onDone();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Falha ao limpar base";
+      setErro(msg.includes("Senha invalida") ? "Senha incorreta." : msg);
+    } finally {
+      setEnviando(false);
+    }
+  };
+  return (
+    <div onClick={enviando ? undefined : onClose} style={modalBackdrop}>
+      <div onClick={(e) => e.stopPropagation()} style={{ ...modalCard, maxWidth: 460 }}>
+        <h3 style={{ margin: 0, color: "var(--danger-500)" }}>⚠ Limpar Base de Prefeituras</h3>
+        <p style={{ color: "var(--text-muted)", fontSize: 14, margin: 0 }}>
+          Esta ação vai <b style={{ color: "var(--danger-500)" }}>remover TODAS as prefeituras</b> cadastradas. Convênios, folhas e servidores associados NÃO são apagados neste botão — só a tabela de prefeituras. Ação irreversível.
+        </p>
+        <div>
+          <label style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
+            Senha de confirmação <span style={{ color: "var(--danger-500)" }}>*</span>
+          </label>
+          <div style={{ position: "relative" }}>
+            <input
+              type={showSenha ? "text" : "password"}
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void executar(); } }}
+              autoFocus
+              placeholder="Digite a senha configurada em .env"
+              style={{
+                width: "100%", padding: "10px 44px 10px 12px", borderRadius: 8,
+                border: "1px solid var(--danger-500)",
+                background: "var(--bg-elev)", color: "var(--text)",
+                fontSize: 14, boxSizing: "border-box",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowSenha((s) => !s)}
+              aria-label={showSenha ? "Ocultar senha" : "Mostrar senha"}
+              style={{
+                position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                width: 32, height: 32, borderRadius: 6,
+                border: "none", background: "transparent",
+                color: "var(--text-muted)", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 16,
+              }}
+            >
+              {showSenha ? "🙈" : "👁"}
+            </button>
+          </div>
+        </div>
+        {erro ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{erro}</div> : null}
+        <FormActions>
+          <Button variant="ghost" type="button" onClick={onClose} disabled={enviando}>Cancelar</Button>
+          <Button type="button" onClick={executar} disabled={enviando || !senha}>
+            {enviando ? "Removendo…" : "Confirmar e limpar"}
+          </Button>
+        </FormActions>
+      </div>
+    </div>
+  );
+}

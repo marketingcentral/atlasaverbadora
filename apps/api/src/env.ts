@@ -30,6 +30,10 @@ export interface Env {
   KV_SESSIONS?: KVNamespace;
   KV_RATELIMIT?: KVNamespace;
   R2_FILES?: R2Bucket;
+  /** Senha para operacoes destrutivas do admin (Limpar Base de prefeituras, etc).
+   *  Configurada via `wrangler secret put ADMIN_PURGE_PASSWORD` em prod.
+   *  Local: vive no arquivo `env` da raiz do repo. */
+  ADMIN_PURGE_PASSWORD?: string;
 }
 
 export const EnvSchema = z.object({

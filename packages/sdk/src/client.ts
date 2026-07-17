@@ -1633,6 +1633,10 @@ export class AtlasClient {
       this.request<void>(`/v1/admin/bancos/${id}`, { method: "DELETE", body: confirm }),
     listPrefeituras: () => this.request<{ prefeituras: AdminPrefeitura[] }>("/v1/admin/prefeituras"),
     upsertPrefeitura: (p: AdminPrefeituraInput) => this.request<{ prefeitura: AdminPrefeitura }>("/v1/admin/prefeituras", { method: "POST", body: p }),
+    /** Zera a base de prefeituras. Exige senha compartilhada (env
+     *  ADMIN_PURGE_PASSWORD). Nao cascatea pra convenios/folhas. */
+    limparBasePrefeituras: (senha: string) =>
+      this.request<{ ok: true; removidas: number }>("/v1/admin/prefeituras/limpar-base", { method: "POST", body: { senha } }),
     sincronizarPrefeitura: (id: number) => this.request<{ prefeitura: AdminPrefeitura; resultado: { novos: number; atualizados: number; erro?: string; ts: string } }>(`/v1/admin/prefeituras/${id}/sincronizar`, { method: "POST" }),
     /** Consulta CNPJ via BrasilAPI (Receita + Junta Comercial). Usado no modal
      *  de cadastro de prefeitura pra prefill automatico dos campos. */

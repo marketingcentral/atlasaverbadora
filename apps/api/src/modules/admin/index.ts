@@ -1283,6 +1283,29 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ⚠️ OPERACAO DESTRUTIVA: zera prefeituras + convenios + folhas + ofertas
   // + tabelas de emprestimo. Bancos ficam mas sem convenio pra operar.
   // Cliente pediu (16/07/2026): recomecar cadastro de prefeituras do zero.
+  // Limpa APENAS a tabela de prefeituras (sem cascatear pra convenios/folhas
+  // /ofertas). Protegido por senha compartilhada em env.ADMIN_PURGE_PASSWORD.
+  // Usado pelo botao "Limpar Base" em /averbadora/prefeituras.
+  .post("/v1/admin/prefeituras/limpar-base", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "prefeituras");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha de operacoes destrutivas nao configurada no ambiente. Contate o operador da plataforma." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    // Trava anti-reseed antes do delete pra nao repopular via cold-start.
+    if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:prefeituras", "1");
+    // Deleta so a tabela `prefeituras`. Rows dependentes (convenios FK etc)
+    // ficam como orfaos ate serem limpas manualmente ou via /db/purge-prefeituras.
+    const antes = prefeituras.length;
+    for (const p of [...prefeituras]) {
+      try { await deletePrefeituraRow(c.env, p.id); } catch { /* segue */ }
+    }
+    prefeituras.length = 0;
+    pushEvent("info", "admin.prefeituras.limpar", `Base de prefeituras zerada por admin ${j?.sub} (${antes} removidas).`);
+    return c.json({ ok: true, removidas: antes });
+  })
   .post("/v1/admin/db/purge-prefeituras", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
