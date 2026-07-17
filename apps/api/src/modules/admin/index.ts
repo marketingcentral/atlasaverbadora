@@ -287,11 +287,11 @@ function syncBancoAccess(b: BancoAdmin): { webhooks: number } {
   return { webhooks };
 }
 
-export const prefeituras: PrefeituraAdmin[] = [
-  { id: 1, nome: "Palhoca", uf: "SC", municipioIbge: 4211900, modoIntegracao: "REST", status: "ativo", servidoresCount: 2400, ultimaSincronizacao: "2026-06-22T03:14:00Z" },
-  { id: 2, nome: "Florianopolis", uf: "SC", municipioIbge: 4205407, modoIntegracao: "SOAP", status: "ativo", servidoresCount: 1100, ultimaSincronizacao: "2026-06-22T03:21:00Z" },
-  { id: 3, nome: "Joinville", uf: "SC", municipioIbge: 4209102, modoIntegracao: "CSV", status: "ativo", servidoresCount: 480, ultimaSincronizacao: "2026-06-21T22:00:00Z" },
-];
+// Seed vazio (16/07/2026): cliente pediu remocao TOTAL dos seeds de prefeituras
+// pra teste real do zero. Uma sessao paralela readicionou Palhoca/Floripa/Joinville
+// em algum ponto; removendo de novo. Prefeituras novas entram via UI (CNPJ).
+// Se restaurar pra demo, reverter este bloco.
+export const prefeituras: PrefeituraAdmin[] = [];
 
 const PREFEITURAS_SEED: PrefeituraAdmin[] = prefeituras.map((p) => ({ ...p }));
 const SERVIDORES_SEED = SERVIDORES_BUSCA_MOCK.map((s) => ({ ...s }));
