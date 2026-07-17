@@ -331,8 +331,16 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
               <TextField label="Data de fundação" value={form.dataFundacao ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Atividade principal" value={form.atividade ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="UF" value={form.uf} readOnly style={readOnlyInputStyle} onChange={() => undefined} required />
-              <NumberField label="Código IBGE" value={form.municipioIbge} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
-              <TextField label="Telefone" value={form.telefone ?? ""} onChange={(e) => setForm({ ...form, telefone: e.target.value })} placeholder="(00) 00000-0000" hint="Editável — pode ajustar se o telefone oficial estiver desatualizado" />
+              <NumberField
+                label="Código IBGE"
+                value={form.municipioIbge}
+                readOnly
+                style={readOnlyInputStyle}
+                onChange={() => undefined}
+                hint={form.municipioIbge > 0 ? undefined : "⚠ Não preenchido — refaça a busca por CNPJ antes de salvar"}
+                error={form.municipioIbge > 0 ? undefined : "Código IBGE é obrigatório"}
+              />
+              <TextField label="Telefone" value={form.telefone ?? ""} onChange={(e) => setForm({ ...form, telefone: e.target.value })} placeholder="(00) 00000-0000" required hint="Obrigatório — editável se o telefone oficial estiver desatualizado" />
               <TextField label="CEP" value={form.endereco?.cep ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Logradouro" value={form.endereco?.logradouro ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Número" value={form.endereco?.numero ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
@@ -448,9 +456,37 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
         </details>
 
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
+        {(() => {
+          // Validacao unificada — mostra o motivo do botao Salvar ficar desabilitado
+          // pra o usuario nao ficar adivinhando o que falta.
+          const faltando: string[] = [];
+          if (!form.nome) faltando.push("razão social (busque o CNPJ)");
+          if (!form.municipioIbge || form.municipioIbge <= 0) faltando.push("código IBGE (refaça a busca do CNPJ)");
+          if (!form.telefone) faltando.push("telefone");
+          if (!form.loginEmail) faltando.push("e-mail de login");
+          if (!initial?.hasPassword && !form.password) faltando.push("senha");
+          if (faltando.length === 0) return null;
+          return (
+            <div style={{ fontSize: 12, color: "var(--gold-500)", padding: "8px 12px", borderRadius: 8, background: "color-mix(in srgb, var(--gold-500) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--gold-500) 30%, transparent)" }}>
+              ⚠ Falta preencher: {faltando.join(", ")}.
+            </div>
+          );
+        })()}
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
-          <Button type="button" disabled={save.isPending || !form.nome || !form.loginEmail || (!initial?.hasPassword && !form.password)} onClick={() => save.mutate()}>
+          <Button
+            type="button"
+            disabled={
+              save.isPending
+              || !form.nome
+              || !form.loginEmail
+              || (!initial?.hasPassword && !form.password)
+              || !form.telefone
+              || !form.municipioIbge
+              || form.municipioIbge <= 0
+            }
+            onClick={() => save.mutate()}
+          >
             {save.isPending ? "Salvando..." : "Salvar"}
           </Button>
         </FormActions>

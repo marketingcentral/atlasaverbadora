@@ -1474,27 +1474,33 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
     const raw = c.req.param("cnpj").replace(/\D/g, "");
     if (raw.length !== 14) throw Errors.validation({ cnpj: "CNPJ invalido — envie 14 digitos" });
-    const cacheKey = `cnpj:${raw}`;
+    // v2: bump apos adicionar enriquecimento IBGE — invalida entradas antigas
+    // que foram cacheadas sem codigo_municipio_ibge (a UI exige IBGE agora).
+    const cacheKey = `cnpj:v2:${raw}`;
+    let cameFromCache = false;
+    let dados: Record<string, unknown> | null = null;
     // 1) Cache — CNPJ nao muda com frequencia; 24h e razoavel.
     if (c.env.KV_CACHE) {
       const cached = await c.env.KV_CACHE.get(cacheKey);
-      if (cached) return c.json({ dados: JSON.parse(cached) as Record<string, unknown> });
+      if (cached) {
+        dados = JSON.parse(cached) as Record<string, unknown>;
+        cameFromCache = true;
+      }
     }
-    // 2) BrasilAPI — provedor primario.
-    let dados: Record<string, unknown> | null = null;
+    // 2) BrasilAPI — provedor primario (so bate se nao veio do cache).
     let ultimoErro = "";
-    try {
-      const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
-      if (r.status === 404) throw Errors.notFound("cnpj_nao_encontrado");
-      if (r.ok) dados = await r.json() as Record<string, unknown>;
-      else ultimoErro = `BrasilAPI HTTP ${r.status}`;
-    } catch (e) {
-      // Se ja e HttpError (ex.: notFound), rethrow. Erro de fetch: tenta fallback.
-      if ((e as { status?: number }).status === 404) throw e;
-      ultimoErro = `BrasilAPI: ${(e as Error).message}`;
+    if (!dados) {
+      try {
+        const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${raw}`);
+        if (r.status === 404) throw Errors.notFound("cnpj_nao_encontrado");
+        if (r.ok) dados = await r.json() as Record<string, unknown>;
+        else ultimoErro = `BrasilAPI HTTP ${r.status}`;
+      } catch (e) {
+        if ((e as { status?: number }).status === 404) throw e;
+        ultimoErro = `BrasilAPI: ${(e as Error).message}`;
+      }
     }
-    // 3) ReceitaWS — fallback. Retorna nomes de campo em PT (situacao_cadastral,
-    //    razao_social, etc.) — normalizamos pro shape do BrasilAPI.
+    // 3) ReceitaWS — fallback. Retorna nomes de campo em PT — normalizamos.
     if (!dados) {
       try {
         const r = await fetch(`https://receitaws.com.br/v1/cnpj/${raw}`);
@@ -1513,17 +1519,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       }
     }
     if (!dados) {
-      // Mensagem util pro operador entender que e limite dos provedores,
-      // nao problema no cadastro dele.
       throw Errors.validation({
         cnpj: ultimoErro.includes("429")
-          ? "Limite temporario de consulta atingido. Aguarde 1 minuto e tente de novo, ou preencha os campos manualmente."
-          : `Consulta falhou (${ultimoErro}). Preencha manualmente ou tente de novo.`,
+          ? "Limite temporario de consulta atingido. Aguarde 1 minuto e tente de novo."
+          : `Consulta falhou (${ultimoErro}). Tente de novo em instantes.`,
       });
     }
-    // Enriquecimento: se IBGE veio vazio (fallback ReceitaWS), busca em
-    // BrasilAPI /ibge/municipios/{uf} (endpoint diferente, rate limit
-    // independente do /cnpj) e casa por nome do municipio.
+    // Enriquecimento IBGE: SEMPRE que faltar (cache antigo ou provedor sem
+    // IBGE). Frontend exige IBGE pra permitir save do cadastro — sem ele o
+    // usuario ficaria travado. Endpoint /ibge/municipios usa rate limit
+    // separado do /cnpj, entao raramente bate 429.
+    let ibgeEnriquecido = false;
     if (!dados.codigo_municipio_ibge && dados.uf && dados.municipio) {
       try {
         const r = await fetch(`https://brasilapi.com.br/api/ibge/municipios/v1/${dados.uf}`);
@@ -1531,12 +1537,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
           const municipios = await r.json() as { nome: string; codigo_ibge: string }[];
           const alvo = String(dados.municipio).toUpperCase().trim();
           const match = municipios.find((m) => m.nome.toUpperCase() === alvo);
-          if (match) dados.codigo_municipio_ibge = Number(match.codigo_ibge);
+          if (match) {
+            dados.codigo_municipio_ibge = Number(match.codigo_ibge);
+            ibgeEnriquecido = true;
+          }
         }
-      } catch { /* fail-safe: IBGE fica vazio, admin resubmete depois */ }
+      } catch { /* fail-safe: IBGE fica vazio, frontend bloqueia save com msg clara */ }
     }
     // Cacheia por 24h — proxima consulta ao mesmo CNPJ nao passa pelo provedor.
-    if (c.env.KV_CACHE) {
+    // Refaz cache se veio de cache mas o IBGE foi enriquecido agora (cache
+    // antigo estava sem, novo tem). Sem isso, ficariamos re-enriquecendo em
+    // toda request.
+    if (c.env.KV_CACHE && (!cameFromCache || ibgeEnriquecido)) {
       try { await c.env.KV_CACHE.put(cacheKey, JSON.stringify(dados), { expirationTtl: 86400 }); } catch { /* fail-safe */ }
     }
     return c.json({ dados });
