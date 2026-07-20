@@ -3,6 +3,7 @@ import { z } from "zod";
 import { calcCET, margemDisponivel, margemTotal } from "@atlas/domain";
 import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors, HttpError } from "../../_shared/errors.js";
+import { withIdempotency } from "../../_shared/idempotency.js";
 import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
 import { refreshConvenios } from "./convenios-store.js";
@@ -509,32 +510,44 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   })
 
   // --------- Averbar / Reservar ----------
+  // Idempotencia via header Idempotency-Key — retorno cacheado por 24h.
   .post("/v1/portal/banco/contratos/averbar/:tipo", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
     const tipo = OperacaoTipoSchema.parse(c.req.param("tipo")?.toUpperCase());
     const body = NovoContratoBody.parse(await c.req.json());
-    const ct = await persistir(j, c.env, tipo, body, false);
-    await persistContrato(c.env, ct.adf);
-    // Averbacao direta (sem passar por reserva) — notifica a averbadora tambem.
-    const bancoNome = bancos.find((b) => b.id === ct.bancoId)?.nome ?? `Banco ${ct.bancoId}`;
-    const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
-    const prefNome = conv?.prefeitura ?? "prefeitura";
-    pushEvent(
-      "info",
-      "averbadora.notif_averbacao",
-      `${bancoNome} averbou a proposta ${ct.adf} (matricula ${ct.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
-    );
-    return c.json(ct);
+    const idemKey = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idemScope = `banco:${j.banco_id}:POST:/v1/portal/banco/contratos/averbar/${tipo}`;
+    const idem = await withIdempotency(c.env, idemKey, idemScope, async () => {
+      const ct = await persistir(j, c.env, tipo, body, false);
+      await persistContrato(c.env, ct.adf);
+      const bancoNome = bancos.find((b) => b.id === ct.bancoId)?.nome ?? `Banco ${ct.bancoId}`;
+      const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+      const prefNome = conv?.prefeitura ?? "prefeitura";
+      pushEvent(
+        "info",
+        "averbadora.notif_averbacao",
+        `${bancoNome} averbou a proposta ${ct.adf} (matricula ${ct.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
+      );
+      return { status: 200, body: ct };
+    });
+    if (idem.replayed) c.header("Idempotent-Replay", "true");
+    return c.json(idem.result);
   })
   .post("/v1/portal/banco/contratos/reservar/:tipo", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
     const tipo = OperacaoTipoSchema.parse(c.req.param("tipo")?.toUpperCase());
     const body = NovoContratoBody.parse(await c.req.json());
-    const ct = await persistir(j, c.env, tipo, body, true);
-    await persistContrato(c.env, ct.adf);
-    return c.json(ct);
+    const idemKey = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idemScope = `banco:${j.banco_id}:POST:/v1/portal/banco/contratos/reservar/${tipo}`;
+    const idem = await withIdempotency(c.env, idemKey, idemScope, async () => {
+      const ct = await persistir(j, c.env, tipo, body, true);
+      await persistContrato(c.env, ct.adf);
+      return { status: 200, body: ct };
+    });
+    if (idem.replayed) c.header("Idempotent-Replay", "true");
+    return c.json(idem.result);
   })
 
   // Banco trata a falha reportada pela averbadora — escolhe uma das 3 acoes.
@@ -552,27 +565,34 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         motivo: z.string().min(3).max(500),
       })
       .parse(await c.req.json());
-    await refreshContratos(c.env);
-    const owner = getContrato(adf);
-    if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
-    if (!owner.situacao.toLowerCase().includes("falha em folha")) {
-      throw Errors.validation({ contrato: "contrato nao esta em falha — nada pra tratar" });
-    }
-    const r = tratarFalhaContrato(adf, body.acao, body.motivo, `user:${j.sub}`);
-    if (!r) throw Errors.notFound("contrato");
-    await persistContrato(c.env, adf);
-    pushEvent(
-      "info",
-      "banco.tratou_falha",
-      `Banco ${j.banco_id} tratou falha do contrato ${adf} com acao "${body.acao}": ${body.motivo}`,
-    );
-    // Notifica o servidor da resolucao (in-app + e-mail).
-    const acaoParaNotif = body.acao === "reenviar" ? "aprovar" : body.acao === "cancelar" ? "cancelar" : "suspender";
-    notifyMovimentacao(c, r, acaoParaNotif, `Tratamento de falha: ${body.motivo}`);
-    return c.json({ contrato: r });
+    const idemKey = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idemScope = `banco:${j.banco_id}:POST:/v1/portal/banco/tratar-falha/${adf}`;
+    const idem = await withIdempotency(c.env, idemKey, idemScope, async () => {
+      await refreshContratos(c.env);
+      const owner = getContrato(adf);
+      if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
+      if (!owner.situacao.toLowerCase().includes("falha em folha")) {
+        throw Errors.validation({ contrato: "contrato nao esta em falha — nada pra tratar" });
+      }
+      const r = tratarFalhaContrato(adf, body.acao, body.motivo, `user:${j.sub}`);
+      if (!r) throw Errors.notFound("contrato");
+      await persistContrato(c.env, adf);
+      pushEvent(
+        "info",
+        "banco.tratou_falha",
+        `Banco ${j.banco_id} tratou falha do contrato ${adf} com acao "${body.acao}": ${body.motivo}`,
+      );
+      const acaoParaNotif = body.acao === "reenviar" ? "aprovar" : body.acao === "cancelar" ? "cancelar" : "suspender";
+      notifyMovimentacao(c, r, acaoParaNotif, `Tratamento de falha: ${body.motivo}`);
+      return { status: 200, body: { contrato: r } };
+    });
+    if (idem.replayed) c.header("Idempotent-Replay", "true");
+    return c.json(idem.result);
   })
 
   // --------- Acoes em contratos ----------
+  // Idempotencia via Idempotency-Key — util pra evitar dupla-aprovacao/quitacao
+  // se o operador do banco clicar 2x ou o cliente retentar depois de timeout.
   .post("/v1/portal/banco/contratos/:adf/:acao", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
@@ -582,45 +602,48 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const body = z
       .object({ motivo: z.string().optional(), parcelasExtras: z.number().int().optional(), observacoes: z.string().optional(), codigoVerba: z.string().optional() })
       .parse(raw);
-    await refreshContratos(c.env); // garante que o contrato/reserva (de outro isolate) esteja no Map antes de agir
-    // Isolamento: verifica dono antes de aplicar acao. Sem isso qualquer banco
-    // podia cancelar/aprovar/suspender contrato de outro adivinhando o ADF.
-    const owner = getContrato(adf);
-    if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
-    // Fluxo novo (pedido do cliente): banco so aprova DEPOIS de anexar o
-    // contrato assinado — MAS so quando a prefeitura exige CCB (config por
-    // prefeitura). Se a prefeitura tem exigeCcb=false, deixa aprovar sem PDF.
-    // Bug identificado 17/07/2026: bloqueio era hardcoded, ignorava a config.
-    if (acao === "aprovar" && !owner.ccbKey) {
-      const conv = CONVENIOS_MOCK.find((cv) => cv.id === owner.convenioId);
-      const pref = conv ? prefeituras.find((p) => p.id === conv.prefeituraId) : undefined;
-      const exigeCcb = pref?.exigeCcb === true;
-      if (exigeCcb) {
-        throw Errors.validation({
-          contrato: `anexe o contrato assinado antes de aprovar a proposta (${pref?.nome ?? "prefeitura"} exige CCB).`,
-        });
+    const idemKey = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idemScope = `banco:${j.banco_id}:POST:/v1/portal/banco/contratos/${adf}/${acao}`;
+    const idem = await withIdempotency(c.env, idemKey, idemScope, async () => {
+      await refreshContratos(c.env); // garante que o contrato/reserva (de outro isolate) esteja no Map antes de agir
+      // Isolamento: verifica dono antes de aplicar acao. Sem isso qualquer banco
+      // podia cancelar/aprovar/suspender contrato de outro adivinhando o ADF.
+      const owner = getContrato(adf);
+      if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
+      // Fluxo novo (pedido do cliente): banco so aprova DEPOIS de anexar o
+      // contrato assinado — MAS so quando a prefeitura exige CCB (config por
+      // prefeitura). Se a prefeitura tem exigeCcb=false, deixa aprovar sem PDF.
+      if (acao === "aprovar" && !owner.ccbKey) {
+        const conv = CONVENIOS_MOCK.find((cv) => cv.id === owner.convenioId);
+        const pref = conv ? prefeituras.find((p) => p.id === conv.prefeituraId) : undefined;
+        const exigeCcb = pref?.exigeCcb === true;
+        if (exigeCcb) {
+          throw Errors.validation({
+            contrato: `anexe o contrato assinado antes de aprovar a proposta (${pref?.nome ?? "prefeitura"} exige CCB).`,
+          });
+        }
       }
-    }
-    const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
-    if (!r) throw Errors.notFound("contrato");
-    await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
-    // Notifica a averbadora sempre que o banco APROVA (fluxo novo — averbadora
-    // que faz a ADF) ou CONFIRMA (fluxo antigo — averbadora so aplica em folha).
-    // Sem esse evento a averbadora ficaria de fora e a ADF nao entraria na fila.
-    if (acao === "aprovar" || acao === "confirmar") {
-      const bancoNome = bancos.find((b) => b.id === r.bancoId)?.nome ?? `Banco ${r.bancoId}`;
-      const conv = CONVENIOS_MOCK.find((cv) => cv.id === r.convenioId);
-      const prefNome = conv?.prefeitura ?? "prefeitura";
-      const verbo = acao === "aprovar" ? "aprovou" : "averbou";
-      pushEvent(
-        "info",
-        "averbadora.notif_averbacao",
-        `${bancoNome} ${verbo} a proposta ${adf} (matricula ${r.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
-      );
-    }
-    // Notifica o servidor da movimentação (in-app + e-mail).
-    notifyMovimentacao(c, r, acao, body.motivo);
-    return c.json({ contrato: r });
+      const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
+      if (!r) throw Errors.notFound("contrato");
+      await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
+      // Notifica a averbadora sempre que o banco APROVA ou CONFIRMA.
+      if (acao === "aprovar" || acao === "confirmar") {
+        const bancoNome = bancos.find((b) => b.id === r.bancoId)?.nome ?? `Banco ${r.bancoId}`;
+        const conv = CONVENIOS_MOCK.find((cv) => cv.id === r.convenioId);
+        const prefNome = conv?.prefeitura ?? "prefeitura";
+        const verbo = acao === "aprovar" ? "aprovou" : "averbou";
+        pushEvent(
+          "info",
+          "averbadora.notif_averbacao",
+          `${bancoNome} ${verbo} a proposta ${adf} (matricula ${r.matricula}, ${prefNome}) — pronta pra ADF na competencia atual.`,
+        );
+      }
+      // Notifica o servidor da movimentação (in-app + e-mail).
+      notifyMovimentacao(c, r, acao, body.motivo);
+      return { status: 200, body: { contrato: r } };
+    });
+    if (idem.replayed) c.header("Idempotent-Replay", "true");
+    return c.json(idem.result);
   })
 
   // --------- Comprovante PDF ----------
