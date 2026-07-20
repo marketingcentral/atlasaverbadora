@@ -64,38 +64,16 @@ export interface BancoUsuario {
   criadoEm: string;
 }
 
-const _tabelas: TabelaEmprestimo[] = [
-  {
-    id: "TBL-001",
-    convenioId: "CONV-001",
-    convenio: "CASTRO / DELTA GLOBAL",
-    taxaMinAm: 0.0151,
-    taxaMaxAm: 0.0199,
-    prazoMaxMeses: 120,
-    vigenciaInicio: "2026-03-18",
-    ativo: true,
-    criadoEm: "2026-03-18",
-  },
-  {
-    id: "TBL-002",
-    convenioId: "CONV-002",
-    convenio: "FLORIPA / DELTA GLOBAL",
-    taxaMinAm: 0.0165,
-    taxaMaxAm: 0.0210,
-    prazoMaxMeses: 96,
-    vigenciaInicio: "2026-04-01",
-    ativo: true,
-    criadoEm: "2026-04-01",
-  },
-];
+// Seeds hardcoded (TBL-001 CASTRO/DELTA GLOBAL, TBL-002 FLORIPA/DELTA GLOBAL)
+// removidos 20/07/2026 — apareciam pra qualquer banco que herdasse a mesma
+// bancoId. Tabelas novas entram via UI (POST /portal/banco/cadastros/tabela-emprestimos).
+const _tabelas: TabelaEmprestimo[] = [];
 
-const _usuarios: BancoUsuario[] = [
-  { id: "U-116612", bancoId: 1, codigo: "116612", nome: "Bruno Lopes do Nascimento", email: "BRUNOLOPES@DELTAGLOBAL", cpf: "12345678977", cpfMasked: "***.***.***-77", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "admin", permissoes: [...BANCO_PRESETS.admin], ipsPermitidos: [], ativo: true, criadoEm: "2026-01-10" },
-  { id: "U-116889", bancoId: 1, codigo: "116889", nome: "Vinicius Costa Nery", email: "44445948888@DELTAGLOBAL", cpf: "44445948888", cpfMasked: "***.***.***-88", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", permissoes: [...BANCO_PRESETS.operador], ipsPermitidos: [], ativo: true, criadoEm: "2026-02-05" },
-  { id: "U-116891", bancoId: 1, codigo: "116891", nome: "Lucas Vicente Ohi", email: "34537215860@DELTAGLOBAL", cpf: "34537215860", cpfMasked: "***.***.***-60", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "operador", permissoes: [...BANCO_PRESETS.operador], ipsPermitidos: [], ativo: true, criadoEm: "2026-02-12" },
-  { id: "U-118327", bancoId: 1, codigo: "118327", nome: "Camila Alves", email: "CAMILAALVES@DELTAGLOBAL", cpf: "55566677722", cpfMasked: "***.***.***-22", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "consulta", permissoes: [...BANCO_PRESETS.consulta], ipsPermitidos: [], ativo: true, criadoEm: "2026-03-01" },
-  { id: "U-120258", bancoId: 1, codigo: "120258", nome: "Kaua Nogueira da Cunha", email: "45198007811@DELTAGLOBAL", cpf: "45198007811", cpfMasked: "***.***.***-11", organizacao: "46177 - DELTA GLOBAL SOCIEDADE DE CREDITO DIRETO S A", perfil: "relatorios", permissoes: [...BANCO_PRESETS.relatorios], ipsPermitidos: ["189.45.10.0/24"], ativo: true, criadoEm: "2026-04-20" },
-];
+// Cliente pediu (20/07/2026) remocao dos seeds hardcoded — 5 usuarios da
+// "DELTA GLOBAL" (fictícia) apareciam pra qualquer banco que herdasse bancoId=1
+// (regra: novo cadastro nao herda dados de entidade deletada). Usuarios novos
+// entram via UI (POST /portal/banco/cadastros/usuarios).
+const _usuarios: BancoUsuario[] = [];
 
 /** Migra usuarios existentes sem permissoes[] — deriva do perfil. Idempotente. */
 function ensureBancoUsuarioPermissoes(u: BancoUsuario): void {
