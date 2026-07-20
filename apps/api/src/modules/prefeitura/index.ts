@@ -11,14 +11,14 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { bancos, folhas, prefeituras, ensureFolhasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
+import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
-import { getIdUnicoConfig, upsertIdUnicoConfig } from "../admin/id-unico.js";
+import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig } from "../admin/id-unico.js";
 import { importTombamento, listLotes, listLinhas } from "../admin/tombamento.js";
 import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
@@ -589,9 +589,15 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 5 — Configurações de convênio =====
-  .get("/v1/prefeitura/convenios", (c) => {
+  .get("/v1/prefeitura/convenios", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    const idcfg = getIdUnicoConfig(id);
+    // Isolate frio nao tem prefeituras/convenios em memoria — recarrega antes.
+    await Promise.all([ensurePrefeiturasLoaded(c.env), refreshConvenios(c.env)]);
+    // Backfill: se o isolate ainda nao tem a config do id-unico dessa prefeitura
+    // (mora so em memoria e nao persiste em PG), gera default a partir do nome+UF.
+    // Sem isso, prefeitura via prefixo vazio mesmo depois da averbadora configurar.
+    const p = prefeituras.find((x) => x.id === id);
+    const idcfg = p ? ensureIdUnicoConfig(id, p.nome, p.uf) : getIdUnicoConfig(id);
     const detalhado = conveniosDaPrefeitura(id).map((cv) => {
       const cfg = getConvenioConfig(cv.id);
       return {
