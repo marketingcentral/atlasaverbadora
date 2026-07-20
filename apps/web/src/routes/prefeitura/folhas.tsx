@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, CsvImportPanel, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import type { PrefeituraFolha, PrefeituraServidor } from "@atlas/sdk";
+import type { PrefeituraAdf, PrefeituraFolha, PrefeituraServidor } from "@atlas/sdk";
 import { Modal, Field, inp } from "./_ui";
 
 type FolhaRow = PrefeituraFolha & { movimentacoes: number };
@@ -54,26 +54,33 @@ export function PrefeituraFolhas() {
     })),
   });
 
-  // Aplica o filtro por servidor — reescreve movimentacoes/valorAplicado por
-  // folha pra refletir so o servidor escolhido, e esconde folhas onde ele nao
-  // aparece. Quando "Todos" (servidorFiltro === ""), passa as folhas cruas.
-  const folhasExibidas: FolhaRow[] = useMemo(() => {
-    if (!servidorFiltro) return folhasBase;
-    return folhasBase
-      .map((folha, idx) => {
-        const adfs = (adfsQueries[idx]?.data?.adfs ?? []).filter((a) => a.matricula === servidorFiltro);
-        const movs = (movQueries[idx]?.data?.movimentacoes ?? []).filter((m) => m.matricula === servidorFiltro);
-        const valorAplicado = adfs.filter((a) => a.status === "aplicada").reduce((s, a) => s + a.valorParcela, 0);
-        return { folha, adfsCount: adfs.length, movsCount: movs.length, valorAplicado };
-      })
-      .filter((r) => r.adfsCount > 0 || r.movsCount > 0)
-      .map((r) => ({
-        ...r.folha,
-        movimentacoes: r.movsCount,
-        valorAplicado: r.valorAplicado,
-        adfsAplicadas: r.adfsCount,
-      }));
-  }, [servidorFiltro, folhasBase, adfsQueries, movQueries]);
+  // Modo FILTRADO: gera uma linha por ADF (contrato) do servidor — sem somar
+  // os valores. Contratos diferentes ficam em linhas separadas ("um embaixo do
+  // outro"), preservando os valores individuais de cada CCB.
+  type AdfRow = { key: string; folha: FolhaRow; adf: PrefeituraAdf };
+  const adfRows: AdfRow[] = useMemo(() => {
+    if (!servidorFiltro) return [];
+    const out: AdfRow[] = [];
+    folhasBase.forEach((folha, idx) => {
+      const adfs = (adfsQueries[idx]?.data?.adfs ?? []).filter((a) => a.matricula === servidorFiltro);
+      for (const adf of adfs) {
+        out.push({ key: `${folha.id}:${adf.adf}`, folha, adf });
+      }
+    });
+    return out;
+  }, [servidorFiltro, folhasBase, adfsQueries]);
+
+  // Movimentacoes totais do servidor filtrado (informativo — nao encaixa em
+  // linha por ADF; mostrado como card acima da tabela quando filtro ativo).
+  const movsDoServidor = useMemo(() => {
+    if (!servidorFiltro) return 0;
+    let total = 0;
+    movQueries.forEach((q) => {
+      const movs = (q.data?.movimentacoes ?? []).filter((m) => m.matricula === servidorFiltro);
+      total += movs.length;
+    });
+    return total;
+  }, [servidorFiltro, movQueries]);
 
   const setStatus = useMutation({
     // Consolidar não é ação da prefeitura — só a averbadora consolida (via /averbadora/folhas).
@@ -86,7 +93,7 @@ export function PrefeituraFolhas() {
     onError: (e) => alert((e as Error).message || "Erro ao excluir"),
   });
 
-  const columns: Column<FolhaRow>[] = [
+  const columnsFolha: Column<FolhaRow>[] = [
     { key: "competencia", header: "Competência", mono: true },
     { key: "dataCorte", header: "Corte" },
     { key: "dataRepasse", header: "Repasse", render: (f) => f.dataRepasse ?? "—" },
@@ -142,6 +149,43 @@ export function PrefeituraFolhas() {
     },
   ];
 
+  // Colunas do modo FILTRADO — uma linha por contrato/ADF do servidor. Sem
+  // somatoria: cada CCB aparece com seu valor de parcela proprio.
+  const columnsAdf: Column<AdfRow>[] = [
+    { key: "competencia", header: "Competência", mono: true, render: (r) => r.folha.competencia },
+    { key: "adf", header: "ADF (contrato)", mono: true, render: (r) => r.adf.adf },
+    { key: "banco", header: "Banco", render: (r) => r.adf.bancoNome },
+    {
+      key: "parcela",
+      header: "Parcela",
+      align: "right",
+      render: (r) => <span style={{ color: "var(--emerald-500)", fontWeight: 600 }}>{fmtBRL(r.adf.valorParcela)}</span>,
+    },
+    { key: "totalParcelas", header: "Parcelas", align: "right", render: (r) => `${r.adf.totalParcelas}x` },
+    {
+      key: "statusAdf",
+      header: "Status ADF",
+      render: (r) => (
+        <Pill variant={r.adf.status === "aplicada" ? "averbado" : r.adf.status === "falha" ? "rejeitada" : "pendente"}>
+          {r.adf.status}
+        </Pill>
+      ),
+    },
+    {
+      key: "statusFolha",
+      header: "Status folha",
+      render: (r) => <Pill variant={r.folha.status === "aberta" ? "pendente" : "averbado"}>{r.folha.status}</Pill>,
+    },
+    {
+      key: "acoes",
+      header: "",
+      align: "right",
+      render: (r) => (
+        <Button size="sm" variant="ghost" onClick={() => setDescFolha(r.folha)}>Ver descontos</Button>
+      ),
+    },
+  ];
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
@@ -191,17 +235,33 @@ export function PrefeituraFolhas() {
         ) : null}
       </div>
 
-      <DataTable
-        columns={columns}
-        rows={folhasExibidas}
-        rowKey={(f) => f.id}
-        loading={q.isLoading}
-        emptyState={
-          servidorFiltro
-            ? "Este servidor não aparece em nenhuma folha ainda (sem ADFs e sem movimentações)."
-            : "Nenhuma folha. Abra uma competência."
-        }
-      />
+      {servidorFiltro ? (
+        <>
+          {movsDoServidor > 0 ? (
+            <div style={{
+              padding: "10px 14px", background: "var(--bg-elev-2)", borderRadius: 8,
+              fontSize: 13, color: "var(--text-muted)",
+            }}>
+              📋 <b>{movsDoServidor}</b> movimentação(ões) registradas para este servidor nas folhas abaixo.
+            </div>
+          ) : null}
+          <DataTable
+            columns={columnsAdf}
+            rows={adfRows}
+            rowKey={(r) => r.key}
+            loading={q.isLoading}
+            emptyState="Este servidor não tem contratos em nenhuma folha ainda."
+          />
+        </>
+      ) : (
+        <DataTable
+          columns={columnsFolha}
+          rows={folhasBase}
+          rowKey={(f) => f.id}
+          loading={q.isLoading}
+          emptyState="Nenhuma folha. Abra uma competência."
+        />
+      )}
 
       {novaOpen ? <NovaFolha onClose={() => setNovaOpen(false)} onSaved={() => { setNovaOpen(false); qc.invalidateQueries({ queryKey: ["prefeitura"] }); }} /> : null}
       {movFolha ? <MovModal folha={movFolha} onClose={() => setMovFolha(null)} onDone={() => qc.invalidateQueries({ queryKey: ["prefeitura"] })} /> : null}
