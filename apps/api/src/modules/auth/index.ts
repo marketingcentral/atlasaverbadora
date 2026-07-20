@@ -9,7 +9,7 @@ import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
-import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded } from "../admin/index.js";
+import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded, refreshServidores } from "../admin/index.js";
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
 import { verifyTotp } from "../../_shared/totp.js";
 import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf, loadServidores, upsertPrefeitura, upsertBanco, upsertCollectionRow } from "../../db/repos.js";
@@ -64,6 +64,15 @@ async function resolveServidorByCredentials(
   const hash = await sha256Hex(password);
   const s = comSenha.find((x) => x.passwordHash === hash);
   if (!s) return { match: null, claimedBy: true };
+  // F6 arquivamento: servidor desligado/aposentado pela prefeitura nao pode
+  // logar mais. Cascade de desligamento (F6) marca situacaoFuncional; aqui
+  // e onde bloqueamos o acesso — sem isso, o servidor demitido continuava
+  // vendo painel, criando propostas etc. Mantem claimedBy=true pra evitar
+  // fallback pra DEV_USERS.
+  const situ = (s.situacaoFuncional ?? "").toUpperCase();
+  if (situ === "DESLIGADO" || situ === "APOSENTADO") {
+    return { match: null, claimedBy: true };
+  }
   const id = Number(s.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
   return { match: { id, nome: s.nome, role: "servidor", servidor_id: id }, claimedBy: true };
 }
@@ -182,9 +191,11 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     const identifier = body.identifier.replace(/\D/g, "").length === 11 ? body.identifier.replace(/\D/g, "") : body.identifier;
 
     // Hidrata os servidores do Postgres (SERVIDORES_BUSCA_MOCK <- linhas reais, com
-    // passwordHash) antes de resolver as credenciais — login costuma ser a primeira
-    // request do isolate, então sem isso o servidor cadastrado só no banco fica invisível.
-    await ensureServidoresLoaded(c.env);
+    // passwordHash) antes de resolver as credenciais. Chamamos refreshServidores
+    // (nao apenas ensureServidoresLoaded) pra pegar mutacoes de outros isolates —
+    // ex.: F6 marca situacaoFuncional="DESLIGADO", auth precisa ver isso pra
+    // bloquear login em qualquer isolate.
+    await refreshServidores(c.env);
     // Perfis da averbadora tambem sao persistidos (admin_perfis) — hidrata antes
     // de tentar resolver senao Carla/Rafael/Sandra/etc ficariam invisiveis.
     await ensurePerfisLoaded(c.env);

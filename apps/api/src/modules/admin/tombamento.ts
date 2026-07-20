@@ -48,6 +48,39 @@ export interface TombamentoLinha {
   statusContrato?: string;
   motivo?: string;
   tipo?: string;
+  /** F2 substituicao: quando o servidor porta este emprestimo pra outro banco
+   *  via portabilidade REFIN e a averbadora aplica o REFIN em folha, esta
+   *  linha vira 'substituida' e para de contar na margem. `substituidoPorAdf`
+   *  aponta pro contrato Atlas que assumiu (rastreabilidade). */
+  substituida?: boolean;
+  substituidoPorAdf?: string;
+  substituidoEm?: string;
+}
+
+/** Marca uma linha de tombamento como substituida por um contrato Atlas
+ *  (portabilidade averbada). Chamado quando averbadora aplica ADF de REFIN
+ *  no /admin/adf/confirmar. Match por matricula + adfBanco (contratoOrigem
+ *  do contrato REFIN). Retorna lista de loteIds afetados pro chamador
+ *  persistir. */
+export function marcarTombamentoSubstituido(matricula: string, adfBancoOrigem: string, adfAtlas: string): string[] {
+  const now = new Date().toISOString();
+  const affectedLotes = new Set<string>();
+  for (const l of _linhas) {
+    if (l.matricula === matricula && l.adfBanco === adfBancoOrigem && !l.substituida) {
+      l.substituida = true;
+      l.substituidoPorAdf = adfAtlas;
+      l.substituidoEm = now;
+      affectedLotes.add(l.loteId);
+    }
+  }
+  return Array.from(affectedLotes);
+}
+
+/** Persiste um lote de tombamento no PG (write-through publico — o
+ *  marcarTombamentoSubstituido precisa persistir a mudanca pra ela chegar
+ *  em outros isolates via refreshTombamento). */
+export async function persistLotePublic(env: Env, loteId: string): Promise<void> {
+  await persistLote(env, loteId);
 }
 
 /** Parseia valores BR: "R$ 7.944,97" -> 7944.97; "79.16" -> 79.16; "164" -> 164. */
@@ -237,6 +270,9 @@ export function listExternalLoans(matricula: string): ExternalLoan[] {
   const tomb = _linhas
     .filter((l) => l.matricula === matricula)
     .filter((l) => !/beneficio|benefício/i.test(l.tipo ?? ""))
+    // F2: linhas substituidas por portabilidade averbada saem do calculo de
+    // margem e da lista de portaveis (nao pode portar de novo o que ja foi).
+    .filter((l) => !l.substituida)
     .map(tombamentoLinhaToLoan);
   // dedup por contratoOrigem (o seed tem prioridade)
   const seen = new Set(seed.map((l) => l.contratoOrigem));
@@ -347,9 +383,13 @@ export async function importTombamento(input: {
       motivo: pick(norm, "motivo") || undefined,
       tipo: pick(norm, "tipo") || undefined,
     };
-    if (linha.reconciliacao === "divergente") { divergencias++; atualizados++; }
-    else if (linha.reconciliacao === "novo") { inseridos++; }
-    else { atualizados++; }
+    // Contador: uma linha SEMPRE foi inserida (o `_linhas.push` mais abaixo).
+    // Antes contava "divergente" separado de "inserido" e "atualizado" — dava
+    // impressao de que import falhou (`inseridos: 0`) quando na verdade
+    // todas as linhas foram gravadas, so estavam com aviso de divergencia.
+    if (existing) atualizados++;
+    else inseridos++;
+    if (linha.reconciliacao === "divergente") divergencias++;
     linhas.push(linha);
   });
   const lote: TombamentoLote = {

@@ -18,7 +18,7 @@ import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, 
 import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
-import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria, refreshTombamento } from "./tombamento.js";
+import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria, refreshTombamento, marcarTombamentoSubstituido, persistLotePublic } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
@@ -390,6 +390,25 @@ export function ensureServidoresLoaded(env: Env): Promise<void> {
 }
 async function persistServidor(env: Env, s: typeof SERVIDORES_BUSCA_MOCK[number]): Promise<void> {
   try { await upsertServidor(env, s); } catch (e) { pushEvent("warn", "db.servidores.write_failed", `Falha ao persistir servidor ${s.matricula}: ${(e as Error).message}`); }
+}
+
+/** Re-sync de SERVIDORES_BUSCA_MOCK do PG a cada request. Chamado no login
+ *  (auth) pra pegar mutacoes de outros isolates — especialmente F6:
+ *  situacaoFuncional="DESLIGADO" precisa propagar pra que o auth bloqueie
+ *  o servidor demitido em qualquer isolate. Sem isso, ensureServidoresLoaded
+ *  so carrega 1x por isolate e outros isolates viam o servidor ainda ativo. */
+export async function refreshServidores(env: Env): Promise<void> {
+  try {
+    await ensureServidoresLoaded(env);
+    const purged = env.KV_CACHE ? await env.KV_CACHE.get("purge:servidores") : null;
+    const loaded = await loadServidores(env);
+    if (loaded.length) {
+      const filtered = loaded.filter((s) => !TEST_CPFS.has(s.cpf));
+      const testAccounts = purged ? [] : SERVIDORES_SEED.filter((s) => TEST_CPFS.has(s.cpf));
+      SERVIDORES_BUSCA_MOCK.length = 0;
+      SERVIDORES_BUSCA_MOCK.push(...filtered, ...testAccounts);
+    }
+  } catch { /* fail-safe: mantem memoria */ }
 }
 
 /** Parse de numero em formato BR ou US. Aceita:
@@ -3514,7 +3533,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Re-materializa ADFs no _adfs deste isolate. Sem isso, um isolate frio
     // que atende o POST direto (sem ter servido GET /admin/adf antes) tem
     // _adfs vazio e o setAdfStatusGlobal nao acha os ids -> retorna 0.
-    await ensurePrefeiturasLoaded(c.env); await ensureBancosLoaded(c.env);
+    // ensureAdfs precisa de CONVENIOS_MOCK populado — sem refreshConvenios em
+    // isolate frio o filtro convenioIds.has(ct.convenioId) rejeita tudo.
+    await Promise.all([
+      ensurePrefeiturasLoaded(c.env), ensureBancosLoaded(c.env), refreshConvenios(c.env),
+    ]);
     const nowIso = new Date().toISOString();
     for (const pref of prefeituras) {
       ensureAdfsGlobal(new Date().toISOString().slice(0, 7).replace("-", ""),
@@ -3530,6 +3553,25 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     for (const adf of adfs) {
       setContratoSituacaoAtivo(adf, ator);
       await persistContrato(c.env, adf);
+      // F2 substituicao: se este contrato e REFIN (portabilidade) e tem
+      // contratoOrigem apontando pra um adfBanco externo, marca a linha de
+      // tombamento como substituida — sai do calculo de margem e da lista
+      // de portaveis. Bug pre-fix: contrato origem continuava ativo em
+      // paralelo, gerando double-count no comprometido.
+      const ct = getContrato(adf);
+      if (ct?.tipoContrato === "REFIN" && ct.contratoOrigem && ct.matricula) {
+        const affectedLotes = marcarTombamentoSubstituido(ct.matricula, ct.contratoOrigem, adf);
+        // Write-through: sem isso a marcacao fica so no isolate atual e outros
+        // isolates continuariam vendo o tombamento como portavel.
+        for (const loteId of affectedLotes) await persistLotePublic(c.env, loteId);
+        if (affectedLotes.length > 0) {
+          appendAudit({
+            categoria: "margem", acao: "portabilidade_substituiu_tombamento",
+            userId: ator, userRole: "averbadora",
+            detalhes: `Contrato ${adf} (REFIN) substituiu tombamento ${ct.contratoOrigem} da matricula ${ct.matricula}.`,
+          });
+        }
+      }
     }
     appendAudit({ categoria: "margem", acao: "adf_aplicada_admin", userId: ator, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
     // Notifica cada servidor por email (best-effort — nunca quebra a request).
@@ -3585,7 +3627,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
     await refreshContratos(c.env);
     // Materializa ADFs no isolate frio antes de mutar (mesmo motivo do /confirmar).
-    await ensurePrefeiturasLoaded(c.env); await ensureBancosLoaded(c.env);
+    await Promise.all([
+      ensurePrefeiturasLoaded(c.env), ensureBancosLoaded(c.env), refreshConvenios(c.env),
+    ]);
     const nowIso = new Date().toISOString();
     for (const pref of prefeituras) {
       ensureAdfsGlobal(new Date().toISOString().slice(0, 7).replace("-", ""),

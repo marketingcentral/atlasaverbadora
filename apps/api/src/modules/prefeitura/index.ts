@@ -563,27 +563,31 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const now = new Date().toISOString();
     const out: ImportOutcome<{ matricula: string; tipo: string }> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
     const tipos: MovimentacaoTipo[] = ["admissao", "demissao", "aposentadoria", "promocao", "alteracao"];
-    rows.forEach((r, idx) => {
+    // for...of pra permitir await do persist (rows.forEach ignoraria promise)
+    for (let idx = 0; idx < rows.length; idx++) {
+      const r = rows[idx]!;
       const line = idx + 2;
       const tipo = (r.tipo || "").toLowerCase() as MovimentacaoTipo;
-      if (!tipos.includes(tipo)) return void out.errors.push({ line, message: `tipo invalido (${tipos.join("/")})` });
-      if (!r.matricula) return void out.errors.push({ line, message: "matricula obrigatoria" });
+      if (!tipos.includes(tipo)) { out.errors.push({ line, message: `tipo invalido (${tipos.join("/")})` }); continue; }
+      if (!r.matricula) { out.errors.push({ line, message: "matricula obrigatoria" }); continue; }
       const salarioNovo = r.salarioNovo ? Number(r.salarioNovo) : undefined;
       const res = applyMovimentacao({
         folhaId: f.id, prefeituraId: pid, tipo, matricula: r.matricula,
         cargoNovo: r.cargoNovo || undefined, salarioNovo: Number.isFinite(salarioNovo) ? salarioNovo : undefined,
         detalhe: r.detalhe || undefined, nomeNovo: r.nome || undefined, cpf: r.cpf || undefined,
       }, now);
-      if (!res.ok) return void out.errors.push({ line, message: res.error });
+      if (!res.ok) { out.errors.push({ line, message: res.error }); continue; }
       out.inserted++;
       out.rows.push({ matricula: r.matricula, tipo });
-      // Cascade F6: desligamento/aposentadoria pode ter afetado contratos ativos.
-      // Persiste cada contrato afetado pra que o banco (outro isolate) veja o
-      // novo status "Em cobranca direta" e pare de esperar averbacao.
-      for (const adf of res.contratosAtingidos) {
-        void persistContrato(c.env, adf).catch(() => { /* fail-safe */ });
+      // AWAIT — sem isso a proxima request de login lia PG antes do upsert
+      // terminar e via situacaoFuncional antigo (F6 nao bloqueava).
+      if (res.servidorAtualizado) {
+        try { await persistServidorPref(c.env, res.servidorAtualizado); } catch { /* fail-safe */ }
       }
-    });
+      for (const adf of res.contratosAtingidos) {
+        try { await persistContrato(c.env, adf); } catch { /* fail-safe */ }
+      }
+    }
     appendAudit({ categoria: "margem", acao: "folha_movimentacao", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia}: ${out.inserted} movimentações, ${out.errors.length} erros. Margem recalculada.` });
     return c.json(out);
   })

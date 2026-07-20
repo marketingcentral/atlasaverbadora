@@ -42,7 +42,7 @@ export function countMovimentacoes(folhaId: string): number {
 export function applyMovimentacao(input: {
   folhaId: string; prefeituraId: number; tipo: MovimentacaoTipo; matricula: string;
   cargoNovo?: string; salarioNovo?: number; detalhe?: string; nomeNovo?: string; cpf?: string;
-}, now: string): { ok: true; mov: Movimentacao; contratosAtingidos: string[] } | { ok: false; error: string } {
+}, now: string): { ok: true; mov: Movimentacao; contratosAtingidos: string[]; servidorAtualizado?: import("../portal-banco/fixtures.js").ServidorBuscaMock } | { ok: false; error: string } {
   const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === input.matricula && prefeituraIdDe(x) === input.prefeituraId);
 
   // Admissão pode criar um servidor novo se não existir.
@@ -88,7 +88,14 @@ export function applyMovimentacao(input: {
       if (input.cargoNovo) target.cargo = input.cargoNovo;
       if (input.salarioNovo != null) target.salarioLiquido = input.salarioNovo;
       break;
-    case "admissao": break; // já tratado acima
+    case "admissao":
+      // Readmissao: se o servidor ja existe mas foi DESLIGADO/APOSENTADO,
+      // reativa (situacaoFuncional -> TRABALHANDO). Antes era no-op, o que
+      // impedia readmitir servidor demitido por engano.
+      if (target.situacaoFuncional === "DESLIGADO" || target.situacaoFuncional === "APOSENTADO") {
+        target.situacaoFuncional = "TRABALHANDO";
+      }
+      break;
   }
 
   const mov: Movimentacao = {
@@ -99,7 +106,11 @@ export function applyMovimentacao(input: {
     cargoNovo: input.cargoNovo, salarioNovo: input.salarioNovo, criadoEm: now,
   };
   _movimentacoes.push(mov);
-  return { ok: true, mov, contratosAtingidos };
+  // Callsite (handler /prefeitura/folhas/:id/movimentacao) precisa persistir
+  // servidorAtualizado no PG — sem isso, mutacoes de situacaoFuncional (F6)
+  // e salario ficam so no isolate que atendeu, outros isolates continuam
+  // servindo dados antigos (bug F6: servidor demitido continuava logando).
+  return { ok: true, mov, contratosAtingidos, servidorAtualizado: target };
 }
 
 function defaultDetalhe(t: MovimentacaoTipo): string {
