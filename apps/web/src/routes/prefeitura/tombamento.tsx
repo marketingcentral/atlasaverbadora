@@ -73,7 +73,8 @@ export function PrefeituraTombamento() {
     })),
   });
 
-  const linhas: Linha[] = useMemo(() => {
+  // Achata todas as linhas de todos os lotes (com competencia herdada do lote).
+  const linhasTodas: Linha[] = useMemo(() => {
     const out: Linha[] = [];
     lotes.forEach((lote, idx) => {
       const data = linhasQueries[idx]?.data as { linhas: Linha[] } | undefined;
@@ -83,6 +84,15 @@ export function PrefeituraTombamento() {
     });
     return out;
   }, [lotes, linhasQueries]);
+
+  // Filtra pela competencia selecionada no seletor — se o usuario troca de mes
+  // no picker, a tabela abaixo mostra so as linhas daquela competencia.
+  const linhas = useMemo(
+    () => linhasTodas.filter((l) => l.competencia === competencia),
+    [linhasTodas, competencia],
+  );
+  // Resumo do lote/linhas na competencia selecionada.
+  const lotesNaCompetencia = lotes.filter((l) => l.competencia === competencia);
 
   const carregando = lotesQ.isLoading || linhasQueries.some((q) => q.isLoading);
 
@@ -129,18 +139,25 @@ export function PrefeituraTombamento() {
         />
       </Card>
 
-      {lotes.length > 0 ? (
-        <div style={{ padding: "10px 14px", background: "var(--bg-elev-2)", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
-          <b>{lotes.length}</b> lote(s) enviado(s) · <b>{linhas.length}</b> contrato(s) declarado(s) no total
-        </div>
-      ) : null}
+      <div style={{ padding: "10px 14px", background: "var(--bg-elev-2)", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
+        Competência selecionada: <b style={{ color: "var(--gold-500)" }}>{labelCompetencia(competencia)}</b> · <b>{lotesNaCompetencia.length}</b> lote(s) · <b>{linhas.length}</b> contrato(s)
+        {lotes.length > lotesNaCompetencia.length ? (
+          <span style={{ marginLeft: 8, color: "var(--text-dim)", fontSize: 12 }}>
+            (outras competências: {lotes.length - lotesNaCompetencia.length} lote(s) ocultos)
+          </span>
+        ) : null}
+      </div>
 
       <DataTable
         columns={columnsContratos}
         rows={linhas}
         rowKey={(l) => `${l.loteId}:${l.matricula}:${l.adfBanco}`}
         loading={carregando}
-        emptyState="Nenhum contrato tombado. Envie o CSV de remessa acima."
+        emptyState={
+          lotes.length > 0
+            ? `Sem contratos tombados em ${labelCompetencia(competencia)}. Troque a competência acima ou envie um CSV para este mês.`
+            : "Nenhum contrato tombado. Envie o CSV de remessa acima."
+        }
       />
     </div>
   );
