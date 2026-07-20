@@ -35,7 +35,12 @@ function campoParaColuna(campo: ServidorCampoConfig, onEdit: (s: AdminServidor) 
   };
   base.render = (s) => {
     const v = getValor(s, campo.key);
-    if (v == null || v === "") return <span style={{ color: "var(--text-dim)" }}>—</span>;
+    const dim = <span style={{ color: "var(--text-dim)" }}>—</span>;
+    // Vazio/nulo -> "—". Numero==0 tambem trata como vazio (IBGE 0 = nao veio
+    // no CSV, salario 0 = nao informado). Mesma regra do servidores.tsx antigo.
+    if (v == null || v === "") return dim;
+    if (campo.tipo === "numero" && Number(v) === 0) return dim;
+    if (campo.tipo === "moeda" && Number(v) === 0) return dim;
     if (campo.key === "cpf") return fmtCpf(String(v));
     if (campo.key === "status") {
       const st = String(v) as AdminServidor["status"];
