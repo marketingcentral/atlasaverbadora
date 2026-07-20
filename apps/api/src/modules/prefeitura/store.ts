@@ -276,8 +276,25 @@ export function setAdfStatus(prefeituraId: number, adfIds: string[], status: Adf
   return contratoAdfs;
 }
 
-/** Averbadora: aplica/reporta falha sem filtrar por prefeituraId. */
-export function setAdfStatusGlobal(adfIds: string[], status: AdfStatus, motivo: string | undefined, now: string): string[] {
+/** Averbadora: aplica/reporta falha sem filtrar por prefeituraId.
+ *  Bloqueia mudanca em ADF de folha CONSOLIDADA (imutabilidade contabil BACEN).
+ *  Se `folhaStatusOf` retorna 'consolidada' pra alguma ADF pedida, LANCA erro
+ *  com a lista de ADFs que nao podem ser tocadas.
+ *  `folhaStatusOf` e uma callback pra evitar dependencia circular com admin. */
+export function setAdfStatusGlobal(
+  adfIds: string[], status: AdfStatus, motivo: string | undefined, now: string,
+  folhaStatusOf?: (prefeituraId: number, competencia: string) => string | undefined,
+): string[] {
+  if (folhaStatusOf) {
+    const bloqueadas: string[] = [];
+    for (const a of _adfs) {
+      if (!adfIds.includes(a.id)) continue;
+      if (folhaStatusOf(a.prefeituraId, a.competencia) === "consolidada") bloqueadas.push(a.id);
+    }
+    if (bloqueadas.length > 0) {
+      throw new Error(`Folha consolidada: ADF(s) imutavel(is) ${bloqueadas.join(", ")}. Reabra a folha (consolidada -> fechada) antes.`);
+    }
+  }
   const contratoAdfs: string[] = [];
   for (const a of _adfs) {
     if (adfIds.includes(a.id)) {

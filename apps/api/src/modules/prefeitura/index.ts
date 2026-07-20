@@ -11,7 +11,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { bancos, folhas, prefeituras, ensureFolhasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
+import { bancos, folhas, prefeituras, ensureFolhasLoaded, persistFolha, autoFecharFolhasVencidas, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
@@ -445,15 +445,17 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   // ===== Passo 4 — Folha mensal =====
   .get("/v1/prefeitura/folhas", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
     // Reload from PG a cada request — folhas apagadas/criadas em outro isolate
     // (ou pelo admin diretamente no PG) precisam refletir imediatamente. Sem
-    // isso, isolate warm segurava a lista velha (bug: folha 202608 apagada
-    // mas continuava aparecendo em GET de outros isolates).
+    // isso, isolate warm segurava a lista velha.
     try {
       const rows = await loadCollection<FolhaAdmin>(c.env, "admin_folhas");
       folhas.length = 0;
       folhas.push(...rows);
     } catch { /* fail-safe: usa in-memory */ }
+    // Auto-fecha folhas vencidas antes de listar (data corte < hoje -> fechada).
+    await autoFecharFolhasVencidas(c.env);
     // Sincroniza contratos + convenios (contratos aprovados em outro isolate
     // viram ADFs) antes de contar. Sem refreshConvenios, CONVENIOS_MOCK fica
     // vazio no isolate frio -> ensureAdfs nao acha contratos pelo convenioId
