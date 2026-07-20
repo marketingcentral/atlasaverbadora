@@ -16,7 +16,7 @@ export interface ConvenioMock {
   ativo?: boolean;
 }
 
-export type ComunicadoPublico = "banco" | "servidor";
+export type ComunicadoPublico = "banco" | "servidor" | "prefeitura";
 
 export interface ComunicadoMock {
   id: string;

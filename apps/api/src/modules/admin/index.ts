@@ -2281,7 +2281,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         corpo: z.string().min(1),
         linkLabel: z.string().optional(),
         linkHref: z.string().optional(),
-        publico: z.enum(["banco", "servidor"]),
+        publico: z.enum(["banco", "servidor", "prefeitura"]),
       })
       .parse(await c.req.json());
     if (body.id) {

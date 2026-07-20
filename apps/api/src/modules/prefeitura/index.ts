@@ -856,17 +856,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/prefeitura/comunicados", async (c) => {
     requirePrefeitura(c.get("jwt"));
     await refreshComunicados(c.env);
-    // Reaproveita a lista compartilhada (COMUNICADOS_MOCK) mas re-aponta os
-    // links para rotas validas no portal da prefeitura. O mock original tinha
-    // links tipo '/banco/cadastros' que sao invisiveis para o perfil prefeitura.
-    const remap: Record<string, { linkHref?: string; linkLabel?: string }> = {
-      "COM-1": { linkHref: "/prefeitura/convenios", linkLabel: "Ver convenios" },
-      "COM-2": { linkHref: "/prefeitura/materiais", linkLabel: "Baixar materiais" },
-    };
-    const comunicados = COMUNICADOS_MOCK.map((c) => {
-      const patch = remap[c.id];
-      return patch ? { ...c, ...patch } : c;
-    });
+    // So os comunicados destinados a prefeitura — publicados pela averbadora
+    // via /averbadora/comunicados/prefeitura. Banco/servidor tem seus proprios
+    // feeds filtrados no /portal/banco/comunicados e /servidores/me/comunicados.
+    const comunicados = COMUNICADOS_MOCK.filter((c) => c.publico === "prefeitura");
     return c.json({ comunicados });
   });
 

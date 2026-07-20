@@ -212,6 +212,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "comunicados", element: <Navigate to="/averbadora/comunicados/banco" replace /> },
           { path: "comunicados/banco", element: <AdminComunicados publico="banco" /> },
           { path: "comunicados/servidor", element: <AdminComunicados publico="servidor" /> },
+          { path: "comunicados/prefeitura", element: <AdminComunicados publico="prefeitura" /> },
           { path: "health", element: <AdminHealth /> },
           { path: "configuracoes", element: <AverbadoraConfiguracoes /> },
           { path: "ia", element: <AverbadoraConfiguracoes /> },

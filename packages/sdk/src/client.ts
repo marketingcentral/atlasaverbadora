@@ -871,7 +871,7 @@ export interface AdminFolhaInput {
   status: "aberta" | "fechada" | "consolidada";
 }
 
-export type ComunicadoPublico = "banco" | "servidor";
+export type ComunicadoPublico = "banco" | "servidor" | "prefeitura";
 
 export interface Comunicado {
   id: string;

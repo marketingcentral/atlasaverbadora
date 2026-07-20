@@ -30,6 +30,7 @@ const NAV = [
     children: [
       { key: "comunicados-banco", label: "Banco", href: "/averbadora/comunicados/banco" },
       { key: "comunicados-servidor", label: "Servidor", href: "/averbadora/comunicados/servidor" },
+      { key: "comunicados-prefeitura", label: "Prefeitura", href: "/averbadora/comunicados/prefeitura" },
     ],
   },
   {

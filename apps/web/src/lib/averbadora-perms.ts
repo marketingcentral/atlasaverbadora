@@ -67,6 +67,7 @@ export const RESOURCE_GROUPS: { titulo: string; recursos: { key: string; label: 
       { key: "comunicados", label: "Comunicados (todos)" },
       { key: "comunicados-banco", label: "Comunicados — Banco" },
       { key: "comunicados-servidor", label: "Comunicados — Servidor" },
+      { key: "comunicados-prefeitura", label: "Comunicados — Prefeitura" },
     ],
   },
   {
@@ -117,7 +118,7 @@ export const PRESETS: Record<AverbadoraPerfil, string[]> = {
   ],
   comercial: [
     "dashboard", "health", "conta",
-    "vitrine", "comunicados", "comunicados-banco", "comunicados-servidor",
+    "vitrine", "comunicados", "comunicados-banco", "comunicados-servidor", "comunicados-prefeitura",
     "interessados",
   ],
   financeiro: [

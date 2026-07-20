@@ -15,6 +15,7 @@ import type { Comunicado, ComunicadoPublico } from "@atlas/sdk";
 const PUBLICO_LABEL: Record<ComunicadoPublico, string> = {
   banco: "Banco",
   servidor: "Servidor",
+  prefeitura: "Prefeitura",
 };
 
 export function AdminComunicados({ publico }: { publico?: ComunicadoPublico } = {}) {
@@ -97,14 +98,18 @@ export function AdminComunicados({ publico }: { publico?: ComunicadoPublico } = 
               ? "Comunicados para bancos"
               : publico === "servidor"
                 ? "Comunicados para servidores"
-                : "Comunicados"}
+                : publico === "prefeitura"
+                  ? "Comunicados para prefeituras"
+                  : "Comunicados"}
           </h1>
           <p style={{ color: "var(--text-muted)" }}>
             {publico === "banco"
               ? "Avisos que aparecem no portal dos bancos parceiros."
               : publico === "servidor"
                 ? "Avisos que aparecem no app dos servidores municipais."
-                : "Publique avisos para bancos parceiros ou para servidores. Cada comunicado aparece somente no público escolhido."}
+                : publico === "prefeitura"
+                  ? "Avisos que aparecem no portal das prefeituras conveniadas."
+                  : "Publique avisos para bancos, servidores ou prefeituras. Cada comunicado aparece somente no público escolhido."}
           </p>
         </div>
         <Button onClick={() => setEditing("new")}>+ Novo comunicado</Button>
@@ -192,7 +197,7 @@ export function AdminComunicados({ publico }: { publico?: ComunicadoPublico } = 
                 </span>
                 {publico ? null : (
                   <span>
-                    <Pill variant={(c.publico ?? "banco") === "servidor" ? "averbado" : "emdia"}>
+                    <Pill variant={(c.publico ?? "banco") === "servidor" ? "averbado" : (c.publico === "prefeitura" ? "aceita" : "emdia")}>
                       {PUBLICO_LABEL[c.publico ?? "banco"]}
                     </Pill>
                   </span>
@@ -311,6 +316,7 @@ function ComunicadoModal({
               options={[
                 { value: "banco", label: "Banco (aparece no portal dos bancos)" },
                 { value: "servidor", label: "Servidor (aparece no app do servidor)" },
+                { value: "prefeitura", label: "Prefeitura (aparece no portal das prefeituras)" },
               ]}
               required
             />
