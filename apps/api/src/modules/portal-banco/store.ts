@@ -346,6 +346,31 @@ export function setContratoDesligamento(adf: string, motivo: string): ContratoFu
   return c;
 }
 
+/** Reverte cascade de desligamento — chamado quando um servidor foi marcado
+ *  como desligado por engano OU foi readmitido. Volta situacao pra "Aprovado"
+ *  (estado padrao pos-aprovacao do banco, aguardando ADF da averbadora) e
+ *  limpa folhaStatus/folhaMotivo. Idempotente: se contrato nao esta em
+ *  "cobranca direta", retorna sem alterar. */
+export function revertContratoDesligamento(adf: string, ator: string): ContratoFull | undefined {
+  const c = _contratos.get(adf);
+  if (!c) return undefined;
+  const s = c.situacao.toLowerCase();
+  if (!s.includes("cobran")) return c;
+  const de = c.situacao;
+  c.situacao = "Aprovado";
+  c.folhaStatus = undefined;
+  c.folhaMotivo = undefined;
+  _eventos.push({
+    id: _eventoId++, contratoId: adf,
+    evento: "reversao_desligamento",
+    deEstado: de, paraEstado: c.situacao,
+    ator,
+    motivo: "reversao manual (readmissao ou correcao)",
+    criadoEm: new Date().toISOString(),
+  });
+  return c;
+}
+
 /** Lista contratos ativos de uma matricula (pra cascade de desligamento). */
 export function listContratosAtivosDaMatricula(matricula: string): ContratoFull[] {
   const out: ContratoFull[] = [];

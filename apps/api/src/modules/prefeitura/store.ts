@@ -282,6 +282,20 @@ export function listAdfsGlobal(competencia?: string): AdfEntry[] {
   return _adfs.filter((a) => !competencia || a.competencia === competencia);
 }
 
+/** Remove entradas de _adfs por lista de ADF ids (a chave `adf` do contrato,
+ *  nao o `id` interno). Usado ao reverter cascade de desligamento — sem isso
+ *  as ADFs stale com folhaStatus="interrompida_desligamento" nao rehidratam
+ *  no proximo ensureAdfs. */
+export function removeAdfsByContratoAdf(contratoAdfs: string[]): number {
+  const set = new Set(contratoAdfs);
+  let n = 0;
+  for (let i = _adfs.length - 1; i >= 0; i--) {
+    const a = _adfs[i];
+    if (a && set.has(a.adf)) { _adfs.splice(i, 1); n++; }
+  }
+  return n;
+}
+
 /** Remove ADFs pertencentes a matriculas dadas (in-memory). Usado pelo purge
  *  admin apos deleteContratosByMatriculas + removeContratosByMatricula — sem
  *  isso o `_adfs` continuaria referenciando contratos que sumiram. */

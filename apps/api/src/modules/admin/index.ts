@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb, revertContratoDesligamento } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -26,7 +26,7 @@ import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, t
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes, purgeCotacoes, setCotacaoContrato, removeCotacaoContrato, loadCotacoes as loadCotacoesAdmin } from "./telemedicina-cotacoes-store.js";
-import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula } from "../prefeitura/store.js";
+import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula, removeAdfsByContratoAdf } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
@@ -1330,6 +1330,37 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ⚠️ OPERACAO DESTRUTIVA (escopo cirurgico): zera SO servidores + contratos +
   // ADFs + propostas + eventos + consentimentos. NAO toca em bancos, prefeituras
   // ou convenios. Cliente pediu (16/07/2026): "vamos comecar essa parte do zero".
+  // Reverte cascade F6 de desligamento em contratos especificos. Usado quando
+  // um servidor foi marcado como desligado por engano (ou readmitido). Body:
+  // { senha, adfs: [...] }. Cada contrato listado volta pra situacao="Aprovado"
+  // + folhaStatus limpo, e a ADF stale eh removida do _adfs pra rehidratar
+  // como "recebida" no proximo ensureAdfs.
+  .post("/v1/admin/contratos/reverter-desligamento", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "adf");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string; adfs?: string[] };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha de operacoes destrutivas nao configurada." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const adfs = (body.adfs ?? []).filter(Boolean);
+    if (adfs.length === 0) throw Errors.validation({ adfs: "Informe pelo menos uma ADF." });
+    await refreshContratos(c.env);
+    const ator = `averbadora:${j?.sub}`;
+    const revertidos: string[] = [];
+    for (const adf of adfs) {
+      const ct = revertContratoDesligamento(adf, ator);
+      if (ct && !ct.situacao.toLowerCase().includes("cobran")) {
+        await persistContrato(c.env, adf);
+        revertidos.push(adf);
+      }
+    }
+    // Limpa ADFs stale para que o proximo ensureAdfs recrie com status correto.
+    removeAdfsByContratoAdf(revertidos);
+    appendAudit({ categoria: "margem", acao: "reverter_desligamento", userId: ator, userRole: "averbadora", detalhes: `Reversao de cascade F6 em ${revertidos.length} contrato(s): ${revertidos.join(", ")}.` });
+    pushEvent("info", "admin.contratos.reverter_desligamento", `Reversao F6 por admin ${j?.sub}: ${revertidos.length} contratos.`);
+    return c.json({ ok: true, revertidos });
+  })
   // Delete cirurgico por matricula(s) — protegido por ADMIN_PURGE_PASSWORD.
   // Usado pra expurgar contas de teste especificas (Diego/Mariana em 17/07/2026)
   // sem zerar a base inteira via /db/purge-servidores. Body: { senha, matriculas[] }.
