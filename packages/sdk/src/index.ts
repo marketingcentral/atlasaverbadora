@@ -14,6 +14,7 @@ export type {
   AdminConvenio, AdminConvenioInput,
   AdminConvenioConfig, FormatoImportacao, VinculoAceito,
   AdminServidor, AdminServidorUpdate,
+  ServidorCampoConfig, ServidorCamposConfig, ServidorCampoTipo,
   AdminFolha, AdminFolhaInput,
   AdminBanner,
   Comunicado, ComunicadoInput, ComunicadoPublico,

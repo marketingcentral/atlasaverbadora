@@ -34,6 +34,7 @@ import { ensurePortabilidadesLoaded, listIntencoes } from "./portabilidade-store
 import { ensureTermosLoaded, listTermos, getTermo, upsertTermo, type TermoTipo } from "./termos-store.js";
 import { getSuporteConfig, setSuporteConfig } from "./suporte.js";
 import { requireUnlocked, getLockState, unlock as unlockDestructive, lock as lockDestructive, MAX_UNLOCK_SEC } from "./destructive-lock.js";
+import { ensureServidorCamposConfig, getServidorCamposConfig, refreshServidorCamposConfigs, upsertServidorCamposConfig, persistServidorCamposConfig, sanitizeCampos, defaultCamposSet, CHAVES_TRAVADAS, type ServidorCampoConfig, type ServidorCampoTipo } from "./servidor-campos.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -819,43 +820,69 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
       linhas,
     ));
   })
-  // Servidores: idConvenio TEM que existir. Se base tem convenios cadastrados,
-  // usa os IDs reais. Se vazia, avisa. CPFs com prefixo "999" pra nao confundir
-  // com CPF real (ja aconteceu de importarem de volta).
+  // Servidores: template DINAMICO por prefeitura. Requer ?prefeituraId=N. Le
+  // a config de campos da prefeitura (admin_servidor_campos_configs) e gera
+  // headers apenas dos campos `visivel:true`, na ordem definida. Sem config,
+  // usa default (14 campos built-in). Ver `modules/admin/servidor-campos.ts`.
   .get("/v1/admin/servidores/csv-template", async (c) => {
     await Promise.all([ensureBancosLoaded(c.env), ensurePrefeiturasLoaded(c.env)]);
-    // Leitura leve dos convenios via CONVENIOS_MOCK (populado por refreshConvenios).
-    // Fallback: se vazio, tenta forçar refresh (best-effort).
     if (CONVENIOS_MOCK.length === 0) {
       try { await refreshConvenios(c.env); } catch { /* ignore */ }
     }
-    const convs = CONVENIOS_MOCK.slice(0, 2);
-    const headers = ["cpf", "matricula", "nome", "dataAdmissao", "dataNascimento",
-      "vinculo", "situacaoFuncional", "salarioLiquido", "idConvenio",
-      "cargo", "endereco", "email", "telefone", "codigoIbge"];
-    if (convs.length === 0) {
-      const aviso = `# Cadastre pelo menos 1 convenio antes de importar servidores.\n# Sem convenio cadastrado, o servidor fica orfao (sem prefeitura resolvida).\n${headers.join(",")}\n`;
+    const prefIdRaw = new URL(c.req.url).searchParams.get("prefeituraId");
+    const prefId = Number(prefIdRaw);
+    if (!prefIdRaw || !Number.isFinite(prefId)) {
+      const aviso = "# Query param obrigatorio: ?prefeituraId=N\n# Cada prefeitura tem seus proprios campos de servidor configuraveis.\n";
       return csvResponse("servidores-exemplo.csv", aviso);
     }
-    // Casa cada convenio com sua prefeitura pra pegar codigoIbge/endereco coerentes.
-    const prefById = new Map(prefeituras.map((p) => [p.id, p]));
-    const linhas = convs.map((cv, i) => {
-      const p = prefById.get(cv.prefeituraId);
-      const cidade = p?.nome ?? cv.prefeitura;
-      const uf = p?.uf ?? cv.uf ?? "SC";
-      return {
-        cpf: `9990001112${i}`, matricula: `EXEMPLO-900${i + 1}`,
-        nome: `EXEMPLO - Servidor ${i + 1}`,
-        dataAdmissao: "17/04/2017", dataNascimento: "1985-03-12",
-        vinculo: "ESTATUTARIO", situacaoFuncional: "TRABALHANDO",
-        salarioLiquido: 4620.50 + i * 500,
-        idConvenio: cv.id,
-        cargo: i === 0 ? "Professora II" : "Motorista",
-        endereco: `Rua Exemplo, ${100 + i} - Centro, ${cidade}/${uf}`,
-        email: `exemplo${i + 1}@example.com`,
-        telefone: `48991010${String(i + 1).padStart(3, "0")}`,
-        codigoIbge: p?.municipioIbge ?? 4211900,
-      };
+    const pref = prefeituras.find((p) => p.id === prefId);
+    if (!pref) {
+      const aviso = `# Prefeitura ${prefId} nao encontrada.\n`;
+      return csvResponse("servidores-exemplo.csv", aviso);
+    }
+    await refreshServidorCamposConfigs(c.env);
+    const config = ensureServidorCamposConfig(prefId);
+    const camposVisiveis = config.campos.filter((f) => f.visivel).sort((a, b) => a.ordem - b.ordem);
+    const headers = camposVisiveis.map((f) => f.key);
+    const convs = CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefId).slice(0, 2);
+    if (convs.length === 0) {
+      const aviso = `# Prefeitura ${pref.nome} sem convenios cadastrados. Cadastre um convenio antes.\n${headers.join(",")}\n`;
+      return csvResponse("servidores-exemplo.csv", aviso);
+    }
+    // Gera 1-2 linhas de exemplo. Para cada header visivel, chama placeholder
+    // apropriado por tipo (built-in ou custom).
+    const placeholderFor = (key: string, tipo: ServidorCampoTipo, idx: number): string => {
+      // Built-ins com valores coerentes com convenio/prefeitura escolhidos.
+      switch (key) {
+        case "cpf": return `9990001112${idx}`;
+        case "matricula": return `EXEMPLO-900${idx + 1}`;
+        case "nome": return `EXEMPLO - Servidor ${idx + 1}`;
+        case "email": return `exemplo${idx + 1}@example.com`;
+        case "telefone": return `48991010${String(idx + 1).padStart(3, "0")}`;
+        case "cargo": return idx === 0 ? "Professora II" : "Motorista";
+        case "vinculo": return "ESTATUTARIO";
+        case "situacaoFuncional": return "TRABALHANDO";
+        case "salarioLiquido": return String(4620.50 + idx * 500);
+        case "idConvenio": return convs[idx]?.id ?? convs[0]!.id;
+        case "dataAdmissao": return "17/04/2017";
+        case "dataNascimento": return "1985-03-12";
+        case "endereco": return `Rua Exemplo, ${100 + idx} - Centro, ${pref.nome}/${pref.uf}`;
+        case "codigoIbge": return String(pref.municipioIbge ?? 4211900);
+      }
+      // Campo custom: placeholder por tipo.
+      switch (tipo) {
+        case "numero": return String(100 + idx);
+        case "moeda": return String(1000 + idx * 250);
+        case "data": return "2020-01-15";
+        case "email": return `custom${idx + 1}@example.com`;
+        case "telefone": return `48999880${String(idx + 1).padStart(3, "0")}`;
+        default: return `Exemplo ${idx + 1}`;
+      }
+    };
+    const linhas = [0, 1].slice(0, Math.max(1, convs.length)).map((idx) => {
+      const row: Record<string, string> = {};
+      for (const f of camposVisiveis) row[f.key] = placeholderFor(f.key, f.tipo, idx);
+      return row;
     });
     return csvResponse("servidores-exemplo.csv", buildCsv(headers, linhas));
   });
@@ -2156,6 +2183,36 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ convenios: detalhado });
   })
 
+  // Config dos campos de servidor POR PREFEITURA. Cada prefeitura escolhe quais
+  // campos quer visiveis + obrigatorios + custom. cpf/matricula/email travados.
+  // Ver `modules/admin/servidor-campos.ts`.
+  .get("/v1/admin/servidores/campos-config/:prefeituraId", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
+    const prefId = Number(c.req.param("prefeituraId"));
+    if (!Number.isFinite(prefId)) throw Errors.validation({ prefeituraId: "invalido" });
+    await refreshServidorCamposConfigs(c.env);
+    const config = ensureServidorCamposConfig(prefId);
+    // Se acabou de criar (sem persist), grava agora pra sincronizar isolates.
+    try { await persistServidorCamposConfig(c.env, config); } catch { /* best-effort */ }
+    return c.json({ config });
+  })
+  .put("/v1/admin/servidores/campos-config/:prefeituraId", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
+    const prefId = Number(c.req.param("prefeituraId"));
+    if (!Number.isFinite(prefId)) throw Errors.validation({ prefeituraId: "invalido" });
+    const pref = prefeituras.find((p) => p.id === prefId);
+    if (!pref) throw Errors.notFound("prefeitura");
+    const body = (await c.req.json().catch(() => ({}))) as { campos?: ServidorCampoConfig[] };
+    const camposIn = Array.isArray(body.campos) ? body.campos : [];
+    // sanitizeCampos re-injeta visivel+obrigatorio+travado nos travados
+    // (cpf/matricula/email) — payload malicioso nao consegue desligar.
+    const camposLimpos = sanitizeCampos(camposIn);
+    const config = upsertServidorCamposConfig({ prefeituraId: prefId, campos: camposLimpos });
+    await persistServidorCamposConfig(c.env, config);
+    pushEvent("info", "admin.servidor_campos.update", `Campos de servidor da prefeitura ${pref.nome} atualizados por admin ${j?.sub}: ${config.campos.length} campos (${config.campos.filter((f) => f.visivel).length} visiveis).`);
+    return c.json({ config });
+  })
+
   .get("/v1/admin/servidores", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
     // Sincroniza SERVIDORES_BUSCA_MOCK com o PG a CADA request — sem isso,
@@ -2196,6 +2253,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       dataAdmissao: s.dataAdmissao ?? "",
       dataNascimento: s.dataNascimento ?? "",
       hasPassword: !!s.passwordHash,
+      camposCustom: s.camposCustom ?? {},
     }));
     if (prefeituraId) {
       const p = prefeituras.find((x) => x.id === Number(prefeituraId));
@@ -3737,6 +3795,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // vazio mesmo com convenios persistidos, e a importacao devolvia erro
     // "prefeitura nao possui convenios" mentindo pro usuario.
     await refreshConvenios(c.env);
+    await refreshServidorCamposConfigs(c.env);
+    const config = ensureServidorCamposConfig(prefId);
+    const camposByKey = new Map(config.campos.map((f) => [f.key, f]));
+    const camposCustomAtivos = config.campos.filter((f) => !f.sistema && f.visivel);
     const conveniosPref = CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefId);
     const defaultConvenioId = conveniosPref[0]?.id ?? "";
     const text = await readCsvBody(c);
@@ -3744,11 +3806,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const out: ImportOutcome<typeof SERVIDORES_BUSCA_MOCK[number]> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
     rows.forEach((r, idx) => {
       const line = idx + 2;
+      // Obrigatorios TRAVADOS (cpf/matricula/email) + os que a prefeitura marcou
+      // como `obrigatorio:true` na config. Rejeita se faltar qualquer um.
+      for (const f of config.campos) {
+        if (!f.obrigatorio || !f.sistema) continue;
+        const val = (r[f.key] ?? "").toString().trim();
+        if (!val) { out.errors.push({ line, message: `campo obrigatorio faltando: ${f.key}` }); return; }
+      }
       const cpf = (r.cpf ?? "").replace(/\D/g, "");
       if (cpf.length !== 11) { out.errors.push({ line, message: "cpf deve ter 11 digitos" }); return; }
-      if (!r.nome) { out.errors.push({ line, message: "nome obrigatorio" }); return; }
-      if (!r.matricula) { out.errors.push({ line, message: "matricula obrigatoria" }); return; }
-      const matricula = normalizeMatricula(r.matricula);
+      const emailReq = camposByKey.get("email");
+      if (emailReq?.obrigatorio && !(r.email ?? "").trim()) {
+        out.errors.push({ line, message: "email obrigatorio (login do servidor)" }); return;
+      }
+      const matricula = normalizeMatricula(r.matricula ?? "");
       if (!MATRICULA_REGEX.test(matricula)) {
         out.errors.push({ line, message: `matricula "${r.matricula}" invalida: use alfanumerico + hifen, 1..30 chars (ex: 852029100, M-009821)` });
         return;
@@ -3794,6 +3865,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (r.endereco) s.endereco = r.endereco;
       if (r.email) s.email = r.email;
       if (r.telefone) s.telefone = r.telefone;
+      // Campos custom da config: le do CSV pela key e guarda em camposCustom.
+      if (camposCustomAtivos.length > 0) {
+        const custom: Record<string, string> = { ...(existing?.camposCustom ?? {}) };
+        for (const f of camposCustomAtivos) {
+          const val = (r[f.key] ?? "").toString().trim();
+          if (val) custom[f.key] = val;
+        }
+        if (Object.keys(custom).length > 0) s.camposCustom = custom;
+      }
       if (existing) { Object.assign(existing, s); out.updated++; }
       else { SERVIDORES_BUSCA_MOCK.push(s); out.inserted++; }
       out.rows.push(s);

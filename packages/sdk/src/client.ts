@@ -825,6 +825,26 @@ export interface AdminServidor {
   dataNascimento?: string;
   /** true se o servidor já tem senha cadastrada; o plaintext nunca é retornado. */
   hasPassword: boolean;
+  /** Campos custom por prefeitura (config em admin_servidor_campos_configs).
+   *  Chave = key do campo (`custom_<slug>`). */
+  camposCustom?: Record<string, string>;
+}
+
+export type ServidorCampoTipo = "texto" | "numero" | "data" | "moeda" | "email" | "telefone";
+export interface ServidorCampoConfig {
+  key: string;
+  label: string;
+  tipo: ServidorCampoTipo;
+  obrigatorio: boolean;
+  visivel: boolean;
+  ordem: number;
+  sistema: boolean;
+  travado?: boolean;
+}
+export interface ServidorCamposConfig {
+  prefeituraId: number;
+  campos: ServidorCampoConfig[];
+  atualizadoEm: string;
 }
 
 export interface AdminServidorUpdate {
@@ -1880,6 +1900,15 @@ export class AtlasClient {
       this.request<{ servidores: AdminServidor[]; total: number }>("/v1/admin/servidores", { query: q ?? {} }),
     updateServidor: (matricula: string, body: AdminServidorUpdate) =>
       this.request<{ servidor: AdminServidor }>(`/v1/admin/servidores/${matricula}`, { method: "PATCH", body }),
+    /** Le a config de campos de servidor da prefeitura (cria default se ainda nao existe). */
+    getServidorCamposConfig: (prefeituraId: number) =>
+      this.request<{ config: ServidorCamposConfig }>(`/v1/admin/servidores/campos-config/${prefeituraId}`),
+    /** Salva a config de campos. Backend re-injeta cpf/matricula/email como travados. */
+    updateServidorCamposConfig: (prefeituraId: number, campos: ServidorCampoConfig[]) =>
+      this.request<{ config: ServidorCamposConfig }>(`/v1/admin/servidores/campos-config/${prefeituraId}`, { method: "PUT", body: { campos } }),
+    /** URL do CSV modelo dinamico da prefeitura (colunas seguem a config). */
+    servidoresCsvTemplateUrl: (prefeituraId: number): string =>
+      `${this.opts.baseUrl}/v1/admin/servidores/csv-template?prefeituraId=${prefeituraId}`,
     listFolhas: () => this.request<{ folhas: AdminFolha[] }>("/v1/admin/folhas"),
     upsertFolha: (f: AdminFolhaInput) => this.request<{ folha: AdminFolha }>("/v1/admin/folhas", { method: "POST", body: f }),
     consolidarFolha: (id: string) => this.request<{ folha: AdminFolha }>(`/v1/admin/folhas/${id}/consolidar`, { method: "POST" }),

@@ -11,7 +11,15 @@ const NAV = [
   // Ordem pedida pelo cliente (16/07/2026): Dashboard > Prefeituras > Bancos > Servidores > Convênios.
   { key: "prefeituras", label: "Prefeituras", href: "/averbadora/prefeituras", icon: "▤" },
   { key: "bancos", label: "Bancos", href: "/averbadora/bancos", icon: "▦" },
-  { key: "servidores", label: "Servidores", href: "/averbadora/servidores", icon: "◎" },
+  {
+    key: "servidores",
+    label: "Servidores",
+    icon: "◎",
+    children: [
+      { key: "servidores-visualizar", label: "Ver servidores", href: "/averbadora/servidores/visualizar" },
+      { key: "servidores-importar", label: "Importar servidores", href: "/averbadora/servidores/importar" },
+    ],
+  },
   { key: "convenios", label: "Convênios", href: "/averbadora/convenios", icon: "▣" },
   { key: "contratos", label: "Contratos", href: "/averbadora/contratos", icon: "▧" },
   { key: "folhas", label: "Folhas", href: "/averbadora/folhas", icon: "▥" },
@@ -77,7 +85,7 @@ export function AverbadoraLayout() {
   // nao-supervisor pra dashboard toda vez que abre um sub-item de email.
   const activeKey = (() => {
     if (parts[1] === "emails" && parts[2]) return `email-${parts[2]}`;
-    if ((parts[1] === "api" || parts[1] === "comunicados") && parts[2]) return `${parts[1]}-${parts[2]}`;
+    if ((parts[1] === "api" || parts[1] === "comunicados" || parts[1] === "servidores") && parts[2]) return `${parts[1]}-${parts[2]}`;
     return parts[1] ?? "dashboard";
   })();
 
@@ -93,21 +101,26 @@ export function AverbadoraLayout() {
   }, [location.pathname]); // reavalia ao trocar de tela (novo token via refresh)
 
   // Redireciona quem tenta abrir uma URL fora do escopo das permissoes.
+  // Sub-itens (foo-bar) herdam o grant do parent `foo` se ele tiver.
   useEffect(() => {
     if (!permissoes || permissoes.includes("*")) return;
-    if (!podeAcessar(permissoes, activeKey)) {
+    const parentKey = activeKey.includes("-") ? activeKey.split("-")[0]! : activeKey;
+    if (!podeAcessar(permissoes, activeKey) && !podeAcessar(permissoes, parentKey)) {
       nav("/averbadora/dashboard", { replace: true });
     }
   }, [permissoes, activeKey, nav]);
 
   // Filtra o menu conforme as permissoes — remove itens que o usuario nao pode ver.
+  // Sub-itens herdam a permissao do parent (ex: `servidores-importar` cai no
+  // grant de `servidores`), a menos que tenham chave propria em RESOURCE_GROUPS.
   const filteredNav = useMemo(() => {
     return NAV
       .map((item) => {
         if (!("children" in item) || !item.children) {
           return podeAcessar(permissoes, item.key) ? item : null;
         }
-        const kids = item.children.filter((c) => podeAcessar(permissoes, c.key));
+        const parentOk = podeAcessar(permissoes, item.key);
+        const kids = item.children.filter((c) => parentOk || podeAcessar(permissoes, c.key));
         if (kids.length === 0) return null;
         return { ...item, children: kids };
       })

@@ -77,6 +77,10 @@ export interface ServidorBuscaMock {
   twoFactorSecret?: string;
   /** RG (opcional, informativo). */
   rg?: string;
+  /** Campos customizados por prefeitura (config em admin_servidor_campos_configs).
+   *  Chave = key do campo custom (`custom_<slug>`), valor = string bruta do CSV.
+   *  Ver `apps/api/src/modules/admin/servidor-campos.ts`. */
+  camposCustom?: Record<string, string>;
 }
 
 /**
