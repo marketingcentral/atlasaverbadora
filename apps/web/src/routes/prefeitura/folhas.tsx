@@ -72,7 +72,20 @@ export function PrefeituraFolhas() {
           <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Folhas de pagamento</h1>
           <p style={{ color: "var(--text-muted)", marginTop: 4 }}>Competência mensal, movimentação de pessoal e datas de corte. Recálculo de margem é automático.</p>
         </div>
-        <Button onClick={() => setNovaOpen(true)}>+ Abrir competência</Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              // <a download> forcado — pega o CSV modelo direto do backend
+              // (endpoint publico, sem JWT). Usar location.assign preserva o
+              // Content-Disposition e o browser baixa como arquivo.
+              window.location.assign(atlas.prefeitura.movimentacaoCsvTemplateUrl());
+            }}
+          >
+            ↓ Baixar exemplo
+          </Button>
+          <Button onClick={() => setNovaOpen(true)}>+ Abrir competência</Button>
+        </div>
       </header>
 
       <DataTable columns={columns} rows={q.data?.folhas ?? []} rowKey={(f) => f.id} loading={q.isLoading} emptyState="Nenhuma folha. Abra uma competência." />
