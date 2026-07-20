@@ -446,10 +446,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/prefeitura/folhas", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     await ensureFolhasLoaded(c.env);
-    // Sincroniza contratos (contratos aprovados em outro isolate viram ADFs)
-    // antes de contar. Sem isso, folha nao refletia ADFs recem-aplicadas
-    // pela averbadora.
-    await refreshContratos(c.env);
+    // Sincroniza contratos + convenios (contratos aprovados em outro isolate
+    // viram ADFs) antes de contar. Sem refreshConvenios, CONVENIOS_MOCK fica
+    // vazio no isolate frio -> ensureAdfs nao acha contratos pelo convenioId
+    // -> folha volta a mostrar 0 descontos mesmo com ADFs aplicadas.
+    await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
     const now = new Date().toISOString();
     const bancoNomeById = (bid: number) => bancos.find((b) => b.id === bid)?.nome ?? `Banco ${bid}`;
     // Enriquece cada folha com contagem/soma de ADFs aplicadas (o que a
@@ -663,14 +664,16 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   // ===== Passo 8 — ADF / Descontos em folha =====
   .get("/v1/prefeitura/adf/competencias", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    await refreshContratos(c.env); // vê averbações feitas pelo banco em outros isolates
+    // Recarrega contratos + convenios: sem refreshConvenios, isolate frio nao
+    // acha o convenioId do contrato -> ensureAdfs materializa zero ADFs.
+    await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
     const competenciaAtual = folhas.filter((f) => f.prefeituraId === id).sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", "");
     ensureAdfs(id, competenciaAtual, bancoNome, new Date().toISOString());
     return c.json({ competencias: listAdfCompetencias(id), competenciaAtual });
   })
   .get("/v1/prefeitura/adf", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    await refreshContratos(c.env);
+    await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
     const competencia = c.req.query("competencia") || undefined;
     // Materializa sempre (competência pedida ou a atual) — assim o ADF aparece
     // mesmo se a tela pedir /adf direto, sem passar por /adf/competencias antes.
@@ -681,7 +684,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/prefeitura/adf/:competencia/download.csv", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const competencia = c.req.param("competencia");
-    await refreshContratos(c.env);
+    await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
     ensureAdfs(id, competencia, bancoNome, new Date().toISOString());
     const adfs = listAdfs(id, competencia);
     const csv = buildCsv(
@@ -693,7 +696,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/prefeitura/adf/:competencia/lote.pdf", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const competencia = c.req.param("competencia");
-    await refreshContratos(c.env);
+    await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
     ensureAdfs(id, competencia, bancoNome, new Date().toISOString());
     const adfs = listAdfs(id, competencia);
     const total = adfs.reduce((s, a) => s + a.valorParcela, 0);
