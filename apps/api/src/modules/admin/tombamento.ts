@@ -81,6 +81,16 @@ export function clearTombamentoMemoria(): void {
   _linhas.length = 0;
 }
 
+/** Remove um lote especifico da memoria (chamado pelo endpoint delete-lote apos
+ *  deletar do PG). Idempotente. */
+export function removeLoteMemoria(id: string): void {
+  const idx = _lotes.findIndex((l) => l.id === id);
+  if (idx >= 0) _lotes.splice(idx, 1);
+  for (let i = _linhas.length - 1; i >= 0; i--) {
+    if (_linhas[i]?.loteId === id) _linhas.splice(i, 1);
+  }
+}
+
 // Seed: one consolidated lote per prefeitura.
 function seedLote(input: Omit<TombamentoLote, "id" | "recebidoEm" | "processadoEm">): TombamentoLote {
   const id = `TB-${input.prefeituraId}-${input.competencia}`;

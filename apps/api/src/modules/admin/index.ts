@@ -10,7 +10,7 @@ import { refreshComunicados, persistComunicados, removerComunicadoPersistido } f
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, deleteCollectionRow, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, deleteCollectionRow, deleteTombamentoLote, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
@@ -18,7 +18,7 @@ import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, 
 import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
-import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria } from "./tombamento.js";
+import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
@@ -2848,6 +2848,29 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Expiração é derivada (reserva "Aguardando" com data de expiração vencida).
     const expiradas = listContratos({}).map(contratoToPreReserva).filter((r) => r.status === "expirada").length;
     return c.json({ expiradas });
+  })
+
+  // Delete cirurgico de lote de tombamento — protegido por ADMIN_PURGE_PASSWORD.
+  // Usado quando o operador enviou lote errado/vazio e precisa limpar sem rodar
+  // purge-contratos inteiro (que apaga contratos + folhas junto).
+  .post("/v1/admin/tombamento/lotes/delete", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "tombamento");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string; ids?: string[] };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha nao configurada." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const ids = (body.ids ?? []).filter(Boolean);
+    if (ids.length === 0) throw Errors.validation({ ids: "Informe pelo menos um lote." });
+    const removidos: string[] = [];
+    for (const id of ids) {
+      const ok = await deleteTombamentoLote(c.env, id).catch(() => false);
+      removeLoteMemoria(id);
+      if (ok) removidos.push(id);
+    }
+    appendAudit({ categoria: "tombamento", acao: "lote_excluido", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `${removidos.length} lote(s) removido(s): ${removidos.join(", ")}.` });
+    return c.json({ ok: true, removidos });
   })
 
   // ===== Tombamento de contratos (passo 9) =====
