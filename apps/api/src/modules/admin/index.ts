@@ -26,7 +26,7 @@ import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, t
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes, purgeCotacoes, setCotacaoContrato, removeCotacaoContrato, loadCotacoes as loadCotacoesAdmin } from "./telemedicina-cotacoes-store.js";
-import { ensureAdfsGlobal, ensureAdfs, listAdfs, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula, removeAdfsByContratoAdf } from "../prefeitura/store.js";
+import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula, removeAdfsByContratoAdf } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
@@ -461,68 +461,6 @@ export function ensureFolhasLoaded(env: Env): Promise<void> {
 }
 export async function persistFolha(env: Env, f: FolhaAdmin): Promise<void> {
   try { await upsertCollectionRow(env, "admin_folhas", f.id, f); } catch { /* fail-safe */ }
-}
-
-/** Retorna YYYYMM da data. */
-function yyyymmOf(d: Date): string {
-  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-/** Deriva `dataCorte` (YYYY-MM-DD) da folha da prefeitura pra uma competencia.
- *  Usa `Convenio.dataCorte` (dia do mes, 1..31) do primeiro convenio ativo da
- *  prefeitura como referencia — se nao houver convenio, cai em dia 15. */
-function deriveDataCorte(prefeituraId: number, competencia: string): string {
-  const dia = CONVENIOS_MOCK.find((cv) => cv.prefeituraId === prefeituraId && cv.ativo !== false)?.dataCorte ?? 15;
-  const ano = Number(competencia.slice(0, 4));
-  const mes = Number(competencia.slice(4, 6));
-  // Clamp em ultimo dia do mes (fev nao tem 30).
-  const ultimoDia = new Date(ano, mes, 0).getDate();
-  const diaClamp = Math.min(Math.max(dia, 1), ultimoDia);
-  return `${ano}-${String(mes).padStart(2, "0")}-${String(diaClamp).padStart(2, "0")}`;
-}
-
-/** Garante que existe uma folha 'aberta' para (prefeituraId, competencia).
- *  Se nao existe, cria com dataCorte derivada do convenio. Idempotente.
- *  Comportamento real do consignado: prefeitura deveria abrir a folha manual,
- *  mas na pratica esquece — a materializacao de ADF nao pode falhar por isso.
- *  Retorna a folha (nova ou existente). */
-export async function ensureFolhaAbertaParaCompetencia(
-  env: Env,
-  prefeituraId: number,
-  competencia: string,
-): Promise<FolhaAdmin> {
-  await ensureFolhasLoaded(env);
-  const existente = folhas.find((f) => f.prefeituraId === prefeituraId && f.competencia === competencia);
-  if (existente) return existente;
-  const pref = prefeituras.find((p) => p.id === prefeituraId);
-  const nova: FolhaAdmin = {
-    id: `F-${competencia}-${prefeituraId}`,
-    prefeituraId, prefeitura: pref?.nome ?? `Prefeitura ${prefeituraId}`,
-    competencia, dataCorte: deriveDataCorte(prefeituraId, competencia),
-    dataRepasse: null, status: "aberta",
-  };
-  folhas.push(nova);
-  await persistFolha(env, nova);
-  pushEvent("info", "folha.auto_criada", `Folha ${competencia} auto-criada para ${nova.prefeitura} (data corte ${nova.dataCorte}).`);
-  return nova;
-}
-
-/** Decide em qual competencia a ADF de um contrato deve cair, com base na
- *  data corte da folha da prefeitura:
- *  - Se hoje <= dataCorte da folha do mes corrente -> competencia atual
- *  - Se hoje > dataCorte -> competencia do proximo mes (auto-criada se nao existir)
- *  Reflete o comportamento real do consignado: banco averba depois da corte,
- *  vai pra folha seguinte, sem bloquear a averbacao. */
-export async function resolverCompetenciaAdf(env: Env, prefeituraId: number, agora: Date = new Date()): Promise<string> {
-  const compAtual = yyyymmOf(agora);
-  const folhaAtual = await ensureFolhaAbertaParaCompetencia(env, prefeituraId, compAtual);
-  const corte = new Date(`${folhaAtual.dataCorte}T23:59:59`);
-  if (agora <= corte) return compAtual;
-  // Depois da corte -> proximo mes.
-  const proximo = new Date(agora.getFullYear(), agora.getMonth() + 1, 1);
-  const compProximo = yyyymmOf(proximo);
-  await ensureFolhaAbertaParaCompetencia(env, prefeituraId, compProximo);
-  return compProximo;
 }
 
 // Cliente pediu remocao dos 2 banners de vitrine fixture (17/07/2026) — R$
@@ -2187,22 +2125,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const f = folhas.find((x) => x.id === c.req.param("id"));
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
-    // Integridade contabil: consolidar = "tudo bateu, encerrei o mes". Nao pode
-    // ter ADF em 'recebida' porque significa que a averbadora nem tentou aplicar
-    // ainda — consolidar dessa forma esconderia dinheiro em transito. Regra
-    // BACEN: folha consolidada eh imutavel, precisa estar completa.
-    await refreshContratos(c.env);
-    const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
-    ensureAdfs(f.prefeituraId, f.competencia, bancoNomeById, new Date().toISOString());
-    const pendentes = listAdfs(f.prefeituraId, f.competencia).filter((a) => a.status === "recebida");
-    if (pendentes.length > 0) {
-      throw Errors.validation({
-        adfs: `Existem ${pendentes.length} ADF(s) pendentes ("recebida") na folha ${f.competencia}. Aplique ou reporte falha em cada uma antes de consolidar. IDs: ${pendentes.slice(0, 5).map((a) => a.id).join(", ")}${pendentes.length > 5 ? "..." : ""}`,
-      });
-    }
     f.status = "consolidada";
     await persistFolha(c.env, f);
-    pushEvent("info", "folha.consolidada", `Folha ${f.competencia} de ${f.prefeitura} consolidada por averbadora:${j.sub}.`);
     return c.json({ folha: f });
   })
 
@@ -3336,15 +3260,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       ensureBancosLoaded(c.env),
     ]);
     const now = new Date().toISOString();
-    // Cada prefeitura pode ter data corte diferente — resolve competencia
-    // separadamente (respeita a corte real). Se banco averbou depois da corte
-    // da prefeitura X, ADF cai na competencia seguinte dessa prefeitura.
-    const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
-    for (const pref of prefeituras) {
-      const comp = await resolverCompetenciaAdf(c.env, pref.id);
-      ensureAdfs(pref.id, comp, bancoNomeById, now);
-    }
-    const compAtual = yyyymmOf(new Date());
+    const compAtual = folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", "");
+    // Materializa para TODAS as prefeituras da competencia atual.
+    ensureAdfsGlobal(compAtual, (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, now, prefeituras.map((p) => p.id));
     return c.json({ competencias: listAdfCompetenciasGlobal(), competenciaAtual: compAtual });
   })
   .get("/v1/admin/adf", async (c) => {
@@ -3359,12 +3277,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const url = new URL(c.req.url);
     const competencia = url.searchParams.get("competencia") ?? undefined;
     const prefFiltro = url.searchParams.get("prefeitura_id");
-    // Materializa competencia respeitando data corte de cada prefeitura.
-    const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
-    for (const pref of prefeituras) {
-      const comp = await resolverCompetenciaAdf(c.env, pref.id);
-      ensureAdfs(pref.id, comp, bancoNomeById, now);
-    }
+    const compAtual = competencia ?? (folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", ""));
+    ensureAdfsGlobal(compAtual, (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, now, prefeituras.map((p) => p.id));
     let list = listAdfsGlobal(competencia);
     if (prefFiltro) {
       const pid = Number(prefFiltro);
