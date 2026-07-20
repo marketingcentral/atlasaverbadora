@@ -33,6 +33,10 @@ export interface ContratoFull extends ContratoMock {
    *  = desconto entrou em folha; "falha" = prefeitura reprovou. Persistido no contrato
    *  pra ser fonte única (prefeitura confirma, banco vê). */
   folhaStatus?: "recebida" | "aplicada" | "falha" | "interrompida_desligamento";
+  /** Snapshot da situacao antes de virar 'Falha em folha' — permite banco
+   *  reenviar a ADF e restaurar o estado (Ativo/Aprovado). Setado em
+   *  setContratoFalhaEmFolha, limpo em tratarFalhaContrato. */
+  situacaoAntesDaFalha?: string;
   folhaMotivo?: string;
   /** R2 key do arquivo de contrato (CCB) atual anexado pelo banco. Serve pra
    *  reabrir via GET /v1/portal/banco/ccb/<key>. Requerido antes do banco poder
@@ -275,6 +279,14 @@ export function comprometeMargem(situacao: string): boolean {
   const s = situacao.toLowerCase();
   if (s === "expirado" || s === "cancelado" || s === "quitado") return false;
   if (s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) return false;
+  // Falha em folha (averbadora reportou falha) libera margem imediatamente —
+  // cliente pediu (17/07/2026): servidor nao fica preso enquanto banco decide
+  // como tratar a falha. Se banco reenviar e der certo, situacao volta a
+  // comprometer margem automaticamente.
+  if (s.includes("falha em folha")) return false;
+  // "Em cobranca direta" (pos-desligamento F6): banco cobra fora da folha,
+  // margem tambem nao mais comprometida na prefeitura.
+  if (s.includes("cobran")) return false;
   return true; // aguard / aprov / ativo / averb / suspens / formaliz -> bloqueia
 }
 
@@ -320,6 +332,69 @@ export function setContratoFolhaStatus(adf: string, status: "recebida" | "aplica
   if (!c) return undefined;
   c.folhaStatus = status;
   c.folhaMotivo = motivo;
+  return c;
+}
+
+/** Marca contrato como 'Falha em folha' — usado quando averbadora reporta
+ *  falha no /adf/falha. Guarda a situacao original em `situacaoAntesDaFalha`
+ *  pra permitir "reenviar" e restaurar. Libera margem (via comprometeMargem
+ *  que agora conhece 'Falha em folha'). Idempotente. */
+export function setContratoFalhaEmFolha(adf: string, motivo: string): ContratoFull | undefined {
+  const c = _contratos.get(adf);
+  if (!c) return undefined;
+  const s = c.situacao.toLowerCase();
+  if (s.includes("falha em folha") || s.includes("cancel") || s.includes("quit")) return c; // idempotente
+  const de = c.situacao;
+  // Snapshot pro reenvio (banco pode devolver pro estado anterior).
+  c.situacaoAntesDaFalha = de;
+  c.situacao = "Falha em folha";
+  c.folhaStatus = "falha";
+  c.folhaMotivo = motivo;
+  _eventos.push({
+    id: _eventoId++, contratoId: adf,
+    evento: "falha_em_folha",
+    deEstado: de, paraEstado: c.situacao,
+    ator: "averbadora", motivo, criadoEm: new Date().toISOString(),
+  });
+  return c;
+}
+
+/** Trata a falha reportada — chamado pelo banco depois de ver a pendencia:
+ *  - "reenviar": volta pra situacaoAntesDaFalha, ADF vira 'recebida', averbadora
+ *    reprocessa. Se nao tem snapshot, cai em "Aprovado" (banco valida de novo).
+ *  - "cancelar": contrato vira 'Cancelado', ADF vira 'falha' final.
+ *  - "cobranca_direta": contrato vira 'Em cobranca direta', banco cobra fora da folha.
+ *  Retorna o contrato atualizado (chamador persiste). */
+export function tratarFalhaContrato(
+  adf: string,
+  acao: "reenviar" | "cancelar" | "cobranca_direta",
+  motivo: string,
+  ator: string,
+): ContratoFull | undefined {
+  const c = _contratos.get(adf);
+  if (!c) return undefined;
+  if (!c.situacao.toLowerCase().includes("falha em folha")) return c; // idempotente/no-op
+  const de = c.situacao;
+  if (acao === "reenviar") {
+    c.situacao = c.situacaoAntesDaFalha ?? "Aprovado";
+    c.folhaStatus = "recebida";
+    c.folhaMotivo = undefined;
+  } else if (acao === "cancelar") {
+    c.situacao = "Cancelado";
+    c.folhaStatus = "falha";
+    c.folhaMotivo = motivo;
+  } else {
+    c.situacao = "Em cobrança direta";
+    c.folhaStatus = "interrompida_desligamento";
+    c.folhaMotivo = motivo;
+  }
+  c.situacaoAntesDaFalha = undefined;
+  _eventos.push({
+    id: _eventoId++, contratoId: adf,
+    evento: `tratar_falha_${acao}`,
+    deEstado: de, paraEstado: c.situacao,
+    ator, motivo, criadoEm: new Date().toISOString(),
+  });
   return c;
 }
 

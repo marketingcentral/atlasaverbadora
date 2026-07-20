@@ -72,6 +72,7 @@ import { BancoPropostas } from "./routes/banco/propostas/index";
 import { BancoPropostaDetalhe } from "./routes/banco/propostas/detalhe";
 import { BancoOfertas } from "./routes/banco/ofertas";
 import { BancoCarteira } from "./routes/banco/carteira/index";
+import { BancoFalhas } from "./routes/banco/falhas";
 import { BancoBateCarteira } from "./routes/banco/bate-carteira";
 import { BancoConvenios } from "./routes/banco/convenios";
 import { BancoPortabilidade } from "./routes/banco/portabilidade";
@@ -157,6 +158,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "ofertas", element: <BancoOfertas /> },
 
           { path: "carteira", element: <BancoCarteira /> },
+          { path: "falhas", element: <BancoFalhas /> },
           { path: "bate-carteira", element: <BancoBateCarteira /> },
           { path: "convenios", element: <BancoConvenios /> },
           { path: "portabilidade", element: <BancoPortabilidade /> },

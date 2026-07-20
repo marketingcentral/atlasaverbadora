@@ -1557,6 +1557,18 @@ export class AtlasClient {
       body?: { motivo?: string; parcelasExtras?: number; observacoes?: string; codigoVerba?: string },
     ) =>
       this.request<{ contrato: BancoContratoFull }>(`/v1/portal/banco/contratos/${adf}/${acao}`, { method: "POST", body: body ?? {} }),
+    // Contratos com falha em folha reportada pela averbadora — banco precisa tratar.
+    listContratosFalha: () =>
+      this.request<{ contratos: BancoContratoFull[] }>("/v1/portal/banco/contratos/falhas"),
+    tratarFalha: (
+      adf: string,
+      acao: "reenviar" | "cancelar" | "cobranca_direta",
+      motivo: string,
+    ) =>
+      this.request<{ contrato: BancoContratoFull }>(`/v1/portal/banco/contratos/${adf}/tratar-falha`, {
+        method: "POST",
+        body: { acao, motivo },
+      }),
     comprovanteUrl: (adf: string) => new URL(`/v1/portal/banco/contratos/${adf}/comprovante.pdf`, this.opts.baseUrl).toString(),
 
     // Cadastros

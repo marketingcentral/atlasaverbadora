@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb, revertContratoDesligamento } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb, setContratoFalhaEmFolha, revertContratoDesligamento } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -3000,6 +3000,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       comissaoPct: z.number().nonnegative().max(100).optional(),
       notasInternas: z.string().max(2000).optional(),
       prefeituraIdsExtras: z.array(z.number().int()).optional(),
+      // F5: valor mensal em R$ da assinatura — quando preenchido, servidor pode
+      // "Contratar" (gera intencao -> averbadora aprova -> ADF em folha).
+      // Vazio/0 = beneficio nao vira ADF, so gera clique/lead.
+      valorMensal: z.number().nonnegative().optional(),
       bancoId: z.number().int().optional(),
       convenioId: z.string().optional(),
       imagens: z.array(z.string().url()).max(10).optional(),
@@ -3337,25 +3341,50 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
     await refreshContratos(c.env);
     const adfs = setAdfStatusGlobal(body.ids, "falha", body.motivo, new Date().toISOString());
-    for (const adf of adfs) await persistContrato(c.env, adf);
+    // Muda situacao do contrato pra 'Falha em folha' (libera margem + gera pendencia
+    // pro banco tratar via /portal/banco/contratos/:adf/tratar-falha).
+    for (const adf of adfs) {
+      setContratoFalhaEmFolha(adf, body.motivo);
+      await persistContrato(c.env, adf);
+    }
     appendAudit({ categoria: "margem", acao: "adf_falha_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
-    // Notifica cada servidor por email (best-effort).
+    // Notifica servidor + banco por email (best-effort).
     for (const adf of adfs) {
       const ct = getContrato(adf);
       if (!ct) continue;
-      const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
-      if (!srv?.email) continue;
       const bancoNome = bancos.find((b) => b.id === ct.bancoId)?.nome ?? `Banco ${ct.bancoId}`;
-      const p = enviarNotificacao(c.env, {
-        destinoPadrao: srv.email,
-        titulo: `Averbacao ${adf} nao aplicada em folha`,
-        mensagem: `A averbacao nao pode ser aplicada em folha. Motivo: ${body.motivo}. O banco vai retomar o contato pra tratar.`,
-        detalhes: [
-          { label: "Banco", valor: bancoNome },
-          { label: "Situacao", valor: "Falha em folha" },
-        ],
-      });
-      try { c.executionCtx.waitUntil(p); } catch { void p; }
+      // 1) Servidor
+      const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
+      if (srv?.email) {
+        const p = enviarNotificacao(c.env, {
+          destinoPadrao: srv.email,
+          titulo: `Averbacao ${adf} nao aplicada em folha`,
+          mensagem: `A averbacao nao pode ser aplicada em folha. Motivo: ${body.motivo}. O banco esta ciente e vai decidir como tratar (reenviar / cancelar / cobranca direta). Sua margem foi liberada enquanto isso.`,
+          detalhes: [
+            { label: "Banco", valor: bancoNome },
+            { label: "Situacao", valor: "Falha em folha (pendente banco)" },
+          ],
+        });
+        try { c.executionCtx.waitUntil(p); } catch { void p; }
+      }
+      // 2) Banco (pendencia — precisa acao)
+      const banco = bancos.find((b) => b.id === ct.bancoId);
+      const bancoEmail = banco?.contatoEmail ?? banco?.loginEmail;
+      if (bancoEmail) {
+        const p = enviarNotificacao(c.env, {
+          destinoPadrao: bancoEmail,
+          titulo: `[Acao necessaria] ADF ${adf} falhou em folha`,
+          mensagem: `A averbadora reportou falha aplicando a ADF ${adf} (matricula ${ct.matricula}, ${ct.nome}) em folha. Motivo: ${body.motivo}. Trate no portal: reenviar / cancelar contrato / cobranca direta.`,
+          detalhes: [
+            { label: "ADF", valor: adf },
+            { label: "Servidor", valor: ct.nome },
+            { label: "Matricula", valor: ct.matricula },
+            { label: "Valor parcela", valor: `R$ ${ct.valorParcela.toFixed(2).replace(".", ",")}` },
+            { label: "Portal", valor: "/banco/carteira ou /banco/propostas" },
+          ],
+        });
+        try { c.executionCtx.waitUntil(p); } catch { void p; }
+      }
     }
     return c.json({ falhas: adfs.length });
   })
