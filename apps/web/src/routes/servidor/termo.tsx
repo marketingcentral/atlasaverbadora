@@ -181,7 +181,7 @@ export function ServidorTermo() {
             <Row k="Aceito em" v={done.quando.toLocaleString("pt-BR")} />
             <Row k="IP de origem" v={done.ip} />
             <Row k="Dispositivo" v={done.device} />
-            <Row k="CPF (mascarado)" v="***.***.222-33" />
+            <Row k="CPF (mascarado)" v={readActiveMatricula()?.cpfMasked ?? "—"} />
           </div>
 
           <div
