@@ -43,13 +43,6 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
       className="atlas-datatable-scroll"
       style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}
     >
-      <style dangerouslySetInnerHTML={{ __html: `
-        .atlas-datatable-scroll { scrollbar-width: thin !important; scrollbar-color: var(--border-strong) transparent !important; -ms-overflow-style: auto !important; }
-        .atlas-datatable-scroll::-webkit-scrollbar { display: block !important; height: 12px !important; width: 12px !important; }
-        .atlas-datatable-scroll::-webkit-scrollbar-thumb { background: var(--border-strong) !important; border-radius: 6px !important; }
-        .atlas-datatable-scroll::-webkit-scrollbar-thumb:hover { background: var(--gold-500) !important; }
-        .atlas-datatable-scroll::-webkit-scrollbar-track { background: color-mix(in srgb, var(--border) 40%, transparent) !important; border-radius: 6px !important; }
-      ` }} />
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ background: "var(--bg-elev-2)" }}>
