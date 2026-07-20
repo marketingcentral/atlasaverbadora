@@ -19,7 +19,7 @@ import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "../admin/id-unico.js";
-import { importTombamento, listLotes, listLinhas } from "../admin/tombamento.js";
+import { importTombamento, listLotes, listLinhas, refreshTombamento } from "../admin/tombamento.js";
 import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
   ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus,
@@ -688,12 +688,17 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     }));
     return c.json({ contratos: rows, total: rows.length });
   })
-  .get("/v1/prefeitura/tombamento/lotes", (c) => {
+  .get("/v1/prefeitura/tombamento/lotes", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    // Refresh do PG a cada request: import feito num isolate precisa
+    // aparecer imediatamente no isolate que serve a prefeitura. Antes,
+    // averbadora e prefeitura viam contagens diferentes do mesmo tombamento.
+    await refreshTombamento(c.env);
     return c.json({ lotes: listLotes({ prefeituraId: id }) });
   })
-  .get("/v1/prefeitura/tombamento/lotes/:id/linhas", (c) => {
+  .get("/v1/prefeitura/tombamento/lotes/:id/linhas", async (c) => {
     const pid = requirePrefeitura(c.get("jwt"));
+    await refreshTombamento(c.env);
     // Isolamento: prefeitura so ve linhas de lote proprio. Antes qualquer
     // prefeitura lia linhas de tombamento de outra adivinhando o id do lote.
     const lote = listLotes({ prefeituraId: pid }).find((l) => l.id === c.req.param("id"));

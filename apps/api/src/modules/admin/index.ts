@@ -18,7 +18,7 @@ import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, 
 import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
-import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria } from "./tombamento.js";
+import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria, refreshTombamento } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
@@ -2950,6 +2950,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ===== Tombamento de contratos (passo 9) =====
   .get("/v1/admin/tombamento/lotes", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "tombamento");
+    // Refresh do PG a cada request pra sincronizar isolates: um import feito
+    // em isolate A precisa aparecer imediatamente pro isolate B que serve a
+    // averbadora. Antes: averbadora e prefeitura viam contagens diferentes.
+    await refreshTombamento(c.env);
     const url = new URL(c.req.url);
     const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
     const competencia = url.searchParams.get("competencia") ?? undefined;
@@ -2961,6 +2965,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   .get("/v1/admin/tombamento/lotes/:id/linhas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "tombamento");
+    await refreshTombamento(c.env);
     const linhas = listLinhas(c.req.param("id"));
     return c.json({ linhas });
   })
