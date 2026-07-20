@@ -468,28 +468,6 @@ function yyyymmOf(d: Date): string {
   return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-/** Auto-fecha folhas cujo dataCorte ja passou (lazy — sem cron).
- *  Chamado nos GETs de folha. Idempotente: pula folhas ja fechadas/consolidadas.
- *  Comportamento real: dia seguinte a data corte, folha vira 'fechada'
- *  automaticamente (nao aceita mais alteracoes). Prefeitura nao precisa
- *  lembrar de fechar manual. Se quiser reabrir, PATCH manual. */
-export async function autoFecharFolhasVencidas(env: Env, agora: Date = new Date()): Promise<number> {
-  await ensureFolhasLoaded(env);
-  const hojeIso = agora.toISOString().slice(0, 10);
-  let fechadas = 0;
-  for (const f of folhas) {
-    if (f.status !== "aberta") continue;
-    if (!f.dataCorte) continue;
-    if (f.dataCorte < hojeIso) {
-      f.status = "fechada";
-      await persistFolha(env, f);
-      pushEvent("info", "folha.auto_fechada", `Folha ${f.competencia} de ${f.prefeitura} auto-fechada (data corte ${f.dataCorte} vencida).`);
-      fechadas++;
-    }
-  }
-  return fechadas;
-}
-
 /** Deriva `dataCorte` (YYYY-MM-DD) da folha da prefeitura pra uma competencia.
  *  Usa `Convenio.dataCorte` (dia do mes, 1..31) do primeiro convenio ativo da
  *  prefeitura como referencia — se nao houver convenio, cai em dia 15. */
@@ -2148,9 +2126,6 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/folhas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
     await ensureFolhasLoaded(c.env);
-    // Auto-fecha folhas cujo data corte ja passou — lazy, sem cron. Antes de
-    // contar ADFs pra que a folha ja apareca com status certo.
-    await autoFecharFolhasVencidas(c.env);
     // Sincroniza contratos antes de contar ADFs (contratos "Aprovado"/"Ativo" viram
     // ADFs materializadas no _adfs). Sem isso, folhas mostravam 0 ADF ate outro
     // endpoint tocar refreshContratos.
@@ -2226,16 +2201,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     f.status = "consolidada";
-    // Consolidacao = "confirmei que o dinheiro chegou aos bancos". Registra
-    // a data do repasse (hoje) se ainda vazia — sem integracao bancaria real,
-    // averbadora consolida quando confirma manualmente que os bancos receberam.
-    // Se ja tiver dataRepasse preenchida (marcada antes por outro fluxo),
-    // preserva. Formato ISO YYYY-MM-DD.
-    if (!f.dataRepasse) {
-      f.dataRepasse = new Date().toISOString().slice(0, 10);
-    }
     await persistFolha(c.env, f);
-    pushEvent("info", "folha.consolidada", `Folha ${f.competencia} de ${f.prefeitura} consolidada por averbadora:${j.sub}. Repasse em ${f.dataRepasse}.`);
+    pushEvent("info", "folha.consolidada", `Folha ${f.competencia} de ${f.prefeitura} consolidada por averbadora:${j.sub}.`);
     return c.json({ folha: f });
   })
 
@@ -3427,15 +3394,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
     const body = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
     await refreshContratos(c.env);
-    const folhaStatusOf = (pid: number, comp: string): string | undefined =>
-      folhas.find((f) => f.prefeituraId === pid && f.competencia === comp)?.status;
-    let adfs: string[];
-    try {
-      adfs = setAdfStatusGlobal(body.ids, "aplicada", undefined, new Date().toISOString(), folhaStatusOf);
-    } catch (e) {
-      // Erro de folha consolidada — vira 422 amigavel.
-      throw Errors.validation({ folha: (e as Error).message });
-    }
+    const adfs = setAdfStatusGlobal(body.ids, "aplicada", undefined, new Date().toISOString());
     // Promove pra "Ativo" contratos que estavam em "Aprovado" — o banco so
     // aprovou; e' a averbadora que efetiva a averbacao ao aplicar em folha.
     // No fluxo antigo (banco averbava direto) ja eram "Ativo": aqui e' no-op.
@@ -3499,14 +3458,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
     const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
     await refreshContratos(c.env);
-    const folhaStatusOfFalha = (pid: number, comp: string): string | undefined =>
-      folhas.find((f) => f.prefeituraId === pid && f.competencia === comp)?.status;
-    let adfs: string[];
-    try {
-      adfs = setAdfStatusGlobal(body.ids, "falha", body.motivo, new Date().toISOString(), folhaStatusOfFalha);
-    } catch (e) {
-      throw Errors.validation({ folha: (e as Error).message });
-    }
+    const adfs = setAdfStatusGlobal(body.ids, "falha", body.motivo, new Date().toISOString());
     // Muda situacao do contrato pra 'Falha em folha' (libera margem + gera pendencia
     // pro banco tratar via /portal/banco/contratos/:adf/tratar-falha).
     for (const adf of adfs) {
