@@ -216,6 +216,10 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
     idMatricula: e.idMatricula, matricula: e.matricula,
     prefeitura: pref ? `Prefeitura de ${pref.nome}` : e.origem, prefeitura_id: prefId, servidor_id: servidorId,
     uf: pref?.uf ?? "SC", cargo: e.cargo ?? "—", vinculo: (["ESTATUTARIO", "CLT", "COMISSIONADO"].includes(e.vinculo) ? e.vinculo : "ESTATUTARIO") as "ESTATUTARIO" | "CLT" | "COMISSIONADO",
+    // cpfMasked real do servidor (nunca retornar o CPF em texto claro pra
+    // frontend). Antes: /servidor/conta tinha "***.***.222-33" hardcoded,
+    // fixed 20/07/2026 apos ABSALAO -53 vs -33 mismatch reportado.
+    cpfMasked: e.cpfMasked,
     nome: e.nome, email: e.email ?? "", telefone: e.telefone ?? "", endereco: e.endereco ?? "", ativa: true,
     // Flag da prefeitura: se true, servidor pode editar email/telefone; se false,
     // esconde botao Editar em /servidor/conta. Default false = mais restritivo.

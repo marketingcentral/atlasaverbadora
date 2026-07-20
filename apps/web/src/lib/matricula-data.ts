@@ -45,6 +45,8 @@ export interface MatriculaInfo {
   cargo: string;
   vinculo: "ESTATUTARIO" | "CLT" | "COMISSIONADO";
   nome: string;
+  /** CPF mascarado (ex: "580.***.***-53"). CPF completo NUNCA e retornado ao frontend. */
+  cpfMasked: string;
   email: string;
   telefone: string;
   endereco: string;

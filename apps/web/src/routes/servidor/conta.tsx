@@ -33,7 +33,11 @@ export function ServidorConta() {
   // botao aparece independente da flag (cliente pediu). Mantido pra caso a
   // regra mude no futuro.
   const nome = info?.nome ?? "Servidor";
-  const cpfMasked = "***.***.222-33";
+  // CPF vem mascarado do backend (nunca em texto claro). Fallback pra "—"
+  // enquanto o hydrate nao terminou — antes tinha "***.***.222-33" hardcoded
+  // que nao batia com o CPF real (bug 20/07/2026, ABSALAO terminava -53 mas
+  // a tela mostrava -33).
+  const cpfMasked = info?.cpfMasked ?? "—";
   const endereco = info?.endereco ?? "—";
   const cargo = info?.cargo ?? "—";
   const matricula = info?.matricula ?? "—";
