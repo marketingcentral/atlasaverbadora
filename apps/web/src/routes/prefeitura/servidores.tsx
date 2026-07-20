@@ -36,7 +36,15 @@ export function PrefeituraServidores() {
     { key: "telefone", header: "Telefone", render: (s) => fmtTel(s.telefone) },
     { key: "cargo", header: "Cargo", render: (s) => s.cargo || "—" },
     { key: "vinculo", header: "Vínculo" },
-    { key: "situacaoFuncional", header: "Situação", render: (s) => <Pill variant={/desligado|aposentad/i.test(s.situacaoFuncional) ? "expirado" : "averbado"}>{s.situacaoFuncional}</Pill> },
+    { key: "situacaoFuncional", header: "Situação", render: (s) => {
+      const situ = (s.situacaoFuncional || "").trim().toUpperCase();
+      if (!situ) return <span style={{ color: "var(--text-dim)", fontSize: 12 }}>NÃO INFORMADO</span>;
+      const variant: "expirado" | "averbado" | "pendente" =
+        /desligado|aposentad/i.test(situ) ? "expirado"
+        : /afastad|licenc|ferias/i.test(situ) ? "pendente"
+        : "averbado";
+      return <Pill variant={variant}>{situ}</Pill>;
+    } },
     { key: "idConvenio", header: "Convênio", render: (s) => s.idConvenio || <span style={{ color: "var(--danger-500)" }}>sem convênio</span> },
     { key: "margemDisponivel", header: "Margem disp.", align: "right", render: (s) => fmtBRL(s.margemDisponivel ?? 0) },
     {
