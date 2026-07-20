@@ -170,6 +170,9 @@ export interface ExternalLoan {
   valorEmprestimo: number;
   taxaAm: number;
   tipo: string;
+  /** Motivo do CSV (ex: "Emprestimo", "Cartao Consignado", "Cartao Beneficio",
+   *  "Refinanciamento"). Combinado com `tipo` pra decidir o bucket da margem. */
+  motivo?: string;
 }
 
 // Seed de teste — SEMPRE em memoria (nao depende do Postgres), pra o fluxo de
@@ -206,6 +209,7 @@ function tombamentoLinhaToLoan(l: TombamentoLinha): ExternalLoan {
     valorEmprestimo: l.valorEmprestimo ?? l.saldoDevedor,
     taxaAm: 0.02, // taxa de origem estimada (o relatorio nao traz taxa)
     tipo: l.tipo ?? "Empréstimo",
+    motivo: l.motivo,
   };
 }
 

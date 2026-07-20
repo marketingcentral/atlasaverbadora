@@ -120,15 +120,19 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   // /prefeitura/tombamento. Sem isso, a margem ignorava tudo que ja estava
   // comprometido fora do Atlas e liberava simulacoes acima do teto real.
   // Regra do cliente (20/07/2026): tombamento tem que refletir na margem.
-  const bucketFromTipoTombamento = (tipo: string | undefined): "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS" => {
-    const t = (tipo ?? "").toLowerCase();
+  const bucketFromTombamento = (tipo: string | undefined, motivo: string | undefined): "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS" => {
+    // Combina tipo + motivo — no CSV real do relatorio de emprestimos, o tipo
+    // costuma ser 'Novo'/'Refinanciamento' e o motivo carrega 'Cartao Consignado'
+    // vs 'Emprestimo'. Olhar so tipo (fix 20/07/2026) fazia cartao cair em
+    // emprestimo. Beneficio checa antes pra nao ser mascarado pelo 'cartao'.
+    const t = `${tipo ?? ""} ${motivo ?? ""}`.toLowerCase();
     if (t.includes("benef")) return "CARTAO_BENEFICIOS";
     if (t.includes("cartao") || t.includes("cartão")) return "CARTAO_CONSIGNADO";
     return "EMPRESTIMO";
   };
   const externos = listExternalLoans(e.matricula);
   for (const ext of externos) {
-    const bucket = bucketFromTipoTombamento(ext.tipo);
+    const bucket = bucketFromTombamento(ext.tipo, ext.motivo);
     comprometidoPorTipo[bucket] += ext.valorParcela;
   }
   // Total comprometido de emprestimo (pra retro-compat no campo comprometido raiz).
