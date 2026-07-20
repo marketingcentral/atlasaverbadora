@@ -5,8 +5,9 @@ import { Card } from "./Card.js";
 export interface CsvImportPanelProps {
   /** Title shown in the panel (ex: "Importar bancos"). */
   title: string;
-  /** Columns shown in the hint line ("Colunas: nome, status, ..."). */
-  columnsHint: string;
+  /** Columns shown in the hint line ("Colunas: nome, status, ..."). Opcional —
+   *  omite quando o modelo eh grande e ja tem "Baixar exemplo" pra guiar. */
+  columnsHint?: string;
   /** URL para baixar CSV exemplo (gerado pelo backend). */
   templateUrl: string;
   /** Função que recebe o conteúdo do CSV (texto) e chama o endpoint de import. */
@@ -59,7 +60,7 @@ export function CsvImportPanel({ title, columnsHint, templateUrl, onImport, onIm
             Importar CSV
           </div>
           <div style={{ fontWeight: 700, marginTop: 2 }}>{title}</div>
-          <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{columnsHint}</div>
+          {columnsHint ? <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{columnsHint}</div> : null}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <a href={templateUrl} download style={{ textDecoration: "none" }}>

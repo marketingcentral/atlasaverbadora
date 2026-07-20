@@ -92,7 +92,6 @@ export function PrefeituraTombamento() {
         </div>
         <CsvImportPanel
           title="Enviar remessa de contratos"
-          columnsHint="cpf, matricula, nome, banco, numeroContrato, valorParcela, totalParcelas, parcelasRestantes, valorEmprestimo, status, motivo, tipo"
           templateUrl={atlas.prefeitura.tombamentoCsvTemplateUrl()}
           onImport={async (csv) => {
             const r = await atlas.prefeitura.importarTombamento(csv, competencia);
