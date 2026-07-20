@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, CsvImportPanel, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import type { PrefeituraFolha } from "@atlas/sdk";
+import type { PrefeituraFolha, PrefeituraServidor } from "@atlas/sdk";
 import { Modal, Field, inp } from "./_ui";
 
 type FolhaRow = PrefeituraFolha & { movimentacoes: number };
@@ -15,6 +15,7 @@ export function PrefeituraFolhas() {
   const [novaOpen, setNovaOpen] = useState(false);
   const [movFolha, setMovFolha] = useState<FolhaRow | null>(null);
   const [descFolha, setDescFolha] = useState<FolhaRow | null>(null);
+  const [porServidorOpen, setPorServidorOpen] = useState(false);
   // Poll 5s — quando a averbadora clica Aplicar em folha em outro isolate,
   // a coluna "ADFs aplicadas" aqui atualiza em ate 5s.
   const q = useQuery({
@@ -80,6 +81,7 @@ export function PrefeituraFolhas() {
           <p style={{ color: "var(--text-muted)", marginTop: 4 }}>Competência mensal, movimentação de pessoal e datas de corte. Recálculo de margem é automático.</p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant="ghost" onClick={() => setPorServidorOpen(true)}>👤 Ver por servidor</Button>
           <Button
             variant="ghost"
             onClick={() => {
@@ -98,6 +100,7 @@ export function PrefeituraFolhas() {
       <DataTable columns={columns} rows={q.data?.folhas ?? []} rowKey={(f) => f.id} loading={q.isLoading} emptyState="Nenhuma folha. Abra uma competência." />
 
       {novaOpen ? <NovaFolha onClose={() => setNovaOpen(false)} onSaved={() => { setNovaOpen(false); qc.invalidateQueries({ queryKey: ["prefeitura"] }); }} /> : null}
+      {porServidorOpen ? <PorServidorModal onClose={() => setPorServidorOpen(false)} folhas={q.data?.folhas ?? []} /> : null}
       {movFolha ? <MovModal folha={movFolha} onClose={() => setMovFolha(null)} onDone={() => qc.invalidateQueries({ queryKey: ["prefeitura"] })} /> : null}
       {descFolha ? <DescontosModal folha={descFolha} onClose={() => setDescFolha(null)} /> : null}
     </div>
@@ -233,6 +236,163 @@ function MovModal({ folha, onClose, onDone }: { folha: FolhaRow; onClose: () => 
         </div>
       </div>
       <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}><Button variant="ghost" onClick={onClose}>Fechar</Button></div>
+    </Modal>
+  );
+}
+
+/** Modal "Ver por servidor" — a prefeitura escolhe uma matricula e o modal
+ *  lista APENAS as folhas onde esse servidor teve ADF ou movimentacao,
+ *  com o valor especifico dele em cada competencia. */
+function PorServidorModal({ folhas, onClose }: { folhas: FolhaRow[]; onClose: () => void }) {
+  const servidoresQ = useQuery({
+    queryKey: ["prefeitura", "servidores-picker"],
+    queryFn: () => atlas.prefeitura.servidores(),
+  });
+  const [matricula, setMatricula] = useState<string>("");
+  const [busca, setBusca] = useState<string>("");
+
+  // Puxa ADFs de todas as competencias em paralelo (cache 30s — o modal fica
+  // rapido ao alternar entre servidores).
+  const adfsQueries = useQueries({
+    queries: folhas.map((f) => ({
+      queryKey: ["prefeitura", "adf", f.competencia],
+      queryFn: () => atlas.prefeitura.adf(f.competencia),
+      staleTime: 30_000,
+      enabled: !!matricula,
+    })),
+  });
+  // Movimentacoes de todas as folhas em paralelo.
+  const movQueries = useQueries({
+    queries: folhas.map((f) => ({
+      queryKey: ["prefeitura", "movimentacoes", f.id],
+      queryFn: () => atlas.prefeitura.movimentacoes(f.id),
+      staleTime: 30_000,
+      enabled: !!matricula,
+    })),
+  });
+
+  const servidores = servidoresQ.data?.servidores ?? [];
+  const servidoresFiltrados = useMemo(() => {
+    const q = busca.trim().toLowerCase();
+    if (!q) return servidores;
+    return servidores.filter((s: PrefeituraServidor) =>
+      s.nome.toLowerCase().includes(q) ||
+      s.matricula.includes(q) ||
+      s.cpfMasked.replace(/\D/g, "").includes(q.replace(/\D/g, "")),
+    );
+  }, [servidores, busca]);
+
+  const servidorEscolhido = servidores.find((s: PrefeituraServidor) => s.matricula === matricula);
+
+  // Cruza folhas × ADFs × movimentacoes filtradas pela matricula selecionada.
+  const linhas = useMemo(() => {
+    if (!matricula) return [];
+    return folhas.map((folha, idx) => {
+      const adfs = (adfsQueries[idx]?.data?.adfs ?? []).filter((a) => a.matricula === matricula);
+      const movs = (movQueries[idx]?.data?.movimentacoes ?? []).filter((m) => m.matricula === matricula);
+      const valorAplicado = adfs.filter((a) => a.status === "aplicada").reduce((s, a) => s + a.valorParcela, 0);
+      return { folha, adfs, movs, valorAplicado };
+    }).filter((r) => r.adfs.length > 0 || r.movs.length > 0);
+  }, [matricula, folhas, adfsQueries, movQueries]);
+
+  const carregando = matricula && (adfsQueries.some((q) => q.isLoading) || movQueries.some((q) => q.isLoading));
+
+  return (
+    <Modal title="Folhas por servidor" onClose={onClose} maxWidth={860}>
+      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
+        Escolha um servidor pra ver em quais competências ele aparece — com movimentações e descontos específicos dele.
+      </p>
+      {!matricula ? (
+        <>
+          <input
+            style={{ ...inp, marginBottom: 8 }}
+            placeholder="Buscar por nome, matrícula ou CPF…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            autoFocus
+          />
+          <div style={{ maxHeight: 380, overflow: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+            {servidoresQ.isLoading ? (
+              <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>Carregando servidores…</div>
+            ) : servidoresFiltrados.length === 0 ? (
+              <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+                {servidores.length === 0 ? "Sem servidores cadastrados." : "Nenhum servidor bate com a busca."}
+              </div>
+            ) : (
+              servidoresFiltrados.map((s: PrefeituraServidor) => (
+                <button
+                  key={s.matricula}
+                  onClick={() => setMatricula(s.matricula)}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left",
+                    padding: "10px 12px", borderBottom: "1px solid var(--border)",
+                    background: "transparent", color: "var(--text)", cursor: "pointer", border: "none",
+                    borderLeft: "3px solid transparent",
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "var(--bg-elev-2)"; e.currentTarget.style.borderLeftColor = "var(--accent)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; e.currentTarget.style.borderLeftColor = "transparent"; }}
+                >
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{s.nome}</div>
+                  <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                    {s.cpfMasked} · matrícula {s.matricula}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: "var(--bg-elev-2)", borderRadius: 8, marginBottom: 12 }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>{servidorEscolhido?.nome}</div>
+              <div style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>
+                {servidorEscolhido?.cpfMasked} · matrícula {matricula}
+              </div>
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setMatricula("")}>← Trocar servidor</Button>
+          </div>
+          {carregando ? (
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)" }}>Carregando folhas…</div>
+          ) : linhas.length === 0 ? (
+            <div style={{ padding: 20, textAlign: "center", color: "var(--text-muted)", fontSize: 13, border: "1px solid var(--border)", borderRadius: 8 }}>
+              Este servidor não aparece em nenhuma folha ainda (sem ADFs e sem movimentações).
+            </div>
+          ) : (
+            <div style={{ maxHeight: 420, overflow: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
+              <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--bg-elev-2)", textTransform: "uppercase", fontSize: 11, letterSpacing: ".06em", color: "var(--text-dim)" }}>
+                    <th style={{ textAlign: "left", padding: "8px 10px" }}>Competência</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px" }}>Movimentações</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px" }}>ADFs</th>
+                    <th style={{ textAlign: "right", padding: "8px 10px" }}>Descontos do servidor</th>
+                    <th style={{ textAlign: "center", padding: "8px 10px" }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhas.map(({ folha, adfs, movs, valorAplicado }) => (
+                    <tr key={folha.id} style={{ borderTop: "1px solid var(--border)" }}>
+                      <td style={{ padding: "8px 10px", fontFamily: "var(--font-mono)" }}>{folha.competencia}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right" }}>{movs.length}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right" }}>{adfs.length}</td>
+                      <td style={{ padding: "8px 10px", textAlign: "right", color: valorAplicado > 0 ? "var(--emerald-500)" : "var(--text-dim)", fontWeight: valorAplicado > 0 ? 600 : 400 }}>
+                        {valorAplicado > 0 ? fmtBRL(valorAplicado) : "—"}
+                      </td>
+                      <td style={{ padding: "8px 10px", textAlign: "center" }}>
+                        <Pill variant={folha.status === "aberta" ? "pendente" : "averbado"}>{folha.status}</Pill>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 16 }}>
+        <Button variant="ghost" onClick={onClose}>Fechar</Button>
+      </div>
     </Modal>
   );
 }
