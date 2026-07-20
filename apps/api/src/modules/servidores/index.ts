@@ -21,6 +21,7 @@ import { gerarCodigoUnico } from "../admin/codes.js";
 import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, cancelarIntencao, aceitarOferta, getIntencao } from "../admin/portabilidade-store.js";
 import { ensureTermosLoaded, getTermo, listTermos, renderTermo, type TermoTipo } from "../admin/termos-store.js";
 import { getSuporteConfig } from "../admin/suporte.js";
+import { withIdempotency } from "../../_shared/idempotency.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
@@ -844,6 +845,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   // Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco, então o
   // portal do banco RECEBE a solicitação (situacao "Aguardando Confirmação do Deferimento").
   // É assim que o ecossistema conversa: servidor -> banco.
+  //
+  // Idempotencia: se o cliente enviar header `Idempotency-Key`, a resposta original
+  // eh cacheada em KV por 24h e retornada em requests subsequentes com a mesma key.
+  // Sem o header, comportamento antigo (cada POST gera nova proposta).
   .post("/v1/servidores/me/propostas", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
@@ -864,7 +869,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         tipo: z.enum(["novo", "portabilidade", "refinanciamento"]).default("novo"),
       })
       .parse(await c.req.json());
-    // A matricula ATIVA no app do servidor eh a fonte de verdade — e vem no
+    const idemKey = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idemScope = `servidor:${s.id}:POST:/v1/servidores/me/propostas`;
+    const idem = await withIdempotency(c.env, idemKey, idemScope, async () => {
+      // A matricula ATIVA no app do servidor eh a fonte de verdade — e vem no
     // body.matricula. Antes o backend priorizava a matricula do JWT (fixada
     // no login) e o body era so fallback, entao servidor com acumulacao de
     // cargos que trocava de matricula no dropdown continuava criando
@@ -956,18 +964,21 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // REVERTIDO (14/07/2026): nao mandar email pra o banco na simulacao inicial.
     // O banco so recebe notificacao nas acoes dele (aprovar/recusar/averbar/etc),
     // via portal-banco/index.ts notifyMovimentacao.
-    return c.json(
-      {
-        id: contrato.adf,
-        situacao: contrato.situacao,
-        banco: body.bancoNome ?? bancoNome(contrato.bancoId),
-        valor: contrato.valorFinanciado,
-        parcelas: contrato.totalParcelas,
-        parcela: contrato.valorParcela,
-        expira_em: contrato.expiracao,
-      },
-      201,
-    );
+      return {
+        status: 201,
+        body: {
+          id: contrato.adf,
+          situacao: contrato.situacao,
+          banco: body.bancoNome ?? bancoNome(contrato.bancoId),
+          valor: contrato.valorFinanciado,
+          parcelas: contrato.totalParcelas,
+          parcela: contrato.valorParcela,
+          expira_em: contrato.expiracao,
+        },
+      };
+    });
+    if (idem.replayed) c.header("Idempotent-Replay", "true");
+    return c.json(idem.result, (idem.status === 200 || idem.status === 201) ? idem.status : 201);
   })
   // Lista as propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
   // Opcionalmente filtra pela matricula ativa — sem esse filtro o servidor
@@ -1147,6 +1158,9 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
       : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
     if (!entry) throw Errors.notFound("matricula");
+    const idemKey = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idemScope = `servidor:${s.id}:POST:/v1/servidores/me/portabilidade/solicitar`;
+    const idem = await withIdempotency(c.env, idemKey, idemScope, async () => {
     // Ja existe emprestimo/portabilidade em analise? Nao deixa abrir outra.
     const jaPendente = listContratos({ matricula: entry.matricula }).some(
       (ct) => /aguard/i.test(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO",
@@ -1195,7 +1209,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       mensagem: `Sua solicitação de portabilidade${loan ? ` do contrato ${loan.bancoNome}` : ""} foi enviada ao ${bancoNome(contrato.bancoId)}. Sua margem de empréstimo fica reservada por até 5 dias e o banco vai entrar em contato.`,
       detalhes: [{ label: "Situação", valor: contrato.situacao }],
     });
-    return c.json({ id: contrato.adf, situacao: contrato.situacao }, 201);
+      return { status: 201, body: { id: contrato.adf, situacao: contrato.situacao } };
+    });
+    if (idem.replayed) c.header("Idempotent-Replay", "true");
+    return c.json(idem.result, (idem.status === 200 || idem.status === 201) ? idem.status : 201);
   })
   // ================== PORTABILIDADE (marketplace) ==================
   // Servidor publica intencao a partir de um contrato ATIVO que ele tem em
