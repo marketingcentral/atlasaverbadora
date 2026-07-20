@@ -16,7 +16,7 @@ import {
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 /** Estado agrupado da proposta pro servidor (view). */
-type EstadoProposta = "em_analise" | "aprovada" | "aguardando_formalizacao" | "recusada" | "expirada" | "cancelada" | "liberada";
+type EstadoProposta = "em_analise" | "aprovada" | "aguardando_formalizacao" | "recusada" | "expirada" | "cancelada" | "liberada" | "desligada";
 
 function mapSituacao(situacao: string): EstadoProposta {
   const t = situacao.toLowerCase();
@@ -26,6 +26,10 @@ function mapSituacao(situacao: string): EstadoProposta {
   if (t.includes("recus") || t.includes("reprov") || t.includes("rejeit") || t.includes("negad")) return "recusada";
   if (t.includes("suspens")) return "cancelada";
   if (t.includes("expir")) return "expirada";
+  // "Em cobranca direta" = servidor foi desligado (F6). Contrato existe mas
+  // saiu da folha; banco cobra direto. Deve aparecer com etapas completas
+  // ate averbacao + marker vermelho na etapa final.
+  if (t.includes("cobran")) return "desligada";
   if (t.includes("quitad")) return "liberada";
   if (t.includes("ativo") || t.includes("averb")) return "liberada";
   // Banco aprovou mas ainda nao averbou (situacao intermediaria "Aprovado")
@@ -61,6 +65,7 @@ const ESTADO_LABEL: Record<EstadoProposta, string> = {
   expirada: "Expirada",
   cancelada: "Cancelada",
   liberada: "Averbada — virou contrato",
+  desligada: "Encerrado — cobrança direta com o banco",
 };
 
 /** Rotulo do produto no card do contrato. Usa tipoContrato + tipoMargem do
@@ -97,7 +102,7 @@ function ehEmAndamento(estado: EstadoProposta): boolean {
 
 /** Proposta que terminou negativa — vai pro Historico. */
 function ehHistoricoProposta(estado: EstadoProposta): boolean {
-  return estado === "recusada" || estado === "expirada" || estado === "cancelada";
+  return estado === "recusada" || estado === "expirada" || estado === "cancelada" || estado === "desligada";
 }
 
 /** Converte "DD/MM/YYYY" (formato do backend) em "YYYY-MM-DD" pra comparar
@@ -458,20 +463,24 @@ const ETAPAS_BASE = [
  *  - `atual`: indice (0..4) da etapa em curso.
  *  - `falha`: quando true, a etapa atual vira vermelha e as demais ficam cinza.
  *  - `labelEtapa2`: sobrescreve o label da etapa 2 quando o estado terminou negativo. */
-function estadoParaEtapa(estado: EstadoProposta): { atual: number; falha: boolean; labelEtapa2?: string } {
+function estadoParaEtapa(estado: EstadoProposta): { atual: number; falha: boolean; labelEtapa2?: string; labelEtapaFinal?: string } {
   if (estado === "em_analise") return { atual: 1, falha: false };
   if (estado === "aprovada" || estado === "aguardando_formalizacao") return { atual: 2, falha: false };
   if (estado === "liberada") return { atual: 4, falha: false };
   if (estado === "recusada") return { atual: 1, falha: true, labelEtapa2: "Recusada pelo banco" };
   if (estado === "expirada") return { atual: 1, falha: true, labelEtapa2: "Expirada" };
   if (estado === "cancelada") return { atual: 1, falha: true, labelEtapa2: "Cancelada" };
+  // Desligado: passou por todas as etapas (foi averbado) mas o servidor saiu
+  // da prefeitura. Mostra etapa final vermelha com label especifico.
+  if (estado === "desligada") return { atual: 4, falha: true, labelEtapaFinal: "Encerrado por desligamento" };
   return { atual: 0, falha: false };
 }
 
 function ProgressoProposta({ estado }: { estado: EstadoProposta }) {
-  const { atual, falha, labelEtapa2 } = estadoParaEtapa(estado);
+  const { atual, falha, labelEtapa2, labelEtapaFinal } = estadoParaEtapa(estado);
   const labels = [...ETAPAS_BASE] as string[];
   if (labelEtapa2) labels[1] = labelEtapa2;
+  if (labelEtapaFinal) labels[4] = labelEtapaFinal;
 
   return (
     <div style={{ marginTop: 16 }}>
