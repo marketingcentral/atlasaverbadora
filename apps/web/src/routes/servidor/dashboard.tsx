@@ -145,7 +145,7 @@ export function ServidorDashboard() {
           descricao="Consulta médica online sem custo, para você e sua família."
           icon="🏥"
           accent="emerald"
-          onClick={() => nav("/servidor/saude")}
+          onClick={() => nav("/servidor/beneficios")}
         />
         <AtalhoCard
           titulo="Portabilidade"
