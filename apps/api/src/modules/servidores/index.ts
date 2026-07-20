@@ -115,6 +115,22 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
     const bucket = deriveTipoMargem(ct);
     comprometidoPorTipo[bucket] += ct.valorParcela;
   }
+  // Adiciona os EMPRESTIMOS EXTERNOS (tombamento) na margem — contratos que o
+  // servidor tem em bancos nao-parceiros Atlas, declarados pela prefeitura via
+  // /prefeitura/tombamento. Sem isso, a margem ignorava tudo que ja estava
+  // comprometido fora do Atlas e liberava simulacoes acima do teto real.
+  // Regra do cliente (20/07/2026): tombamento tem que refletir na margem.
+  const bucketFromTipoTombamento = (tipo: string | undefined): "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS" => {
+    const t = (tipo ?? "").toLowerCase();
+    if (t.includes("benef")) return "CARTAO_BENEFICIOS";
+    if (t.includes("cartao") || t.includes("cartão")) return "CARTAO_CONSIGNADO";
+    return "EMPRESTIMO";
+  };
+  const externos = listExternalLoans(e.matricula);
+  for (const ext of externos) {
+    const bucket = bucketFromTipoTombamento(ext.tipo);
+    comprometidoPorTipo[bucket] += ext.valorParcela;
+  }
   // Total comprometido de emprestimo (pra retro-compat no campo comprometido raiz).
   const comprometido = comprometidoPorTipo.EMPRESTIMO;
   const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => ({
