@@ -29,6 +29,24 @@ export function ServidorConta() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
+  // Busca as matriculas frescas do backend a cada mount — bypassa cache
+  // localStorage stale. Antes: se localStorage tivesse MatriculaInfo antiga
+  // (sem cpfMasked, gravada por bundle anterior ao fix), o CPF ficava "—"
+  // pra sempre porque o hydrateMatriculas nao dispara storage event na mesma
+  // aba. Agora useQuery re-executa e atualiza `info` com dados do backend.
+  const matriculasQ = useQuery({
+    queryKey: ["servidor", "me", "matriculas"],
+    queryFn: () => atlas.getMyMatriculas<MatriculaInfo>(),
+    staleTime: 30_000,
+  });
+  useEffect(() => {
+    const fresh = matriculasQ.data?.matriculas ?? [];
+    if (fresh.length === 0) return;
+    const active = readActiveMatricula();
+    const match = active ? fresh.find((m) => m.idMatricula === active.idMatricula) : fresh[0];
+    if (match) setInfo(match);
+  }, [matriculasQ.data]);
+
   // Prefeitura decide se o servidor pode editar contato pelo app — hoje o
   // botao aparece independente da flag (cliente pediu). Mantido pra caso a
   // regra mude no futuro.

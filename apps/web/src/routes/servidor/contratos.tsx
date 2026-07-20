@@ -73,6 +73,22 @@ const ESTADO_LABEL: Record<EstadoProposta, string> = {
   falha_em_folha: "Falha em folha — aguardando decisão do banco",
 };
 
+/** Telemedicina nao passa pelo banco — o fluxo e servidor -> averbadora ->
+ *  ADF. O pill precisa refletir isso pra bater com a timeline logo abaixo
+ *  (que ja mostra "Averbadora avaliando" na etapa 2). */
+function estadoLabelParaPill(estado: EstadoProposta, telemedicina: boolean): string {
+  if (!telemedicina) return ESTADO_LABEL[estado];
+  switch (estado) {
+    case "em_analise": return "Em análise pela averbadora";
+    case "aprovada": return "Aprovada pela averbadora";
+    case "aguardando_formalizacao": return "Aguardando contrato";
+    case "liberada": return "Plano ativo";
+    case "desligada": return "Encerrado — cobrança direta";
+    case "falha_em_folha": return "Falha em folha — aguardando averbadora";
+    default: return ESTADO_LABEL[estado];
+  }
+}
+
 /** Rotulo do produto no card do contrato. Usa tipoContrato + tipoMargem do
  *  backend pra distinguir os 4 casos:
  *   - REFIN                                      -> Portabilidade
@@ -290,7 +306,7 @@ export function ServidorContratos() {
                     Proposta {p.id} · criada em {p.data}
                   </div>
                 </div>
-                <Pill variant={estadoPillVariant(p.estado)}>{ESTADO_LABEL[p.estado]}</Pill>
+                <Pill variant={estadoPillVariant(p.estado)}>{estadoLabelParaPill(p.estado, /telemedicina/i.test(p.observacoes ?? ""))}</Pill>
               </div>
               <div style={{
                 display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
@@ -345,7 +361,7 @@ export function ServidorContratos() {
                       Proposta {p.id} · criada em {p.data}
                     </div>
                   </div>
-                  <Pill variant={estadoPillVariant(p.estado)}>{ESTADO_LABEL[p.estado]}</Pill>
+                  <Pill variant={estadoPillVariant(p.estado)}>{estadoLabelParaPill(p.estado, /telemedicina/i.test(p.observacoes ?? ""))}</Pill>
                 </div>
                 <div style={{
                   display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
