@@ -105,3 +105,8 @@
 html, body { background: var(--bg); color: var(--text); font-family: var(--font-sans); }
 body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 * { box-sizing: border-box; }
+
+/* Esconde scrollbar mantendo scroll funcional. Usado em elementos onde a barra
+   polui o visual (ex.: nav lateral da averbadora com muitos itens). */
+.atlas-hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.atlas-hide-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }

@@ -60,6 +60,7 @@ export function AppShellAdmin({
           {convenioSlot}
         </div>
         <nav
+          className="atlas-hide-scrollbar"
           style={{
             display: "flex",
             flexDirection: "column",
