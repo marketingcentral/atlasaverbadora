@@ -101,12 +101,22 @@ export function ServidorConta() {
   );
 }
 
-/** Card Suporte no mesmo padrao do app mobile: 3 items fixos —
- *  Suporte, Termos de Uso, Politicas de Privacidade.
- *  - Suporte: modal com email/WhatsApp/horario editados em /averbadora/suporte
- *  - Termos/Politica: modal com corpo puxado de /averbadora/termos */
+/** 2 cards:
+ *  - Suporte: um item, abre modal com email/WhatsApp/horario editados
+ *    pela averbadora em /averbadora/suporte.
+ *  - Termos de aceite: lista TODOS os termos ativos publicados em
+ *    /averbadora/termos. Servidor so LE (nao edita). Cada linha abre
+ *    modal com o corpo. Lista dinamica — se averbadora ativa novo termo,
+ *    aparece automaticamente. */
 function SuporteCard() {
   const [aberto, setAberto] = useState<"suporte" | TermoTipo | null>(null);
+
+  const termosQ = useQuery({
+    queryKey: ["servidor", "termos-vigentes"],
+    queryFn: () => atlas.servidor.listTermos(),
+    staleTime: 5 * 60_000,
+  });
+  const termos = termosQ.data?.termos ?? [];
 
   return (
     <>
@@ -114,11 +124,34 @@ function SuporteCard() {
         <div style={{ fontSize: 11, letterSpacing: ".08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 12 }}>
           Suporte
         </div>
-        <div style={{ display: "flex", flexDirection: "column" }}>
-          <SuporteItem label="Suporte" onClick={() => setAberto("suporte")} />
-          <SuporteItem label="Termos de Uso" onClick={() => setAberto("termos_uso")} borderTop />
-          <SuporteItem label="Políticas de Privacidade" onClick={() => setAberto("politica_privacidade")} borderTop />
+        <SuporteItem label="Suporte" onClick={() => setAberto("suporte")} />
+      </Card>
+
+      <Card>
+        <div style={{ fontSize: 11, letterSpacing: ".08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>
+          Termos de aceite
         </div>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted)" }}>
+          Documentos oficiais em vigência. Toque em qualquer um pra ler o texto integral.
+        </p>
+        {termosQ.isPending ? (
+          <div style={{ color: "var(--text-muted)", fontSize: 14, padding: "8px 0" }}>Carregando…</div>
+        ) : termosQ.isError ? (
+          <div style={{ color: "var(--danger-500)", fontSize: 14 }}>Não foi possível carregar os termos.</div>
+        ) : termos.length === 0 ? (
+          <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Nenhum termo ativo no momento.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {termos.map((t, i) => (
+              <SuporteItem
+                key={t.id}
+                label={t.titulo}
+                onClick={() => setAberto(t.id)}
+                borderTop={i > 0}
+              />
+            ))}
+          </div>
+        )}
       </Card>
 
       {aberto === "suporte" ? (
