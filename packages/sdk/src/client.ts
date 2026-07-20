@@ -1965,6 +1965,8 @@ export class AtlasClient {
       this.request<{ folha: PrefeituraFolha }>("/v1/prefeitura/folhas", { method: "POST", body }),
     atualizarFolha: (id: string, body: Partial<{ status: "aberta" | "fechada"; dataCorte: string; dataRepasse: string | null }>) =>
       this.request<{ folha: PrefeituraFolha }>(`/v1/prefeitura/folhas/${id}`, { method: "PATCH", body }),
+    excluirFolha: (id: string) =>
+      this.request<{ ok: boolean; competencia: string }>(`/v1/prefeitura/folhas/${id}`, { method: "DELETE" }),
     movimentacoes: (folhaId: string) =>
       this.request<{ movimentacoes: { id: string; tipo: string; matricula: string; nome: string; detalhe: string; criadoEm: string }[] }>(`/v1/prefeitura/folhas/${folhaId}/movimentacoes`),
     enviarMovimentacao: (folhaId: string, csv: string) =>

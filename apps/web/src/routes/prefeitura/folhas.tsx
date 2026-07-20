@@ -30,6 +30,11 @@ export function PrefeituraFolhas() {
     mutationFn: ({ id, status }: { id: string; status: "aberta" | "fechada" }) => atlas.prefeitura.atualizarFolha(id, { status }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["prefeitura"] }),
   });
+  const excluirFolha = useMutation({
+    mutationFn: (id: string) => atlas.prefeitura.excluirFolha(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["prefeitura"] }),
+    onError: (e) => alert((e as Error).message || "Erro ao excluir"),
+  });
 
   const columns: Column<FolhaRow>[] = [
     { key: "competencia", header: "Competência", mono: true },
@@ -57,6 +62,21 @@ export function PrefeituraFolhas() {
           {f.status === "aberta" ? (
             <>
               <Button size="sm" variant="ghost" onClick={() => setMovFolha(f)}>✎ Movimentar</Button>
+              {f.movimentacoes === 0 ? (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={excluirFolha.isPending}
+                  title="Exclui folha aberta e sem movimentações"
+                  onClick={() => {
+                    if (confirm(`Excluir a folha ${f.competencia}? Ação irreversível.`)) {
+                      excluirFolha.mutate(f.id);
+                    }
+                  }}
+                >
+                  🗑 Excluir
+                </Button>
+              ) : null}
               <Button
                 size="sm"
                 disabled={f.movimentacoes === 0 || setStatus.isPending}

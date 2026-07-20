@@ -26,7 +26,7 @@ import {
   TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia,
   listPerfis, upsertPerfil, deletePerfil, reactivatePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
 } from "./store.js";
-import { upsertPrefeitura, upsertServidor } from "../../db/repos.js";
+import { upsertPrefeitura, upsertServidor, deleteCollectionRow, loadCollection } from "../../db/repos.js";
 import { MATRICULA_REGEX, normalizeMatricula } from "../../_shared/matricula.js";
 
 /**
@@ -445,7 +445,15 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   // ===== Passo 4 — Folha mensal =====
   .get("/v1/prefeitura/folhas", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    await ensureFolhasLoaded(c.env);
+    // Reload from PG a cada request — folhas apagadas/criadas em outro isolate
+    // (ou pelo admin diretamente no PG) precisam refletir imediatamente. Sem
+    // isso, isolate warm segurava a lista velha (bug: folha 202608 apagada
+    // mas continuava aparecendo em GET de outros isolates).
+    try {
+      const rows = await loadCollection<FolhaAdmin>(c.env, "admin_folhas");
+      folhas.length = 0;
+      folhas.push(...rows);
+    } catch { /* fail-safe: usa in-memory */ }
     // Sincroniza contratos + convenios (contratos aprovados em outro isolate
     // viram ADFs) antes de contar. Sem refreshConvenios, CONVENIOS_MOCK fica
     // vazio no isolate frio -> ensureAdfs nao acha contratos pelo convenioId
@@ -518,6 +526,25 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await persistFolha(c.env, f);
     appendAudit({ categoria: "margem", acao: "folha_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} -> status=${f.status}.` });
     return c.json({ folha: f });
+  })
+  // Exclui folha aberta e SEM movimentacoes (rollback de "abri sem querer").
+  // Nao permite excluir folha fechada ou com ADFs/movimentacoes — dado real.
+  .delete("/v1/prefeitura/folhas/:id", async (c) => {
+    const pid = requirePrefeitura(c.get("jwt"));
+    await ensureFolhasLoaded(c.env);
+    const idx = folhas.findIndex((x) => x.id === c.req.param("id") && x.prefeituraId === pid);
+    if (idx < 0) throw Errors.notFound("folha");
+    const f = folhas[idx]!;
+    if (f.status !== "aberta") {
+      throw Errors.validation({ folha: "so folha ABERTA pode ser excluida (feche/consolide antes se quiser arquivar)." });
+    }
+    if (countMovimentacoes(f.id) > 0) {
+      throw Errors.validation({ folha: "folha ja tem movimentacoes — nao pode ser excluida." });
+    }
+    folhas.splice(idx, 1);
+    try { await deleteCollectionRow(c.env, "admin_folhas", f.id); } catch { /* fail-safe */ }
+    appendAudit({ categoria: "margem", acao: "folha_excluida", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} excluida (estava aberta e sem movimentacoes).` });
+    return c.json({ ok: true, competencia: f.competencia });
   })
   .get("/v1/prefeitura/folhas/:id/movimentacoes", (c) => {
     const pid = requirePrefeitura(c.get("jwt"));
