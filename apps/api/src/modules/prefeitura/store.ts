@@ -370,10 +370,11 @@ export interface Anuencia {
 // pendente" aparecer como pendencia permanente no painel. Prefeituras
 // cadastradas via UI (id > 2) nao tem seed, entao a pendencia aparece
 // legitimamente ate elas assinarem em /prefeitura/anuencia.
-const _anuencias: Anuencia[] = [
-  { id: "ANU-0001", prefeituraId: 1, versao: TERMO_VERSAO_ATUAL, escopo: "base_servidores", aceitoPor: "gestor@palhoca.sc.gov.br", aceitoEm: "2026-01-15T10:00:00.000Z", ip: "189.41.10.50" },
-  { id: "ANU-0002", prefeituraId: 2, versao: TERMO_VERSAO_ATUAL, escopo: "base_servidores", aceitoPor: "gestor@florianopolis.sc.gov.br", aceitoEm: "2026-01-20T14:30:00.000Z", ip: "189.41.12.20" },
-];
+// Cliente pediu (20/07/2026) remocao dos seeds hardcoded de anuencia — ANU-0001
+// (Palhoça) e ANU-0002 (Florianopolis) apareciam como "vigente" pra qualquer
+// prefeitura que reciclasse id=1 ou id=2 (Capistrano herdou id=1 apos delete
+// da Palhoça). Anuencias novas entram exclusivamente via POST /prefeitura/anuencia.
+const _anuencias: Anuencia[] = [];
 let _anuSeq = 3;
 
 export function listAnuencias(prefeituraId: number): Anuencia[] {
