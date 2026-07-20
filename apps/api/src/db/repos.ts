@@ -391,6 +391,12 @@ export async function upsertTombamentoLote(env: Env, lote: LoteLike, linhas: Lot
     ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`);
 }
 
+/** Apaga um lote de tombamento especifico por id. Retorna true se apagou algo. */
+export async function deleteTombamentoLote(env: Env, id: string): Promise<boolean> {
+  const rows = (await getDb(env).execute(sql`DELETE FROM tombamento_lotes WHERE id = ${id} RETURNING id`)) as unknown as { id: string }[];
+  return rows.length > 0;
+}
+
 export async function seedTombamentoIfEmpty(env: Env, seed: { lote: LoteLike; linhas: LoteLike[] }[]): Promise<boolean> {
   const db = getDb(env);
   const c = (await db.execute(sql`SELECT count(*)::int AS n FROM tombamento_lotes`)) as unknown as { n: number }[];
