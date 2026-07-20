@@ -1,45 +1,65 @@
-import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, DataTable, FormActions, FormGrid, IconButton, Pill, SelectField, TextField, type Column } from "@atlas/ui/web";
+import { useMemo, useState } from "react";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, DataTable, FormActions, FormGrid, Pill, SelectField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminTombamentoLote, AdminTombamentoLinha, AdminPrefeitura } from "@atlas/sdk";
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
+type LinhaEnriquecida = AdminTombamentoLinha & { competencia: string; prefeituraNome: string };
+
 export function AdminTombamento() {
   const qc = useQueryClient();
   const lotes = useQuery({ queryKey: ["admin", "tombamento", "lotes"], queryFn: () => atlas.admin.listTombamentoLotes() });
   const prefeituras = useQuery({ queryKey: ["admin", "prefeituras"], queryFn: () => atlas.admin.listPrefeituras() });
-  const [opening, setOpening] = useState<AdminTombamentoLote | null>(null);
   const [importing, setImporting] = useState(false);
 
-  const columns: Column<AdminTombamentoLote>[] = [
+  const listaLotes = lotes.data?.lotes ?? [];
+  // Puxa as linhas de cada lote em paralelo. Cache 30s pra alternar rapido.
+  const linhasQueries = useQueries({
+    queries: listaLotes.map((l) => ({
+      queryKey: ["admin", "tombamento", "linhas", l.id],
+      queryFn: () => atlas.admin.listTombamentoLinhas(l.id),
+      staleTime: 30_000,
+    })),
+  });
+
+  const linhas: LinhaEnriquecida[] = useMemo(() => {
+    const out: LinhaEnriquecida[] = [];
+    listaLotes.forEach((lote, idx) => {
+      const data = linhasQueries[idx]?.data;
+      for (const l of data?.linhas ?? []) {
+        out.push({ ...l, competencia: lote.competencia, prefeituraNome: lote.prefeituraNome });
+      }
+    });
+    return out;
+  }, [listaLotes, linhasQueries]);
+
+  const columns: Column<LinhaEnriquecida>[] = [
+    { key: "competencia", header: "Competência", mono: true },
+    { key: "prefeituraNome", header: "Prefeitura" },
+    { key: "cpfMasked", header: "CPF", mono: true },
+    { key: "matricula", header: "Matrícula", mono: true },
+    { key: "nome", header: "Nome", render: (l) => l.nome ?? "—" },
+    { key: "bancoNome", header: "Banco" },
+    { key: "adfBanco", header: "Nº Contrato", mono: true },
+    { key: "valorParcela", header: "Parcela", align: "right", render: (l) => BRL.format(l.valorParcela) },
+    { key: "totalParcelas", header: "Total parc.", align: "right", render: (l) => l.totalParcelas ?? "—" },
+    { key: "parcelasRestantes", header: "Restantes", align: "right" },
+    { key: "valorEmprestimo", header: "Valor emprést.", align: "right", render: (l) => l.valorEmprestimo ? BRL.format(l.valorEmprestimo) : "—" },
+    { key: "saldoDevedor", header: "Saldo dev.", align: "right", render: (l) => BRL.format(l.saldoDevedor) },
+    { key: "statusContrato", header: "Status", render: (l) => l.statusContrato ?? "—" },
+    { key: "motivo", header: "Motivo", render: (l) => l.motivo ?? "—" },
+    { key: "tipo", header: "Tipo", render: (l) => l.tipo ?? "—" },
     {
-      key: "status",
-      header: "Status",
+      key: "reconciliacao",
+      header: "Reconciliação",
       render: (l) => (
-        <Pill variant={l.status === "conciliado" ? "averbado" : l.status === "divergente" ? "pendente" : l.status === "rejeitado" ? "rejeitada" : "emdia"}>
-          {l.status}
+        <Pill variant={l.reconciliacao === "ok" ? "averbado" : l.reconciliacao === "novo" ? "pendente" : "rejeitada"}>
+          {l.reconciliacao}
         </Pill>
       ),
     },
-    { key: "id", header: "Lote", mono: true },
-    { key: "prefeituraNome", header: "Prefeitura" },
-    { key: "competencia", header: "Competência" },
-    { key: "totalLinhas", header: "Linhas", align: "right" },
-    { key: "inseridos", header: "Inseridos", align: "right" },
-    { key: "atualizados", header: "Atualizados", align: "right" },
-    {
-      key: "divergencias",
-      header: "Divergências",
-      align: "right",
-      render: (l) => (
-        <span style={{ color: l.divergencias > 0 ? "var(--gold-500)" : "var(--text)", fontWeight: l.divergencias > 0 ? 600 : 400 }}>
-          {l.divergencias}
-        </span>
-      ),
-    },
-    { key: "recebidoEm", header: "Recebido", render: (l) => new Date(l.recebidoEm).toLocaleString("pt-BR") },
   ];
 
   return (
@@ -71,17 +91,20 @@ export function AdminTombamento() {
         );
       })()}
 
+      {listaLotes.length > 0 ? (
+        <div style={{ padding: "10px 14px", background: "var(--bg-elev-2)", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
+          <b>{listaLotes.length}</b> lote(s) recebido(s) · <b>{linhas.length}</b> contrato(s) declarado(s) no total
+        </div>
+      ) : null}
+
       <DataTable
         columns={columns}
-        rows={lotes.data?.lotes ?? []}
-        rowKey={(l) => l.id}
-        loading={lotes.isLoading}
-        actions={(l) => (
-          <IconButton title="Ver linhas do lote" onClick={() => setOpening(l)}>↗</IconButton>
-        )}
+        rows={linhas}
+        rowKey={(l) => `${l.loteId}:${l.matricula}:${l.adfBanco}`}
+        loading={lotes.isLoading || linhasQueries.some((q) => q.isLoading)}
+        emptyState="Nenhum contrato tombado ainda."
       />
 
-      {opening ? <LinhasDrawer lote={opening} onClose={() => setOpening(null)} /> : null}
       {importing ? (
         <ImportModal
           prefeituras={prefeituras.data?.prefeituras ?? []}

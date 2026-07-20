@@ -1,24 +1,83 @@
-import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CsvImportPanel, DataTable, type Column } from "@atlas/ui/web";
+import { useMemo, useState } from "react";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Card, CsvImportPanel, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { PageHeader, inp } from "./_ui";
 
 interface Lote { id: string; competencia: string; totalLinhas: number; inseridos: number; atualizados: number; divergencias: number; recebidoEm: string }
+interface Linha {
+  loteId: string;
+  cpfMasked: string;
+  matricula: string;
+  nome?: string;
+  bancoNome: string;
+  adfBanco: string;
+  valorParcela: number;
+  totalParcelas?: number;
+  parcelasRestantes: number;
+  valorEmprestimo?: number;
+  saldoDevedor: number;
+  statusContrato?: string;
+  motivo?: string;
+  tipo?: string;
+  reconciliacao: "ok" | "divergente" | "novo";
+  competencia?: string;
+}
+
+const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
 export function PrefeituraTombamento() {
   const qc = useQueryClient();
   const [competencia, setCompetencia] = useState(new Date().toISOString().slice(0, 7).replace("-", ""));
-  const q = useQuery({ queryKey: ["prefeitura", "tombamento"], queryFn: () => atlas.prefeitura.tombamentoLotes() });
+  const lotesQ = useQuery({ queryKey: ["prefeitura", "tombamento"], queryFn: () => atlas.prefeitura.tombamentoLotes() });
+  const lotes: Lote[] = (lotesQ.data?.lotes ?? []) as Lote[];
 
-  const columns: Column<Lote>[] = [
-    { key: "id", header: "Lote", mono: true },
-    { key: "competencia", header: "Competência", mono: true },
-    { key: "totalLinhas", header: "Linhas", align: "right" },
-    { key: "inseridos", header: "Inseridos", align: "right" },
-    { key: "atualizados", header: "Atualizados", align: "right" },
-    { key: "divergencias", header: "Divergências", align: "right", render: (l) => <span style={{ color: l.divergencias ? "var(--danger-500)" : "var(--text-muted)" }}>{l.divergencias}</span> },
-    { key: "recebidoEm", header: "Recebido", render: (l) => new Date(l.recebidoEm).toLocaleString("pt-BR") },
+  // Puxa linhas de cada lote em paralelo (cache 30s pra alternar rápido).
+  const linhasQueries = useQueries({
+    queries: lotes.map((l) => ({
+      queryKey: ["prefeitura", "tombamento", "linhas", l.id],
+      queryFn: () => atlas.prefeitura.tombamentoLinhas(l.id),
+      staleTime: 30_000,
+    })),
+  });
+
+  const linhas: Linha[] = useMemo(() => {
+    const out: Linha[] = [];
+    lotes.forEach((lote, idx) => {
+      const data = linhasQueries[idx]?.data as { linhas: Linha[] } | undefined;
+      for (const l of data?.linhas ?? []) {
+        out.push({ ...l, competencia: lote.competencia });
+      }
+    });
+    return out;
+  }, [lotes, linhasQueries]);
+
+  const carregando = lotesQ.isLoading || linhasQueries.some((q) => q.isLoading);
+
+  const columnsContratos: Column<Linha>[] = [
+    { key: "competencia", header: "Competência", mono: true, render: (l) => l.competencia ?? "—" },
+    { key: "cpfMasked", header: "CPF", mono: true },
+    { key: "matricula", header: "Matrícula", mono: true },
+    { key: "nome", header: "Nome", render: (l) => l.nome ?? "—" },
+    { key: "bancoNome", header: "Banco" },
+    { key: "adfBanco", header: "Nº Contrato", mono: true },
+    { key: "valorParcela", header: "Valor parcela", align: "right", render: (l) => BRL.format(l.valorParcela) },
+    { key: "totalParcelas", header: "Total parc.", align: "right", render: (l) => l.totalParcelas ?? "—" },
+    { key: "parcelasRestantes", header: "Restantes", align: "right" },
+    { key: "valorEmprestimo", header: "Valor emprést.", align: "right", render: (l) => l.valorEmprestimo ? BRL.format(l.valorEmprestimo) : "—" },
+    { key: "saldoDevedor", header: "Saldo dev.", align: "right", render: (l) => BRL.format(l.saldoDevedor) },
+    { key: "statusContrato", header: "Status", render: (l) => l.statusContrato ?? "—" },
+    { key: "motivo", header: "Motivo", render: (l) => l.motivo ?? "—" },
+    { key: "tipo", header: "Tipo", render: (l) => l.tipo ?? "—" },
+    {
+      key: "reconciliacao",
+      header: "Reconciliação",
+      render: (l) => (
+        <Pill variant={l.reconciliacao === "ok" ? "averbado" : l.reconciliacao === "novo" ? "pendente" : "rejeitada"}>
+          {l.reconciliacao}
+        </Pill>
+      ),
+    },
   ];
 
   return (
@@ -42,7 +101,20 @@ export function PrefeituraTombamento() {
           onImported={() => qc.invalidateQueries({ queryKey: ["prefeitura", "tombamento"] })}
         />
       </Card>
-      <DataTable columns={columns} rows={(q.data?.lotes ?? []) as Lote[]} rowKey={(l) => l.id} loading={q.isLoading} emptyState="Nenhum lote de tombamento enviado." />
+
+      {lotes.length > 0 ? (
+        <div style={{ padding: "10px 14px", background: "var(--bg-elev-2)", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
+          <b>{lotes.length}</b> lote(s) enviado(s) · <b>{linhas.length}</b> contrato(s) declarado(s) no total
+        </div>
+      ) : null}
+
+      <DataTable
+        columns={columnsContratos}
+        rows={linhas}
+        rowKey={(l) => `${l.loteId}:${l.matricula}:${l.adfBanco}`}
+        loading={carregando}
+        emptyState="Nenhum contrato tombado. Envie o CSV de remessa acima."
+      />
     </div>
   );
 }
