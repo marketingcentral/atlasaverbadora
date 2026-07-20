@@ -100,6 +100,10 @@ export interface Beneficio {
   bancoId?: number;
   /** Obrigatorio quando origem="convenio": id do convenio da prefeitura. */
   convenioId?: string;
+  /** F5: valor mensal em R$ quando o beneficio vira ADF (assinatura mensal
+   *  descontada em folha). Opcional — se nao tiver, servidor nao pode "Contratar",
+   *  so pode clicar no link externo (fluxo antigo). */
+  valorMensal?: number;
   imagens?: string[];
   modoImagens?: ModoImagens;
   linkAcesso?: LinkAcessoBeneficio;
