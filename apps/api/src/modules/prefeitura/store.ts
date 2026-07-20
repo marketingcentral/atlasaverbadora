@@ -243,6 +243,13 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
       }
       // Preenche tipoMargem se veio depois (ADF criado antes desse campo existir).
       if (!already.tipoMargem && tipoMargemInferido) already.tipoMargem = tipoMargemInferido;
+      // Backfill telemedicina: ADFs materializadas antes deste fix ficaram com
+      // bancoNome do banco parceiro (ATLAS TECH) e tipoContrato=EMPRESTIMO.
+      // Corrige retroativamente detectando via observacoes.
+      if (/telemedicina/i.test(ct.observacoes ?? "")) {
+        already.bancoNome = "Telemedicina Atlas";
+        already.tipoContrato = "TELEMEDICINA";
+      }
       continue;
     }
     // atualizadoEm inicial = criacao do contrato (garante que ADFs materializadas
@@ -253,12 +260,20 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
     // sort DESC. So cai em `now` se nem lancamento tem, o que nao deveria
     // acontecer nunca em contrato real.
     const iso = ct.criadoEmIso ?? parseLancamentoAsIso(ct.lancamento) ?? now;
+    // Telemedicina: contrato criado pelo /admin/telemedicina/cotacoes/:id/ativar
+    // vem com bancoId=1 (banco padrao do convenio da prefeitura) mas o servico
+    // e da AVERBADORA, nao do banco. Detecta via observacoes e sobrescreve
+    // bancoNome+tipoContrato pra o rotulo correto na ADF. Antes aparecia
+    // "ATLAS TECH · EMPRESTIMO" — errado; agora "Telemedicina Atlas · Telemedicina".
+    const isTelemedicina = /telemedicina/i.test(ct.observacoes ?? "");
     _adfs.push({
       id: `ADF-${competencia}-${ct.adf}`,
       competencia, prefeituraId, adf: ct.adf, idUnico: issueIdUnico(prefeituraId),
       cpfMasked: ct.cpfMasked, matricula: ct.matricula, nome: ct.nome,
-      bancoNome: bancoNomeById(ct.bancoId), valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
-      valorFinanciado: ct.valorFinanciado, tipoContrato: ct.tipoContrato,
+      bancoNome: isTelemedicina ? "Telemedicina Atlas" : bancoNomeById(ct.bancoId),
+      valorParcela: ct.valorParcela, totalParcelas: ct.totalParcelas,
+      valorFinanciado: ct.valorFinanciado,
+      tipoContrato: isTelemedicina ? "TELEMEDICINA" : ct.tipoContrato,
       tipoMargem: tipoMargemInferido,
       status, motivo: ct.folhaMotivo, atualizadoEm: iso,
     });

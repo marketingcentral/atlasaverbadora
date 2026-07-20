@@ -28,6 +28,7 @@ type AdfRow = {
  *  ECONSIGNADO sem tipoMargem cai em "Cartao" (dado antigo). */
 function produtoLabel(tipoContrato: string | undefined, tipoMargem?: string): string {
   const t = (tipoContrato ?? "").toUpperCase();
+  if (t === "TELEMEDICINA") return "Telemedicina";
   if (t === "REFIN") return "Portabilidade";
   if (t === "ECONSIGNADO") {
     if (tipoMargem === "CARTAO_BENEFICIOS") return "Cartão Benefício";
