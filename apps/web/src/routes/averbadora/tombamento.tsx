@@ -226,7 +226,7 @@ function ImportModal({
       <div onClick={(e) => e.stopPropagation()} style={{ ...modalCard, maxWidth: 760 }}>
         <h3 style={{ margin: 0 }}>Importar remessa de contratos</h3>
         <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13 }}>
-          Cola o conteúdo do CSV abaixo. <a href={atlas.admin.tombamentoCsvTemplateUrl()} download style={{ color: "var(--gold-500)" }}>Baixar template</a>.
+          Envie o arquivo CSV ou cole o conteúdo abaixo. <a href={atlas.admin.tombamentoCsvTemplateUrl()} download style={{ color: "var(--gold-500)" }}>Baixar exemplo</a>.
         </p>
         <FormGrid cols={2}>
           <SelectField
@@ -237,6 +237,29 @@ function ImportModal({
           />
           <TextField label="Competência (YYYYMM)" value={competencia} onChange={(e) => setCompetencia(e.target.value)} maxLength={6} />
         </FormGrid>
+        <div>
+          <label style={{ display: "inline-block" }}>
+            <input
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: "none" }}
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (!f) return;
+                const text = await f.text();
+                setCsv(text);
+                setError(null);
+                e.target.value = ""; // permite reselect do mesmo arquivo
+              }}
+            />
+            <Button size="sm" variant="ghost" type="button" onClick={(e) => (e.currentTarget.previousElementSibling as HTMLInputElement)?.click()}>
+              ↑ Selecionar arquivo CSV
+            </Button>
+          </label>
+          <span style={{ marginLeft: 8, fontSize: 12, color: "var(--text-dim)" }}>
+            ou cole o conteúdo direto na área abaixo (Ctrl+V)
+          </span>
+        </div>
         <textarea
           value={csv}
           onChange={(e) => setCsv(e.target.value)}
@@ -247,6 +270,11 @@ function ImportModal({
             borderRadius: 10, padding: 12, color: "var(--text)", fontFamily: "ui-monospace, monospace", fontSize: 13,
           }}
         />
+        {csv ? (
+          <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
+            {csv.split(/\r?\n/).filter((l) => l.trim()).length} linha(s) prontas pra processar
+          </div>
+        ) : null}
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         {result ? (
           <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 10, padding: 12, fontSize: 13 }}>
