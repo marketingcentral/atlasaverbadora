@@ -769,6 +769,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     await refreshContratos(c.env);
     const owner = getContrato(adf);
     if (owner && owner.bancoId === (j.banco_id ?? -1)) {
+      // Antes de substituir: apaga o arquivo antigo do R2 (regra do cliente
+      // 20/07/2026: nao deixar orfaos em disco quando CCB e' substituida).
+      // O historico do ccbHistorico mantem so o registro de metadados, nao o
+      // arquivo — a versao anterior nao pode mais ser baixada.
+      const oldKey = owner.ccbKey;
+      if (oldKey && oldKey !== key) {
+        try { await c.env.R2_FILES.delete(oldKey); } catch { /* segue */ }
+      }
       setContratoCcb(adf, key, `user:${j.sub}`);
       await persistContrato(c.env, adf);
     }

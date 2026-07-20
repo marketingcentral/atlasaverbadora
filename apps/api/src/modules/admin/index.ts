@@ -2184,7 +2184,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const rows = listContratos({}); // todos os bancos
     const contratos = rows.map((ct) => {
       const eventos = getContratoEventos(ct.adf);
-      const ultimo = eventos.length > 0 ? eventos[eventos.length - 1]?.criadoEm : undefined;
+      // Ordem de precedencia (fixa, nao muda entre requests):
+      // 1) ultimo evento real (aprovacao, averbacao, falha em folha, etc)
+      // 2) ccb anexada (banco enviou CCB — evento real do contrato)
+      // 3) criadoEmIso (criacao do contrato)
+      // 4) lancamento DD/MM/YYYY -> ISO 00:00 (contratos do seed sem criadoEmIso)
+      // Antes tinha fallback pra `new Date().toISOString()` — bug: coluna
+      // "Ultima atualizacao" atualizava a cada request pra 'agora'. Removido.
+      const parseLanc = (s: string): string | undefined => {
+        const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s);
+        return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : undefined;
+      };
+      const atualizadoEm =
+        (eventos.length > 0 ? eventos[eventos.length - 1]?.criadoEm : undefined)
+        ?? ct.ccbAnexadoEm
+        ?? ct.criadoEmIso
+        ?? parseLanc(ct.lancamento);
       const banco = bancos.find((b) => b.id === ct.bancoId);
       return {
         adf: ct.adf,
@@ -2202,7 +2217,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         valorFinanciado: ct.valorFinanciado,
         taxaAm: ct.taxaAm,
         folhaStatus: ct.folhaStatus,
-        atualizadoEm: ultimo ?? new Date().toISOString(),
+        atualizadoEm,
         bancoId: ct.bancoId,
         bancoNome: banco?.nome ?? `Banco ${ct.bancoId}`,
         ccbKey: ct.ccbKey,
