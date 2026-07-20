@@ -531,6 +531,16 @@ export async function purgeServidores(env: Env): Promise<void> {
   await db.execute(sql`TRUNCATE servidores, contratos, portal_banco_contratos, propostas, proposta_eventos, contrato_eventos, consentimentos RESTART IDENTITY CASCADE`);
 }
 
+/** Purge cirurgico: SO contratos + propostas + ADFs + eventos. Preserva
+ *  servidores, bancos, prefeituras, convenios, folhas. Usado quando cliente
+ *  quer "testar do zero a parte de contratos" sem perder base de servidores
+ *  cadastrados. Idempotente. */
+export async function purgeContratosApenas(env: Env): Promise<void> {
+  const db = getDb(env);
+  await ensureSchema(env);
+  await db.execute(sql`TRUNCATE contratos, portal_banco_contratos, propostas, proposta_eventos, contrato_eventos RESTART IDENTITY CASCADE`);
+}
+
 /** Zera prefeituras + tudo que gira em torno delas: convenios (Drizzle + collection),
  *  folhas (Drizzle + collection), ofertas (collection), tabelas de emprestimo.
  *  Bancos ficam intocados (mas sem convenio pra operar).

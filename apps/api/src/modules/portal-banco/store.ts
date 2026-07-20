@@ -195,6 +195,17 @@ export function ensureContratosLoaded(env: Env): Promise<void> {
   return _hydrationPromise;
 }
 
+/** Zera in-memory de contratos + eventos + flag de hidratacao. Usado pelo
+ *  /admin/db/purge-contratos APOS o TRUNCATE no PG (senao contratos stale no
+ *  isolate reapareceriam via seedContratosIfEmpty na proxima ensureContratosLoaded). */
+export function clearContratosMemoria(): void {
+  _contratos.clear();
+  _eventos.length = 0;
+  _eventoId = 1;
+  _hydrated = false;
+  _hydrationPromise = null;
+}
+
 /** Write-through best-effort: persiste um contrato/reserva sem quebrar a request. */
 export async function persistContrato(env: Env, adf: string): Promise<void> {
   const c = _contratos.get(adf);

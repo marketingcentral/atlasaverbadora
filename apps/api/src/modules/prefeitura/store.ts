@@ -146,6 +146,13 @@ export interface AdfEntry {
 
 const _adfs: AdfEntry[] = [];
 
+/** Zera in-memory de ADFs. Usado pelo /admin/db/purge-contratos apos o TRUNCATE
+ *  dos contratos — sem isso, o proximo ensureAdfsGlobal encontraria as ADFs
+ *  antigas ainda no array e nao rehidratariam do zero. */
+export function clearAdfsMemoria(): void {
+  _adfs.length = 0;
+}
+
 /** Elegivel pra virar ADF na averbadora. Inclui:
  *  - "Ativo"/averbado (fluxo antigo — banco confirmava direto).
  *  - "Aprovado" (fluxo novo — banco so aprova, averbadora que faz a ADF).
