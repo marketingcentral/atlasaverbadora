@@ -74,6 +74,13 @@ function pick(norm: Record<string, string>, ...names: string[]): string {
 const _lotes: TombamentoLote[] = [];
 const _linhas: TombamentoLinha[] = [];
 
+/** Zera memoria do tombamento (chamado pelo purge-contratos pra evitar orfaos
+ *  in-memory apos TRUNCATE do PG). */
+export function clearTombamentoMemoria(): void {
+  _lotes.length = 0;
+  _linhas.length = 0;
+}
+
 // Seed: one consolidated lote per prefeitura.
 function seedLote(input: Omit<TombamentoLote, "id" | "recebidoEm" | "processadoEm">): TombamentoLote {
   const id = `TB-${input.prefeituraId}-${input.competencia}`;

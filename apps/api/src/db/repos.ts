@@ -538,7 +538,10 @@ export async function purgeServidores(env: Env): Promise<void> {
 export async function purgeContratosApenas(env: Env): Promise<void> {
   const db = getDb(env);
   await ensureSchema(env);
-  await db.execute(sql`TRUNCATE contratos, portal_banco_contratos, propostas, proposta_eventos, contrato_eventos RESTART IDENTITY CASCADE`);
+  // Inclui tombamento_lotes: cliente pediu (20/07/2026) que purge de contratos
+  // limpe tombamento tambem — nao faz sentido manter lote de contratos externos
+  // se toda a base de contratos foi zerada.
+  await db.execute(sql`TRUNCATE contratos, portal_banco_contratos, propostas, proposta_eventos, contrato_eventos, tombamento_lotes RESTART IDENTITY CASCADE`);
 }
 
 /** Zera prefeituras + tudo que gira em torno delas: convenios (Drizzle + collection),

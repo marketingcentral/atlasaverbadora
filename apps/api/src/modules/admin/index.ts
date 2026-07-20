@@ -18,7 +18,7 @@ import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, 
 import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
-import { importTombamento, listLinhas, listLotes } from "./tombamento.js";
+import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
@@ -1440,10 +1440,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         confirmar: 'Operacao destrutiva bloqueada. Para confirmar, envie { "confirmar": "APAGAR-CONTRATOS" }. Apaga contratos + propostas + ADFs + eventos. Servidores/bancos/prefeituras/convenios ficam intocados.',
       });
     }
-    pushEvent("error", "admin.db.purge_contratos", `PURGE CIRURGICO de contratos confirmado por admin ${j?.sub}: TRUNCATE contratos + propostas + eventos + folhas.`);
+    pushEvent("error", "admin.db.purge_contratos", `PURGE CIRURGICO de contratos confirmado por admin ${j?.sub}: TRUNCATE contratos + propostas + eventos + folhas + tombamento.`);
     await purgeContratosApenas(c.env);
     clearContratosMemoria();
     clearAdfsMemoria();
+    clearTombamentoMemoria();
     // Regra do cliente (20/07/2026): "nao faz sentido ter as folhas se nao tem
     // contrato/propostas". Sem contratos, todas as folhas viram cascas vazias
     // — apaga junto pra manter a base consistente. Se o cliente quiser reabrir
