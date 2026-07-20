@@ -90,7 +90,7 @@ export function AppShellAdmin({
       >
         {topbarSlot}
       </header>
-      <main style={{ gridArea: "main", padding: 24, overflowY: "auto" }}>{children}</main>
+      <main className="atlas-hide-scrollbar" style={{ gridArea: "main", padding: 24, overflowY: "auto" }}>{children}</main>
     </div>
   );
 }
