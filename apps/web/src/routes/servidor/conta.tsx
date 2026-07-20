@@ -271,7 +271,8 @@ function ModalSimples({ titulo, onClose, children }: { titulo: string; onClose: 
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "var(--bg-elev-1)", borderRadius: 14, border: "1px solid var(--border)",
+          background: "var(--surface-solid)", borderRadius: 14, border: "1px solid var(--border)",
+          boxShadow: "0 20px 60px rgba(0, 0, 0, .5)",
           maxWidth: 640, width: "100%", maxHeight: "85vh", overflow: "hidden",
           display: "flex", flexDirection: "column",
         }}
