@@ -506,6 +506,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       dataCorte: z.string().optional(),
       dataRepasse: z.string().nullable().optional(),
     }).parse(await c.req.json());
+    // Regra do cliente (17/07/2026): nao pode fechar folha sem ter enviado
+    // ao menos 1 movimentacao. Um mes so eh "confirmado como sem mudancas"
+    // depois que a prefeitura reportou explicitamente — silencio nao vale.
+    if (body.status === "fechada" && countMovimentacoes(f.id) === 0) {
+      throw Errors.validation({ status: "Envie ao menos 1 movimentacao antes de fechar a folha. Se realmente nao houve movimentacao no mes, faca uma linha de tipo=alteracao sem alterar cargo/salario (so preencha detalhe: 'sem movimentacoes no mes')." });
+    }
     if (body.status) f.status = body.status;
     if (body.dataCorte) f.dataCorte = body.dataCorte;
     if (body.dataRepasse !== undefined) f.dataRepasse = body.dataRepasse;

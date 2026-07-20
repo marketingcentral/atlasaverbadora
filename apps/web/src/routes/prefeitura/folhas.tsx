@@ -56,7 +56,14 @@ export function PrefeituraFolhas() {
           {f.status === "aberta" ? (
             <>
               <Button size="sm" variant="ghost" onClick={() => setMovFolha(f)}>✎ Movimentar</Button>
-              <Button size="sm" onClick={() => setStatus.mutate({ id: f.id, status: "fechada" })}>Fechar</Button>
+              <Button
+                size="sm"
+                disabled={f.movimentacoes === 0 || setStatus.isPending}
+                title={f.movimentacoes === 0 ? "Envie ao menos 1 movimentação antes de fechar" : undefined}
+                onClick={() => setStatus.mutate({ id: f.id, status: "fechada" })}
+              >
+                Fechar
+              </Button>
             </>
           ) : null}
         </div>
