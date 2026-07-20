@@ -19,7 +19,7 @@ import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "../admin/id-unico.js";
-import { importTombamento, listLotes, listLinhas, refreshTombamento } from "../admin/tombamento.js";
+import { importTombamento, listLotes, listLinhas, refreshTombamento, listExternalLoans, ensureTombamentoLoaded } from "../admin/tombamento.js";
 import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
   ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus,
@@ -71,11 +71,24 @@ function contratosDaPrefeitura(prefeituraId: number) {
   return listContratos().filter((ct) => ids.has(ct.convenioId));
 }
 
-/** Comprometido (soma de parcelas ativas) por matrícula. */
-function comprometidoDe(matricula: string, contratos: ReturnType<typeof listContratos>): number {
-  return contratos
-    .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao)) // bloqueia já na proposta em análise
+/** Comprometido (soma de parcelas ativas) por matrícula. Considera:
+ *   1) contratos Atlas de QUALQUER convenio (nao so os da prefeitura — telemedicina,
+ *      por exemplo, usa convenio "Atlas Telemedicina" mas desconta na folha da prefeitura)
+ *   2) contratos externos vindos do tombamento (Caixa/Bradesco/BMG, etc — o que a
+ *      prefeitura declarou como parcelas ja ativas em outros bancos)
+ *   3) cartao beneficio NAO entra (listExternalLoans ja filtra) — nao e' consignavel
+ *      no mesmo bucket.
+ *
+ * Antes esta funcao filtrava por `contratosDaPrefeitura(id)` (so os do convenio da
+ * prefeitura), zerando o comprometido pra qualquer coisa fora disso. Resultado:
+ * telemedicina RECEBIDA + tombamento inteiro invisiveis no dashboard.
+ */
+function comprometidoDe(matricula: string, todosContratos: ReturnType<typeof listContratos>): number {
+  const atlas = todosContratos
+    .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao))
     .reduce((acc, ct) => acc + ct.valorParcela, 0);
+  const externos = listExternalLoans(matricula).reduce((acc, l) => acc + l.valorParcela, 0);
+  return atlas + externos;
 }
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
