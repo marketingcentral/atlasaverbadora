@@ -1047,12 +1047,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       },
     });
   })
-  // Averbadora ativa o plano de telemedicina: cria um CONTRATO ATIVO de 12 meses
-  // (R$ 50/mes, na margem de EMPRESTIMO) e marca a cotacao como "fechado".
-  // EXIGE contrato anexado antes — mesma regra do CCB no fluxo de emprestimo.
+  // Averbadora ativa o plano de telemedicina: promove a RESERVA (contrato ja
+  // criado quando servidor pediu a cotacao) pra "Ativo" e marca a cotacao
+  // como "fechado". EXIGE contrato anexado antes.
+  // Fallback: cotacoes antigas (pre-fix) sem contratoAdf caem no fluxo antigo
+  // que CRIA contrato novo — mantém compat.
   .post("/v1/admin/telemedicina/cotacoes/:id/ativar", async (c) => {
     requireAdmin(c.get("jwt"));
     await refreshCotacoes(c.env);
+    await refreshContratos(c.env);
     const pre = (await loadCotacoesAdmin(c.env)).find((x) => x.id === c.req.param("id"));
     if (!pre) throw Errors.notFound("cotacao");
     if (!pre.contratoKey) {
@@ -1060,42 +1063,58 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     const cot = await updateCotacaoSituacao(c.env, c.req.param("id"), "fechado");
     if (!cot) throw Errors.notFound("cotacao");
-    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === cot.matricula);
-    const conv = entry ? CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio) : undefined;
-    const contrato = criarContratoOuReserva({
-      bancoId: conv?.bancoId ?? 1,
-      servidorId: cot.servidorId,
-      idMatricula: entry?.idMatricula ?? cot.matricula,
-      matricula: cot.matricula,
-      nome: cot.nome,
-      cpfMasked: cot.cpfMasked,
-      convenioId: conv?.id ?? entry?.idConvenio ?? "",
-      convenio: "Telemedicina Atlas",
-      tipoContrato: "EMPRESTIMO", // consome a margem de emprestimo consignado
-      valorFinanciado: 50 * 12,
-      parcelas: 12, // plano de 12 meses
-      taxaAm: 0,
-      cetAm: 0,
-      iof: 0,
-      diasCarencia: 0,
-      valorParcela: 50,
-      codigoVerba: conv?.codigoVerba ?? "",
-      observacoes: "Plano de Telemedicina — 12 meses (R$ 50,00/mês), descontado da margem de empréstimo consignado.",
-      isReserva: false, // contrato ATIVO direto (vai pra Contratos Ativos)
-      ator: "averbadora",
-    });
-    // O contrato que a averbadora anexou na cotacao vira o "contrato assinado" do
-    // contrato gerado — assim o servidor baixa EXATAMENTE o mesmo arquivo em
-    // "Baixar Contrato" (antes dava "banco ainda nao anexou").
-    setContratoCcb(contrato.adf, pre.contratoKey, `averbadora:${c.get("jwt").sub}`);
-    await persistContrato(c.env, contrato.adf);
-    return c.json({ ok: true, situacao: cot.situacao, contratoAdf: contrato.adf });
+    const ator = `averbadora:${c.get("jwt").sub}`;
+    let contratoAdf = pre.contratoAdf;
+    if (contratoAdf && getContrato(contratoAdf)) {
+      // Fluxo novo: reserva ja existe — promove pra Ativo (mesma logica que
+      // averbadora aplicar ADF no fluxo de emprestimo comum).
+      setContratoSituacaoAtivo(contratoAdf, ator);
+    } else {
+      // Fallback: cotacao antiga sem reserva pre-criada. Cria contrato direto
+      // Ativo pra nao quebrar historico.
+      const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === cot.matricula);
+      const conv = entry ? CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio) : undefined;
+      const contrato = criarContratoOuReserva({
+        bancoId: conv?.bancoId ?? 1,
+        servidorId: cot.servidorId,
+        idMatricula: entry?.idMatricula ?? cot.matricula,
+        matricula: cot.matricula,
+        nome: cot.nome,
+        cpfMasked: cot.cpfMasked,
+        convenioId: conv?.id ?? entry?.idConvenio ?? "",
+        convenio: "Telemedicina Atlas",
+        tipoContrato: "EMPRESTIMO",
+        valorFinanciado: 50 * 12,
+        parcelas: 12,
+        taxaAm: 0, cetAm: 0, iof: 0, diasCarencia: 0,
+        valorParcela: 50,
+        codigoVerba: conv?.codigoVerba ?? "",
+        observacoes: "Plano de Telemedicina — 12 meses (R$ 50,00/mês), descontado da margem de empréstimo consignado.",
+        isReserva: false,
+        tipoMargem: "EMPRESTIMO",
+        ator: "averbadora",
+      });
+      contratoAdf = contrato.adf;
+    }
+    setContratoCcb(contratoAdf, pre.contratoKey, ator);
+    await persistContrato(c.env, contratoAdf);
+    return c.json({ ok: true, situacao: cot.situacao, contratoAdf });
   })
   // Averbadora cancela a cotacao (situacao -> "cancelado").
   .post("/v1/admin/telemedicina/cotacoes/:id/cancelar", async (c) => {
     requireAdmin(c.get("jwt"));
+    await refreshCotacoes(c.env);
+    await refreshContratos(c.env);
+    const preCot = (await loadCotacoesAdmin(c.env)).find((x) => x.id === c.req.param("id"));
     const cot = await updateCotacaoSituacao(c.env, c.req.param("id"), "cancelado");
     if (!cot) throw Errors.notFound("cotacao");
+    // Cancela a reserva vinculada — libera a margem de emprestimo. Ignora
+    // erro (cotacao antiga sem reserva pre-criada nao tem contratoAdf).
+    const adf = preCot?.contratoAdf;
+    if (adf && getContrato(adf)) {
+      aplicarAcao(adf, "cancelar", `averbadora:${c.get("jwt").sub}`, "Cotacao de telemedicina cancelada pela averbadora");
+      await persistContrato(c.env, adf);
+    }
     return c.json({ ok: true, situacao: cot.situacao });
   })
 

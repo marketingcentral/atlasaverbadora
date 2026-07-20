@@ -738,9 +738,38 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // Dedup: uma cotacao "nova" pendente por servidor+matricula (evita spam de cliques).
     await refreshCotacoes(c.env);
     const jaTem = (await loadCotacoes(c.env)).some(
-      (x) => x.servidorId === s.id && x.matricula === entryAtivo.matricula && x.situacao === "nova",
+      (x) => x.servidorId === s.id && x.matricula === entryAtivo.matricula && (x.situacao === "nova" || x.situacao === "contatado"),
     );
     if (jaTem) return c.json({ ok: true, deduplicado: true });
+    // Cria RESERVA de contrato Atlas (aparece em /servidor/contratos como "Em
+    // andamento" com passo a passo). Trava margem de EMPRESTIMO enquanto
+    // averbadora nao decide — servidor nao pode pedir consignado em paralelo.
+    await refreshContratos(c.env);
+    const reserva = criarContratoOuReserva({
+      bancoId: conv?.bancoId ?? 1,
+      servidorId: s.id,
+      idMatricula: entryAtivo.idMatricula,
+      matricula: entryAtivo.matricula,
+      nome: entryAtivo.nome,
+      cpfMasked: entryAtivo.cpfMasked,
+      convenioId: conv?.id ?? entryAtivo.idConvenio,
+      convenio: "Telemedicina Atlas",
+      tipoContrato: "EMPRESTIMO",
+      valorFinanciado: 50 * 12,
+      parcelas: 12,
+      taxaAm: 0,
+      cetAm: 0,
+      iof: 0,
+      diasCarencia: 0,
+      valorParcela: 50,
+      codigoVerba: conv?.codigoVerba ?? "",
+      observacoes: "Plano de Telemedicina — 12 meses (R$ 50,00/mês). Aguardando averbadora.",
+      isReserva: true,
+      reservaDias: 30, // averbadora tem 30 dias pra ativar
+      tipoMargem: "EMPRESTIMO",
+      ator: `servidor:${s.id}`,
+    });
+    await persistContrato(c.env, reserva.adf);
     const cot: TelemedicinaCotacao = {
       id: nextCotacaoId(),
       servidorId: s.id,
@@ -753,10 +782,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       prefeitura: pref ? `Prefeitura de ${pref.nome}` : entryAtivo.origem,
       situacao: "nova",
       criadoEm: new Date().toISOString(),
+      contratoAdf: reserva.adf,
     };
     await persistCotacao(c.env, cot);
-    pushEvent("info", "servidor.telemedicina_cotacao", `${entryAtivo.nome} solicitou cotacao de telemedicina.`);
-    return c.json({ ok: true, id: cot.id });
+    pushEvent("info", "servidor.telemedicina_cotacao", `${entryAtivo.nome} solicitou cotacao de telemedicina (adf ${reserva.adf}).`);
+    return c.json({ ok: true, id: cot.id, adf: reserva.adf });
   })
   // Cotacoes de telemedicina DO PROPRIO servidor — o app/web usa pra esconder o botao
   // "Solicitar Cotacao" (mostra "em analise"/"Plano Ativo") e listar na aba Em Analise.

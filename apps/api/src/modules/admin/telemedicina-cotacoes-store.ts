@@ -27,6 +27,12 @@ export interface TelemedicinaCotacao {
    *  de anexar o contrato — mesma regra do CCB no fluxo de emprestimo. */
   contratoKey?: string;
   contratoNome?: string;
+  /** ADF do contrato Atlas amarrado a esta cotacao. Criado como RESERVA
+   *  ("Aguardando Confirmação do Deferimento") no momento da /cotacao pra
+   *  trava margem de EMPRESTIMO enquanto averbadora nao decide. Depois:
+   *  - ativar()  -> promove reserva pra "Ativo"
+   *  - cancelar()-> cancela reserva (libera margem). */
+  contratoAdf?: string;
 }
 
 const TABLE = "admin_telemedicina_cotacoes";

@@ -51,7 +51,8 @@ function mapSituacao(situacao: string): EstadoProposta {
  *   - ECONSIGNADO + tipoMargem=CARTAO_BENEFICIOS -> Cartao Beneficio
  *   - ECONSIGNADO (default)                      -> Cartao Consignado
  *   - EMPRESTIMO / undefined                     -> Emprestimo Consignado */
-function mapProduto(tipoContrato: string | undefined, tipoMargem?: string): string {
+function mapProduto(tipoContrato: string | undefined, tipoMargem?: string, observacoes?: string): string {
+  if (observacoes && /telemedicina/i.test(observacoes)) return "Plano Telemedicina";
   const t = (tipoContrato ?? "").toUpperCase();
   if (t === "REFIN") return "Portabilidade";
   if (t === "ECONSIGNADO") {
@@ -166,7 +167,8 @@ export function ServidorContratos() {
       // tipoContrato do backend: EMPRESTIMO | REFIN | ECONSIGNADO.
       // Usado pra mostrar "Empréstimo / Portabilidade / Cartão" no card
       // (senao o servidor nao sabe pra qual produto e a proposta).
-      produto: mapProduto(p.tipoContrato, p.tipoMargem),
+      produto: mapProduto(p.tipoContrato, p.tipoMargem, p.observacoes),
+      observacoes: p.observacoes,
       valor: p.valor,
       parcelas: p.parcelas,
       parcela: p.parcela,
@@ -300,7 +302,7 @@ export function ServidorContratos() {
               </div>
 
               {/* Linha de progresso — em que etapa a proposta esta agora. */}
-              <ProgressoProposta estado={p.estado} />
+              <ProgressoProposta estado={p.estado} telemedicina={/telemedicina/i.test(p.observacoes ?? "")} />
             </Card>
             );
           })}
@@ -371,7 +373,7 @@ export function ServidorContratos() {
                   </div>
                 ) : null}
                 {/* Mesma linha de progresso — pinta em vermelho onde parou. */}
-                <ProgressoProposta estado={p.estado} />
+                <ProgressoProposta estado={p.estado} telemedicina={/telemedicina/i.test(p.observacoes ?? "")} />
               </Card>
               );
             })}
@@ -482,6 +484,16 @@ const ETAPAS_BASE = [
   "Autorização completa",
 ] as const;
 
+// Etapas customizadas pra plano de telemedicina — fluxo passa pela averbadora,
+// nao por banco. Cinco etapas mapeadas 1:1 no mesmo eixo de 0..4.
+const ETAPAS_TELEMEDICINA = [
+  "Solicitação enviada",
+  "Averbadora avaliando",
+  "Contrato anexado",
+  "Plano aprovado",
+  "ADF em folha",
+] as const;
+
 /** Retorna { atual, falha, labelEtapa2? }.
  *  - `atual`: indice (0..4) da etapa em curso.
  *  - `falha`: quando true, a etapa atual vira vermelha e as demais ficam cinza.
@@ -502,9 +514,9 @@ function estadoParaEtapa(estado: EstadoProposta): { atual: number; falha: boolea
   return { atual: 0, falha: false };
 }
 
-function ProgressoProposta({ estado }: { estado: EstadoProposta }) {
+function ProgressoProposta({ estado, telemedicina }: { estado: EstadoProposta; telemedicina?: boolean }) {
   const { atual, falha, labelEtapaAtual } = estadoParaEtapa(estado);
-  const labels = [...ETAPAS_BASE] as string[];
+  const labels = [...(telemedicina ? ETAPAS_TELEMEDICINA : ETAPAS_BASE)] as string[];
   // Substitui o label da etapa "atual" quando ha customizacao (falhas + finais).
   if (labelEtapaAtual) labels[atual] = labelEtapaAtual;
 
