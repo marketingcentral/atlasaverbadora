@@ -32,6 +32,7 @@ import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
 import { ensurePortabilidadesLoaded, listIntencoes } from "./portabilidade-store.js";
 import { ensureTermosLoaded, listTermos, getTermo, upsertTermo, type TermoTipo } from "./termos-store.js";
+import { getSuporteConfig, setSuporteConfig } from "./suporte.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -1263,6 +1264,33 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
     return c.json(r);
   })
+
+  // ===== Config de suporte (email/whatsapp/horario) exibida ao servidor =====
+  .get("/v1/admin/suporte-config", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
+    return c.json(await getSuporteConfig(c.env));
+  })
+  .put("/v1/admin/suporte-config", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "configuracoes");
+    const body = z.object({
+      email: z.string().email().optional(),
+      whatsapp: z.string().max(20).optional(),
+      horario: z.string().max(200).optional(),
+      mensagem: z.string().max(200).optional(),
+    }).parse(await c.req.json());
+    const proximo = await setSuporteConfig(c.env, body);
+    appendAudit({
+      categoria: "convenio_config", acao: "suporte.config.set",
+      userId: c.get("jwt").sub, userRole: "averbadora",
+      detalhes: `Config de suporte atualizada: email=${proximo.email} whatsapp=${proximo.whatsapp || "-"}`,
+    });
+    return c.json(proximo);
+  })
+
   .post("/v1/admin/ai/normalize-csv", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);

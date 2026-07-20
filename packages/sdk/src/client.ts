@@ -1464,6 +1464,11 @@ export class AtlasClient {
     listTermos: () => this.request<{
       termos: { id: TermoTipo; titulo: string; descricao: string; versao: string; atualizadoEm: string }[];
     }>("/v1/servidores/me/termos"),
+    /** Info de suporte (email/whatsapp/horario/frase de abertura) que a averbadora
+     *  edita em /averbadora/suporte. Servidor usa no modal de Conta > Suporte. */
+    getSuporte: () => this.request<{ email: string; whatsapp: string; horario: string; mensagem: string }>(
+      "/v1/servidores/me/suporte",
+    ),
   };
 
   // ============ Portal Banco ============
@@ -1652,6 +1657,10 @@ export class AtlasClient {
       this.request<{ host: string; port: number; user: string; fromEmail: string; fromName: string; secure: boolean; notifyEmail: string; hasPassword: boolean; configured: boolean; updatedAt: string | null }>("/v1/admin/smtp/config", { method: "PUT", body: input }),
     smtpClear: () => this.request<void>("/v1/admin/smtp/config", { method: "DELETE" }),
     smtpTest: (to: string) => this.request<{ sent: boolean; reason?: string }>("/v1/admin/smtp/test", { method: "POST", body: { to } }),
+    // ===== Config de suporte (info exibida ao servidor em Conta > Suporte) =====
+    suporteConfig: () => this.request<{ email: string; whatsapp: string; horario: string; mensagem: string; updatedAt: string }>("/v1/admin/suporte-config"),
+    suporteSave: (input: { email?: string; whatsapp?: string; horario?: string; mensagem?: string }) =>
+      this.request<{ email: string; whatsapp: string; horario: string; mensagem: string; updatedAt: string }>("/v1/admin/suporte-config", { method: "PUT", body: input }),
     aiNormalizeCsv: (body: { csv: string; expectedHeaders: string[]; contextHint?: string; model?: string }) =>
       this.request<{ csv: string; mapping: Record<string, string>; summary: string; usage: { input: number; output: number } }>(
         "/v1/admin/ai/normalize-csv",

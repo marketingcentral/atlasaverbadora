@@ -101,18 +101,12 @@ export function ServidorConta() {
   );
 }
 
-/** Card de Suporte + Termos em vigencia. Suporte abre modal com contato;
- *  cada termo ATIVO publicado em /averbadora/termos vira uma linha clicavel
- *  que abre o corpo renderizado. Lista dinamica — se a averbadora publica
- *  um novo termo (ex.: portabilidade), ele aparece aqui automaticamente. */
+/** Card Suporte no mesmo padrao do app mobile: 3 items fixos —
+ *  Suporte, Termos de Uso, Politicas de Privacidade.
+ *  - Suporte: modal com email/WhatsApp/horario editados em /averbadora/suporte
+ *  - Termos/Politica: modal com corpo puxado de /averbadora/termos */
 function SuporteCard() {
   const [aberto, setAberto] = useState<"suporte" | TermoTipo | null>(null);
-
-  const termosQ = useQuery({
-    queryKey: ["servidor", "termos-vigentes"],
-    queryFn: () => atlas.servidor.listTermos(),
-  });
-  const termos = termosQ.data?.termos ?? [];
 
   return (
     <>
@@ -122,46 +116,13 @@ function SuporteCard() {
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <SuporteItem label="Suporte" onClick={() => setAberto("suporte")} />
+          <SuporteItem label="Termos de Uso" onClick={() => setAberto("termos_uso")} borderTop />
+          <SuporteItem label="Políticas de Privacidade" onClick={() => setAberto("politica_privacidade")} borderTop />
         </div>
-      </Card>
-
-      <Card>
-        <div style={{ fontSize: 11, letterSpacing: ".08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>
-          Termos em vigência
-        </div>
-        <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted)" }}>
-          Documentos oficiais que estão valendo hoje. Toque em qualquer um pra ler o texto integral e conferir a versão.
-        </p>
-        {termosQ.isLoading ? (
-          <div style={{ color: "var(--text-muted)", fontSize: 14, padding: "8px 0" }}>Carregando…</div>
-        ) : termosQ.isError ? (
-          <div style={{ color: "var(--danger-500)", fontSize: 14 }}>Não foi possível carregar os termos.</div>
-        ) : termos.length === 0 ? (
-          <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Nenhum termo ativo no momento.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {termos.map((t, i) => (
-              <SuporteItem
-                key={t.id}
-                label={t.titulo}
-                hint={`Versão ${t.versao}`}
-                onClick={() => setAberto(t.id)}
-                borderTop={i > 0}
-              />
-            ))}
-          </div>
-        )}
       </Card>
 
       {aberto === "suporte" ? (
-        <ModalSimples titulo="Suporte" onClose={() => setAberto(null)}>
-          <p style={{ marginTop: 0 }}>Fale com a gente:</p>
-          <ul style={{ paddingLeft: 20, marginTop: 8, marginBottom: 0, lineHeight: 1.7 }}>
-            <li>E-mail: <a href="mailto:suporte@atlasaverbadora.com.br" style={{ color: "var(--accent)" }}>suporte@atlasaverbadora.com.br</a></li>
-            <li>WhatsApp: <a href="https://wa.me/5511999999999" target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>(11) 99999-9999</a></li>
-            <li>Atendimento: segunda a sexta, 09h às 18h.</li>
-          </ul>
-        </ModalSimples>
+        <ModalSuporte onClose={() => setAberto(null)} />
       ) : aberto ? (
         <ModalTermo tipo={aberto} onClose={() => setAberto(null)} />
       ) : null}
@@ -169,7 +130,51 @@ function SuporteCard() {
   );
 }
 
-function SuporteItem({ label, hint, onClick, borderTop }: { label: string; hint?: string; onClick: () => void; borderTop?: boolean }) {
+/** Modal Suporte com dados dinamicos vindos de /me/suporte. Ate carregar,
+ *  mostra so o titulo. Se der erro, mensagem generica. */
+function ModalSuporte({ onClose }: { onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["servidor", "suporte"],
+    queryFn: () => atlas.servidor.getSuporte(),
+  });
+  const s = q.data;
+  return (
+    <ModalSimples titulo="Suporte" onClose={onClose}>
+      {q.isLoading ? (
+        <div style={{ color: "var(--text-muted)" }}>Carregando…</div>
+      ) : q.isError ? (
+        <div style={{ color: "var(--danger-500)" }}>Não foi possível carregar. Tente novamente em instantes.</div>
+      ) : s ? (
+        <>
+          <p style={{ marginTop: 0 }}>{s.mensagem || "Fale com a gente:"}</p>
+          <ul style={{ paddingLeft: 20, marginTop: 8, marginBottom: 0, lineHeight: 1.7 }}>
+            {s.email ? (
+              <li>E-mail: <a href={`mailto:${s.email}`} style={{ color: "var(--accent)" }}>{s.email}</a></li>
+            ) : null}
+            {s.whatsapp ? (
+              <li>
+                WhatsApp: <a href={`https://wa.me/${s.whatsapp}`} target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>
+                  {formatWhatsappBR(s.whatsapp)}
+                </a>
+              </li>
+            ) : null}
+            {s.horario ? <li>Atendimento: {s.horario}.</li> : null}
+          </ul>
+        </>
+      ) : null}
+    </ModalSimples>
+  );
+}
+
+function formatWhatsappBR(w: string): string {
+  const d = w.replace(/\D/g, "");
+  const semDdi = d.startsWith("55") ? d.slice(2) : d;
+  if (semDdi.length === 11) return `(${semDdi.slice(0, 2)}) ${semDdi.slice(2, 7)}-${semDdi.slice(7)}`;
+  if (semDdi.length === 10) return `(${semDdi.slice(0, 2)}) ${semDdi.slice(2, 6)}-${semDdi.slice(6)}`;
+  return w;
+}
+
+function SuporteItem({ label, onClick, borderTop }: { label: string; onClick: () => void; borderTop?: boolean }) {
   return (
     <button
       onClick={onClick}
@@ -181,10 +186,7 @@ function SuporteItem({ label, hint, onClick, borderTop }: { label: string; hint?
         textAlign: "left", cursor: "pointer", width: "100%",
       }}
     >
-      <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
-        <span>{label}</span>
-        {hint ? <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 400 }}>{hint}</span> : null}
-      </span>
+      <span>{label}</span>
       <span style={{ color: "var(--text-dim)", fontSize: "1.1rem", flexShrink: 0 }} aria-hidden>›</span>
     </button>
   );

@@ -48,6 +48,7 @@ import { AdminBateCarteira } from "./routes/averbadora/bate-carteira";
 import { AdminAdf } from "./routes/averbadora/adf";
 import { AverbadoraPortabilidade } from "./routes/averbadora/portabilidade";
 import { AverbadoraTermos } from "./routes/averbadora/termos";
+import { AverbadoraSuporte } from "./routes/averbadora/suporte";
 import { AdminAuditoria } from "./routes/averbadora/auditoria";
 import { AdminPerfis } from "./routes/averbadora/perfis";
 import { AverbadoraConta } from "./routes/averbadora/conta";
@@ -215,6 +216,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "comunicados/prefeitura", element: <AdminComunicados publico="prefeitura" /> },
           { path: "health", element: <AdminHealth /> },
           { path: "configuracoes", element: <AverbadoraConfiguracoes /> },
+          { path: "suporte", element: <AverbadoraSuporte /> },
           { path: "ia", element: <AverbadoraConfiguracoes /> },
           { path: "logs", element: <AdminLogs /> },
           { path: "vitrine", element: <AdminVitrine /> },

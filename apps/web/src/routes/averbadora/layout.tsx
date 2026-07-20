@@ -62,6 +62,7 @@ const NAV = [
     ],
   },
   { key: "configuracoes", label: "Configurações", href: "/averbadora/configuracoes", icon: "⚙" },
+  { key: "suporte", label: "Suporte (app)", href: "/averbadora/suporte", icon: "☎" },
   { key: "conta", label: "Minha conta", href: "/averbadora/conta", icon: "👤" },
 ];
 

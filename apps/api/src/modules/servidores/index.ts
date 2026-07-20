@@ -20,6 +20,7 @@ import { enviarCodigo, enviarNotificacao, dispatchTemplateEmail } from "../admin
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, cancelarIntencao, aceitarOferta, getIntencao } from "../admin/portabilidade-store.js";
 import { ensureTermosLoaded, getTermo, listTermos, renderTermo, type TermoTipo } from "../admin/termos-store.js";
+import { getSuporteConfig } from "../admin/suporte.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
@@ -1265,6 +1266,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       .filter((t) => t.ativo)
       .map((t) => ({ id: t.id, titulo: t.titulo, descricao: t.descricao, versao: t.versao, atualizadoEm: t.atualizadoEm }));
     return c.json({ termos });
+  })
+  // Info de suporte (email/whatsapp/horario) editada pela averbadora em
+  // /averbadora/suporte. Servidor le pra montar o modal de Conta > Suporte.
+  .get("/v1/servidores/me/suporte", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    const cfg = await getSuporteConfig(c.env);
+    // Nao devolvemos updatedAt pro servidor — irrelevante pra ele.
+    return c.json({ email: cfg.email, whatsapp: cfg.whatsapp, horario: cfg.horario, mensagem: cfg.mensagem });
   })
   // Servidor autenticado busca corpo do termo antes de aceitar. Se pediu
   // ?vars={"chave":"valor"}, ja retorna com placeholders substituidos.

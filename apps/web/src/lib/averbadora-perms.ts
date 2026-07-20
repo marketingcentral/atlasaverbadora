@@ -99,6 +99,7 @@ export const RESOURCE_GROUPS: { titulo: string; recursos: { key: string; label: 
       { key: "api-tokens", label: "API — Tokens" },
       { key: "api-webhooks", label: "API — Webhooks" },
       { key: "configuracoes", label: "Configuracoes", descricao: "SMTP + OpenAI (troca de chaves)" },
+      { key: "suporte", label: "Suporte (app)", descricao: "Edita email/WhatsApp/horario exibidos ao servidor em Conta > Suporte" },
       { key: "manutencao", label: "Manutencao (destrutivo)", descricao: "Purge de contratos, reset de contas, reseed do banco. So supervisor por padrao." },
     ],
   },
