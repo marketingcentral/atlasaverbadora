@@ -290,9 +290,7 @@ function CompetenciaPicker({ value, onChange }: { value: string; onChange: (v: s
   const anosDisponiveis = [anoAtual - 1, anoAtual, anoAtual + 1];
   const hoje = new Date();
   const compHoje = toCompetencia(hoje.getFullYear(), hoje.getMonth() + 1);
-  const compProximo = shiftCompetencia(compHoje, 1);
   const isHoje = value === compHoje;
-  const isProximo = value === compProximo;
   const selectStyle: React.CSSProperties = {
     padding: "9px 12px",
     borderRadius: 8,
@@ -334,9 +332,9 @@ function CompetenciaPicker({ value, onChange }: { value: string; onChange: (v: s
           </Button>
           <Button
             size="sm"
-            variant={isProximo ? undefined : "ghost"}
-            onClick={() => onChange(compProximo)}
-            title="Competência do próximo mês"
+            variant="ghost"
+            onClick={() => onChange(shiftCompetencia(value, 1))}
+            title="Próximo mês"
           >
             Próximo →
           </Button>
