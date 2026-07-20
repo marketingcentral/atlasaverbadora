@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 
 class LoginViewModel : ViewModel() {
     private val auth = ServiceLocator.authRepository
+    private val prefs = ServiceLocator.appPrefs
 
     var cpf by mutableStateOf("")
         private set
@@ -20,6 +21,17 @@ class LoginViewModel : ViewModel() {
         private set
     var error by mutableStateOf<String?>(null)
         private set
+    /** "Lembre-me": pré-preenche o CPF no próximo acesso. */
+    var lembrar by mutableStateOf(false)
+        private set
+
+    init {
+        // Se o servidor marcou "Lembre-me" antes, já traz o CPF preenchido.
+        if (prefs.lembrarLogin) {
+            cpf = prefs.cpfSalvo.orEmpty()
+            lembrar = true
+        }
+    }
 
     fun onCpfChange(value: String) {
         cpf = value.filter { it.isDigit() }.take(11)
@@ -29,6 +41,10 @@ class LoginViewModel : ViewModel() {
     fun onSenhaChange(value: String) {
         senha = value
         error = null
+    }
+
+    fun onLembrarChange(value: Boolean) {
+        lembrar = value
     }
 
     fun login(onSuccess: () -> Unit) {
@@ -45,6 +61,9 @@ class LoginViewModel : ViewModel() {
         viewModelScope.launch {
             try {
                 auth.login(cpf, senha)
+                // Persiste (ou limpa) o CPF conforme o "Lembre-me".
+                prefs.lembrarLogin = lembrar
+                prefs.cpfSalvo = if (lembrar) cpf else null
                 onSuccess()
             } catch (e: ApiException) {
                 error = e.userMessage

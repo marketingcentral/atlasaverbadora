@@ -45,7 +45,8 @@ import io.atlas.servidor.data.remote.dto.MatriculaInfoDto
 import io.atlas.servidor.data.remote.dto.PropostaDto
 import io.atlas.servidor.ui.analise.EmAnaliseContent
 import io.atlas.servidor.ui.analise.emAnaliseAtivas
-import io.atlas.servidor.ui.components.terminalHistorico
+import io.atlas.servidor.ui.analise.faseDe
+import io.atlas.servidor.ui.analise.propostaFalhou
 import io.atlas.servidor.domain.Format
 import io.atlas.servidor.ui.components.AtlasCard
 import io.atlas.servidor.ui.components.AtlasSecondaryButton
@@ -80,8 +81,9 @@ fun ContratosScreen(vm: HomeViewModel) {
             if (info == null) {
                 ErrorBox("Nenhuma matrícula ativa.", onRetry = null, modifier = Modifier.background(Fundo))
             } else {
-                // Recusadas/expiradas/canceladas vêm da lista de propostas → Histórico.
-                val recusadas = vm.propostas.filter { terminalHistorico(it.situacao) }
+                // Recusadas/expiradas/canceladas E as com ADF negada pela prefeitura
+                // (falha em folha) vêm da lista de propostas → Histórico.
+                val recusadas = vm.propostas.filter { propostaFalhou(it) }
                 // A cotação de telemedicina não é proposta — soma no contador à parte.
                 val emAnaliseCount = emAnaliseAtivas(vm.propostas).size + vm.cotacoesTelePendentes.size
                 ContratosContent(
@@ -185,7 +187,8 @@ private fun EmptyHint(text: String) {
 @Composable
 private fun RecusadaCard(p: PropostaDto) {
     var expandido by remember { mutableStateOf(false) }
-    val fase = io.atlas.servidor.ui.components.faseChain(p.situacao ?: "—", p.folhaStatus, p.folhaMotivo)
+    // faseDe cobre também a telemedicina (passo a passo próprio).
+    val fase = faseDe(p)
     AtlasCard {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -196,7 +199,7 @@ private fun RecusadaCard(p: PropostaDto) {
                 Text("Proposta ${p.id}", color = Ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 Text(p.banco ?: "Banco Atlas", color = InkMuted, fontSize = 13.sp)
             }
-            StatusChip(recusaRotulo(p.situacao), ChipTone.Neutro)
+            StatusChip(recusaRotulo(p.situacao, p.folhaStatus), ChipTone.Neutro)
         }
         Spacer(Modifier.height(12.dp))
         Divider(color = io.atlas.servidor.ui.theme.Divider)
@@ -232,12 +235,15 @@ private fun RecusadaCard(p: PropostaDto) {
     }
 }
 
-private fun recusaRotulo(situacao: String?): String {
+private fun recusaRotulo(situacao: String?, folhaStatus: String? = null): String {
     val s = (situacao ?: "").lowercase()
     return when {
         s.contains("expir") -> "Expirada"
         s.contains("cancel") -> "Cancelada"
         s.contains("suspens") -> "Suspensa"
+        s.contains("recus") -> "Recusada"
+        // Banco aprovou mas a prefeitura negou o desconto em folha (ADF).
+        folhaStatus?.equals("falha", ignoreCase = true) == true -> "ADF negada"
         else -> "Recusada"
     }
 }

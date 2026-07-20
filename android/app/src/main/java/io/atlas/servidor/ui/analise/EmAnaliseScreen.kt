@@ -60,11 +60,21 @@ fun faseDe(p: PropostaDto): FaseInfo =
     if (ehTelemedicina(p.convenio, p.observacoes)) teleFaseChain(p.situacao ?: "—", p.folhaStatus, p.folhaMotivo)
     else faseChain(p.situacao ?: "—", p.folhaStatus, p.folhaMotivo)
 
-/** Em análise = qualquer solicitação que ainda NÃO concluiu todas as etapas (a última é a
- *  ADF aprovada). Só depois de concluída ela sai daqui para Contratos Ativos. */
+/** Proposta encerrada com FALHA/negativa em qualquer etapa → vai para o Histórico.
+ *  Cobre não só a recusa do banco (situação textual), mas também a **ADF negada pela
+ *  prefeitura** (folhaStatus "falha") — nesse caso a situação do banco ainda diz "Ativo",
+ *  então `terminalHistorico` sozinho deixava a proposta presa em "Em análise". O
+ *  `falhaPasso != null` da linha do tempo marca qualquer erro terminal (banco, prefeitura
+ *  ou expiração). */
+fun propostaFalhou(p: PropostaDto): Boolean =
+    terminalHistorico(p.situacao) || faseDe(p).falhaPasso != null
+
+/** Em análise = solicitação AINDA em andamento: não concluiu todas as etapas (a última é a
+ *  ADF aprovada) E não falhou/foi negada em nenhuma. Concluída → Contratos Ativos;
+ *  falhou/negada/quitada → Histórico. */
 fun emAnaliseAtivas(propostas: List<PropostaDto>): List<PropostaDto> = propostas.filter {
     val sit = (it.situacao ?: "").lowercase()
-    !terminalHistorico(it.situacao) &&
+    !propostaFalhou(it) &&
         !sit.contains("quitad") &&
         !faseDe(it).concluido
 }

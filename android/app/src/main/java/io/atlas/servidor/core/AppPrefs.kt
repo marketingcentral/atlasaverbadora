@@ -39,6 +39,17 @@ class AppPrefs(context: Context) {
 
     fun clearSelection() = prefs.edit().remove("selected_matricula").apply()
 
+    // ---- "Lembre-me" no login ----
+    // Guarda só o CPF (identificador), NUNCA a senha — o CPF não é segredo e agiliza o
+    // próximo acesso. A senha continua sendo digitada toda vez.
+    var lembrarLogin: Boolean
+        get() = prefs.getBoolean("lembrar_login", false)
+        set(v) = prefs.edit().putBoolean("lembrar_login", v).apply()
+
+    var cpfSalvo: String?
+        get() = prefs.getString("cpf_salvo", null)
+        set(v) = prefs.edit().putString("cpf_salvo", v).apply()
+
     // ---- Notificações: estado lida/não-lida por ID (espelha o notifications.ts do web) ----
     fun readNotifIds(): Set<String> = prefs.getStringSet("notif_read", emptySet()) ?: emptySet()
 

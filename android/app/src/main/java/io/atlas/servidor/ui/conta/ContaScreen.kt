@@ -39,7 +39,6 @@ import io.atlas.servidor.core.UiState
 import io.atlas.servidor.ui.components.AtlasCard
 import io.atlas.servidor.ui.components.AtlasSecondaryButton
 import io.atlas.servidor.ui.components.ErrorBox
-import io.atlas.servidor.ui.components.InfoRow
 import io.atlas.servidor.ui.components.LoadingBox
 import io.atlas.servidor.ui.components.SectionLabel
 import io.atlas.servidor.ui.shell.HomeViewModel
@@ -104,11 +103,17 @@ fun ContaScreen(
                     Spacer(Modifier.height(24.dp))
                     SectionLabel("Dados funcionais · não editáveis")
                     Spacer(Modifier.height(8.dp))
+                    // Empilhado (rótulo em cima, valor embaixo em largura total): o layout
+                    // lado-a-lado quebrava com nomes/órgãos longos, jogando o valor pra
+                    // direita e deixando tudo desalinhado.
                     AtlasCard {
-                        InfoRow("Nome", info.nome)
-                        InfoRow("Cargo", info.cargo)
-                        InfoRow("Vínculo", info.vinculo)
-                        InfoRow("Órgão", info.prefeitura)
+                        DadoFuncional("Nome", info.nome)
+                        RowDivider()
+                        DadoFuncional("Cargo", info.cargo)
+                        RowDivider()
+                        DadoFuncional("Vínculo", info.vinculo)
+                        RowDivider()
+                        DadoFuncional("Órgão", info.prefeitura)
                     }
 
                     Spacer(Modifier.height(24.dp))
@@ -118,8 +123,6 @@ fun ContaScreen(
                         ContatoItem("E-mail", info.email, editavel = true) { contaVm.abrirEmail(info.email) }
                         RowDivider()
                         ContatoItem("Telefone", io.atlas.servidor.domain.Format.phone(info.telefone), editavel = true) { contaVm.abrirTelefone(info.telefone) }
-                        RowDivider()
-                        ContatoItem("Endereço", info.endereco, editavel = false) {}
                     }
                     Spacer(Modifier.height(10.dp))
                     AtlasSecondaryButton(text = "Alterar senha", onClick = { contaVm.abrirSenha() })
@@ -173,6 +176,21 @@ private fun ContatoItem(label: String, value: String, editavel: Boolean, onClick
                 Icon(Icons.Filled.Edit, contentDescription = "Editar", tint = Verde, modifier = Modifier.size(16.dp))
             }
         }
+        Spacer(Modifier.height(4.dp))
+        Text(value, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+    }
+}
+
+/** Dado funcional (não editável): rótulo pequeno em cima, valor embaixo em largura total.
+ *  Alinhado à esquerda — não desalinha com nomes/órgãos longos como o layout lado-a-lado. */
+@Composable
+private fun DadoFuncional(label: String, value: String) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 10.dp),
+    ) {
+        Text(label, color = InkMuted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(4.dp))
         Text(value, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
     }
