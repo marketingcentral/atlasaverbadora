@@ -544,10 +544,13 @@ export async function purgeServidores(env: Env): Promise<void> {
 export async function purgeContratosApenas(env: Env): Promise<void> {
   const db = getDb(env);
   await ensureSchema(env);
-  // Inclui tombamento_lotes: cliente pediu (20/07/2026) que purge de contratos
-  // limpe tombamento tambem — nao faz sentido manter lote de contratos externos
-  // se toda a base de contratos foi zerada.
-  await db.execute(sql`TRUNCATE contratos, portal_banco_contratos, propostas, proposta_eventos, contrato_eventos, tombamento_lotes RESTART IDENTITY CASCADE`);
+  // TOMBAMENTO_LOTES REMOVIDO do TRUNCATE (20/07/2026 tarde) — o cliente perdeu
+  // o tombamento 3x em uma tarde por causa de sessoes paralelas rodando
+  // purge-contratos. Tombamento eh declaracao INDEPENDENTE da prefeitura
+  // (contratos externos de outros bancos), nao deve ser afetado por purge de
+  // contratos internos Atlas. Se precisar zerar tombamento, use o endpoint
+  // dedicado /v1/admin/tombamento/lotes/delete que exige senha + lista de ids.
+  await db.execute(sql`TRUNCATE contratos, portal_banco_contratos, propostas, proposta_eventos, contrato_eventos RESTART IDENTITY CASCADE`);
 }
 
 /** Zera prefeituras + tudo que gira em torno delas: convenios (Drizzle + collection),

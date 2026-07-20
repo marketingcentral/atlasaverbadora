@@ -4,6 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 The binding project rules (stack, naming, code conventions, skills/MCPs) live in [.claude/CLAUDE.md](.claude/CLAUDE.md) and are loaded into every session. This file complements them with build/dev commands and the cross-package architecture needed to act productively.
 
+## STOP — leia antes de qualquer coisa (sessões paralelas)
+
+Este repo é usado por **múltiplas sessões Claude Code em paralelo** (várias janelas abertas ao mesmo tempo). Regras que TODA sessão precisa obedecer, sem exceção:
+
+- **NUNCA chame endpoints destrutivos por conta própria** — `POST /v1/admin/db/purge-*`, `POST /v1/admin/db/reseed`, `POST /v1/admin/servidores/delete-matriculas`, `POST /v1/admin/tombamento/lotes/delete`, `POST /v1/admin/anuencias/delete`, `POST /v1/admin/contratos/limpar-ccb`, `POST /v1/admin/contratos/reverter-desligamento`. Criar o endpoint ≠ autorização pra executar. Executar exige pedido explícito na mensagem atual do usuário.
+- Esses endpoints agora têm um **kill switch em KV** (`admin:destructive_lock`) — travados por default. Só o usuário destrava, via `POST /v1/admin/destructive-lock/unlock` com senha + duração ≤300s. Se você achar que precisa rodar um purge/delete, **peça ao usuário destravar** — não tente contornar.
+- **NUNCA faça `wrangler deploy` da API por conta própria** — cada deploy recicla isolates e pode zerar estado in-memory que ainda não persistiu. O usuário decide quando deploya. `wrangler pages deploy` (web) é OK sem perguntar.
+- **Alterações que o usuário fez PERSISTEM** — se sumiu algo (seed, dado, servidor, contrato), **investigue e pergunte**; não recrie por conta própria "só pra facilitar o teste".
+- Se você encontrar seeds hardcoded, whitelist de CPF (TEST_CPFS), fixtures que se re-populam sozinhos: **remova**. O cliente pediu 20/07/2026 que "apagar todos" significa TODOS, sem whitelist de QA.
+
+Ver `~/.claude/projects/.../memory/MEMORY.md` para detalhes por regra.
+
 ## Commands
 
 Workspaces are pnpm + Turborepo (requires `node >=20`, `pnpm >=9`). Always invoke per-package with `pnpm --filter <name>`; root scripts (`pnpm dev`, `pnpm build`, `pnpm test`, `pnpm typecheck`, `pnpm lint`) fan out via Turbo to every workspace. Note: `pnpm lint` is currently a no-op — no package defines a `lint` script yet, so don't rely on it as a gate (use `pnpm -r typecheck` instead).

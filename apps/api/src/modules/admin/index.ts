@@ -33,6 +33,7 @@ import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail }
 import { ensurePortabilidadesLoaded, listIntencoes } from "./portabilidade-store.js";
 import { ensureTermosLoaded, listTermos, getTermo, upsertTermo, type TermoTipo } from "./termos-store.js";
 import { getSuporteConfig, setSuporteConfig } from "./suporte.js";
+import { requireUnlocked, getLockState, unlock as unlockDestructive, lock as lockDestructive, MAX_UNLOCK_SEC } from "./destructive-lock.js";
 
 // ============================================================
 // Confirmacao step-up por email (acoes destrutivas: excluir banco/prefeitura).
@@ -1357,6 +1358,41 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
   })
 
+  // Kill-switch cross-isolate pra endpoints destrutivos.
+  // Default: TRAVADO. Sessoes paralelas nao conseguem rodar purge/delete sem
+  // que o usuario destrave manualmente. Auto-trava em <=300s (MAX_UNLOCK_SEC).
+  .get("/v1/admin/destructive-lock", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    const state = await getLockState(c.env);
+    return c.json({ ...state, maxUnlockSec: MAX_UNLOCK_SEC });
+  })
+  .post("/v1/admin/destructive-lock/unlock", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "manutencao");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string; durationSec?: number; reason?: string };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha de operacoes destrutivas nao configurada." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const duration = Math.min(Math.max(Number(body.durationSec) || 120, 30), MAX_UNLOCK_SEC);
+    const state = await unlockDestructive(c.env, {
+      durationSec: duration,
+      unlockedBy: `averbadora:${j?.sub}`,
+      reason: body.reason,
+    });
+    pushEvent("error", "admin.destructive_lock.unlock", `Endpoints destrutivos DESTRAVADOS por admin ${j?.sub} por ${duration}s. Motivo: ${body.reason ?? "-"}.`);
+    appendAudit({ categoria: "termo_aceite", acao: "destructive_unlock", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Destravou endpoints destrutivos por ${duration}s. Motivo: ${body.reason ?? "-"}.` });
+    return c.json(state);
+  })
+  .post("/v1/admin/destructive-lock/lock", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    const state = await lockDestructive(c.env);
+    pushEvent("info", "admin.destructive_lock.lock", `Endpoints destrutivos TRAVADOS por admin ${j?.sub}.`);
+    return c.json(state);
+  })
+
   // ⚠️ OPERACAO DESTRUTIVA: reseedAll faz TRUNCATE servidores/bancos/prefeituras +
   // re-seed. So existe pra reparar jsonb corrompido. GUARDA ANTI-RESET: exige
   // confirmacao explicita no body para NUNCA apagar dados por acidente/automacao/
@@ -1365,6 +1401,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "manutencao");
+    await requireUnlocked(c.env, "db/reseed");
     const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
     if (body.confirmar !== "APAGAR-TUDO-E-RESEMEAR") {
       throw Errors.validation({
@@ -1392,6 +1429,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "adf");
+    await requireUnlocked(c.env, "contratos/reverter-desligamento");
     const body = (await c.req.json().catch(() => ({}))) as { senha?: string; adfs?: string[] };
     const expected = c.env.ADMIN_PURGE_PASSWORD;
     if (!expected) throw Errors.validation({ senha: "Senha de operacoes destrutivas nao configurada." });
@@ -1420,6 +1458,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .post("/v1/admin/anuencias/delete", async (c) => {
     const j = c.get("jwt");
     requireAdmin(j);
+    await requireUnlocked(c.env, "anuencias/delete");
     const body = (await c.req.json().catch(() => ({}))) as { senha?: string; ids?: string[] };
     const expected = c.env.ADMIN_PURGE_PASSWORD;
     if (!expected) throw Errors.validation({ senha: "Senha nao configurada." });
@@ -1442,6 +1481,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "servidores");
+    await requireUnlocked(c.env, "servidores/delete-matriculas");
     const body = (await c.req.json().catch(() => ({}))) as { senha?: string; matriculas?: string[] };
     const expected = c.env.ADMIN_PURGE_PASSWORD;
     if (!expected) throw Errors.validation({ senha: "Senha de operacoes destrutivas nao configurada." });
@@ -1462,6 +1502,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "manutencao");
+    await requireUnlocked(c.env, "db/purge-servidores");
     const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
     if (body.confirmar !== "APAGAR-SERVIDORES") {
       throw Errors.validation({
@@ -1483,17 +1524,19 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "manutencao");
+    await requireUnlocked(c.env, "db/purge-contratos");
     const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
     if (body.confirmar !== "APAGAR-CONTRATOS") {
       throw Errors.validation({
         confirmar: 'Operacao destrutiva bloqueada. Para confirmar, envie { "confirmar": "APAGAR-CONTRATOS" }. Apaga contratos + propostas + ADFs + eventos. Servidores/bancos/prefeituras/convenios ficam intocados.',
       });
     }
-    pushEvent("error", "admin.db.purge_contratos", `PURGE CIRURGICO de contratos confirmado por admin ${j?.sub}: TRUNCATE contratos + propostas + eventos + folhas + tombamento.`);
+    pushEvent("error", "admin.db.purge_contratos", `PURGE CIRURGICO de contratos confirmado por admin ${j?.sub}: TRUNCATE contratos + propostas + eventos + folhas. TOMBAMENTO PRESERVADO.`);
     await purgeContratosApenas(c.env);
     clearContratosMemoria();
     clearAdfsMemoria();
-    clearTombamentoMemoria();
+    // NAO chama clearTombamentoMemoria — tombamento eh declaracao da prefeitura,
+    // nao deve sumir com purge de contratos internos (bug repetido 20/07/2026).
     // Regra do cliente (20/07/2026): "nao faz sentido ter as folhas se nao tem
     // contrato/propostas". Sem contratos, todas as folhas viram cascas vazias
     // — apaga junto pra manter a base consistente. Se o cliente quiser reabrir
@@ -1554,6 +1597,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "manutencao");
+    await requireUnlocked(c.env, "db/purge-prefeituras");
     const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
     if (body.confirmar !== "APAGAR-PREFEITURAS") {
       throw Errors.validation({
@@ -1584,6 +1628,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "manutencao");
+    await requireUnlocked(c.env, "db/purge-usuarios");
     const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
     if (body.confirmar !== "APAGAR-USUARIOS") {
       throw Errors.validation({
@@ -1606,6 +1651,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "manutencao");
+    await requireUnlocked(c.env, "db/purge-comunicados");
     const body = (await c.req.json().catch(() => ({}))) as { confirmar?: string };
     if (body.confirmar !== "APAGAR-COMUNICADOS") {
       throw Errors.validation({
@@ -2292,6 +2338,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "adf");
+    await requireUnlocked(c.env, "contratos/limpar-ccb");
     const body = (await c.req.json().catch(() => ({}))) as { senha?: string; adfs?: string[] };
     const expected = c.env.ADMIN_PURGE_PASSWORD;
     if (!expected) throw Errors.validation({ senha: "Senha nao configurada." });
@@ -2883,6 +2930,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt");
     requireAdmin(j);
     requirePermissao(j, "tombamento");
+    await requireUnlocked(c.env, "tombamento/lotes/delete");
     const body = (await c.req.json().catch(() => ({}))) as { senha?: string; ids?: string[] };
     const expected = c.env.ADMIN_PURGE_PASSWORD;
     if (!expected) throw Errors.validation({ senha: "Senha nao configurada." });
