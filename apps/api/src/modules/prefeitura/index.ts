@@ -23,7 +23,7 @@ import { importTombamento, listLotes, listLinhas } from "../admin/tombamento.js"
 import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
   ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus,
-  TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia,
+  TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia, refreshAnuencias, persistAnuencia,
   listPerfis, upsertPerfil, deletePerfil, reactivatePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
 } from "./store.js";
 import { upsertPrefeitura, upsertServidor, deleteCollectionRow, loadCollection } from "../../db/repos.js";
@@ -814,8 +814,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 10 — Anuência de dados =====
-  .get("/v1/prefeitura/anuencia", (c) => {
+  .get("/v1/prefeitura/anuencia", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    // Recarrega do PG — sobrevive a redeploy da API.
+    await refreshAnuencias(c.env);
     const vigente = anuenciaVigente(id);
     return c.json({ versaoAtual: TERMO_VERSAO_ATUAL, termo: TERMO_TEXTO, vigente: vigente ?? null, historico: listAnuencias(id) });
   })
@@ -824,7 +826,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const j = c.get("jwt");
     const body = z.object({ aceito: z.literal(true), aceitoPor: z.string().min(2) }).parse(await c.req.json());
     const ip = c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for") ?? undefined;
+    // Recarrega antes pra o _anuSeq estar sincronizado com PG (evita colisao de id).
+    await refreshAnuencias(c.env);
     const anu = registrarAnuencia({ prefeituraId: id, aceitoPor: body.aceitoPor, ip }, new Date().toISOString());
+    // Persist no PG — sobrevive a redeploy.
+    await persistAnuencia(c.env, anu);
     appendAudit({ categoria: "termo_aceite", acao: "anuencia_base", termoAceito: TERMO_VERSAO_ATUAL, ip, userId: `prefeitura:${j.sub}`, userRole: "prefeitura", detalhes: `Anuência de uso da base aceita por ${body.aceitoPor} (${TERMO_VERSAO_ATUAL}).` });
     return c.json({ anuencia: anu }, 201);
   })

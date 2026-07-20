@@ -374,8 +374,32 @@ export interface Anuencia {
 // (Palhoça) e ANU-0002 (Florianopolis) apareciam como "vigente" pra qualquer
 // prefeitura que reciclasse id=1 ou id=2 (Capistrano herdou id=1 apos delete
 // da Palhoça). Anuencias novas entram exclusivamente via POST /prefeitura/anuencia.
+// Persistidas em PG (admin_anuencias) pra sobreviver a redeploys da API.
+import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
+import type { Env } from "../../env.js";
+
+const ANU_TABLE = "admin_anuencias";
 const _anuencias: Anuencia[] = [];
 let _anuSeq = 3;
+
+/** Recarrega TODAS as anuencias do PG pra memoria. Best-effort. */
+export async function refreshAnuencias(env: Env): Promise<void> {
+  try {
+    const rows = await loadCollection<Anuencia>(env, ANU_TABLE);
+    _anuencias.length = 0;
+    _anuencias.push(...rows);
+    // Sincroniza sequence com o maior id existente pra nao gerar duplicata.
+    const nums = rows
+      .map((a) => Number((a.id ?? "").replace(/^ANU-0*/, "")))
+      .filter((n) => Number.isFinite(n));
+    _anuSeq = Math.max(0, ...nums) + 1;
+  } catch { /* fail-safe: mantem in-memory */ }
+}
+
+/** Write-through: persiste no PG apos criar. Best-effort. */
+export async function persistAnuencia(env: Env, a: Anuencia): Promise<void> {
+  try { await upsertCollectionRow(env, ANU_TABLE, a.id, a); } catch { /* fail-safe */ }
+}
 
 export function listAnuencias(prefeituraId: number): Anuencia[] {
   return _anuencias.filter((a) => a.prefeituraId === prefeituraId).sort((a, b) => b.aceitoEm.localeCompare(a.aceitoEm));
