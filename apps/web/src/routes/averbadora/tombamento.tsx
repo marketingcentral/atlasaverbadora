@@ -73,9 +73,6 @@ export function AdminTombamento() {
           <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 720 }}>
             Recebimento mensal dos arquivos de remessa enviados pelas prefeituras. Faz a conciliação contra as posições do Atlas e atualiza margens.
           </p>
-          <p style={{ color: "var(--text-dim)", margin: "8px 0 0", maxWidth: 780, fontSize: 12 }}>
-            <b>Colunas do CSV:</b> cpf, matricula, nome, banco, numeroContrato, valorParcela, totalParcelas, parcelasRestantes, valorEmprestimo, status, motivo, tipo.
-          </p>
         </div>
         <Button onClick={() => setImporting(true)}>+ Importar remessa</Button>
       </header>
