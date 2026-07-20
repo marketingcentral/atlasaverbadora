@@ -3825,24 +3825,26 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         return;
       }
       r.matricula = matricula;
-      // idConvenio: usa o do CSV se pertencer a esta prefeitura; caso contrário (vazio ou de outra)
-      // cai silenciosamente no convênio padrão da prefeitura selecionada.
-      let idConvenio = (r.idConvenio ?? "").trim();
-      if (idConvenio && !conveniosPref.some((cv) => cv.id === idConvenio)) {
-        idConvenio = defaultConvenioId;
+      // idConvenio: SEM fallback silencioso pro default. Se CSV nao trouxer
+      // idConvenio valido, rejeita a linha com erro explicito (regra
+      // 20/07/2026: "nao inventar"). Servidor precisa ter convenio real.
+      const idConvenio = (r.idConvenio ?? "").trim();
+      if (!idConvenio) { out.errors.push({ line, message: "idConvenio obrigatorio no CSV (nao ha mais auto-fill silencioso)" }); return; }
+      if (!conveniosPref.some((cv) => cv.id === idConvenio)) {
+        out.errors.push({ line, message: `idConvenio "${idConvenio}" nao pertence a ${pref.nome}. Convenios validos: ${conveniosPref.map((cv) => cv.id).join(", ") || "(nenhum)"}` });
+        return;
       }
-      if (!idConvenio) idConvenio = defaultConvenioId;
-      if (!idConvenio) { out.errors.push({ line, message: `prefeitura ${pref.nome} nao possui convenios cadastrados` }); return; }
       // Identidade (prefeituraId, matricula) — permite mesmo CPF em outra prefeitura.
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === prefId);
       // Salario: aceita formato BR ("R$ 5.000,50", "5.000,50") e US ("5000.50").
-      // Antes o Number() cru retornava NaN pra qualquer coisa com R$ ou virgula
-      // decimal — resultado: import trazia salario zerado.
       const salario = parseNumberBr(r.salarioLiquido);
       const ibge = Number((r.codigoIbge ?? "").toString().replace(/\D/g, ""));
-      // Vinculo: aceita string canonica (ESTATUTARIO/CLT/etc) OU codigo numerico
-      // usado por planilhas de RH (1=Estatutario, 2=CLT, 3=Comissionado, ...).
-      const vinculo = mapVinculo(r.vinculo) ?? "ESTATUTARIO";
+      // Vinculo: aceita string canonica (ESTATUTARIO/CLT/etc) OU codigo numerico.
+      // SEM fallback pra "ESTATUTARIO" — se CSV nao trouxer, salva vazio.
+      const vinculo = mapVinculo(r.vinculo) ?? "";
+      // Origem: usa o do CSV se veio; SEM fallback pro nome da prefeitura.
+      // Antes: origem sempre sobrescrita com pref.nome (inventado 20/07/2026).
+      const origem = (r.origem ?? "").trim();
       const s: ServidorBuscaMock = {
         cpf,
         cpfMasked: cpf.slice(0, 3) + ".***.***-" + cpf.slice(-2),
@@ -3853,8 +3855,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         dataAdmissao: r.dataAdmissao ?? "",
         dataNascimento: r.dataNascimento ?? "",
         vinculo,
-        origem: pref.nome,
-        situacaoFuncional: (r.situacaoFuncional?.trim() || "TRABALHANDO") as ServidorBuscaMock["situacaoFuncional"],
+        origem,
+        // SEM fallback pra "TRABALHANDO" — se CSV nao trouxer, salva vazio.
+        situacaoFuncional: (r.situacaoFuncional?.trim() ?? "") as ServidorBuscaMock["situacaoFuncional"],
         salarioLiquido: Number.isFinite(salario) && salario > 0 ? salario : 0,
         idConvenio,
         codigoIbge: Number.isFinite(ibge) && ibge > 0 ? ibge : undefined,
