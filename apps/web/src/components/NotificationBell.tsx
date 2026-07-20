@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   buildNotificationsFromPropostas,
+  dismissAll,
   markAllAsRead,
   markAsRead,
   type NotifType,
@@ -133,7 +134,8 @@ export function NotificationBell() {
       if (
         e.key === STORAGE_KEY_META ||
         e.key === STORAGE_KEY_ID ||
-        e.key === "atlas:notifications:read"
+        e.key === "atlas:notifications:read" ||
+        e.key === "atlas:notifications:dismissed"
       ) {
         setTickKey((k) => k + 1);
       }
@@ -220,6 +222,14 @@ export function NotificationBell() {
     setTickKey((k) => k + 1);
   }
 
+  function limparTudo() {
+    // Marca todos como dispensados (some do dropdown). Notificacoes futuras
+    // (novos estados da proposta) continuam aparecendo — so o snapshot atual
+    // e escondido. Mesmo padrao do app.
+    dismissAll(notifs.map((n) => n.id));
+    setTickKey((k) => k + 1);
+  }
+
   return (
     <div ref={ref} style={{ position: "relative", zIndex: 100 }}>
       <style>{`@keyframes atlas-bell-pulse { 0%{transform:scale(1);box-shadow:0 0 0 0 rgba(212,175,55,.6)} 50%{transform:scale(1.15);box-shadow:0 0 0 8px rgba(212,175,55,0)} 100%{transform:scale(1);box-shadow:0 0 0 0 rgba(212,175,55,0)} }`}</style>
@@ -300,22 +310,41 @@ export function NotificationBell() {
             }}
           >
             <span style={{ fontWeight: 700, fontSize: ".95rem" }}>Notificações</span>
-            {unread > 0 ? (
-              <button
-                type="button"
-                onClick={marcarTodasLidas}
-                style={{
-                  background: "transparent",
-                  border: 0,
-                  color: "var(--accent)",
-                  fontSize: ".82rem",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                }}
-              >
-                Marcar todas como lidas
-              </button>
-            ) : null}
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              {unread > 0 ? (
+                <button
+                  type="button"
+                  onClick={marcarTodasLidas}
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    color: "var(--accent)",
+                    fontSize: ".82rem",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  Marcar todas como lidas
+                </button>
+              ) : null}
+              {notifs.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={limparTudo}
+                  title="Remove todas as notificações atuais do dropdown"
+                  style={{
+                    background: "transparent",
+                    border: 0,
+                    color: "var(--text-muted)",
+                    fontSize: ".82rem",
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  Limpar tudo
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div style={{ maxHeight: 460, overflowY: "auto" }}>

@@ -32,6 +32,7 @@ export interface Notification {
 }
 
 const READ_KEY = "atlas:notifications:read";
+const DISMISSED_KEY = "atlas:notifications:dismissed";
 
 function readReadIds(): Set<string> {
   try {
@@ -49,6 +50,36 @@ function writeReadIds(set: Set<string>): void {
   } catch {
     // ignore
   }
+}
+
+function readDismissedIds(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return new Set();
+    return new Set(JSON.parse(raw) as string[]);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeDismissedIds(set: Set<string>): void {
+  try {
+    window.localStorage.setItem(DISMISSED_KEY, JSON.stringify([...set]));
+  } catch { /* ignore */ }
+}
+
+/** Dispensa todas as notificacoes atuais — some do dropdown do sino. Chamado
+ *  pelo botao "Limpar tudo". Notificacoes NOVAS (estados futuros da proposta)
+ *  continuam aparecendo — so o snapshot atual e escondido. */
+export function dismissAll(notifIds: string[]): void {
+  const set = readDismissedIds();
+  for (const id of notifIds) set.add(id);
+  writeDismissedIds(set);
+}
+
+/** Filtra ids dispensados — usado pelo builder. */
+export function isDismissed(id: string): boolean {
+  return readDismissedIds().has(id);
 }
 
 export function markAsRead(notifId: string): void {
@@ -269,11 +300,15 @@ export function buildNotificationsFromPropostas(
   ofertasBanco: OfertaBancoParaNotif[] = [],
 ): Notification[] {
   const readIds = readReadIds();
+  const dismissedIds = readDismissedIds();
   // Cada proposta pode emitir varias notifs (uma por etapa da timeline).
   const derivadas = propostas.flatMap(notifsFromProposta);
   const ofertas = ofertasBanco
     .map(notifDeOferta)
     .filter((n): n is Notification => n != null);
   const lista = [...derivadas, ...ofertas, folhaProcessada()];
-  return lista.map((n) => ({ ...n, lida: readIds.has(n.id) }));
+  // Filtra dispensadas (usuario clicou "Limpar tudo") e marca lidas.
+  return lista
+    .filter((n) => !dismissedIds.has(n.id))
+    .map((n) => ({ ...n, lida: readIds.has(n.id) }));
 }
