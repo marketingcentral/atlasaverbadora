@@ -1,8 +1,40 @@
 import { useMemo, useState } from "react";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CsvImportPanel, DataTable, Pill, type Column } from "@atlas/ui/web";
+import { Button, Card, CsvImportPanel, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import { PageHeader, inp } from "./_ui";
+import { PageHeader } from "./_ui";
+
+const MESES_PT = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+
+/** Converte YYYYMM em { ano, mes } (mes 1-12). */
+function parseCompetencia(v: string): { ano: number; mes: number } {
+  const clean = v.replace(/\D/g, "").padStart(6, "0").slice(-6);
+  const ano = Number(clean.slice(0, 4));
+  const mes = Number(clean.slice(4, 6));
+  return { ano, mes };
+}
+
+/** Combina ano+mes em YYYYMM. */
+function toCompetencia(ano: number, mes: number): string {
+  return `${ano}${String(mes).padStart(2, "0")}`;
+}
+
+/** Nome amigavel: "Julho de 2026". */
+function labelCompetencia(v: string): string {
+  const { ano, mes } = parseCompetencia(v);
+  if (mes < 1 || mes > 12) return "—";
+  return `${MESES_PT[mes - 1]} de ${ano}`;
+}
+
+/** Soma N meses em YYYYMM (positivo ou negativo). */
+function shiftCompetencia(v: string, delta: number): string {
+  const { ano, mes } = parseCompetencia(v);
+  const total = ano * 12 + (mes - 1) + delta;
+  return toCompetencia(Math.floor(total / 12), (total % 12) + 1);
+}
 
 interface Lote { id: string; competencia: string; totalLinhas: number; inseridos: number; atualizados: number; divergencias: number; recebidoEm: string }
 interface Linha {
@@ -84,12 +116,8 @@ export function PrefeituraTombamento() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageHeader title="Tombamento de contratos" subtitle="Envio inicial dos contratos legados e remessa mensal (saldo, parcelas pagas, status)." />
       <Card>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase" }}>Competência do lote</span>
-            <input style={{ ...inp, width: 140 }} value={competencia} onChange={(e) => setCompetencia(e.target.value)} placeholder="202608" />
-          </label>
-        </div>
+        <CompetenciaPicker value={competencia} onChange={setCompetencia} />
+        <div style={{ height: 12 }} />
         <CsvImportPanel
           title="Enviar remessa de contratos"
           templateUrl={atlas.prefeitura.tombamentoCsvTemplateUrl()}
@@ -114,6 +142,76 @@ export function PrefeituraTombamento() {
         loading={carregando}
         emptyState="Nenhum contrato tombado. Envie o CSV de remessa acima."
       />
+    </div>
+  );
+}
+
+/** Seletor de competencia (mes/ano) — separa em 2 selects visuais + rotulo
+ *  amigavel + botoes rapidos (mes anterior / atual / proximo). Evita o usuario
+ *  digitar YYYYMM na mao e errar. */
+function CompetenciaPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { ano, mes } = parseCompetencia(value);
+  const anoAtual = new Date().getFullYear();
+  const anosDisponiveis = [anoAtual - 1, anoAtual, anoAtual + 1];
+  const hoje = new Date();
+  const compHoje = toCompetencia(hoje.getFullYear(), hoje.getMonth() + 1);
+  const compProximo = shiftCompetencia(compHoje, 1);
+  const isHoje = value === compHoje;
+  const isProximo = value === compProximo;
+  const selectStyle: React.CSSProperties = {
+    padding: "9px 12px",
+    borderRadius: 8,
+    border: "1px solid var(--border-strong)",
+    background: "var(--bg-elev)",
+    color: "var(--text)",
+    fontSize: 14,
+    fontWeight: 600,
+    minWidth: 130,
+    cursor: "pointer",
+  };
+  return (
+    <div style={{ padding: "14px 16px", background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 8 }}>
+        Competência do lote
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <select value={mes} onChange={(e) => onChange(toCompetencia(ano, Number(e.target.value)))} style={selectStyle}>
+          {MESES_PT.map((m, i) => (
+            <option key={i} value={i + 1}>{m}</option>
+          ))}
+        </select>
+        <select value={ano} onChange={(e) => onChange(toCompetencia(Number(e.target.value), mes))} style={{ ...selectStyle, minWidth: 90 }}>
+          {anosDisponiveis.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+        <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: "auto", flexWrap: "wrap" }}>
+          <Button size="sm" variant="ghost" onClick={() => onChange(shiftCompetencia(value, -1))} title="Mês anterior">
+            ← Anterior
+          </Button>
+          <Button
+            size="sm"
+            variant={isHoje ? undefined : "ghost"}
+            onClick={() => onChange(compHoje)}
+            title="Competência do mês atual"
+          >
+            Este mês
+          </Button>
+          <Button
+            size="sm"
+            variant={isProximo ? undefined : "ghost"}
+            onClick={() => onChange(compProximo)}
+            title="Competência do próximo mês"
+          >
+            Próximo →
+          </Button>
+        </div>
+      </div>
+      <div style={{ marginTop: 10, display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Enviando para:</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold-500)" }}>{labelCompetencia(value)}</span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>({value})</span>
+      </div>
     </div>
   );
 }
