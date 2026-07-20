@@ -12,7 +12,7 @@ import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded } from "../admin/index.js";
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
 import { verifyTotp } from "../../_shared/totp.js";
-import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf, loadServidores } from "../../db/repos.js";
+import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf, loadServidores, upsertPrefeitura, upsertBanco, upsertCollectionRow } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
 function maskEmail(email?: string): string {
@@ -683,6 +683,9 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
         const stored = await c.env.KV_SESSIONS.get(`rs:banco:${b.id}`);
         if (!stored || stored !== codigo) throw Errors.unauthorized("Codigo invalido ou expirado");
         b.passwordHash = hash;
+        // Persiste no PG — sem isso, so o isolate atual tem a senha nova; outros
+        // isolates rejeitam login com "Credenciais invalidas". Bug 17/07/2026.
+        try { await upsertBanco(c.env, b); } catch { /* fail-safe */ }
         await c.env.KV_SESSIONS.delete(`rs:banco:${b.id}`);
         return c.json({ ok: true, perfil: "banco" });
       }
@@ -691,6 +694,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
         const stored = await c.env.KV_SESSIONS.get(`rs:pref:${p.id}`);
         if (!stored || stored !== codigo) throw Errors.unauthorized("Codigo invalido ou expirado");
         p.passwordHash = hash;
+        try { await upsertPrefeitura(c.env, p); } catch { /* fail-safe */ }
         await c.env.KV_SESSIONS.delete(`rs:pref:${p.id}`);
         return c.json({ ok: true, perfil: "prefeitura" });
       }
@@ -698,10 +702,9 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       if (u) {
         const stored = await c.env.KV_SESSIONS.get(`rs:av:${u.id}`);
         if (!stored || stored !== codigo) throw Errors.unauthorized("Codigo invalido ou expirado");
-        // Atualiza em memoria; upsert do proximo mutation persiste no PG. Pra
-        // garantir a persistencia imediata, poderia chamar persistPerfis(env)
-        // mas essa fn e privada de admin/index.ts. Deixamos best-effort aqui.
         u.passwordHash = hash;
+        // Persiste no PG via collection admin_perfis — mesmo problema de multi-isolate.
+        try { await upsertCollectionRow(c.env, "admin_perfis", String(u.id), u); } catch { /* fail-safe */ }
         await c.env.KV_SESSIONS.delete(`rs:av:${u.id}`);
         return c.json({ ok: true, perfil: "averbadora" });
       }
