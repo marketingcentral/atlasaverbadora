@@ -477,6 +477,20 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     return c.json({ contratos, total: contratos.length });
   })
 
+  // Lista contratos com falha em folha pra o banco tratar (nova pendencia).
+  // Path FORA de /contratos/:adf pra evitar colisao com o trie-router do Hono
+  // — antes estava em /contratos/falhas e caia no handler /:adf mesmo com a
+  // rota registrada primeiro (Hono prefere match mais especifico do trie).
+  .get("/v1/portal/banco/falhas", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    await refreshContratos(c.env);
+    const list = listContratos({}).filter(
+      (ct) => ct.bancoId === j.banco_id && ct.situacao.toLowerCase().includes("falha em folha"),
+    );
+    return c.json({ contratos: list });
+  })
+
   // --------- Detalhe contrato ----------
   .get("/v1/portal/banco/contratos/:adf", async (c) => {
     const j = c.get("jwt");
@@ -521,6 +535,41 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const ct = await persistir(j, c.env, tipo, body, true);
     await persistContrato(c.env, ct.adf);
     return c.json(ct);
+  })
+
+  // Banco trata a falha reportada pela averbadora — escolhe uma das 3 acoes.
+  // Fluxo F1-falha do plano: averbadora reporta falha -> ADF vira 'falha' +
+  // contrato 'Falha em folha' + notificacao pro banco -> banco decide.
+  // Path FORA de /contratos/:adf pelo mesmo motivo do GET /falhas — Hono
+  // priorizava /:adf/:acao mesmo com /tratar-falha registrada antes.
+  .post("/v1/portal/banco/tratar-falha/:adf", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    const adf = c.req.param("adf");
+    const body = z
+      .object({
+        acao: z.enum(["reenviar", "cancelar", "cobranca_direta"]),
+        motivo: z.string().min(3).max(500),
+      })
+      .parse(await c.req.json());
+    await refreshContratos(c.env);
+    const owner = getContrato(adf);
+    if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
+    if (!owner.situacao.toLowerCase().includes("falha em folha")) {
+      throw Errors.validation({ contrato: "contrato nao esta em falha — nada pra tratar" });
+    }
+    const r = tratarFalhaContrato(adf, body.acao, body.motivo, `user:${j.sub}`);
+    if (!r) throw Errors.notFound("contrato");
+    await persistContrato(c.env, adf);
+    pushEvent(
+      "info",
+      "banco.tratou_falha",
+      `Banco ${j.banco_id} tratou falha do contrato ${adf} com acao "${body.acao}": ${body.motivo}`,
+    );
+    // Notifica o servidor da resolucao (in-app + e-mail).
+    const acaoParaNotif = body.acao === "reenviar" ? "aprovar" : body.acao === "cancelar" ? "cancelar" : "suspender";
+    notifyMovimentacao(c, r, acaoParaNotif, `Tratamento de falha: ${body.motivo}`);
+    return c.json({ contrato: r });
   })
 
   // --------- Acoes em contratos ----------
@@ -571,50 +620,6 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     }
     // Notifica o servidor da movimentação (in-app + e-mail).
     notifyMovimentacao(c, r, acao, body.motivo);
-    return c.json({ contrato: r });
-  })
-
-  // Lista contratos com falha em folha pra o banco tratar (nova pendencia).
-  .get("/v1/portal/banco/contratos/falhas", async (c) => {
-    const j = c.get("jwt");
-    requireBancoRole(j);
-    await refreshContratos(c.env);
-    const list = listContratos({}).filter(
-      (ct) => ct.bancoId === j.banco_id && ct.situacao.toLowerCase().includes("falha em folha"),
-    );
-    return c.json({ contratos: list });
-  })
-
-  // Banco trata a falha reportada pela averbadora — escolhe uma das 3 acoes.
-  // Fluxo F1-falha do plano: averbadora reporta falha -> ADF vira 'falha' +
-  // contrato 'Falha em folha' + notificacao pro banco -> banco decide.
-  .post("/v1/portal/banco/contratos/:adf/tratar-falha", async (c) => {
-    const j = c.get("jwt");
-    requireBancoRole(j);
-    const adf = c.req.param("adf");
-    const body = z
-      .object({
-        acao: z.enum(["reenviar", "cancelar", "cobranca_direta"]),
-        motivo: z.string().min(3).max(500),
-      })
-      .parse(await c.req.json());
-    await refreshContratos(c.env);
-    const owner = getContrato(adf);
-    if (!owner || owner.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("contrato");
-    if (!owner.situacao.toLowerCase().includes("falha em folha")) {
-      throw Errors.validation({ contrato: "contrato nao esta em falha — nada pra tratar" });
-    }
-    const r = tratarFalhaContrato(adf, body.acao, body.motivo, `user:${j.sub}`);
-    if (!r) throw Errors.notFound("contrato");
-    await persistContrato(c.env, adf);
-    pushEvent(
-      "info",
-      "banco.tratou_falha",
-      `Banco ${j.banco_id} tratou falha do contrato ${adf} com acao "${body.acao}": ${body.motivo}`,
-    );
-    // Notifica o servidor da resolucao (in-app + e-mail).
-    const acaoParaNotif = body.acao === "reenviar" ? "aprovar" : body.acao === "cancelar" ? "cancelar" : "suspender";
-    notifyMovimentacao(c, r, acaoParaNotif, `Tratamento de falha: ${body.motivo}`);
     return c.json({ contrato: r });
   })
 
