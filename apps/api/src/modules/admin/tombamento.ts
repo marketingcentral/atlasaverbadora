@@ -276,9 +276,15 @@ export async function importTombamento(input: {
     const parcelasRestantes = Number(pick(norm, "parcelasrestantes", "parcelas remanescentes"));
     const totalParcelas = Number(pick(norm, "totalparcelas", "total de parcelas")) || undefined;
     const valorEmprestimo = parseBRL(pick(norm, "valoremprestimo", "valor do emprestimo", "valor do empréstimo")) || undefined;
-    const saldoRaw = parseBRL(pick(norm, "saldodevedor"));
+    // parseBRL("") = 0 (finito) — precisa checar se a coluna veio VAZIA no CSV
+    // pra cair no fallback. Sem essa verificacao, todo tombamento sem coluna
+    // saldoDevedor viria com R$ 0,00 (bug 20/07/2026).
+    const saldoStr = pick(norm, "saldodevedor");
+    const saldoRaw = saldoStr ? parseBRL(saldoStr) : NaN;
     // Sem saldo devedor explicito, estima parcela × parcelas restantes.
-    const saldoDevedor = Number.isFinite(saldoRaw) ? saldoRaw : (valorParcela * (Number.isFinite(parcelasRestantes) ? parcelasRestantes : 0));
+    const saldoDevedor = Number.isFinite(saldoRaw) && saldoRaw > 0
+      ? saldoRaw
+      : (valorParcela * (Number.isFinite(parcelasRestantes) ? parcelasRestantes : 0));
     if (!Number.isFinite(valorParcela)) { erros.push({ line, message: "valorParcela invalido" }); return; }
     if (!Number.isFinite(parcelasRestantes)) { erros.push({ line, message: "parcelasRestantes invalido" }); return; }
     const existing = _linhas.find((l) => l.matricula === matricula && l.adfBanco === adfBanco);
