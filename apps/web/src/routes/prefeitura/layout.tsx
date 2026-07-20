@@ -15,7 +15,6 @@ const NAV = [
   { key: "relatorios", label: "Relatórios", href: "/prefeitura/relatorios", icon: "▨" },
   { key: "anuencia", label: "Anuência de dados", href: "/prefeitura/anuencia", icon: "✓" },
   { key: "perfis", label: "Usuários e acessos", href: "/prefeitura/perfis", icon: "◐" },
-  { key: "comunicados", label: "Comunicados", href: "/prefeitura/comunicados", icon: "❐" },
   { key: "conta", label: "Minha conta", href: "/prefeitura/conta", icon: "👤" },
 ];
 

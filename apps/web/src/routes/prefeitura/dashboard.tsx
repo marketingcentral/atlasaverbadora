@@ -16,6 +16,14 @@ export function PrefeituraDashboard() {
     refetchInterval: 8_000,
     refetchOnWindowFocus: true,
   });
+  // Comunicados publicados pela averbadora para a prefeitura — antes viviam
+  // numa aba propria (/prefeitura/comunicados). Cliente pediu pra mover
+  // pro rodape do painel; a aba lateral foi removida.
+  const comunicadosQ = useQuery({
+    queryKey: ["prefeitura", "comunicados"],
+    queryFn: () => atlas.prefeitura.comunicados(),
+    refetchInterval: 60_000,
+  });
 
   // `isPending` (nao `isLoading`) — assim o refetch de fundo nao pisca o
   // "Carregando…" a cada 8s; o card so aparece no primeiro fetch da sessao.
@@ -85,7 +93,61 @@ export function PrefeituraDashboard() {
           ))}
         </div>
       </Card>
+
+      <ComunicadosCard
+        comunicados={comunicadosQ.data?.comunicados ?? []}
+        loading={comunicadosQ.isPending}
+      />
     </div>
+  );
+}
+
+/** Tabela compacta dos comunicados publicados pela averbadora pra prefeitura.
+ *  Vive no rodape do dashboard depois que a aba lateral foi removida (o filtro
+ *  no backend garante que so vem publico === "prefeitura"). */
+function ComunicadosCard({
+  comunicados,
+  loading,
+}: {
+  comunicados: { id: string; titulo: string; corpo: string; linkHref?: string; linkLabel?: string }[];
+  loading: boolean;
+}) {
+  return (
+    <Card>
+      <span className="eyebrow" style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", color: "var(--text-dim)", textTransform: "uppercase" }}>Comunicados</span>
+      <div style={{ marginTop: 12, display: "grid", gap: 8 }}>
+        {loading ? (
+          <span style={{ color: "var(--text-muted)", fontSize: 14 }}>Carregando…</span>
+        ) : comunicados.length === 0 ? (
+          <span style={{ color: "var(--text-muted)", fontSize: 14 }}>Nenhum comunicado.</span>
+        ) : (
+          comunicados.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                padding: "10px 14px", background: "var(--bg-elev-2)", borderRadius: 10,
+                display: "flex", flexDirection: "column", gap: 4,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <strong style={{ fontSize: 14 }}>{c.titulo}</strong>
+                {c.linkHref && c.linkHref !== "#" ? (
+                  <a
+                    href={c.linkHref}
+                    target={c.linkHref.startsWith("http") ? "_blank" : undefined}
+                    rel="noreferrer noopener"
+                    style={{ color: "var(--accent)", fontSize: 12, fontWeight: 600, textDecoration: "none" }}
+                  >
+                    {c.linkLabel ?? "Saiba mais"} →
+                  </a>
+                ) : null}
+              </div>
+              <p style={{ margin: 0, color: "var(--text-muted)", fontSize: 13, lineHeight: 1.5 }}>{c.corpo}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </Card>
   );
 }
 
