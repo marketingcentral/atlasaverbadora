@@ -1,5 +1,14 @@
 // Unique operation ID — prefix per prefeitura + sequential counter (with optional hash component).
 // Used in ADF, bate-carteira, audit log to uniquely identify every margin movement / contract operation.
+//
+// Persistencia: espelhado no PG (collection `admin_id_unico_configs`) pra sobreviver
+// a redeploys e sincronizar entre isolates. Averbadora e prefeitura leem e escrevem
+// no mesmo storage — sem divergencia entre as duas visoes.
+
+import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
+import type { Env } from "../../env.js";
+
+const PG_TABLE = "admin_id_unico_configs";
 
 export type IdUnicoFormat = "SEQ" | "SEQ_HASH" | "YYYYMM_SEQ";
 
@@ -40,6 +49,25 @@ export function upsertIdUnicoConfig(input: Omit<IdUnicoConfig, "atualizadoEm">):
   if (idx >= 0) _configs[idx] = next;
   else _configs.push(next);
   return next;
+}
+
+/** Recarrega TODAS as configs do PG pra o array in-memory. Chamado por refresh
+ *  antes das leituras — evita divergencia entre isolates. Best-effort: se PG
+ *  falhar, mantem o cache que tinha. */
+export async function refreshIdUnicoConfigs(env: Env): Promise<void> {
+  try {
+    const rows = await loadCollection<IdUnicoConfig>(env, PG_TABLE);
+    _configs.length = 0;
+    _configs.push(...rows);
+  } catch { /* fail-safe */ }
+}
+
+/** Persiste uma config no PG (write-through). Chamado apos upsertIdUnicoConfig
+ *  em endpoints que precisam sincronizar entre isolates (averbadora e prefeitura). */
+export async function persistIdUnicoConfig(env: Env, cfg: IdUnicoConfig): Promise<void> {
+  try {
+    await upsertCollectionRow(env, PG_TABLE, String(cfg.prefeituraId), cfg);
+  } catch { /* fail-safe: mantem in-memory */ }
 }
 
 /**

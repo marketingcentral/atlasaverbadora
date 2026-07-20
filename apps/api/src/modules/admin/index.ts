@@ -15,7 +15,7 @@ import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
 import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
-import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig } from "./id-unico.js";
+import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria } from "./tombamento.js";
@@ -2771,12 +2771,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   // ===== ID Único — config + preview/issue (passo 10) =====
   .get("/v1/admin/id-unico/configs", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "id-unico");
-    // Recarrega prefeituras do PG — isolate novo pode ter lista vazia in-memory.
-    await ensurePrefeiturasLoaded(c.env);
-    // Garante que toda prefeitura tem uma config default gerada — em isolates
-    // que subiram depois do cadastro, ou apos redeploy, a lista in-memory volta
-    // vazia e o auto-create do POST /prefeituras nao se aplica retroativamente.
-    for (const p of prefeituras) ensureIdUnicoConfig(p.id, p.nome, p.uf);
+    // Recarrega prefeituras + configs do PG — sincroniza in-memory com o
+    // storage compartilhado (evita divergencia entre isolates e entre a visao
+    // da averbadora e da prefeitura).
+    await Promise.all([ensurePrefeiturasLoaded(c.env), refreshIdUnicoConfigs(c.env)]);
+    // Garante que toda prefeitura tem uma config default gerada + persistida.
+    for (const p of prefeituras) {
+      const before = getIdUnicoConfig(p.id);
+      const cfg = ensureIdUnicoConfig(p.id, p.nome, p.uf);
+      if (!before) await persistIdUnicoConfig(c.env, cfg);
+    }
     return c.json({
       configs: listIdUnicoConfigs().map((cfg) => ({
         ...cfg,
@@ -2799,6 +2803,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       .parse(await c.req.json());
     if (!prefeituras.find((p) => p.id === body.prefeituraId)) throw Errors.notFound("prefeitura");
     const cfg = upsertIdUnicoConfig(body);
+    await persistIdUnicoConfig(c.env, cfg);
     appendAudit({ categoria: "id_unico", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config ID Unico prefeitura=${body.prefeituraId} prefixo=${body.prefixo} formato=${body.formato}.` });
     pushEvent("info", "admin.id-unico", `Config ID-Unico prefeitura=${body.prefeituraId} salva`);
     return c.json({ config: cfg, exemplo: previewIdUnico(cfg.prefeituraId) });

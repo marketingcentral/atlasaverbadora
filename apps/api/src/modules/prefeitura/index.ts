@@ -18,7 +18,7 @@ import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
-import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig } from "../admin/id-unico.js";
+import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "../admin/id-unico.js";
 import { importTombamento, listLotes, listLinhas } from "../admin/tombamento.js";
 import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
@@ -591,13 +591,21 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   // ===== Passo 5 — Configurações de convênio =====
   .get("/v1/prefeitura/convenios", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    // Isolate frio nao tem prefeituras/convenios em memoria — recarrega antes.
-    await Promise.all([ensurePrefeiturasLoaded(c.env), refreshConvenios(c.env)]);
-    // Backfill: se o isolate ainda nao tem a config do id-unico dessa prefeitura
-    // (mora so em memoria e nao persiste em PG), gera default a partir do nome+UF.
-    // Sem isso, prefeitura via prefixo vazio mesmo depois da averbadora configurar.
+    // Recarrega prefeituras + convenios + id-unico do PG — garante que a
+    // prefeitura ve exatamente o mesmo prefixo/formato que a averbadora
+    // configurou, sem depender do estado in-memory do isolate.
+    await Promise.all([
+      ensurePrefeiturasLoaded(c.env),
+      refreshConvenios(c.env),
+      refreshIdUnicoConfigs(c.env),
+    ]);
+    // Backfill: se ainda nao tem config, gera default e persiste no PG.
     const p = prefeituras.find((x) => x.id === id);
-    const idcfg = p ? ensureIdUnicoConfig(id, p.nome, p.uf) : getIdUnicoConfig(id);
+    let idcfg = getIdUnicoConfig(id);
+    if (!idcfg && p) {
+      idcfg = ensureIdUnicoConfig(id, p.nome, p.uf);
+      await persistIdUnicoConfig(c.env, idcfg);
+    }
     const detalhado = conveniosDaPrefeitura(id).map((cv) => {
       const cfg = getConvenioConfig(cv.id);
       return {
@@ -659,11 +667,13 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       vigenciaFim: prev?.vigenciaFim, ativo: prev?.ativo ?? true,
     });
     const idcfg = getIdUnicoConfig(pid);
-    upsertIdUnicoConfig({
+    const novoIdcfg = upsertIdUnicoConfig({
       prefeituraId: pid, prefixo: body.prefixo.toUpperCase(),
       formato: idcfg?.formato ?? "SEQ", larguraSeq: idcfg?.larguraSeq ?? 6,
       proximoSeq: idcfg?.proximoSeq ?? 1, separador: idcfg?.separador ?? "-",
     });
+    // Persiste no PG pra que a tela /averbadora/id-unico veja o mesmo prefixo.
+    await persistIdUnicoConfig(c.env, novoIdcfg);
     appendAudit({ categoria: "convenio_config", acao: "config_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Convenio ${cv.id}: trava=${body.prazoTravaHoras}h, portabilidade=${body.prazoPortabilidadeDU}DU, maxComp=${Math.round(body.maxComprometimentoPct * 100)}%, tetoParcelas=${body.maxParcelas}, prefixo=${body.prefixo.toUpperCase()}.` });
     return c.json({ config: cfg, prefixo: body.prefixo.toUpperCase() });
   })
