@@ -106,7 +106,14 @@ html, body { background: var(--bg); color: var(--text); font-family: var(--font-
 body { margin: 0; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 * { box-sizing: border-box; }
 
-/* Esconde scrollbar mantendo scroll funcional. Usado em elementos onde a barra
-   polui o visual (ex.: nav lateral da averbadora com muitos itens). */
+/* Esconde scrollbar GLOBAL — cliente pediu (20/07/2026) barras invisiveis em
+   toda a UI (todas as personas). Scroll continua funcional (wheel/trackpad/
+   teclado) — so a barra fica escondida. */
+html, body, * { scrollbar-width: none; -ms-overflow-style: none; }
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar { display: none; width: 0; height: 0; }
+
+/* Classe legada — mantida por compat com elementos que ja usam. */
 .atlas-hide-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 .atlas-hide-scrollbar::-webkit-scrollbar { display: none; width: 0; height: 0; }
