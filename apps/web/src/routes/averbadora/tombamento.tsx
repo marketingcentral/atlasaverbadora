@@ -6,6 +6,28 @@ import type { AdminTombamentoLote, AdminTombamentoLinha, AdminPrefeitura } from 
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
+const MESES_PT = [
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
+function parseCompetencia(v: string): { ano: number; mes: number } {
+  const clean = v.replace(/\D/g, "").padStart(6, "0").slice(-6);
+  return { ano: Number(clean.slice(0, 4)), mes: Number(clean.slice(4, 6)) };
+}
+function toCompetencia(ano: number, mes: number): string {
+  return `${ano}${String(mes).padStart(2, "0")}`;
+}
+function labelCompetencia(v: string): string {
+  const { ano, mes } = parseCompetencia(v);
+  if (mes < 1 || mes > 12) return "—";
+  return `${MESES_PT[mes - 1]} de ${ano}`;
+}
+function shiftCompetencia(v: string, delta: number): string {
+  const { ano, mes } = parseCompetencia(v);
+  const total = ano * 12 + (mes - 1) + delta;
+  return toCompetencia(Math.floor(total / 12), (total % 12) + 1);
+}
+
 type LinhaEnriquecida = AdminTombamentoLinha & { competencia: string; prefeituraNome: string };
 
 export function AdminTombamento() {
@@ -13,6 +35,10 @@ export function AdminTombamento() {
   const lotes = useQuery({ queryKey: ["admin", "tombamento", "lotes"], queryFn: () => atlas.admin.listTombamentoLotes() });
   const prefeituras = useQuery({ queryKey: ["admin", "prefeituras"], queryFn: () => atlas.admin.listPrefeituras() });
   const [importing, setImporting] = useState(false);
+  const [competencia, setCompetencia] = useState<string>(() => {
+    const d = new Date();
+    return toCompetencia(d.getFullYear(), d.getMonth() + 1);
+  });
 
   const listaLotes = lotes.data?.lotes ?? [];
   // Puxa as linhas de cada lote em paralelo. Cache 30s pra alternar rapido.
@@ -24,7 +50,7 @@ export function AdminTombamento() {
     })),
   });
 
-  const linhas: LinhaEnriquecida[] = useMemo(() => {
+  const linhasTodas: LinhaEnriquecida[] = useMemo(() => {
     const out: LinhaEnriquecida[] = [];
     listaLotes.forEach((lote, idx) => {
       const data = linhasQueries[idx]?.data;
@@ -34,6 +60,12 @@ export function AdminTombamento() {
     });
     return out;
   }, [listaLotes, linhasQueries]);
+  // Filtra pela competencia selecionada no picker.
+  const linhas = useMemo(
+    () => linhasTodas.filter((l) => l.competencia === competencia),
+    [linhasTodas, competencia],
+  );
+  const lotesNaCompetencia = listaLotes.filter((l) => l.competencia === competencia);
 
   const columns: Column<LinhaEnriquecida>[] = [
     { key: "competencia", header: "Competência", mono: true },
@@ -88,18 +120,27 @@ export function AdminTombamento() {
         );
       })()}
 
-      {listaLotes.length > 0 ? (
-        <div style={{ padding: "10px 14px", background: "var(--bg-elev-2)", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
-          <b>{listaLotes.length}</b> lote(s) recebido(s) · <b>{linhas.length}</b> contrato(s) declarado(s) no total
-        </div>
-      ) : null}
+      <CompetenciaPicker value={competencia} onChange={setCompetencia} />
+
+      <div style={{ padding: "10px 14px", background: "var(--bg-elev-2)", borderRadius: 8, fontSize: 13, color: "var(--text-muted)" }}>
+        Competência selecionada: <b style={{ color: "var(--gold-500)" }}>{labelCompetencia(competencia)}</b> · <b>{lotesNaCompetencia.length}</b> lote(s) · <b>{linhas.length}</b> contrato(s)
+        {listaLotes.length > lotesNaCompetencia.length ? (
+          <span style={{ marginLeft: 8, color: "var(--text-dim)", fontSize: 12 }}>
+            (outras competências: {listaLotes.length - lotesNaCompetencia.length} lote(s) ocultos)
+          </span>
+        ) : null}
+      </div>
 
       <DataTable
         columns={columns}
         rows={linhas}
         rowKey={(l) => `${l.loteId}:${l.matricula}:${l.adfBanco}`}
         loading={lotes.isLoading || linhasQueries.some((q) => q.isLoading)}
-        emptyState="Nenhum contrato tombado ainda."
+        emptyState={
+          listaLotes.length > 0
+            ? `Sem contratos tombados em ${labelCompetencia(competencia)}. Troque a competência acima ou peça pra prefeitura enviar remessa.`
+            : "Nenhum contrato tombado ainda."
+        }
       />
 
       {importing ? (
@@ -240,3 +281,72 @@ const modalCard: React.CSSProperties = {
   display: "flex", flexDirection: "column", gap: 16, boxShadow: "var(--shadow-lg)",
   maxHeight: "calc(100vh - 48px)", overflowY: "auto",
 };
+
+/** Seletor de competencia (mes/ano) — mesmo componente do prefeitura/tombamento
+ *  pra manter consistencia. Filtra a tabela pela competencia escolhida. */
+function CompetenciaPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const { ano, mes } = parseCompetencia(value);
+  const anoAtual = new Date().getFullYear();
+  const anosDisponiveis = [anoAtual - 1, anoAtual, anoAtual + 1];
+  const hoje = new Date();
+  const compHoje = toCompetencia(hoje.getFullYear(), hoje.getMonth() + 1);
+  const compProximo = shiftCompetencia(compHoje, 1);
+  const isHoje = value === compHoje;
+  const isProximo = value === compProximo;
+  const selectStyle: React.CSSProperties = {
+    padding: "9px 12px",
+    borderRadius: 8,
+    border: "1px solid var(--border-strong)",
+    background: "var(--bg-elev)",
+    color: "var(--text)",
+    fontSize: 14,
+    fontWeight: 600,
+    minWidth: 130,
+    cursor: "pointer",
+  };
+  return (
+    <div style={{ padding: "14px 16px", background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 10 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 8 }}>
+        Competência
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <select value={mes} onChange={(e) => onChange(toCompetencia(ano, Number(e.target.value)))} style={selectStyle}>
+          {MESES_PT.map((m, i) => (
+            <option key={i} value={i + 1}>{m}</option>
+          ))}
+        </select>
+        <select value={ano} onChange={(e) => onChange(toCompetencia(Number(e.target.value), mes))} style={{ ...selectStyle, minWidth: 90 }}>
+          {anosDisponiveis.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
+        <div style={{ display: "flex", gap: 4, alignItems: "center", marginLeft: "auto", flexWrap: "wrap" }}>
+          <Button size="sm" variant="ghost" onClick={() => onChange(shiftCompetencia(value, -1))} title="Mês anterior">
+            ← Anterior
+          </Button>
+          <Button
+            size="sm"
+            variant={isHoje ? undefined : "ghost"}
+            onClick={() => onChange(compHoje)}
+            title="Competência do mês atual"
+          >
+            Este mês
+          </Button>
+          <Button
+            size="sm"
+            variant={isProximo ? undefined : "ghost"}
+            onClick={() => onChange(compProximo)}
+            title="Competência do próximo mês"
+          >
+            Próximo →
+          </Button>
+        </div>
+      </div>
+      <div style={{ marginTop: 10, display: "flex", alignItems: "baseline", gap: 8 }}>
+        <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Visualizando:</span>
+        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--gold-500)" }}>{labelCompetencia(value)}</span>
+        <span style={{ fontSize: 11, color: "var(--text-dim)", fontFamily: "var(--font-mono)" }}>({value})</span>
+      </div>
+    </div>
+  );
+}
