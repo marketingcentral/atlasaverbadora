@@ -2160,9 +2160,41 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         atualizadoEm: ultimo ?? new Date().toISOString(),
         bancoId: ct.bancoId,
         bancoNome: banco?.nome ?? `Banco ${ct.bancoId}`,
+        ccbKey: ct.ccbKey,
+        ccbAnexadoEm: ct.ccbAnexadoEm,
       };
     });
     return c.json({ contratos, total: contratos.length });
+  })
+  // Diagnostico: descarta a CCB anexada (limpa ccbKey no contrato + apaga o
+  // arquivo do R2). Usado quando o banco anexou uma CCB errada (ex: um modelo
+  // com dados de outro servidor) e precisa reenviar. Protegido por senha.
+  .post("/v1/admin/contratos/limpar-ccb", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "adf");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string; adfs?: string[] };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha nao configurada." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const adfs = (body.adfs ?? []).filter(Boolean);
+    if (adfs.length === 0) throw Errors.validation({ adfs: "Informe pelo menos uma ADF." });
+    await refreshContratos(c.env);
+    const limpos: { adf: string; keyRemovida?: string }[] = [];
+    for (const adf of adfs) {
+      const ct = getContrato(adf);
+      if (!ct) continue;
+      const key = ct.ccbKey;
+      ct.ccbKey = undefined;
+      ct.ccbAnexadoEm = undefined;
+      await persistContrato(c.env, adf);
+      if (key && c.env.R2_FILES) {
+        try { await c.env.R2_FILES.delete(key); } catch { /* segue */ }
+      }
+      limpos.push({ adf, keyRemovida: key });
+    }
+    appendAudit({ categoria: "margem", acao: "limpar_ccb", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Limpou CCB de ${limpos.length} contrato(s): ${limpos.map((x) => x.adf).join(", ")}.` });
+    return c.json({ ok: true, limpos });
   })
 
   .get("/v1/admin/comunicados", async (c) => {
