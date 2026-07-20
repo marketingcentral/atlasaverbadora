@@ -36,6 +36,7 @@ export const RESOURCE_GROUPS: { titulo: string; recursos: { key: string; label: 
     recursos: [
       { key: "prefeituras", label: "Prefeituras" },
       { key: "convenios", label: "Convenios" },
+      { key: "contratos", label: "Contratos" },
       { key: "servidores", label: "Servidores" },
       { key: "pre-reservas", label: "Pre-reservas" },
       { key: "tombamento", label: "Tombamento" },
@@ -111,7 +112,7 @@ export const PRESETS: Record<AverbadoraPerfil, string[]> = {
   supervisor: ["*"],
   operador: [
     "dashboard", "health", "conta",
-    "prefeituras", "convenios", "servidores", "pre-reservas",
+    "prefeituras", "convenios", "contratos", "servidores", "pre-reservas",
     "tombamento", "adf", "beneficios", "telemedicina", "interessados",
   ],
   comercial: [

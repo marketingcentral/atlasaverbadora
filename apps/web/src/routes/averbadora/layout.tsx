@@ -13,6 +13,7 @@ const NAV = [
   { key: "bancos", label: "Bancos", href: "/averbadora/bancos", icon: "▦" },
   { key: "servidores", label: "Servidores", href: "/averbadora/servidores", icon: "◎" },
   { key: "convenios", label: "Convênios", href: "/averbadora/convenios", icon: "▣" },
+  { key: "contratos", label: "Contratos", href: "/averbadora/contratos", icon: "▧" },
   { key: "folhas", label: "Folhas", href: "/averbadora/folhas", icon: "▥" },
   { key: "pre-reservas", label: "Pré-reservas", href: "/averbadora/pre-reservas", icon: "⧖" },
   { key: "tombamento", label: "Tombamento", href: "/averbadora/tombamento", icon: "⇩" },

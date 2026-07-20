@@ -24,6 +24,7 @@ import { AverbadoraDashboard } from "./routes/averbadora/dashboard";
 import { AdminBancos } from "./routes/averbadora/bancos";
 import { AdminPrefeituras } from "./routes/averbadora/prefeituras";
 import { AdminConvenios } from "./routes/averbadora/convenios";
+import { AdminContratos } from "./routes/averbadora/contratos";
 import { AdminServidores } from "./routes/averbadora/servidores";
 import { AdminFolhas } from "./routes/averbadora/folhas";
 import { AdminComunicados } from "./routes/averbadora/comunicados";
@@ -194,6 +195,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "bancos", element: <AdminBancos /> },
           { path: "prefeituras", element: <AdminPrefeituras /> },
           { path: "convenios", element: <AdminConvenios /> },
+          { path: "contratos", element: <AdminContratos /> },
           { path: "servidores", element: <AdminServidores /> },
           { path: "folhas", element: <AdminFolhas /> },
           { path: "pre-reservas", element: <AdminPreReservas /> },
