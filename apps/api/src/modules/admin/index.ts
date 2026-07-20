@@ -26,7 +26,7 @@ import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, t
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
 import { refreshCotacoes, updateCotacaoSituacao, expireStaleCotacoes, purgeCotacoes, setCotacaoContrato, removeCotacaoContrato, loadCotacoes as loadCotacoesAdmin } from "./telemedicina-cotacoes-store.js";
-import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula, removeAdfsByContratoAdf, clearAdfsMemoria } from "../prefeitura/store.js";
+import { ensureAdfsGlobal, listAdfsGlobal, listAdfCompetenciasGlobal, setAdfStatusGlobal, removeAdfsByMatricula, removeAdfsByContratoAdf, clearAdfsMemoria, removeAnuenciaMemoria } from "../prefeitura/store.js";
 import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from "./ai.js";
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
@@ -1413,6 +1413,27 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     appendAudit({ categoria: "margem", acao: "reverter_desligamento", userId: ator, userRole: "averbadora", detalhes: `Reversao de cascade F6 em ${revertidos.length} contrato(s): ${revertidos.join(", ")}.` });
     pushEvent("info", "admin.contratos.reverter_desligamento", `Reversao F6 por admin ${j?.sub}: ${revertidos.length} contratos.`);
     return c.json({ ok: true, revertidos });
+  })
+  // Delete cirurgico de anuencia — usado quando o admin registrou entrada
+  // errada e precisa reverter (ex: nome truncado, prefeitura errada). Body:
+  // { senha, ids }. Protegido por ADMIN_PURGE_PASSWORD.
+  .post("/v1/admin/anuencias/delete", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string; ids?: string[] };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha nao configurada." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const ids = (body.ids ?? []).filter(Boolean);
+    if (ids.length === 0) throw Errors.validation({ ids: "Informe ao menos um id." });
+    const removidos: string[] = [];
+    for (const id of ids) {
+      try { await deleteCollectionRow(c.env, "admin_anuencias", id); } catch { /* segue */ }
+      if (removeAnuenciaMemoria(id)) removidos.push(id);
+      else removidos.push(id); // considera removido mesmo se so estava no PG
+    }
+    appendAudit({ categoria: "termo_aceite", acao: "anuencia_removida", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Anuencia(s) removida(s) por admin: ${removidos.join(", ")}` });
+    return c.json({ ok: true, removidos });
   })
   // Delete cirurgico por matricula(s) — protegido por ADMIN_PURGE_PASSWORD.
   // Usado pra expurgar contas de teste especificas (Diego/Mariana em 17/07/2026)

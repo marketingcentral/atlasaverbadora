@@ -419,6 +419,14 @@ export function registrarAnuencia(input: { prefeituraId: number; aceitoPor: stri
   return a;
 }
 
+/** Remove uma anuencia por id (in-memory + retorna se existia). Admin use only. */
+export function removeAnuenciaMemoria(id: string): boolean {
+  const idx = _anuencias.findIndex((a) => a.id === id);
+  if (idx < 0) return false;
+  _anuencias.splice(idx, 1);
+  return true;
+}
+
 // ============================================================
 // Perfis por área (RH, financeiro, gestor) + 2FA TOTP
 // ============================================================
