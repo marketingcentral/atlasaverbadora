@@ -282,17 +282,24 @@ export async function importTombamento(input: {
     if (!Number.isFinite(valorParcela)) { erros.push({ line, message: "valorParcela invalido" }); return; }
     if (!Number.isFinite(parcelasRestantes)) { erros.push({ line, message: "parcelasRestantes invalido" }); return; }
     const existing = _linhas.find((l) => l.matricula === matricula && l.adfBanco === adfBanco);
-    // Reconciliação em 3 bases: a remessa (base da averbadora antiga) é cruzada
-    // contra (1) a base da PREFEITURA e (2) a base do BANCO.
+    // Reconciliação: tombamento é POR DEFINIÇÃO contrato externo (banco não-Atlas).
+    // Só flagra divergência quando algo REAL não bate:
+    //   1) Servidor não existe na base da prefeitura (matricula/CPF orfao)
+    //   2) Valor difere de tombamento anterior da mesma linha
+    //   3) Se por acaso existir contrato Atlas com esse ADF+matricula (raro,
+    //      indica que o banco JA e parceiro), o valor tem que bater
+    // "Contrato nao consta na base do banco" NAO e divergencia — e o padrao pra
+    // tombamento (o banco externo por natureza nao esta na base Atlas).
     const cpfDigits = cpfRaw.replace(/\D/g, "");
     const naPrefeitura = SERVIDORES_BUSCA_MOCK.find(
       (s) => s.matricula === matricula && prefeituraIdDe(s) === input.prefeituraId && (!cpfDigits || s.cpf === cpfDigits.padStart(11, "0") || s.cpf === cpfDigits),
     );
-    const noBanco = listContratos({ matricula }).find((ct) => ct.adf === adfBanco || ct.matricula === matricula);
+    const noBanco = listContratos({ matricula }).find((ct) => ct.adf === adfBanco);
     const divs: string[] = [];
     if (!naPrefeitura) divs.push("servidor não consta na base da prefeitura");
-    if (!noBanco) divs.push("contrato não consta na base do banco");
-    else if (Math.abs((noBanco.valorParcela ?? 0) - valorParcela) > 0.01) divs.push(`parcela difere do banco: remessa=${valorParcela} / banco=${noBanco.valorParcela}`);
+    if (noBanco && Math.abs((noBanco.valorParcela ?? 0) - valorParcela) > 0.01) {
+      divs.push(`parcela difere do banco (contrato ${adfBanco} ja existe no Atlas): remessa=${valorParcela} / atlas=${noBanco.valorParcela}`);
+    }
     if (existing && Math.abs(existing.valorParcela - valorParcela) > 0.01) divs.push(`parcela difere de tombamento anterior: ${existing.valorParcela}`);
 
     const linha: TombamentoLinha = {
