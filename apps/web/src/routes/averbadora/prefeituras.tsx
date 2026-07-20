@@ -309,7 +309,27 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
       qc.invalidateQueries({ queryKey: ["admin", "prefeituras"] });
       onClose();
     },
-    onError: (err) => setError(err instanceof Error ? err.message : "Erro ao salvar"),
+    onError: (err) => {
+      // Backend retorna 400 com details.fieldErrors[campo] = mensagem. Expande
+      // pra mostrar CAMPO+MOTIVO ao inves de so "Dados invalidos" generico.
+      const e = err as { message?: string; details?: Record<string, unknown> };
+      const det = e.details as { fieldErrors?: Record<string, string[]>; formErrors?: string[] } | undefined;
+      const campos: string[] = [];
+      if (det?.fieldErrors) {
+        for (const [k, msgs] of Object.entries(det.fieldErrors)) {
+          if (msgs?.length) campos.push(`${k}: ${msgs.join(", ")}`);
+        }
+      }
+      // Erros no nivel raiz (ex.: loginEmail ja em uso vem em details.loginEmail direto)
+      if (det && !det.fieldErrors) {
+        for (const [k, v] of Object.entries(det)) {
+          if (typeof v === "string") campos.push(`${k}: ${v}`);
+        }
+      }
+      if (det?.formErrors?.length) campos.push(...det.formErrors);
+      const base = e.message || "Erro ao salvar";
+      setError(campos.length > 0 ? `${base} — ${campos.join(" | ")}` : base);
+    },
   });
 
   const senhaHint = initial?.hasPassword

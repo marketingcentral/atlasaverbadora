@@ -88,6 +88,8 @@ async function resolveBancoByCredentials(
 ): Promise<{ match: ResolvedUser | null; claimedBy: boolean }> {
   const email = identifier.trim().toLowerCase();
   if (!email.includes("@")) return { match: null, claimedBy: false };
+  // Bloqueia @atlas.test — reservado pros dev-users (evita hijack).
+  if (email.endsWith("@atlas.test")) return { match: null, claimedBy: false };
   const b = bancosStore.find((x) => x.loginEmail === email);
   if (!b || !b.passwordHash) return { match: null, claimedBy: false };
   if (b.status !== "ativo") return { match: null, claimedBy: true };
@@ -137,6 +139,10 @@ async function resolvePrefeituraByCredentials(
 ): Promise<{ match: ResolvedUser | null; claimedBy: boolean }> {
   const email = identifier.trim().toLowerCase();
   if (!email.includes("@")) return { match: null, claimedBy: false };
+  // Emails @atlas.test sao RESERVADOS pros dev-users — se alguem cadastrou
+  // prefeitura/banco com um deles, ignora aqui pra o fallback DEV_USERS
+  // pegar. Evita hijack do login admin/banco de teste.
+  if (email.endsWith("@atlas.test")) return { match: null, claimedBy: false };
   const p = prefeiturasStore.find((x) => x.loginEmail === email);
   if (!p || !p.passwordHash) return { match: null, claimedBy: false };
   if (p.status !== "ativo") return { match: null, claimedBy: true };

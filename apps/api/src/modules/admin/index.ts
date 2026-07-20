@@ -1720,6 +1720,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const { password, loginEmail, ...rest } = body;
     const normalizedLogin = loginEmail ? loginEmail.trim().toLowerCase() : undefined;
     if (normalizedLogin) {
+      // Mesma protecao do POST /prefeituras — bloqueia emails reservados
+      // pros dev-users (evita conflito no auth/login).
+      const reservados = ["admin@atlas.test", "banco@atlas.test", "prefeitura@atlas.test"];
+      if (reservados.includes(normalizedLogin)) {
+        throw Errors.validation({ loginEmail: `E-mail ${normalizedLogin} e reservado pro sistema. Use outro (ex.: contato@banco.com.br).` });
+      }
       const dup = bancos.find((b) => b.loginEmail === normalizedLogin && b.id !== body.id);
       if (dup) throw Errors.validation({ loginEmail: `Login ja em uso pelo banco ${dup.nome}` });
     }
@@ -1944,6 +1950,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const { password, loginEmail, ...rest } = body;
     const normalizedLogin = loginEmail ? loginEmail.trim().toLowerCase() : undefined;
     if (normalizedLogin) {
+      // Bloqueia emails de dev-users (admin@atlas.test / banco@atlas.test /
+      // capistrano@teste.com) — se prefeitura pegar esses, o auth/login
+      // resolve pra prefeitura em vez do dev-user e quebra login de teste.
+      const reservados = ["admin@atlas.test", "banco@atlas.test", "prefeitura@atlas.test"];
+      if (reservados.includes(normalizedLogin)) {
+        throw Errors.validation({ loginEmail: `E-mail ${normalizedLogin} e reservado pro sistema. Use outro (ex.: prefeitura@municipio.gov.br).` });
+      }
       const dup = prefeituras.find((p) => p.loginEmail === normalizedLogin && p.id !== body.id);
       if (dup) throw Errors.validation({ loginEmail: `Login ja em uso pela prefeitura ${dup.nome}` });
     }
