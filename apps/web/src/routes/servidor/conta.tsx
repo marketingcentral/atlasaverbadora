@@ -101,22 +101,14 @@ export function ServidorConta() {
   );
 }
 
-/** 2 cards:
- *  - Suporte: um item, abre modal com email/WhatsApp/horario editados
- *    pela averbadora em /averbadora/suporte.
- *  - Termos de aceite: lista TODOS os termos ativos publicados em
- *    /averbadora/termos. Servidor so LE (nao edita). Cada linha abre
- *    modal com o corpo. Lista dinamica — se averbadora ativa novo termo,
- *    aparece automaticamente. */
+/** Card Suporte com 2 items: Suporte e Termos de Uso.
+ *  - Suporte: modal com email/WhatsApp/horario editados em /averbadora/suporte.
+ *  - Termos de Uso: modal que primeiro lista TODOS os termos ativos
+ *    publicados em /averbadora/termos; ao clicar num termo, o modal
+ *    troca de vista pro corpo daquele termo (botao Voltar retorna a lista).
+ *    Servidor so LE. */
 function SuporteCard() {
-  const [aberto, setAberto] = useState<"suporte" | TermoTipo | null>(null);
-
-  const termosQ = useQuery({
-    queryKey: ["servidor", "termos-vigentes"],
-    queryFn: () => atlas.servidor.listTermos(),
-    staleTime: 5 * 60_000,
-  });
-  const termos = termosQ.data?.termos ?? [];
+  const [aberto, setAberto] = useState<"suporte" | "termos" | null>(null);
 
   return (
     <>
@@ -124,42 +116,100 @@ function SuporteCard() {
         <div style={{ fontSize: 11, letterSpacing: ".08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 12 }}>
           Suporte
         </div>
-        <SuporteItem label="Suporte" onClick={() => setAberto("suporte")} />
-      </Card>
-
-      <Card>
-        <div style={{ fontSize: 11, letterSpacing: ".08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>
-          Termos de aceite
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <SuporteItem label="Suporte" onClick={() => setAberto("suporte")} />
+          <SuporteItem label="Termos de Uso" onClick={() => setAberto("termos")} borderTop />
         </div>
-        <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted)" }}>
-          Documentos oficiais em vigência. Toque em qualquer um pra ler o texto integral.
-        </p>
-        {termosQ.isPending ? (
-          <div style={{ color: "var(--text-muted)", fontSize: 14, padding: "8px 0" }}>Carregando…</div>
-        ) : termosQ.isError ? (
-          <div style={{ color: "var(--danger-500)", fontSize: 14 }}>Não foi possível carregar os termos.</div>
-        ) : termos.length === 0 ? (
-          <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Nenhum termo ativo no momento.</div>
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            {termos.map((t, i) => (
-              <SuporteItem
-                key={t.id}
-                label={t.titulo}
-                onClick={() => setAberto(t.id)}
-                borderTop={i > 0}
-              />
-            ))}
-          </div>
-        )}
       </Card>
 
       {aberto === "suporte" ? (
         <ModalSuporte onClose={() => setAberto(null)} />
-      ) : aberto ? (
-        <ModalTermo tipo={aberto} onClose={() => setAberto(null)} />
+      ) : aberto === "termos" ? (
+        <ModalTermos onClose={() => setAberto(null)} />
       ) : null}
     </>
+  );
+}
+
+/** Modal com 2 vistas: lista de termos ativos e detalhe (corpo) de um termo.
+ *  Cliente pediu (20/07): "Termos de Uso" abre um modal que mostra as opcoes
+ *  de termos pra o servidor escolher qual ler. */
+function ModalTermos({ onClose }: { onClose: () => void }) {
+  const [selecionado, setSelecionado] = useState<TermoTipo | null>(null);
+  const listaQ = useQuery({
+    queryKey: ["servidor", "termos-vigentes"],
+    queryFn: () => atlas.servidor.listTermos(),
+    staleTime: 5 * 60_000,
+    enabled: selecionado === null,
+  });
+  const detalheQ = useQuery({
+    queryKey: ["servidor", "termo", selecionado],
+    queryFn: () => atlas.servidor.getTermo(selecionado as TermoTipo),
+    enabled: selecionado !== null,
+  });
+  const termo = detalheQ.data?.termo;
+  const tituloModal = selecionado ? (termo?.titulo ?? "Termo") : "Termos de Uso";
+
+  return (
+    <ModalSimples
+      titulo={tituloModal}
+      onClose={onClose}
+      leading={
+        selecionado ? (
+          <button
+            onClick={() => setSelecionado(null)}
+            aria-label="Voltar"
+            style={{
+              background: "transparent", border: "none", color: "var(--text-dim)",
+              fontSize: "1.1rem", cursor: "pointer", padding: 4, marginRight: 4,
+            }}
+          >
+            ‹
+          </button>
+        ) : null
+      }
+    >
+      {selecionado === null ? (
+        listaQ.isPending ? (
+          <div style={{ color: "var(--text-muted)" }}>Carregando…</div>
+        ) : listaQ.isError ? (
+          <div style={{ color: "var(--danger-500)" }}>Não foi possível carregar a lista.</div>
+        ) : (listaQ.data?.termos ?? []).length === 0 ? (
+          <div style={{ color: "var(--text-muted)" }}>Nenhum termo ativo no momento.</div>
+        ) : (
+          <>
+            <p style={{ marginTop: 0, marginBottom: 12, color: "var(--text-muted)", fontSize: ".92rem" }}>
+              Escolha o documento que você quer ler:
+            </p>
+            <div style={{ display: "flex", flexDirection: "column" }}>
+              {(listaQ.data?.termos ?? []).map((t, i) => (
+                <SuporteItem
+                  key={t.id}
+                  label={t.titulo}
+                  onClick={() => setSelecionado(t.id)}
+                  borderTop={i > 0}
+                />
+              ))}
+            </div>
+          </>
+        )
+      ) : detalheQ.isPending ? (
+        <div style={{ color: "var(--text-muted)" }}>Carregando…</div>
+      ) : detalheQ.isError ? (
+        <div style={{ color: "var(--danger-500)" }}>
+          Não foi possível carregar. {(detalheQ.error as Error)?.message ?? ""}
+        </div>
+      ) : termo ? (
+        <>
+          {termo.versao ? (
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              Versão {termo.versao}
+            </div>
+          ) : null}
+          <TermoCorpo corpo={termo.corpo} />
+        </>
+      ) : null}
+    </ModalSimples>
   );
 }
 
@@ -225,35 +275,6 @@ function SuporteItem({ label, onClick, borderTop }: { label: string; onClick: ()
   );
 }
 
-function ModalTermo({ tipo, onClose }: { tipo: TermoTipo; onClose: () => void }) {
-  const q = useQuery({
-    queryKey: ["servidor", "termo", tipo],
-    queryFn: () => atlas.servidor.getTermo(tipo),
-  });
-  const termo = q.data?.termo;
-  const titulo = termo?.titulo ?? (tipo === "termos_uso" ? "Termos de Uso" : "Política de Privacidade");
-  return (
-    <ModalSimples titulo={titulo} onClose={onClose}>
-      {q.isLoading ? (
-        <div style={{ color: "var(--text-muted)" }}>Carregando…</div>
-      ) : q.isError ? (
-        <div style={{ color: "var(--danger-500)" }}>
-          Não foi possível carregar. {(q.error as Error)?.message ?? ""}
-        </div>
-      ) : termo ? (
-        <>
-          {termo.versao ? (
-            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
-              Versão {termo.versao}
-            </div>
-          ) : null}
-          <TermoCorpo corpo={termo.corpo} />
-        </>
-      ) : null}
-    </ModalSimples>
-  );
-}
-
 /** Render minimalista de markdown do corpo do termo: paragrafos separados por
  *  linha em branco, **negrito** e itens de lista comecando com "- ". Suficiente
  *  pro que a averbadora edita no /averbadora/termos hoje; nao usamos lib de
@@ -288,7 +309,16 @@ function renderInline(texto: string): React.ReactNode {
   });
 }
 
-function ModalSimples({ titulo, onClose, children }: { titulo: string; onClose: () => void; children: React.ReactNode }) {
+function ModalSimples({
+  titulo, onClose, children, leading,
+}: {
+  titulo: string;
+  onClose: () => void;
+  children: React.ReactNode;
+  /** Elemento opcional a esquerda do titulo (ex.: botao Voltar quando o modal
+   *  tem 2 vistas). */
+  leading?: React.ReactNode;
+}) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
     window.addEventListener("keydown", onKey);
@@ -313,7 +343,10 @@ function ModalSimples({ titulo, onClose, children }: { titulo: string; onClose: 
         }}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
-          <h3 style={{ margin: 0, fontSize: "1.1rem" }}>{titulo}</h3>
+          <div style={{ display: "flex", alignItems: "center", minWidth: 0 }}>
+            {leading}
+            <h3 style={{ margin: 0, fontSize: "1.1rem" }}>{titulo}</h3>
+          </div>
           <button onClick={onClose} aria-label="Fechar" style={{ background: "transparent", border: "none", color: "var(--text-dim)", fontSize: "1.4rem", cursor: "pointer", padding: 4 }}>×</button>
         </div>
         <div style={{ padding: 18, overflow: "auto" }}>
