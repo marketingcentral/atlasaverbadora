@@ -173,7 +173,7 @@ export function AdminBancos() {
           <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Bancos parceiros</h1>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="ghost" onClick={() => setLimparAberto(true)}>🗑 Limpar Base</Button>
+          {/* Botao "Limpar Base" removido (mesmo motivo de /prefeituras) */}
           <Button onClick={() => setEditing("new")}>+ Adicionar banco</Button>
         </div>
       </header>

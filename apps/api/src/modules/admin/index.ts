@@ -352,6 +352,19 @@ async function persistPrefeitura(env: Env, p: PrefeituraAdmin): Promise<void> {
   } catch (e) { pushEvent("warn", "db.prefeituras.write_failed", `Falha ao persistir prefeitura ${p.id}: ${(e as Error).message}`); }
 }
 
+/** Re-sync in-memory de prefeituras do PG a cada request. Chamado no GET
+ *  /admin/prefeituras (e outros) pra detectar hard-delete/edicao feita em
+ *  outro isolate. Sem isso, isolates dormentes mostram prefeitura ja
+ *  removida (aparece na lista mesmo apos delete). */
+export async function refreshPrefeituras(env: Env): Promise<void> {
+  try {
+    await ensurePrefeiturasLoaded(env);
+    const loaded = await loadPrefeituras(env);
+    prefeituras.length = 0;
+    if (loaded.length) prefeituras.push(...loaded);
+  } catch { /* fail-safe */ }
+}
+
 // Servidores dependem de prefeituras (FK) — hidratar depois delas.
 let _servidoresLoad: Promise<void> | null = null;
 export function ensureServidoresLoaded(env: Env): Promise<void> {
@@ -1816,6 +1829,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/prefeituras", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "prefeituras");
+    // Re-sync do PG: sem isso hard-delete feito em outro isolate nao propaga
+    // e a lista mostra prefeitura ja removida.
+    await refreshPrefeituras(c.env);
     return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
   })
   // Consulta CNPJ com fallback multi-provider + cache KV 24h. Ordem:
@@ -2093,8 +2109,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(j);
     requirePermissao(j, "prefeituras");
     const id = Number(c.req.param("id"));
+    const hard = c.req.query("hard") === "true";
     const p = prefeituras.find((x) => x.id === id);
     if (!p) throw Errors.notFound("prefeitura");
+    if (hard) {
+      // Hard-delete: apaga do PG e da memoria. Sem contratos/servidores
+      // associados so pode ser feito por supervisor (permissao prefeituras
+      // ja checa isso). Usado pra remover cadastros de teste ou duplicados
+      // que ficaram na base — o soft-delete deixa 'inativo' mas continua
+      // aparecendo na lista.
+      await deletePrefeituraRow(c.env, id);
+      const idx = prefeituras.findIndex((x) => x.id === id);
+      if (idx >= 0) prefeituras.splice(idx, 1);
+      appendAudit({ categoria: "acesso", acao: "prefeitura_hard_deleted", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) DELETADA permanentemente.` });
+      pushEvent("warn", "admin.prefeituras.hard_delete", `Prefeitura "${p.nome}" DELETADA por user:${j.sub}`);
+      return c.json({ ok: true, deleted: id });
+    }
     p.status = "inativo";
     await persistPrefeitura(c.env, p);
     appendAudit({ categoria: "acesso", acao: "prefeitura_desativada", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) desativada.` });
