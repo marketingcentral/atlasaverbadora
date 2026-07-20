@@ -474,7 +474,9 @@ private fun TermoDialog(
         containerColor = Superficie,
         title = { Text("Termo de solicitação", fontWeight = FontWeight.ExtraBold, color = Ink) },
         text = {
-            androidx.compose.foundation.layout.Column {
+            // Rola dentro do diálogo — o termo oficial é longo e estava sendo cortado
+            // sem como descer pra ler o resto.
+            androidx.compose.foundation.layout.Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "Você está solicitando $produtoLabel junto ao Banco Atlas:",
                     color = InkMuted,
@@ -537,7 +539,8 @@ private fun CartaoTermoDialog(
         containerColor = Superficie,
         title = { Text("Confirmar solicitação", fontWeight = FontWeight.ExtraBold, color = Ink) },
         text = {
-            androidx.compose.foundation.layout.Column {
+            // Rola dentro do diálogo — evita cortar o termo oficial (que é longo).
+            androidx.compose.foundation.layout.Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "Você está solicitando o $nomeCartao junto ao Banco Atlas:",
                     color = InkMuted,

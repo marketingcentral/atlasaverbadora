@@ -165,7 +165,8 @@ private fun TermoPortabilidade(
         containerColor = Superficie,
         title = { Text("Solicitar portabilidade", fontWeight = FontWeight.ExtraBold, color = Ink) },
         text = {
-            Column {
+            // Rola dentro do diálogo — o termo oficial é longo e estava sendo cortado.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "Você está solicitando a portabilidade do contrato de ${e.banco} (saldo devedor " +
                         "${Format.money(e.saldoDevedor)}) para o Banco Atlas.",

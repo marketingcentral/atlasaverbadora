@@ -229,7 +229,8 @@ private fun CotacaoDialog(enviando: Boolean, erro: String?, onSolicitar: () -> U
         containerColor = Superficie,
         title = { Text("Telemedicina — Solicitar Cotação", fontWeight = FontWeight.ExtraBold, color = Ink) },
         text = {
-            Column {
+            // Rola dentro do diálogo — o termo oficial é longo e estava sendo cortado.
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "Consultas online 24h com médicos parceiros (Clínico Geral, Pediatria, Psicologia e Nutrição). " +
                         "Plano com compromisso mínimo de 12 meses.",
