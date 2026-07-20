@@ -230,8 +230,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // isolate fresh (ou que perdeu writes de outro isolate) retornava zero
     // descontos/contratos mesmo com propostas ja aprovadas.
     await refreshContratos(c.env);
+    await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
     const servidores = servidoresDaPrefeitura(id);
-    const contratos = contratosDaPrefeitura(id);
+    const contratos = contratosDaPrefeitura(id); // usado so nos KPIs de contagem
+    const todosContratos = listContratos();      // usado no comprometido (inclui telemedicina/outros)
     const convenios = conveniosDaPrefeitura(id);
     const folhasPref = folhas.filter((f) => f.prefeituraId === id);
     const ativos = servidores.filter((s) => !["DESLIGADO", "APOSENTADO"].includes(s.situacaoFuncional.toUpperCase()));
@@ -239,7 +241,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     let margemTotalAgg = 0, margemComprometidaAgg = 0, descontosMes = 0;
     for (const s of servidores) {
       const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
-      const comprometido = comprometidoDe(s.matricula, contratos);
+      const comprometido = comprometidoDe(s.matricula, todosContratos);
       margemTotalAgg += total;
       margemComprometidaAgg += Math.min(comprometido, total);
       descontosMes += comprometido;
