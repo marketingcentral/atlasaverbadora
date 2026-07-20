@@ -10,7 +10,7 @@ import { refreshComunicados, persistComunicados, removerComunicadoPersistido } f
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, deleteCollectionRow, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
@@ -1440,11 +1440,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         confirmar: 'Operacao destrutiva bloqueada. Para confirmar, envie { "confirmar": "APAGAR-CONTRATOS" }. Apaga contratos + propostas + ADFs + eventos. Servidores/bancos/prefeituras/convenios ficam intocados.',
       });
     }
-    pushEvent("error", "admin.db.purge_contratos", `PURGE CIRURGICO de contratos confirmado por admin ${j?.sub}: TRUNCATE contratos + propostas + eventos.`);
+    pushEvent("error", "admin.db.purge_contratos", `PURGE CIRURGICO de contratos confirmado por admin ${j?.sub}: TRUNCATE contratos + propostas + eventos + folhas.`);
     await purgeContratosApenas(c.env);
     clearContratosMemoria();
     clearAdfsMemoria();
-    return c.json({ ok: true, mensagem: "Contratos + propostas + ADFs zerados. Servidores/bancos/prefeituras preservados." });
+    // Regra do cliente (20/07/2026): "nao faz sentido ter as folhas se nao tem
+    // contrato/propostas". Sem contratos, todas as folhas viram cascas vazias
+    // — apaga junto pra manter a base consistente. Se o cliente quiser reabrir
+    // uma competencia depois, usa "+ Abrir competencia" na UI da prefeitura.
+    const folhasRemovidas = folhas.length;
+    for (const f of [...folhas]) {
+      try { await deleteCollectionRow(c.env, "admin_folhas", f.id); } catch { /* segue */ }
+    }
+    folhas.length = 0;
+    return c.json({ ok: true, mensagem: `Contratos + propostas + ADFs + ${folhasRemovidas} folha(s) zerados. Servidores/bancos/prefeituras preservados.` });
   })
 
   // ⚠️ OPERACAO DESTRUTIVA: zera prefeituras + convenios + folhas + ofertas
