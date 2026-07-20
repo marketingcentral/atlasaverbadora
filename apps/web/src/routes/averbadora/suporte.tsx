@@ -37,9 +37,9 @@ export function AverbadoraSuporte() {
     <div style={{ display: "flex", flexDirection: "column", gap: 20, maxWidth: 720 }}>
       <header>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>Averbadora</span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Suporte exibido ao servidor</h1>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Suporte</h1>
         <p style={{ color: "var(--text-muted)", marginTop: 4 }}>
-          Estes dados aparecem no card Suporte da tela de conta do servidor (web + app). Muda aqui, aparece lá — sem redeploy.
+          Informações que aparecem para o servidor quando ele clica em Suporte na tela de conta. Muda aqui, aparece lá — sem redeploy.
         </p>
       </header>
 
