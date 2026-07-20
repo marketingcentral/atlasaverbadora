@@ -153,3 +153,6 @@ vite.config.ts.timestamp-*
 .vite/
 atlas-servidor-apk/
 .DS_Store
+
+# Wrangler local dev state (miniflare cache, KV/R2 mocks — regenerado a cada `wrangler dev`)
+.wrangler/
