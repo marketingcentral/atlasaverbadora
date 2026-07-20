@@ -89,8 +89,11 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
                     fontFamily: c.mono ? "var(--font-mono)" : undefined,
                     color: "var(--text)",
                     whiteSpace: c.wrap ? "normal" : "nowrap",
-                    wordBreak: c.wrap ? "break-word" : undefined,
-                    maxWidth: c.wrap ? 220 : undefined,
+                    // overflowWrap: quebra so quando a palavra e' longa demais pra
+                    // a coluna. Diferente de wordBreak:break-word que quebra em
+                    // qualquer lugar (parte "ESTATUTARIO" em "ESTATUTARI/O").
+                    overflowWrap: c.wrap ? "anywhere" : undefined,
+                    maxWidth: c.wrap ? 320 : undefined,
                   }}
                 >
                   {c.render ? c.render(r) : (r as Record<string, unknown>)[c.key] as ReactNode}

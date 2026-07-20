@@ -37,6 +37,13 @@ function getValor(s: AdminServidor, key: string): string | number | null | undef
   return (s as unknown as Record<string, string | number | null | undefined>)[key];
 }
 
+/** Colunas que devem SEMPRE ser nowrap — strings curtas onde quebra fica feia
+ *  (ex: "ESTATUTARIO", "TRABALHANDO", "ATIVO"). */
+const NOWRAP_KEYS = new Set([
+  "matricula", "cpf", "vinculo", "situacaoFuncional", "status",
+  "salarioLiquido", "codigoIbge", "telefone", "dataAdmissao", "dataNascimento",
+  "idConvenio",
+]);
 /** Converte um campo da config em Column<AdminServidor> com render por tipo. */
 function campoParaColuna(campo: ServidorCampoConfig, onEdit: (s: AdminServidor) => void): Column<AdminServidor> {
   if (campo.key === "acoes") {
@@ -45,8 +52,10 @@ function campoParaColuna(campo: ServidorCampoConfig, onEdit: (s: AdminServidor) 
   const base: Column<AdminServidor> = {
     key: campo.key,
     header: campo.label,
-    wrap: campo.tipo === "texto" && !["matricula", "cpf"].includes(campo.key),
-    mono: campo.tipo === "texto" ? ["matricula", "cpf", "idConvenio", "codigoIbge"].includes(campo.key) : false,
+    // wrap so pra colunas de texto LONGO (nome, cargo, origem, endereco, email).
+    // Colunas com valores curtos (vinculo/status/telefone) ficam nowrap.
+    wrap: campo.tipo === "texto" && !NOWRAP_KEYS.has(campo.key),
+    mono: campo.tipo === "texto" && ["matricula", "cpf", "idConvenio", "codigoIbge"].includes(campo.key),
   };
   base.render = (s) => {
     const v = getValor(s, campo.key);
