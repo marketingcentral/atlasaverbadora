@@ -3458,6 +3458,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
     const body = z.object({ ids: z.array(z.string()).min(1) }).parse(await c.req.json());
     await refreshContratos(c.env);
+    // Re-materializa ADFs no _adfs deste isolate. Sem isso, um isolate frio
+    // que atende o POST direto (sem ter servido GET /admin/adf antes) tem
+    // _adfs vazio e o setAdfStatusGlobal nao acha os ids -> retorna 0.
+    await ensurePrefeiturasLoaded(c.env); await ensureBancosLoaded(c.env);
+    const nowIso = new Date().toISOString();
+    for (const pref of prefeituras) {
+      ensureAdfsGlobal(new Date().toISOString().slice(0, 7).replace("-", ""),
+        (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, nowIso, [pref.id]);
+    }
     const adfs = setAdfStatusGlobal(body.ids, "aplicada", undefined, new Date().toISOString());
     // Promove pra "Ativo" contratos que estavam em "Aprovado" — o banco so
     // aprovou; e' a averbadora que efetiva a averbacao ao aplicar em folha.
@@ -3522,6 +3531,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "adf");
     const body = z.object({ ids: z.array(z.string()).min(1), motivo: z.string().min(3) }).parse(await c.req.json());
     await refreshContratos(c.env);
+    // Materializa ADFs no isolate frio antes de mutar (mesmo motivo do /confirmar).
+    await ensurePrefeiturasLoaded(c.env); await ensureBancosLoaded(c.env);
+    const nowIso = new Date().toISOString();
+    for (const pref of prefeituras) {
+      ensureAdfsGlobal(new Date().toISOString().slice(0, 7).replace("-", ""),
+        (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, nowIso, [pref.id]);
+    }
     const adfs = setAdfStatusGlobal(body.ids, "falha", body.motivo, new Date().toISOString());
     // Muda situacao do contrato pra 'Falha em folha' (libera margem + gera pendencia
     // pro banco tratar via /portal/banco/contratos/:adf/tratar-falha).

@@ -7,14 +7,19 @@ export interface CsvParseResult {
 
 export function parseCsv(text: string): CsvParseResult {
   const stripped = text.replace(/^﻿/, ""); // strip BOM
-  // Detecta separator: se a primeira linha nao tem virgula mas tem TAB, e' TSV
-  // (copiado direto do Google Sheets/Excel). Converte pra CSV antes de parsear.
+  // Detecta separator na primeira linha e normaliza pra virgula:
+  //   - TSV (Google Sheets/Excel copy) -> tab
+  //   - CSV pt-BR (Excel Windows salvar como CSV) -> ponto-e-virgula
+  //   - CSV default -> virgula (nao converte)
   // Sem essa deteccao, o parser trata toda a linha como um unico campo e
-  // reporta "cpf obrigatorio" pra todas as linhas (erro do usuario 20/07/2026).
+  // reporta "cpf obrigatorio" pra todas as linhas (usuarios 20/07/2026).
   const firstLine = stripped.split(/\r?\n/, 1)[0] ?? "";
-  const normalized = !firstLine.includes(",") && firstLine.includes("\t")
-    ? stripped.replace(/\t/g, ",")
-    : stripped;
+  const nComma = (firstLine.match(/,/g) ?? []).length;
+  const nSemi = (firstLine.match(/;/g) ?? []).length;
+  const nTab = (firstLine.match(/\t/g) ?? []).length;
+  let normalized = stripped;
+  if (nTab > nComma && nTab > nSemi) normalized = stripped.replace(/\t/g, ",");
+  else if (nSemi > nComma) normalized = stripped.replace(/;/g, ",");
   const raw = parseRows(normalized);
   if (raw.length === 0) return { headers: [], rows: [] };
   const headers = (raw[0] ?? []).map((h) => h.trim());

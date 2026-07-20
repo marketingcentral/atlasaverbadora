@@ -129,16 +129,18 @@ export function ensureTombamentoLoaded(env: Env): Promise<void> {
 
 /** Re-sync do PG a cada request — usado nos endpoints que precisam ver
  *  tombamento atualizado por outro isolate (import de lote em isolate A,
- *  leitura em isolate B). Mesmo padrao de refreshContratos. */
+ *  leitura em isolate B). Mesmo padrao de refreshContratos.
+ *  Sobrescreve incondicionalmente — se PG retornou (sem exception), aquilo eh
+ *  a verdade, mesmo que vazio. Antes tinha `if (lotes.length)` como guard mas
+ *  isso impedia sincronizar apos purge (isolates com memoria antiga ficavam
+ *  servindo lotes ja apagados). */
 export async function refreshTombamento(env: Env): Promise<void> {
   try {
     await ensureTombamentoLoaded(env);
     const { lotes, linhas } = await loadTombamento(env);
-    if (lotes.length) {
-      _lotes.length = 0; _lotes.push(...(lotes as unknown as TombamentoLote[]));
-      _linhas.length = 0; _linhas.push(...(linhas as unknown as TombamentoLinha[]));
-    }
-  } catch { /* mantem memoria */ }
+    _lotes.length = 0; _lotes.push(...(lotes as unknown as TombamentoLote[]));
+    _linhas.length = 0; _linhas.push(...(linhas as unknown as TombamentoLinha[]));
+  } catch { /* falha PG: mantem memoria */ }
 }
 
 /** Write-through best-effort de um lote (com suas linhas) no Postgres. */
