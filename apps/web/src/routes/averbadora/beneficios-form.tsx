@@ -142,7 +142,7 @@ export function AdminBeneficiosForm() {
   // Preview "onde vai aparecer pro servidor" — atualiza em tempo real com o form.
   const telasQueMostram = useMemo(() => {
     const telas: string[] = [];
-    if (form.categorias.includes("saude")) telas.push("/servidor/saude (aba Saúde)");
+    if (form.categorias.includes("saude")) telas.push("/servidor/beneficios (aba Saúde)");
     if (form.categorias.some((c) => c === "alimentacao" || c === "educacao" || c === "lazer")) {
       telas.push("/servidor/beneficios (aba Descontos e Benefícios)");
     }

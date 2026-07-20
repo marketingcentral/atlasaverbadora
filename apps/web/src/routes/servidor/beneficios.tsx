@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@atlas/ui/web";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { atlas } from "../../lib/sdk";
 import type { ServidorBeneficio } from "@atlas/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
@@ -374,10 +374,11 @@ function Stat({ label, value, accent, muted }: { label: string; value: string; a
  *  de admin ter cadastrado um beneficio de telemedicina). 3 estados:
  *   - Plano Ativo: barra de progresso + "faltam X meses" (como card contrato)
  *   - Cotacao pendente: "Aguardando contato da equipe"
- *   - Sem cotacao: botao Solicitar Cotacao (leva pra /servidor/saude que
- *     tem o fluxo completo com termo de aceite). */
-function TelemedicinaCard({ matricula: _matricula }: { matricula?: string }) {
-  const nav = useNavigate();
+ *   - Sem cotacao: botao Solicitar Cotacao (abre modal do termo aqui mesmo —
+ *     antes redirecionava pra /servidor/saude que mostrava o mesmo card
+ *     duplicado). */
+function TelemedicinaCard({ matricula }: { matricula?: string }) {
+  const [showCotar, setShowCotar] = useState(false);
   const q = useQuery({
     queryKey: ["servidor", "telemedicina", "minhas-cotacoes"],
     queryFn: () => atlas.servidor.minhasCotacoesTelemedicina(),
@@ -396,71 +397,122 @@ function TelemedicinaCard({ matricula: _matricula }: { matricula?: string }) {
     };
   })() : null;
 
+  const cotacao = useMutation({
+    mutationFn: () => atlas.servidor.solicitarCotacaoTelemedicina({ matricula }),
+    onSuccess: () => { setShowCotar(false); q.refetch(); },
+  });
+  // Termo oficial (averbadora) — mesma fonte do fluxo antigo em /saude.
+  const termoQ = useQuery({
+    queryKey: ["servidor", "termo", "telemedicina"],
+    queryFn: () => atlas.servidor.getTermo("telemedicina", { meses: 12, valor: "R$ 50,00", banco: "Banco Atlas" }),
+    enabled: showCotar,
+  });
+
   return (
-    <article style={{
-      background: "linear-gradient(120deg, var(--emerald-600, #059669), var(--emerald-500))",
-      borderRadius: 16, padding: 22,
-      display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap",
-      color: "white", boxShadow: "0 4px 14px rgba(16,185,129,.25)",
-    }}>
-      <div style={{
-        width: 62, height: 62, borderRadius: 14,
-        background: "rgba(255,255,255,.16)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 30, flexShrink: 0,
-      }}>🩺</div>
-      <div style={{ flex: 1, minWidth: 260 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", opacity: 0.85, textTransform: "uppercase" }}>
-          Benefício exclusivo · Servidor
+    <>
+      <article style={{
+        background: "linear-gradient(120deg, var(--emerald-600, #059669), var(--emerald-500))",
+        borderRadius: 16, padding: 22,
+        display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap",
+        color: "white", boxShadow: "0 4px 14px rgba(16,185,129,.25)",
+      }}>
+        <div style={{
+          width: 62, height: 62, borderRadius: 14,
+          background: "rgba(255,255,255,.16)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 30, flexShrink: 0,
+        }}>🩺</div>
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", opacity: 0.85, textTransform: "uppercase" }}>
+            Benefício exclusivo · Servidor
+          </div>
+          <div style={{ fontSize: "1.35rem", fontWeight: 800, marginTop: 2 }}>Telemedicina Gratuita</div>
+          <div style={{ fontSize: 13, opacity: 0.92, marginTop: 4 }}>
+            Consultas online 24h · Clínico Geral, Pediatria, Psicologia, Nutrição
+          </div>
         </div>
-        <div style={{ fontSize: "1.35rem", fontWeight: 800, marginTop: 2 }}>Telemedicina Gratuita</div>
-        <div style={{ fontSize: 13, opacity: 0.92, marginTop: 4 }}>
-          Consultas online 24h · Clínico Geral, Pediatria, Psicologia, Nutrição
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+          <span style={{
+            fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999,
+            background: "rgba(255,255,255,.2)", color: "white",
+            border: "1px solid rgba(255,255,255,.3)",
+          }}>
+            Plano mínimo de 12 meses
+          </span>
+          {plano ? (
+            <div style={{ background: "rgba(255,255,255,.18)", borderRadius: 10, padding: 14, minWidth: 240 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 800 }}>
+                <span>✓ Plano Ativo</span>
+                <span>faltam {plano.restante} {plano.restante === 1 ? "mês" : "meses"}</span>
+              </div>
+              <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,.25)", overflow: "hidden", marginTop: 8 }}>
+                <div style={{ width: `${plano.pct * 100}%`, height: "100%", background: "white" }} />
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.85, marginTop: 6 }}>
+                Plano de 12 meses · {Math.round(plano.pct * 100)}% concluído
+              </div>
+            </div>
+          ) : pendente ? (
+            <span style={{
+              padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+              background: "rgba(255,255,255,.18)", color: "white", textAlign: "center", maxWidth: 280,
+            }}>
+              Cotação em análise. Em breve, a equipe da Atlas entrará em contato.
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowCotar(true)}
+              style={{
+                padding: "10px 18px", borderRadius: 10,
+                background: "white", color: "var(--emerald-600, #059669)",
+                fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
+                boxShadow: "0 2px 8px rgba(0,0,0,.15)",
+              }}
+            >
+              Solicitar Cotação
+            </button>
+          )}
         </div>
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
-        <span style={{
-          fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999,
-          background: "rgba(255,255,255,.2)", color: "white",
-          border: "1px solid rgba(255,255,255,.3)",
-        }}>
-          Plano mínimo de 12 meses
-        </span>
-        {plano ? (
-          <div style={{ background: "rgba(255,255,255,.18)", borderRadius: 10, padding: 14, minWidth: 240 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 800 }}>
-              <span>✓ Plano Ativo</span>
-              <span>faltam {plano.restante} {plano.restante === 1 ? "mês" : "meses"}</span>
-            </div>
-            <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,.25)", overflow: "hidden", marginTop: 8 }}>
-              <div style={{ width: `${plano.pct * 100}%`, height: "100%", background: "white" }} />
-            </div>
-            <div style={{ fontSize: 11, opacity: 0.85, marginTop: 6 }}>
-              Plano de 12 meses · {Math.round(plano.pct * 100)}% concluído
+      </article>
+
+      {showCotar && (
+        <div
+          onClick={() => !cotacao.isPending && setShowCotar(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 16, padding: 24, maxWidth: 460, width: "100%" }}>
+            <h3 style={{ margin: "0 0 10px", fontSize: "1.25rem" }}>
+              {termoQ.data?.termo.titulo ?? "Telemedicina — Solicitar Cotação"}
+            </h3>
+            <p style={{ color: "var(--text-muted)", fontSize: 14, margin: "0 0 16px", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+              {termoQ.data?.termo.corpo
+                ?? "Consultas online 24h com médicos parceiros. Plano com compromisso mínimo de 12 meses. Ao solicitar a cotação, o time da Atlas recebe seus dados de contato e entra em contato com você para formalizar a solicitação."}
+            </p>
+            {cotacao.isError && (
+              <p style={{ color: "var(--danger, #dc2626)", fontSize: 13 }}>Não foi possível enviar. Tente novamente.</p>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setShowCotar(false)}
+                disabled={cotacao.isPending}
+                style={{ padding: "10px 16px", borderRadius: 10, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border-strong)", fontWeight: 600, cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => cotacao.mutate()}
+                disabled={cotacao.isPending}
+                style={{ padding: "10px 18px", borderRadius: 10, background: "var(--emerald-500)", color: "white", border: "none", fontWeight: 700, cursor: "pointer" }}
+              >
+                {cotacao.isPending ? "Enviando…" : "Solicitar Cotação"}
+              </button>
             </div>
           </div>
-        ) : pendente ? (
-          <span style={{
-            padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
-            background: "rgba(255,255,255,.18)", color: "white", textAlign: "center", maxWidth: 280,
-          }}>
-            Cotação em análise. Em breve, a equipe da Atlas entrará em contato.
-          </span>
-        ) : (
-          <button
-            type="button"
-            onClick={() => nav("/servidor/saude")}
-            style={{
-              padding: "10px 18px", borderRadius: 10,
-              background: "white", color: "var(--emerald-600, #059669)",
-              fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
-              boxShadow: "0 2px 8px rgba(0,0,0,.15)",
-            }}
-          >
-            Solicitar Cotação
-          </button>
-        )}
-      </div>
-    </article>
+        </div>
+      )}
+    </>
   );
 }
