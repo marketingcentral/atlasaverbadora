@@ -161,12 +161,11 @@ export const PRODUTO_LABEL: Record<BancoProduto, string> = {
   portabilidade: "Portabilidade",
 };
 
-/** Convenios seed que o banco enxerga na Atlas (Passo 11) — apenas os seus. */
-const BANCO_CONVENIOS_SEED = [
-  "Prefeitura de Palhoça",
-  "Prefeitura de Biguaçu",
-  "Prefeitura de São José",
-];
+/** Convenios seed do banco. Cliente pediu (20/07/2026) remocao dos seeds
+ *  hardcoded (Palhoca/Biguacu/Sao Jose ja nao existem mais como prefeituras
+ *  cadastradas). Convenios reais vem do backend via SDK; a lista local so
+ *  serve pra opcoes que o operador adicionar manualmente via UI. */
+const BANCO_CONVENIOS_SEED: string[] = [];
 
 function readList(key: string): string[] {
   try {
