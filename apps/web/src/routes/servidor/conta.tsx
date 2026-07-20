@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { Button, Card, Input, useThemeMode } from "@atlas/ui/web";
+import type { TermoTipo } from "@atlas/sdk";
 import { atlas } from "../../lib/sdk";
 import { clearAtlasState } from "../../lib/session";
 import { GerenciarDoisFA } from "../../components/GerenciarDoisFA";
@@ -81,6 +82,8 @@ export function ServidorConta() {
 
       <GerenciarDoisFA />
 
+      <SuporteCard />
+
       <div>
         <Button
           variant="ghost"
@@ -94,6 +97,125 @@ export function ServidorConta() {
         </Button>
       </div>
 
+    </div>
+  );
+}
+
+/** Card de Suporte no mesmo estilo do app mobile. Lista 3 items clicaveis:
+ *  Suporte (contato), Termos de Uso e Politica de Privacidade. Os dois termos
+ *  puxam o corpo publicado em /averbadora/termos via atlas.servidor.getTermo. */
+function SuporteCard() {
+  const [aberto, setAberto] = useState<"suporte" | TermoTipo | null>(null);
+
+  return (
+    <>
+      <Card>
+        <div style={{ fontSize: 11, letterSpacing: ".08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 12 }}>
+          Suporte
+        </div>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <SuporteItem label="Suporte" onClick={() => setAberto("suporte")} />
+          <SuporteItem label="Termos de Uso" onClick={() => setAberto("termos_uso")} borderTop />
+          <SuporteItem label="Políticas de Privacidade" onClick={() => setAberto("politica_privacidade")} borderTop />
+        </div>
+      </Card>
+
+      {aberto === "suporte" ? (
+        <ModalSimples titulo="Suporte" onClose={() => setAberto(null)}>
+          <p style={{ marginTop: 0 }}>Fale com a gente:</p>
+          <ul style={{ paddingLeft: 20, marginTop: 8, marginBottom: 0, lineHeight: 1.7 }}>
+            <li>E-mail: <a href="mailto:suporte@atlasaverbadora.com.br" style={{ color: "var(--accent)" }}>suporte@atlasaverbadora.com.br</a></li>
+            <li>WhatsApp: <a href="https://wa.me/5511999999999" target="_blank" rel="noreferrer" style={{ color: "var(--accent)" }}>(11) 99999-9999</a></li>
+            <li>Atendimento: segunda a sexta, 09h às 18h.</li>
+          </ul>
+        </ModalSimples>
+      ) : aberto === "termos_uso" || aberto === "politica_privacidade" ? (
+        <ModalTermo tipo={aberto} onClose={() => setAberto(null)} />
+      ) : null}
+    </>
+  );
+}
+
+function SuporteItem({ label, onClick, borderTop }: { label: string; onClick: () => void; borderTop?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "14px 4px", background: "transparent", border: "none",
+        borderTop: borderTop ? "1px solid var(--border)" : "none",
+        color: "var(--text)", fontSize: ".95rem", fontWeight: 500,
+        textAlign: "left", cursor: "pointer", width: "100%",
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ color: "var(--text-dim)", fontSize: "1.1rem" }} aria-hidden>›</span>
+    </button>
+  );
+}
+
+function ModalTermo({ tipo, onClose }: { tipo: TermoTipo; onClose: () => void }) {
+  const q = useQuery({
+    queryKey: ["servidor", "termo", tipo],
+    queryFn: () => atlas.servidor.getTermo(tipo),
+  });
+  const termo = q.data?.termo;
+  const titulo = termo?.titulo ?? (tipo === "termos_uso" ? "Termos de Uso" : "Política de Privacidade");
+  return (
+    <ModalSimples titulo={titulo} onClose={onClose}>
+      {q.isLoading ? (
+        <div style={{ color: "var(--text-muted)" }}>Carregando…</div>
+      ) : q.isError ? (
+        <div style={{ color: "var(--danger-500)" }}>
+          Não foi possível carregar. {(q.error as Error)?.message ?? ""}
+        </div>
+      ) : termo ? (
+        <>
+          {termo.versao ? (
+            <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 12 }}>
+              Versão {termo.versao}
+            </div>
+          ) : null}
+          <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: ".95rem" }}>
+            {termo.corpo}
+          </div>
+        </>
+      ) : null}
+    </ModalSimples>
+  );
+}
+
+function ModalSimples({ titulo, onClose, children }: { titulo: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === "Escape") onClose(); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: 16, zIndex: 1000,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "var(--bg-elev-1)", borderRadius: 14, border: "1px solid var(--border)",
+          maxWidth: 640, width: "100%", maxHeight: "85vh", overflow: "hidden",
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: "1px solid var(--border)" }}>
+          <h3 style={{ margin: 0, fontSize: "1.1rem" }}>{titulo}</h3>
+          <button onClick={onClose} aria-label="Fechar" style={{ background: "transparent", border: "none", color: "var(--text-dim)", fontSize: "1.4rem", cursor: "pointer", padding: 4 }}>×</button>
+        </div>
+        <div style={{ padding: 18, overflow: "auto" }}>
+          {children}
+        </div>
+      </div>
     </div>
   );
 }
