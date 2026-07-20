@@ -7,6 +7,10 @@ export interface Column<T> {
   width?: number | string;
   align?: "left" | "right" | "center";
   mono?: boolean;
+  /** Permite quebra de linha na celula (default: nowrap). Use pra textos longos
+   *  como nome/endereco/email — mantem a tabela dentro do viewport sem forcar
+   *  scroll horizontal. */
+  wrap?: boolean;
 }
 
 interface Props<T> {
@@ -84,7 +88,9 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
                     textAlign: c.align ?? "left",
                     fontFamily: c.mono ? "var(--font-mono)" : undefined,
                     color: "var(--text)",
-                    whiteSpace: "nowrap",
+                    whiteSpace: c.wrap ? "normal" : "nowrap",
+                    wordBreak: c.wrap ? "break-word" : undefined,
+                    maxWidth: c.wrap ? 220 : undefined,
                   }}
                 >
                   {c.render ? c.render(r) : (r as Record<string, unknown>)[c.key] as ReactNode}
