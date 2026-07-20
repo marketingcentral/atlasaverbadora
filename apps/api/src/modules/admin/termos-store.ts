@@ -56,9 +56,9 @@ const SEED: TermoTemplate[] = [
     id: "emprestimo",
     titulo: "Termo de autorização — Empréstimo Consignado",
     descricao: "Exibido antes do servidor confirmar uma proposta de emprestimo consignado.",
-    variaveis: ["tipoLabel", "valor", "parcelas", "parcela", "banco", "prazo"],
+    variaveis: ["nome", "cpf", "tipoLabel", "valor", "parcelas", "parcela", "banco", "prazo"],
     corpo:
-      "**Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora** a registrar a averbação da minha margem consignável junto à minha prefeitura empregadora para a operação de **{{tipoLabel}}**, no valor de **{{valor}}**, em {{parcelas}} parcelas de **{{parcela}}**, junto ao banco **{{banco}}**.\n\n" +
+      "**Eu, {{nome}}, inscrito(a) no CPF {{cpf}}, autorizo expressamente a Atlas Averbadora** a registrar a averbação da minha margem consignável junto à minha prefeitura empregadora para a operação de **{{tipoLabel}}**, no valor de **{{valor}}**, em {{parcelas}} parcelas de **{{parcela}}**, junto ao banco **{{banco}}**.\n\n" +
       "Estou ciente de que ao confirmar este aceite minha margem ficará **indisponível** para outras operações pelo prazo de **{{prazo}}**, podendo ser liberada antes desse período mediante cancelamento da pré-reserva.\n\n" +
       "**LGPD e log de auditoria.** Este aceite será registrado com data, hora, endereço IP, dispositivo, CPF e identificador desta proposta para fins legais e de auditoria, conforme a Lei 13.709/2018.\n\n" +
       "**Custo Efetivo Total (CET).** A taxa apresentada é mensal e inclui juros remuneratórios, IOF, tarifas e seguros aplicáveis quando exigidos pelo convênio. O contrato definitivo será disponibilizado pelo banco após a aprovação.\n\n" +
@@ -69,9 +69,9 @@ const SEED: TermoTemplate[] = [
     id: "portabilidade",
     titulo: "Termo de autorização — Portabilidade",
     descricao: "Exibido antes do servidor consolidar contratos em outro banco.",
-    variaveis: ["banco", "valor", "parcelas", "parcela", "prazo"],
+    variaveis: ["nome", "cpf", "banco", "valor", "parcelas", "parcela", "prazo"],
     corpo:
-      "**Eu autorizo a Atlas Averbadora** a solicitar a portabilidade dos meus contratos consignados ativos para o banco **{{banco}}**, no valor consolidado de **{{valor}}**, em {{parcelas}} parcelas de **{{parcela}}**.\n\n" +
+      "**Eu, {{nome}}, inscrito(a) no CPF {{cpf}}, autorizo a Atlas Averbadora** a solicitar a portabilidade dos meus contratos consignados ativos para o banco **{{banco}}**, no valor consolidado de **{{valor}}**, em {{parcelas}} parcelas de **{{parcela}}**.\n\n" +
       "Estou ciente de que ao confirmar este aceite minha margem ficará **indisponível** para outras operações pelo prazo de **{{prazo}}**, tempo necessário para a operação de portabilidade se concretizar junto ao banco de origem.\n\n" +
       "**LGPD e log de auditoria.** Este aceite será registrado com data, hora, endereço IP e dispositivo para fins legais e de auditoria, conforme a Lei 13.709/2018 e a Resolução BACEN 4.292/2013.",
     versao: "1.0", ativo: true, criadoEm: "2026-07-14T00:00:00.000Z", atualizadoEm: "2026-07-14T00:00:00.000Z",
@@ -80,9 +80,9 @@ const SEED: TermoTemplate[] = [
     id: "refinanciamento",
     titulo: "Termo de autorização — Refinanciamento",
     descricao: "Exibido antes do servidor refinanciar contrato existente com o mesmo banco.",
-    variaveis: ["banco", "valor", "parcelas", "parcela", "prazo"],
+    variaveis: ["nome", "cpf", "banco", "valor", "parcelas", "parcela", "prazo"],
     corpo:
-      "**Eu autorizo o refinanciamento** do meu contrato consignado ativo junto ao banco **{{banco}}**, ampliando o valor para **{{valor}}** em {{parcelas}} parcelas de **{{parcela}}**.\n\n" +
+      "**Eu, {{nome}}, inscrito(a) no CPF {{cpf}}, autorizo o refinanciamento** do meu contrato consignado ativo junto ao banco **{{banco}}**, ampliando o valor para **{{valor}}** em {{parcelas}} parcelas de **{{parcela}}**.\n\n" +
       "Estou ciente de que a diferença entre o novo valor e o saldo devedor atual pode ser liberada como \"troco\" na minha conta, e que minha margem ficará **indisponível** pelo prazo de **{{prazo}}**.\n\n" +
       "**LGPD e log de auditoria.** Este aceite será registrado com data, hora, endereço IP e dispositivo, conforme a Lei 13.709/2018.",
     versao: "1.0", ativo: true, criadoEm: "2026-07-14T00:00:00.000Z", atualizadoEm: "2026-07-14T00:00:00.000Z",
@@ -91,9 +91,9 @@ const SEED: TermoTemplate[] = [
     id: "cartao_consignado",
     titulo: "Termo de autorização — Cartão de Crédito Consignado",
     descricao: "Exibido antes do servidor solicitar cartão consignado.",
-    variaveis: ["banco", "limite", "produto"],
+    variaveis: ["nome", "cpf", "banco", "limite", "produto"],
     corpo:
-      "**Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora** a registrar a solicitação de **{{produto}}** junto à minha prefeitura empregadora, com limite proposto de **{{limite}}**, para o banco **{{banco}}**.\n\n" +
+      "**Eu, {{nome}}, inscrito(a) no CPF {{cpf}}, autorizo expressamente a Atlas Averbadora** a registrar a solicitação de **{{produto}}** junto à minha prefeitura empregadora, com limite proposto de **{{limite}}**, para o banco **{{banco}}**.\n\n" +
       "Estou ciente de que a fatura mínima mensal será descontada diretamente na folha de pagamento, respeitando o limite regulatório de **5% do meu salário líquido** (margem cartão consignado). Minha margem cartão consignado ficará **indisponível** por **48 horas** enquanto o banco analisa esta solicitação.\n\n" +
       "**LGPD e log de auditoria.** Este aceite será registrado com data, hora, endereço IP, dispositivo, CPF e identificador desta solicitação para fins legais e de auditoria, conforme a Lei 13.709/2018.",
     versao: "1.0", ativo: true, criadoEm: "2026-07-14T00:00:00.000Z", atualizadoEm: "2026-07-14T00:00:00.000Z",
@@ -102,9 +102,9 @@ const SEED: TermoTemplate[] = [
     id: "cartao_beneficio",
     titulo: "Termo de autorização — Cartão Benefício Consignado",
     descricao: "Exibido antes do servidor solicitar cartão benefício (farmácia, mercado, saúde).",
-    variaveis: ["banco", "limite", "produto"],
+    variaveis: ["nome", "cpf", "banco", "limite", "produto"],
     corpo:
-      "**Eu, titular do CPF acima identificado, autorizo expressamente a Atlas Averbadora** a registrar a solicitação de **{{produto}}** junto à minha prefeitura empregadora, com limite proposto de **{{limite}}**, para o banco **{{banco}}**.\n\n" +
+      "**Eu, {{nome}}, inscrito(a) no CPF {{cpf}}, autorizo expressamente a Atlas Averbadora** a registrar a solicitação de **{{produto}}** junto à minha prefeitura empregadora, com limite proposto de **{{limite}}**, para o banco **{{banco}}**.\n\n" +
       "Estou ciente de que o cartão benefício é **restrito a estabelecimentos categorizados** (farmácia, mercado, saúde e afins) e a fatura mínima mensal será descontada diretamente na folha de pagamento, respeitando o limite regulatório de **5% do meu salário líquido** (margem cartão benefício, bucket separado do cartão consignado). Minha margem cartão benefício ficará **indisponível** por **48 horas** enquanto o banco analisa esta solicitação.\n\n" +
       "**LGPD e log de auditoria.** Este aceite será registrado com data, hora, endereço IP, dispositivo, CPF e identificador desta solicitação para fins legais e de auditoria, conforme a Lei 13.709/2018.",
     versao: "1.0", ativo: true, criadoEm: "2026-07-15T00:00:00.000Z", atualizadoEm: "2026-07-15T00:00:00.000Z",
@@ -113,9 +113,9 @@ const SEED: TermoTemplate[] = [
     id: "beneficio_generico",
     titulo: "Termo de adesão — Benefício",
     descricao: "Exibido antes do servidor aderir a um beneficio negociado pela Atlas.",
-    variaveis: ["parceiro", "duracaoMinima"],
+    variaveis: ["nome", "cpf", "parceiro", "duracaoMinima"],
     corpo:
-      "**Eu, titular do CPF acima**, adiro ao benefício oferecido por **{{parceiro}}** através da Atlas Averbadora.\n\n" +
+      "**Eu, {{nome}}, inscrito(a) no CPF {{cpf}}**, adiro ao benefício oferecido por **{{parceiro}}** através da Atlas Averbadora.\n\n" +
       "Ciente de que os descontos são concedidos exclusivamente mediante apresentação da minha matrícula ativa e podem ser modificados a qualquer momento pelo parceiro.\n\n" +
       "{{duracaoMinima}}",
     versao: "1.0", ativo: true, criadoEm: "2026-07-14T00:00:00.000Z", atualizadoEm: "2026-07-14T00:00:00.000Z",
@@ -124,9 +124,9 @@ const SEED: TermoTemplate[] = [
     id: "telemedicina",
     titulo: "Termo de adesão — Telemedicina Atlas",
     descricao: "Exibido antes do servidor aderir a telemedicina (compromisso minimo de 12 meses).",
-    variaveis: ["parceiro"],
+    variaveis: ["nome", "cpf", "parceiro"],
     corpo:
-      "**Eu adiro ao serviço de Telemedicina Atlas** oferecido por **{{parceiro}}**.\n\n" +
+      "**Eu, {{nome}}, inscrito(a) no CPF {{cpf}}, adiro ao serviço de Telemedicina Atlas** oferecido por **{{parceiro}}**.\n\n" +
       "**Compromisso mínimo de 12 (doze) meses.** Estou ciente que o serviço tem período mínimo de contratação e o cancelamento antes desse prazo pode implicar em cobrança da mensalidade proporcional aos meses restantes.\n\n" +
       "Consultas online com médicos parceiros, ilimitadas, incluídas no plano. Especialidades: clínica geral, pediatria, psicologia e nutrição.\n\n" +
       "**LGPD.** Seus dados de consulta ficam armazenados exclusivamente com o parceiro médico e nunca são compartilhados com a Atlas.",

@@ -1359,6 +1359,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
     await ensureTermosLoaded(c.env);
+    await ensureServidoresLoaded(c.env);
     const tipo = c.req.param("tipo") as TermoTipo;
     const t = getTermo(tipo);
     if (!t) throw Errors.notFound("termo");
@@ -1367,6 +1368,14 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     let vars: Record<string, string | number | undefined> = {};
     if (varsRaw) {
       try { vars = JSON.parse(varsRaw); } catch { /* ignore */ }
+    }
+    // Identidade do titular vem SEMPRE do servidor autenticado (JWT) — nunca do
+    // cliente. {{nome}} e {{cpf}} (mascarado) identificam quem assina o aceite e
+    // NAO podem ser forjados via ?vars; por isso sobrescrevem o que veio na query.
+    const s = resolveServidor(j);
+    if (s) {
+      vars.nome = s.nome;
+      vars.cpf = maskCPF(s.cpf);
     }
     return c.json({
       termo: { id: t.id, titulo: t.titulo, versao: t.versao, corpo: renderTermo(t.corpo, vars) },
