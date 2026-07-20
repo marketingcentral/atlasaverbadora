@@ -9,14 +9,11 @@ export function AdminIdUnico() {
   const configs = useQuery({ queryKey: ["admin", "id-unico"], queryFn: () => atlas.admin.listIdUnicoConfigs() });
   const prefeituras = useQuery({ queryKey: ["admin", "prefeituras"], queryFn: () => atlas.admin.listPrefeituras() });
   const [editing, setEditing] = useState<AdminIdUnicoConfig | "new" | null>(null);
-  const issue = useMutation({
-    mutationFn: (prefeituraId: number) => atlas.admin.issueIdUnico(prefeituraId),
-    onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ["admin", "id-unico"] });
-      alert(`ID emitido: ${r.idUnico}`);
-    },
-    onError: (err) => alert(err instanceof Error ? err.message : "Falha"),
-  });
+  // Botao "emitir manualmente" removido da UI (20/07/2026) — em operacao normal
+  // cada aprovacao de proposta ja consome o proximo ID automaticamente, e o
+  // clique acidental no botao "+" queimava numeros da sequencia sem gerar
+  // operacao real. Endpoint POST /v1/admin/id-unico/issue continua disponivel
+  // pra scripts/migracao manual (nao ha caminho de UI).
 
   const columns: Column<AdminIdUnicoConfig>[] = [
     { key: "prefeituraNome", header: "Prefeitura" },
@@ -49,10 +46,7 @@ export function AdminIdUnico() {
         rowKey={(c) => String(c.prefeituraId)}
         loading={configs.isLoading}
         actions={(c) => (
-          <>
-            <IconButton title="Editar" onClick={() => setEditing(c)}>✎</IconButton>
-            <IconButton title="Emitir novo ID manualmente" onClick={() => issue.mutate(c.prefeituraId)}>＋</IconButton>
-          </>
+          <IconButton title="Editar" onClick={() => setEditing(c)}>✎</IconButton>
         )}
       />
 
