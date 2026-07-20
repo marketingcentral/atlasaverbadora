@@ -355,6 +355,10 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
     await ensureTombamentoLoaded(c.env); // emprestimos externos importados pela prefeitura (portabilidade)
+    // Re-sincroniza contratos do PG. Sem isso, isolates dormentes serviam
+    // contratos ja apagados por outro isolate (purge admin, delete de proposta)
+    // — servidor via 'utilizado' errado ate cair no isolate certo por sorte.
+    await refreshContratos(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     // Filtra matriculas arquivadas (soft-delete) — a averbadora pode arquivar
