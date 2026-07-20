@@ -192,6 +192,18 @@ export function ensureAdfs(prefeituraId: number, competencia: string, bancoNomeB
   for (const ct of contratos) {
     const status = (ct.folhaStatus ?? "recebida") as AdfStatus;
     const tipoMargemInferido = deduceTipoMargem(ct);
+    // Um contrato so pode viver em UMA competencia por vez (dupla contagem
+    // gerava R$ X aparecendo em julho E agosto). Se ja existe ADF pra esse
+    // contrato em OUTRA competencia, remove — a competencia certa e a que
+    // o `resolverCompetenciaAdf` decidiu chamar (respeita data corte).
+    // Excecao: ADFs ja `aplicada` ou `falha` em competencia anterior sao
+    // historico permanente — NAO removem (dinheiro ja passou pela folha).
+    for (let i = _adfs.length - 1; i >= 0; i--) {
+      const a = _adfs[i]!;
+      if (a.adf === ct.adf && a.competencia !== competencia && a.status === "recebida") {
+        _adfs.splice(i, 1);
+      }
+    }
     const already = _adfs.find((a) => a.adf === ct.adf && a.competencia === competencia);
     if (already) {
       // So atualiza atualizadoEm se o status realmente MUDOU. Antes atualizava
