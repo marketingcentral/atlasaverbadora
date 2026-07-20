@@ -127,6 +127,20 @@ export function ensureTombamentoLoaded(env: Env): Promise<void> {
   return _tombLoad;
 }
 
+/** Re-sync do PG a cada request — usado nos endpoints que precisam ver
+ *  tombamento atualizado por outro isolate (import de lote em isolate A,
+ *  leitura em isolate B). Mesmo padrao de refreshContratos. */
+export async function refreshTombamento(env: Env): Promise<void> {
+  try {
+    await ensureTombamentoLoaded(env);
+    const { lotes, linhas } = await loadTombamento(env);
+    if (lotes.length) {
+      _lotes.length = 0; _lotes.push(...(lotes as unknown as TombamentoLote[]));
+      _linhas.length = 0; _linhas.push(...(linhas as unknown as TombamentoLinha[]));
+    }
+  } catch { /* mantem memoria */ }
+}
+
 /** Write-through best-effort de um lote (com suas linhas) no Postgres. */
 async function persistLote(env: Env, loteId: string): Promise<void> {
   const lote = _lotes.find((l) => l.id === loteId);

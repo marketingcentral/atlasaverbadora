@@ -6,7 +6,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
-import { ensureTombamentoLoaded, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
+import { ensureTombamentoLoaded, refreshTombamento, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -354,11 +354,13 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
-    await ensureTombamentoLoaded(c.env); // emprestimos externos importados pela prefeitura (portabilidade)
-    // Re-sincroniza contratos do PG. Sem isso, isolates dormentes serviam
-    // contratos ja apagados por outro isolate (purge admin, delete de proposta)
-    // — servidor via 'utilizado' errado ate cair no isolate certo por sorte.
+    // Re-sync contratos + tombamento do PG por request. Sem isso, isolates
+    // dormentes serviam dados stale (contratos apagados, tombamento importado
+    // em outro isolate) — servidor via 'utilizado' errado ate cair no isolate
+    // certo por sorte. Aceitavel: 2 SELECTs pra corrigir consistencia visivel.
+    await ensureTombamentoLoaded(c.env);
     await refreshContratos(c.env);
+    await refreshTombamento(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     // Filtra matriculas arquivadas (soft-delete) — a averbadora pode arquivar
