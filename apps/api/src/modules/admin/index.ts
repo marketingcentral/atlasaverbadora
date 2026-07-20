@@ -463,6 +463,31 @@ export async function persistFolha(env: Env, f: FolhaAdmin): Promise<void> {
   try { await upsertCollectionRow(env, "admin_folhas", f.id, f); } catch { /* fail-safe */ }
 }
 
+/** Reconcilia contratos "Aprovado" cujas ADFs foram marcadas 'falha' antes do
+ *  fluxo F1-falha existir (dados historicos): promove pra 'Falha em folha' e
+ *  persiste. Sem isso, a proposta fica presa em Em andamento no /servidor/contratos
+ *  mesmo com todas ADFs falhadas. Idempotente. */
+export async function reconcileContratosFalhaHistorica(env: Env): Promise<number> {
+  await refreshContratos(env);
+  const adfs = listAdfsGlobal();
+  const falhaPorAdf = new Map<string, string>();
+  for (const a of adfs) {
+    if (a.status === "falha") falhaPorAdf.set(a.adf, a.motivo ?? "falha em folha");
+  }
+  let promovidos = 0;
+  for (const [adf, motivo] of falhaPorAdf) {
+    const ct = getContrato(adf);
+    if (!ct) continue;
+    const s = ct.situacao.toLowerCase();
+    if (s.includes("falha em folha") || s.includes("cancel") || s.includes("quit") || s.includes("cobran")) continue;
+    setContratoFalhaEmFolha(adf, motivo);
+    await persistContrato(env, adf);
+    promovidos++;
+  }
+  return promovidos;
+}
+
+
 // Cliente pediu remocao dos 2 banners de vitrine fixture (17/07/2026) — R$
 // 18.000 (BAN-1 Banco Y) + R$ 9.200 (BAN-2 SCred) = R$ 27.200 apareciam como
 // "Receita vitrine (mes)" no dashboard mesmo sem receita real. Se restaurar
@@ -3279,6 +3304,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const prefFiltro = url.searchParams.get("prefeitura_id");
     const compAtual = competencia ?? (folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", ""));
     ensureAdfsGlobal(compAtual, (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, now, prefeituras.map((p) => p.id));
+    // Reconcilia contratos historicos: ADFs marcadas 'falha' pelo fluxo antigo
+    // (antes do F1-falha) nao mexiam no contrato — ficavam presos em 'Aprovado'.
+    await reconcileContratosFalhaHistorica(c.env);
     let list = listAdfsGlobal(competencia);
     if (prefFiltro) {
       const pid = Number(prefFiltro);
