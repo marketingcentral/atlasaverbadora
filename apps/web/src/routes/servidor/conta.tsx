@@ -101,11 +101,18 @@ export function ServidorConta() {
   );
 }
 
-/** Card de Suporte no mesmo estilo do app mobile. Lista 3 items clicaveis:
- *  Suporte (contato), Termos de Uso e Politica de Privacidade. Os dois termos
- *  puxam o corpo publicado em /averbadora/termos via atlas.servidor.getTermo. */
+/** Card de Suporte + Termos em vigencia. Suporte abre modal com contato;
+ *  cada termo ATIVO publicado em /averbadora/termos vira uma linha clicavel
+ *  que abre o corpo renderizado. Lista dinamica — se a averbadora publica
+ *  um novo termo (ex.: portabilidade), ele aparece aqui automaticamente. */
 function SuporteCard() {
   const [aberto, setAberto] = useState<"suporte" | TermoTipo | null>(null);
+
+  const termosQ = useQuery({
+    queryKey: ["servidor", "termos-vigentes"],
+    queryFn: () => atlas.servidor.listTermos(),
+  });
+  const termos = termosQ.data?.termos ?? [];
 
   return (
     <>
@@ -115,9 +122,35 @@ function SuporteCard() {
         </div>
         <div style={{ display: "flex", flexDirection: "column" }}>
           <SuporteItem label="Suporte" onClick={() => setAberto("suporte")} />
-          <SuporteItem label="Termos de Uso" onClick={() => setAberto("termos_uso")} borderTop />
-          <SuporteItem label="Políticas de Privacidade" onClick={() => setAberto("politica_privacidade")} borderTop />
         </div>
+      </Card>
+
+      <Card>
+        <div style={{ fontSize: 11, letterSpacing: ".08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 4 }}>
+          Termos em vigência
+        </div>
+        <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted)" }}>
+          Documentos oficiais que estão valendo hoje. Toque em qualquer um pra ler o texto integral e conferir a versão.
+        </p>
+        {termosQ.isLoading ? (
+          <div style={{ color: "var(--text-muted)", fontSize: 14, padding: "8px 0" }}>Carregando…</div>
+        ) : termosQ.isError ? (
+          <div style={{ color: "var(--danger-500)", fontSize: 14 }}>Não foi possível carregar os termos.</div>
+        ) : termos.length === 0 ? (
+          <div style={{ color: "var(--text-muted)", fontSize: 14 }}>Nenhum termo ativo no momento.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {termos.map((t, i) => (
+              <SuporteItem
+                key={t.id}
+                label={t.titulo}
+                hint={`Versão ${t.versao}`}
+                onClick={() => setAberto(t.id)}
+                borderTop={i > 0}
+              />
+            ))}
+          </div>
+        )}
       </Card>
 
       {aberto === "suporte" ? (
@@ -129,27 +162,30 @@ function SuporteCard() {
             <li>Atendimento: segunda a sexta, 09h às 18h.</li>
           </ul>
         </ModalSimples>
-      ) : aberto === "termos_uso" || aberto === "politica_privacidade" ? (
+      ) : aberto ? (
         <ModalTermo tipo={aberto} onClose={() => setAberto(null)} />
       ) : null}
     </>
   );
 }
 
-function SuporteItem({ label, onClick, borderTop }: { label: string; onClick: () => void; borderTop?: boolean }) {
+function SuporteItem({ label, hint, onClick, borderTop }: { label: string; hint?: string; onClick: () => void; borderTop?: boolean }) {
   return (
     <button
       onClick={onClick}
       style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
         padding: "14px 4px", background: "transparent", border: "none",
         borderTop: borderTop ? "1px solid var(--border)" : "none",
         color: "var(--text)", fontSize: ".95rem", fontWeight: 500,
         textAlign: "left", cursor: "pointer", width: "100%",
       }}
     >
-      <span>{label}</span>
-      <span style={{ color: "var(--text-dim)", fontSize: "1.1rem" }} aria-hidden>›</span>
+      <span style={{ display: "flex", flexDirection: "column", gap: 2, minWidth: 0 }}>
+        <span>{label}</span>
+        {hint ? <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 400 }}>{hint}</span> : null}
+      </span>
+      <span style={{ color: "var(--text-dim)", fontSize: "1.1rem", flexShrink: 0 }} aria-hidden>›</span>
     </button>
   );
 }
@@ -176,13 +212,45 @@ function ModalTermo({ tipo, onClose }: { tipo: TermoTipo; onClose: () => void })
               Versão {termo.versao}
             </div>
           ) : null}
-          <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.6, fontSize: ".95rem" }}>
-            {termo.corpo}
-          </div>
+          <TermoCorpo corpo={termo.corpo} />
         </>
       ) : null}
     </ModalSimples>
   );
+}
+
+/** Render minimalista de markdown do corpo do termo: paragrafos separados por
+ *  linha em branco, **negrito** e itens de lista comecando com "- ". Suficiente
+ *  pro que a averbadora edita no /averbadora/termos hoje; nao usamos lib de
+ *  markdown pra evitar peso no bundle. */
+function TermoCorpo({ corpo }: { corpo: string }) {
+  const blocos = corpo.split(/\n\s*\n/);
+  return (
+    <div style={{ lineHeight: 1.6, fontSize: ".95rem", display: "flex", flexDirection: "column", gap: 12 }}>
+      {blocos.map((bloco, i) => {
+        const linhas = bloco.split(/\n/).filter((l) => l.length > 0);
+        const ehLista = linhas.length > 0 && linhas.every((l) => /^\s*[-*]\s+/.test(l));
+        if (ehLista) {
+          return (
+            <ul key={i} style={{ margin: 0, paddingLeft: 22 }}>
+              {linhas.map((l, j) => (
+                <li key={j}>{renderInline(l.replace(/^\s*[-*]\s+/, ""))}</li>
+              ))}
+            </ul>
+          );
+        }
+        return <p key={i} style={{ margin: 0 }}>{renderInline(bloco)}</p>;
+      })}
+    </div>
+  );
+}
+
+function renderInline(texto: string): React.ReactNode {
+  const partes = texto.split(/(\*\*[^*]+\*\*)/g);
+  return partes.map((p, i) => {
+    if (/^\*\*.+\*\*$/.test(p)) return <strong key={i}>{p.slice(2, -2)}</strong>;
+    return <span key={i}>{p}</span>;
+  });
 }
 
 function ModalSimples({ titulo, onClose, children }: { titulo: string; onClose: () => void; children: React.ReactNode }) {

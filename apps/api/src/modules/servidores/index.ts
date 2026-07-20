@@ -11,6 +11,7 @@ import { listContratos, criarContratoOuReserva, persistContrato, refreshContrato
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
+import { loadIntencoes, refreshIntencoes, persistIntencao, nextIntencaoId, type BeneficioIntencao } from "../admin/beneficio-intencoes-store.js";
 import { loadCotacoes, refreshCotacoes, persistCotacao, nextCotacaoId, expireStaleCotacoes, type TelemedicinaCotacao } from "../admin/telemedicina-cotacoes-store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { listTabelas } from "../portal-banco/cadastros.js";
@@ -18,7 +19,7 @@ import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo, enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, cancelarIntencao, aceitarOferta, getIntencao } from "../admin/portabilidade-store.js";
-import { ensureTermosLoaded, getTermo, renderTermo, type TermoTipo } from "../admin/termos-store.js";
+import { ensureTermosLoaded, getTermo, listTermos, renderTermo, type TermoTipo } from "../admin/termos-store.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
@@ -636,6 +637,59 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await persistClique(c.env, clique);
     return c.json({ ok: true });
   })
+  // F5 do plano de fluxos: servidor clica "Contratar" no beneficio (mensalidade
+  // -> ADF). Cria uma INTENCAO no admin_beneficio_intencoes; a averbadora
+  // depois confere com o parceiro externo e vira ADF via /admin/beneficio-intencoes/:id/aprovar.
+  .post("/v1/servidores/me/beneficios/:id/contratar", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureServidoresLoaded(c.env);
+    const s = resolveServidor(j);
+    if (!s) throw Errors.notFound("servidor");
+    await refreshBeneficios(c.env);
+    const beneficioId = c.req.param("id");
+    const beneficio = (await loadBeneficios(c.env)).find((b) => b.id === beneficioId);
+    if (!beneficio) throw Errors.notFound("beneficio");
+    if (!beneficio.ativo) throw Errors.validation({ beneficio: "beneficio pausado" });
+    const valorMensal = Number((beneficio as unknown as { valorMensal?: number }).valorMensal ?? 0);
+    if (!Number.isFinite(valorMensal) || valorMensal <= 0) {
+      throw Errors.validation({ beneficio: "beneficio nao tem valorMensal configurado — nao pode virar ADF" });
+    }
+
+    const body = await c.req.json().catch(() => ({}));
+    const matAtiva = typeof body?.matricula === "string" ? body.matricula : undefined;
+    const entryAtivo = matAtiva
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.cpf === s.cpf && x.matricula === matAtiva)
+      : SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === s.matricula);
+    if (!entryAtivo) throw Errors.notFound("matricula");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === entryAtivo.idConvenio);
+    const prefeituraId = conv?.prefeituraId ?? s.prefeitura_id;
+
+    // Dedup: se ja tem uma intencao pendente pro mesmo beneficio+matricula,
+    // nao duplica — servidor pode acompanhar via /servidor/beneficios/intencoes.
+    await refreshIntencoes(c.env);
+    const pendenteExistente = (await loadIntencoes(c.env)).find(
+      (i) => i.beneficioId === beneficioId
+        && i.matricula === entryAtivo.matricula
+        && i.status === "pendente",
+    );
+    if (pendenteExistente) {
+      return c.json({ ok: true, intencao: pendenteExistente, deduplicado: true });
+    }
+
+    const intencao: BeneficioIntencao = {
+      id: nextIntencaoId(),
+      beneficioId, beneficioNome: beneficio.nome,
+      valorMensal,
+      servidorId: s.id, cpf: entryAtivo.cpf, nome: entryAtivo.nome,
+      cpfMasked: entryAtivo.cpfMasked, matricula: entryAtivo.matricula,
+      prefeituraId,
+      status: "pendente",
+      criadoEm: new Date().toISOString(),
+    };
+    await persistIntencao(c.env, intencao);
+    return c.json({ ok: true, intencao });
+  })
   // Solicitacao de COTACAO de telemedicina. O servidor confirma o termo no banner de
   // Beneficios; a Atlas (averbadora) recebe os dados dele (com TELEFONE) pra formalizar.
   .post("/v1/servidores/me/telemedicina/cotacao", async (c) => {
@@ -1200,6 +1254,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     return c.json({ intencao: r.intencao });
   })
   // ===== Termos (renderiza template editado no /averbadora/termos) =====
+  // Lista todos os termos ATIVOS em vigencia (usado na tela /servidor/conta
+  // > Suporte pra o servidor conferir o que assinou/aceitou). So metadados
+  // — o corpo se busca via /me/termos/:tipo (endpoint abaixo).
+  .get("/v1/servidores/me/termos", async (c) => {
+    const j = c.get("jwt");
+    requireRoleInline(j, ["servidor"]);
+    await ensureTermosLoaded(c.env);
+    const termos = listTermos()
+      .filter((t) => t.ativo)
+      .map((t) => ({ id: t.id, titulo: t.titulo, descricao: t.descricao, versao: t.versao, atualizadoEm: t.atualizadoEm }));
+    return c.json({ termos });
+  })
   // Servidor autenticado busca corpo do termo antes de aceitar. Se pediu
   // ?vars={"chave":"valor"}, ja retorna com placeholders substituidos.
   .get("/v1/servidores/me/termos/:tipo", async (c) => {

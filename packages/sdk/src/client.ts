@@ -1459,6 +1459,11 @@ export class AtlasClient {
       if (vars && Object.keys(vars).length > 0) query.vars = JSON.stringify(vars);
       return this.request<{ termo: TermoRenderizado }>(`/v1/servidores/me/termos/${tipo}`, { query });
     },
+    /** Lista todos os termos ativos em vigencia (metadados, sem corpo). Usado
+     *  na tela Conta > Suporte pra o servidor conferir o que esta vigente. */
+    listTermos: () => this.request<{
+      termos: { id: TermoTipo; titulo: string; descricao: string; versao: string; atualizadoEm: string }[];
+    }>("/v1/servidores/me/termos"),
   };
 
   // ============ Portal Banco ============
