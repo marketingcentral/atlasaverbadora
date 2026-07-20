@@ -16,7 +16,7 @@ import {
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
 /** Estado agrupado da proposta pro servidor (view). */
-type EstadoProposta = "em_analise" | "aprovada" | "aguardando_formalizacao" | "recusada" | "expirada" | "cancelada" | "liberada" | "desligada";
+type EstadoProposta = "em_analise" | "aprovada" | "aguardando_formalizacao" | "recusada" | "expirada" | "cancelada" | "liberada" | "desligada" | "falha_em_folha";
 
 function mapSituacao(situacao: string): EstadoProposta {
   const t = situacao.toLowerCase();
@@ -26,6 +26,9 @@ function mapSituacao(situacao: string): EstadoProposta {
   if (t.includes("recus") || t.includes("reprov") || t.includes("rejeit") || t.includes("negad")) return "recusada";
   if (t.includes("suspens")) return "cancelada";
   if (t.includes("expir")) return "expirada";
+  // Falha em folha: averbadora reportou falha, aguardando banco decidir.
+  // Vai pro Historico (nao mais em andamento) — servidor ve o motivo.
+  if (t.includes("falha em folha")) return "falha_em_folha";
   // "Em cobranca direta" = servidor foi desligado (F6). Contrato existe mas
   // saiu da folha; banco cobra direto. Deve aparecer com etapas completas
   // ate averbacao + marker vermelho na etapa final.
@@ -66,6 +69,7 @@ const ESTADO_LABEL: Record<EstadoProposta, string> = {
   cancelada: "Cancelada",
   liberada: "Averbada — virou contrato",
   desligada: "Encerrado — cobrança direta com o banco",
+  falha_em_folha: "Falha em folha — aguardando decisão do banco",
 };
 
 /** Rotulo do produto no card do contrato. Usa tipoContrato + tipoMargem do
@@ -90,7 +94,7 @@ function produtoContratoLabel(c: { tipoContrato?: string; tipoMargem?: string; b
 
 function estadoPillVariant(e: EstadoProposta): "aceita" | "pendente" | "expirado" | "averbado" {
   if (e === "liberada") return "averbado";
-  if (e === "recusada" || e === "expirada" || e === "cancelada") return "expirado";
+  if (e === "recusada" || e === "expirada" || e === "cancelada" || e === "falha_em_folha" || e === "desligada") return "expirado";
   if (e === "aprovada" || e === "aguardando_formalizacao") return "aceita";
   return "pendente";
 }
@@ -102,7 +106,7 @@ function ehEmAndamento(estado: EstadoProposta): boolean {
 
 /** Proposta que terminou negativa — vai pro Historico. */
 function ehHistoricoProposta(estado: EstadoProposta): boolean {
-  return estado === "recusada" || estado === "expirada" || estado === "cancelada" || estado === "desligada";
+  return estado === "recusada" || estado === "expirada" || estado === "cancelada" || estado === "desligada" || estado === "falha_em_folha";
 }
 
 /** Converte "DD/MM/YYYY" (formato do backend) em "YYYY-MM-DD" pra comparar
@@ -174,6 +178,8 @@ export function ServidorContratos() {
       criadoEmIso: p.criado_em_iso ?? null,
       // Vem do backend quando existir — usado pra rotular o produto no card.
       tipoContrato: p.tipoContrato,
+      // Motivo da falha em folha (quando aplicavel) — mostrado no card do Historico.
+      folhaMotivo: p.folhaMotivo,
     }));
   }, [propostasQ.data]);
 
@@ -347,6 +353,23 @@ export function ServidorContratos() {
                   <KV label="Parcelas" v={`${p.parcelas}x de ${fmtBRL(p.parcela)}`} />
                   <KV label="Taxa a.m." v={`${p.taxaAm.toFixed(2)}%`} />
                 </div>
+                {/* Motivo da falha em folha — mostrado destacado no Historico
+                    quando averbadora reportou falha na ADF. */}
+                {(p.estado === "falha_em_folha" || p.estado === "desligada") && p.folhaMotivo ? (
+                  <div style={{
+                    marginTop: 12, padding: "10px 12px", borderRadius: 8,
+                    background: "color-mix(in srgb, var(--danger-500) 8%, transparent)",
+                    border: "1px solid color-mix(in srgb, var(--danger-500) 30%, transparent)",
+                    fontSize: 13, color: "var(--text)",
+                  }}>
+                    <b style={{ color: "var(--danger-500)" }}>Motivo:</b> {p.folhaMotivo}
+                    {p.estado === "falha_em_folha" ? (
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>
+                        Sua margem foi liberada. O banco vai decidir se reenvia, cancela ou cobra direto.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {/* Mesma linha de progresso — pinta em vermelho onde parou. */}
                 <ProgressoProposta estado={p.estado} />
               </Card>
@@ -463,24 +486,27 @@ const ETAPAS_BASE = [
  *  - `atual`: indice (0..4) da etapa em curso.
  *  - `falha`: quando true, a etapa atual vira vermelha e as demais ficam cinza.
  *  - `labelEtapa2`: sobrescreve o label da etapa 2 quando o estado terminou negativo. */
-function estadoParaEtapa(estado: EstadoProposta): { atual: number; falha: boolean; labelEtapa2?: string; labelEtapaFinal?: string } {
+function estadoParaEtapa(estado: EstadoProposta): { atual: number; falha: boolean; labelEtapaAtual?: string } {
   if (estado === "em_analise") return { atual: 1, falha: false };
   if (estado === "aprovada" || estado === "aguardando_formalizacao") return { atual: 2, falha: false };
   if (estado === "liberada") return { atual: 4, falha: false };
-  if (estado === "recusada") return { atual: 1, falha: true, labelEtapa2: "Recusada pelo banco" };
-  if (estado === "expirada") return { atual: 1, falha: true, labelEtapa2: "Expirada" };
-  if (estado === "cancelada") return { atual: 1, falha: true, labelEtapa2: "Cancelada" };
+  if (estado === "recusada") return { atual: 1, falha: true, labelEtapaAtual: "Recusada pelo banco" };
+  if (estado === "expirada") return { atual: 1, falha: true, labelEtapaAtual: "Expirada" };
+  if (estado === "cancelada") return { atual: 1, falha: true, labelEtapaAtual: "Cancelada" };
   // Desligado: passou por todas as etapas (foi averbado) mas o servidor saiu
   // da prefeitura. Mostra etapa final vermelha com label especifico.
-  if (estado === "desligada") return { atual: 4, falha: true, labelEtapaFinal: "Encerrado por desligamento" };
+  if (estado === "desligada") return { atual: 4, falha: true, labelEtapaAtual: "Encerrado por desligamento" };
+  // Falha em folha: averbadora tentou aplicar mas rejeitou; aguardando banco decidir.
+  // Chegou ate a etapa 3 (ADF averbadora) mas falhou nela.
+  if (estado === "falha_em_folha") return { atual: 3, falha: true, labelEtapaAtual: "Falha — banco vai decidir" };
   return { atual: 0, falha: false };
 }
 
 function ProgressoProposta({ estado }: { estado: EstadoProposta }) {
-  const { atual, falha, labelEtapa2, labelEtapaFinal } = estadoParaEtapa(estado);
+  const { atual, falha, labelEtapaAtual } = estadoParaEtapa(estado);
   const labels = [...ETAPAS_BASE] as string[];
-  if (labelEtapa2) labels[1] = labelEtapa2;
-  if (labelEtapaFinal) labels[4] = labelEtapaFinal;
+  // Substitui o label da etapa "atual" quando ha customizacao (falhas + finais).
+  if (labelEtapaAtual) labels[atual] = labelEtapaAtual;
 
   return (
     <div style={{ marginTop: 16 }}>
