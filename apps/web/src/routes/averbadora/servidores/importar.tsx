@@ -4,6 +4,7 @@ import { Button, SelectField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import type { CsvImportOutcome, ServidorCampoConfig, ServidorCamposConfig } from "@atlas/sdk";
 import { CamposEditor } from "./_camposEditor";
+import { DEFAULT_CAMPOS_FALLBACK } from "./_defaults";
 
 /** Detecta se os headers do CSV batem com pelo menos os travados (cpf/matricula/email).
  *  Suficiente pra rejeitar arquivo em formato completamente estranho antes de
@@ -30,16 +31,22 @@ export function AdminServidoresImportar() {
 
   // Rascunho local pra o editor: comeca com o que veio do backend, marca dirty
   // ao editar. Salvar envia pro backend + reset do dirty.
+  // Fallback: se o endpoint /campos-config nao existe (backend antigo) ou
+  // falhou, cai no default local pra tela nao ficar em "Carregando..." pra
+  // sempre. Save vai falhar ate API deployar, mas UI segue interativa.
   const [rascunho, setRascunho] = useState<ServidorCampoConfig[] | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const configIndisponivel = configQ.isError;
   useEffect(() => {
+    if (!prefId) { setRascunho(null); setSavedAt(null); return; }
     if (configQ.data?.config?.campos) {
       setRascunho(configQ.data.config.campos);
       setSavedAt(configQ.data.config.atualizadoEm ?? null);
-    } else {
-      setRascunho(null);
+    } else if (configQ.isError) {
+      setRascunho(DEFAULT_CAMPOS_FALLBACK);
+      setSavedAt(null);
     }
-  }, [configQ.data?.config?.atualizadoEm]);
+  }, [prefId, configQ.data?.config?.atualizadoEm, configQ.isError]);
   const dirty = useMemo(() => {
     if (!rascunho || !configQ.data?.config?.campos) return false;
     return JSON.stringify(rascunho) !== JSON.stringify(configQ.data.config.campos);
@@ -138,12 +145,21 @@ export function AdminServidoresImportar() {
         <div style={{ padding: 36, textAlign: "center", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 12 }}>
           Selecione uma prefeitura acima para configurar os campos e importar servidores.
         </div>
-      ) : configQ.isLoading || !rascunho ? (
+      ) : configQ.isLoading && !rascunho ? (
         <div style={{ padding: 36, textAlign: "center", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 12 }}>
           Carregando configuração da prefeitura…
         </div>
+      ) : !rascunho ? (
+        <div style={{ padding: 36, textAlign: "center", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 12 }}>
+          Não foi possível carregar a configuração.
+        </div>
       ) : (
         <>
+          {configIndisponivel ? (
+            <div style={{ padding: 12, borderRadius: 10, border: "1px solid var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 12%, transparent)", fontSize: 13 }}>
+              ⚠ Endpoint de configuração indisponível (backend ainda não deployado). Mostrando campos padrão — alterações não serão persistidas até o deploy da API.
+            </div>
+          ) : null}
           <CamposEditor
             campos={rascunho}
             onChange={setRascunho}
