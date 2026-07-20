@@ -133,7 +133,7 @@ export function ServidorBeneficios() {
         </div>
       </header>
 
-      <TelemedicinaBanner beneficios={beneficiosQ.data?.beneficios ?? []} />
+      <TelemedicinaCard matricula={info?.matricula} />
 
       {/* Parceiros comerciais */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -370,49 +370,97 @@ function Stat({ label, value, accent, muted }: { label: string; value: string; a
   );
 }
 
-/** Banner destacado de Telemedicina — aparece no topo da aba Beneficios,
- *  linkando pra pagina exclusiva. Mostra a duracao minima de contratacao
- *  (definida pela averbadora — telemedicina padrao = 12 meses). */
-function TelemedicinaBanner({ beneficios }: { beneficios: ServidorBeneficio[] }) {
+/** Card de Telemedicina — sempre visivel em /servidor/beneficios (independe
+ *  de admin ter cadastrado um beneficio de telemedicina). 3 estados:
+ *   - Plano Ativo: barra de progresso + "faltam X meses" (como card contrato)
+ *   - Cotacao pendente: "Aguardando contato da equipe"
+ *   - Sem cotacao: botao Solicitar Cotacao (leva pra /servidor/saude que
+ *     tem o fluxo completo com termo de aceite). */
+function TelemedicinaCard({ matricula: _matricula }: { matricula?: string }) {
   const nav = useNavigate();
-  const telemedicinas = beneficios.filter((b) => b.categorias.includes("telemedicina"));
-  if (telemedicinas.length === 0) return null;
-  // Pega o maior compromisso minimo entre os beneficios de telemedicina — o mais
-  // conservador que o servidor pode aceitar. Default 12 meses (regra de negocio).
-  const duracaoMinima = Math.max(
-    12,
-    ...telemedicinas.map((b) => (b as ServidorBeneficio & { duracaoMinimaMeses?: number }).duracaoMinimaMeses ?? 0),
-  );
+  const q = useQuery({
+    queryKey: ["servidor", "telemedicina", "minhas-cotacoes"],
+    queryFn: () => atlas.servidor.minhasCotacoesTelemedicina(),
+    refetchOnWindowFocus: true,
+  });
+  const cotacoes = q.data?.cotacoes ?? [];
+  const pendente = cotacoes.some((c) => c.situacao === "nova" || c.situacao === "contatado");
+  const ativo = cotacoes.find((c) => c.situacao === "fechado");
+  const plano = ativo?.ativadoEm ? (() => {
+    const ini = new Date(ativo.ativadoEm as string).getTime();
+    const fim = ini + 12 * 30 * 24 * 3600 * 1000;
+    const agora = Date.now();
+    return {
+      pct: Math.max(0, Math.min(1, (agora - ini) / (fim - ini))),
+      restante: Math.max(0, Math.ceil((fim - agora) / (30 * 24 * 3600 * 1000))),
+    };
+  })() : null;
+
   return (
-    <button
-      type="button"
-      onClick={() => nav("/servidor/saude")}
-      style={{
-        background: "linear-gradient(135deg, var(--accent) 0%, var(--gold-500) 100%)",
-        border: "none",
-        borderRadius: 14,
-        padding: 20,
-        display: "flex",
-        alignItems: "center",
-        gap: 16,
-        cursor: "pointer",
-        boxShadow: "var(--shadow-md)",
-        color: "white",
-        textAlign: "left",
-        width: "100%",
-      }}
-    >
-      <div style={{ fontSize: 42 }}>📱</div>
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 12, letterSpacing: "0.08em", fontWeight: 700, opacity: 0.9, textTransform: "uppercase" }}>
-          Benefício Atlas
+    <article style={{
+      background: "linear-gradient(120deg, var(--emerald-600, #059669), var(--emerald-500))",
+      borderRadius: 16, padding: 22,
+      display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap",
+      color: "white", boxShadow: "0 4px 14px rgba(16,185,129,.25)",
+    }}>
+      <div style={{
+        width: 62, height: 62, borderRadius: 14,
+        background: "rgba(255,255,255,.16)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 30, flexShrink: 0,
+      }}>🩺</div>
+      <div style={{ flex: 1, minWidth: 260 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".08em", opacity: 0.85, textTransform: "uppercase" }}>
+          Benefício exclusivo · Servidor
         </div>
-        <div style={{ fontSize: 20, fontWeight: 800, marginTop: 2 }}>Telemedicina 24h grátis</div>
+        <div style={{ fontSize: "1.35rem", fontWeight: 800, marginTop: 2 }}>Telemedicina Gratuita</div>
         <div style={{ fontSize: 13, opacity: 0.92, marginTop: 4 }}>
-          Consultas online com médicos parceiros. Compromisso mínimo de <b>{duracaoMinima} meses</b>.
+          Consultas online 24h · Clínico Geral, Pediatria, Psicologia, Nutrição
         </div>
       </div>
-      <div style={{ fontSize: 22, fontWeight: 800 }}>→</div>
-    </button>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+        <span style={{
+          fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999,
+          background: "rgba(255,255,255,.2)", color: "white",
+          border: "1px solid rgba(255,255,255,.3)",
+        }}>
+          Plano mínimo de 12 meses
+        </span>
+        {plano ? (
+          <div style={{ background: "rgba(255,255,255,.18)", borderRadius: 10, padding: 14, minWidth: 240 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 800 }}>
+              <span>✓ Plano Ativo</span>
+              <span>faltam {plano.restante} {plano.restante === 1 ? "mês" : "meses"}</span>
+            </div>
+            <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,.25)", overflow: "hidden", marginTop: 8 }}>
+              <div style={{ width: `${plano.pct * 100}%`, height: "100%", background: "white" }} />
+            </div>
+            <div style={{ fontSize: 11, opacity: 0.85, marginTop: 6 }}>
+              Plano de 12 meses · {Math.round(plano.pct * 100)}% concluído
+            </div>
+          </div>
+        ) : pendente ? (
+          <span style={{
+            padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+            background: "rgba(255,255,255,.18)", color: "white", textAlign: "center", maxWidth: 280,
+          }}>
+            Cotação em análise. Em breve, a equipe da Atlas entrará em contato.
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => nav("/servidor/saude")}
+            style={{
+              padding: "10px 18px", borderRadius: 10,
+              background: "white", color: "var(--emerald-600, #059669)",
+              fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer",
+              boxShadow: "0 2px 8px rgba(0,0,0,.15)",
+            }}
+          >
+            Solicitar Cotação
+          </button>
+        )}
+      </div>
+    </article>
   );
 }
