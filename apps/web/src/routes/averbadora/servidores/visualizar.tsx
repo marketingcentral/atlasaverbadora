@@ -13,6 +13,23 @@ const fmtCpf = (cpf: string) => {
   return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : (cpf || "—");
 };
 
+/** Fallback usado enquanto o endpoint /campos-config nao esta deployado ou falha.
+ *  Mesma lista de campos built-in que o backend usa como default. */
+const DEFAULT_CAMPOS_FALLBACK: ServidorCampoConfig[] = [
+  { key: "nome", label: "Nome", tipo: "texto", visivel: true, obrigatorio: true, ordem: 0, sistema: true, travado: true },
+  { key: "matricula", label: "Matrícula", tipo: "texto", visivel: true, obrigatorio: true, ordem: 1, sistema: true, travado: true },
+  { key: "cpf", label: "CPF", tipo: "texto", visivel: true, obrigatorio: true, ordem: 2, sistema: true, travado: true },
+  { key: "cargo", label: "Cargo", tipo: "texto", visivel: true, obrigatorio: false, ordem: 3, sistema: true },
+  { key: "origem", label: "Origem", tipo: "texto", visivel: true, obrigatorio: false, ordem: 4, sistema: true },
+  { key: "vinculo", label: "Vínculo", tipo: "texto", visivel: true, obrigatorio: false, ordem: 5, sistema: true },
+  { key: "situacaoFuncional", label: "Situação funcional", tipo: "texto", visivel: true, obrigatorio: false, ordem: 6, sistema: true },
+  { key: "salarioLiquido", label: "Salário líq.", tipo: "moeda", visivel: true, obrigatorio: false, ordem: 7, sistema: true },
+  { key: "idConvenio", label: "Convênio", tipo: "texto", visivel: true, obrigatorio: false, ordem: 8, sistema: true },
+  { key: "email", label: "E-mail", tipo: "email", visivel: true, obrigatorio: true, ordem: 9, sistema: true, travado: true },
+  { key: "telefone", label: "Telefone", tipo: "telefone", visivel: true, obrigatorio: false, ordem: 10, sistema: true },
+  { key: "status", label: "Status", tipo: "texto", visivel: true, obrigatorio: false, ordem: 11, sistema: true },
+];
+
 /** Extrai o valor de um servidor pra qualquer key (built-in ou custom). */
 function getValor(s: AdminServidor, key: string): string | number | null | undefined {
   if (key === "cpf") return s.cpf;
@@ -92,10 +109,16 @@ export function AdminServidoresVisualizar() {
 
   const columns: Column<AdminServidor>[] = useMemo(() => {
     const config = configQ.data?.config;
-    if (!config) return [];
+    // Fallback: se o endpoint de config nao existe ainda (backend nao deployado)
+    // ou falhou, monta colunas built-in default equivalentes ao antigo servidores.tsx.
+    // Assim a tela nao aparece em branco enquanto a API nao tem os novos endpoints.
+    if (!config) {
+      return DEFAULT_CAMPOS_FALLBACK
+        .map((c) => campoParaColuna(c, setEditing))
+        .concat([{ key: "acoes", header: "", render: (s) => <IconButton title="Editar" onClick={() => setEditing(s)}>✎</IconButton> }]);
+    }
     const visiveis = config.campos.filter((c) => c.visivel).sort((a, b) => a.ordem - b.ordem);
     const cols = visiveis.map((c) => campoParaColuna(c, setEditing));
-    // Coluna de acao sempre no fim.
     cols.push({ key: "acoes", header: "", render: (s) => <IconButton title="Editar" onClick={() => setEditing(s)}>✎</IconButton> });
     return cols;
   }, [configQ.data?.config]);
