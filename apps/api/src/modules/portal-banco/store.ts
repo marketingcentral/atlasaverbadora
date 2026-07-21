@@ -666,6 +666,14 @@ export function aplicarAcao(
       break;
     case "cancelar":
       para = "Cancelado";
+      // Cancela a ADF na folha tambem. Antes: se o contrato ja estava averbado
+      // (folhaStatus="aplicada") e o admin cancelava, a situacao virava
+      // "Cancelado" mas folhaStatus continuava "aplicada" — averbadora via
+      // "CANCELADO | APLICADA" na mesma linha, contradicao visivel.
+      // Semantica: cancelamento zera a folha; se o desconto ja rodou em folha
+      // anterior, o rastro fica nos eventos (linha ~694+).
+      c.folhaStatus = undefined;
+      c.folhaMotivo = motivo;
       break;
     case "alongar":
       if (extra && typeof extra.parcelasExtras === "number" && extra.parcelasExtras > 0) {
