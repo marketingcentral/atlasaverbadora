@@ -935,6 +935,28 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
     const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxaAm });
     await refreshContratos(c.env); // sincroniza o contador de adf entre isolates antes de criar
+    // Bloqueia se JA HA proposta/reserva EM ANALISE ocupando a margem do bucket
+    // EMPRESTIMO. Antes o servidor conseguia criar 2, 3 propostas empilhadas
+    // (uma REFIN de portabilidade + uma de emprestimo novo + etc), o que
+    // resultava em duplo comprometimento e propostas duplicadas no card do
+    // banco. Regra: 1 proposta por vez do MESMO bucket. Passou a averbacao
+    // (Ativo/Averbado), pode pedir outra em cima do saldo restante.
+    const emAnalise = listContratos({ matricula: entry.matricula })
+      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
+      .find((ct) => {
+        const s = (ct.situacao ?? "").toLowerCase();
+        // "em analise" = qualquer estado ANTES de virar contrato averbado.
+        // Ativo/Averbado nao sao "em analise" — ja consumiram margem, mas o
+        // servidor pode pedir mais em cima do que sobra.
+        return s.includes("aguard") || s.includes("aprov") || s.includes("formaliz") || s.includes("em analise") || s.includes("em análise");
+      });
+    if (emAnalise) {
+      throw new HttpError(
+        422,
+        "proposta_em_andamento",
+        `Voce ja tem uma proposta em analise (ADF ${emAnalise.adf}). Aguarde a conclusao (ou cancele) antes de solicitar outra.`,
+      );
+    }
     // SEGURANÇA (server-side): a parcela nunca pode exceder a margem consignável
     // disponível da matrícula. O cliente já limita o valor, mas o backend é a fonte
     // de verdade — sem isto, uma chamada adulterada criaria empréstimo acima da margem.
