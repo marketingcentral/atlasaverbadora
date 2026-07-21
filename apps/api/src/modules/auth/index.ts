@@ -159,8 +159,11 @@ async function resolvePrefeituraByCredentials(
  * Replace with real DB-backed lookup + Argon2 comparison once `users` is populated.
  */
 const DEV_USERS: DevUser[] = [
-  { id: 1, identifier: "00011122233", password: "teste123", role: "servidor", nome: "ADRIANA MARQUES DA SILVA", servidor_id: 1, cpf: "00011122233", email: "adriana.silva@palhoca.sc.gov.br" },
-  { id: 2, identifier: "00011122234", password: "teste123", role: "servidor", nome: "FERNANDA KELLI TOMAZONI", servidor_id: 2, cpf: "00011122234", email: "fernanda.tomazoni@floripa.sc.gov.br" },
+  // Dev-users de SERVIDOR removidos (21/07/2026 — cliente). Antes: Adriana
+  // (00011122233) e Fernanda (00011122234) logavam sempre via fallback,
+  // mesmo apos serem "excluidas" do cadastro real. Regra: CPF que nao existe
+  // como servidor cadastrado NAO tem acesso — nem via demo. Pra testar,
+  // cadastrar via import CSV em /averbadora/servidores/importar.
   { id: 100, identifier: "banco@atlas.test", password: "teste123", role: "banco", nome: "Operador Banco SCred", banco_id: 1 },
   { id: 200, identifier: "admin@atlas.test", password: "teste123", role: "averbadora", nome: "Admin Atlas" },
   { id: 300, identifier: "prefeitura@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Palhoca", prefeitura_id: 1 },
