@@ -914,12 +914,11 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
         default: return `Exemplo ${idx + 1}`;
       }
     };
-    const linhas = [0, 1].slice(0, Math.max(1, convs.length)).map((idx) => {
-      const row: Record<string, string> = {};
-      for (const f of camposVisiveis) row[csvHeader(f.key)] = placeholderFor(f.key, f.tipo, idx);
-      return row;
-    });
-    return csvResponse("servidores-exemplo.csv", buildCsv(headers, linhas));
+    // Cliente pediu 21/07/2026: baixar so o cabecalho, sem linhas de exemplo
+    // pra evitar que operador esqueca de deletar e importe dados fake.
+    // placeholderFor mantido pra retrocompat/debug; nao chamamos mais.
+    void placeholderFor; void convs;
+    return csvResponse("servidores-exemplo.csv", buildCsv(headers, []));
   });
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims; trace_id: string } }>()
