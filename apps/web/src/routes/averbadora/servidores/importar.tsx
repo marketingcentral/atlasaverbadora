@@ -37,6 +37,15 @@ export function AdminServidoresImportar() {
   const [rascunho, setRascunho] = useState<ServidorCampoConfig[] | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const configIndisponivel = configQ.isError;
+  // Ao trocar de prefeitura, limpa o rascunho IMEDIATO — senao a UI mostra a
+  // config da prefeitura anterior enquanto o novo fetch nao chega (cliente
+  // reportou 21/07/2026: "estava em capistrano com preset, mudei pra guarulhos
+  // e apareceu o preset de capistrano"). Reset separado por prefId; effect
+  // abaixo popula quando os dados novos chegarem.
+  useEffect(() => {
+    setRascunho(null);
+    setSavedAt(null);
+  }, [prefId]);
   useEffect(() => {
     if (!prefId) { setRascunho(null); setSavedAt(null); return; }
     if (configQ.data?.config?.campos) {
