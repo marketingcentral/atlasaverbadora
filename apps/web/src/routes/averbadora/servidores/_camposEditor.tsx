@@ -44,8 +44,17 @@ export function CamposEditor({
   const [novoTipo, setNovoTipo] = useState<ServidorCampoTipo>("texto");
 
   const updateCampo = (idx: number, patch: Partial<ServidorCampoConfig>) => {
-    const next = campos.slice();
-    next[idx] = { ...next[idx]!, ...patch };
+    const c = campos[idx];
+    if (!c) return;
+    let next = campos.slice();
+    next[idx] = { ...c, ...patch };
+    // Regra 21/07/2026: ativar visivel de um custom -> desmarca AUTOMATICAMENTE
+    // visivel+obrigatorio de TODOS os sistema (menos travados cpf/matricula).
+    // Desativar visivel do custom nao remarca automaticamente — user faz manual
+    // (nao ha "estado anterior" pra restaurar sem ambiguidade).
+    if (!c.sistema && patch.visivel === true) {
+      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
+    }
     onChange(next);
   };
 
@@ -71,15 +80,18 @@ export function CamposEditor({
     // Clicar em "+ Adicionar" = commit da alteracao. Anexa custom + persiste
     // com TODAS as alteracoes pendentes (labels/visivel/obrigatorio) num call
     // so. Sem auto-save entre cliques (cliente pediu 21/07/2026).
+    // Regra: novo custom com visivel:true -> desmarca visivel/obrigatorio
+    // de todos os sistema (menos travados). Mesmo padrao do toggle manual.
+    const semSistemaAtivo = campos.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
     const nextCampos: ServidorCampoConfig[] = [
-      ...campos,
+      ...semSistemaAtivo,
       {
         key,
         label: novoNome.trim(),
         tipo: novoTipo,
         obrigatorio: false,
         visivel: true,
-        ordem: campos.length,
+        ordem: semSistemaAtivo.length,
         sistema: false,
       },
     ];
