@@ -2475,6 +2475,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         ccbAnexadoEm: ct.ccbAnexadoEm,
       };
     });
+    // Mais novos no topo — mesmo padrao de /prefeitura/contratos (cliente
+    // pediu 21/07/2026). Usa `atualizadoEm` que ja tem o timestamp mais
+    // recente do contrato (evento -> ccb -> criadoEmIso -> lancamento).
+    contratos.sort((a, b) => (b.atualizadoEm ?? "").localeCompare(a.atualizadoEm ?? ""));
     return c.json({ contratos, total: contratos.length });
   })
   // Diagnostico: descarta a CCB anexada (limpa ccbKey no contrato + apaga o

@@ -458,6 +458,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // ficariam sorteados por lancamento (data BR do contrato original), o que
     // e uma proxy ruim de "novidade".
     const contratosBase = [...outrosConvenios, ...rows];
+    // Parseia DD/MM/YYYY -> ISO 00:00 pra fallback do atualizadoEm sem
+    // introduzir `new Date()` que muda a cada request (bug corrigido no
+    // admin/contratos, replicado aqui). Ordem de precedencia:
+    //   1) evento mais recente  2) ccb anexada  3) criadoEmIso  4) lancamento ISO
+    const parseLanc = (s: string): string | undefined => {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s ?? "");
+      return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : undefined;
+    };
     const contratos = contratosBase.map((ct) => {
       const eventos = getContratoEventos(ct.adf);
       const ultimo = eventos.length > 0 ? eventos[eventos.length - 1]?.criadoEm : undefined;
@@ -468,13 +476,16 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
       return {
         ...ct,
-        atualizadoEm: ultimo ?? new Date().toISOString(),
+        atualizadoEm: ultimo ?? ct.ccbAnexadoEm ?? ct.criadoEmIso ?? parseLanc(ct.lancamento) ?? "",
         telefoneServidor: srv?.telefone,
         ccbKey: ct.ccbKey,
         ccbAnexadoEm: ct.ccbAnexadoEm,
         ccbHistorico: ct.ccbHistorico,
       };
     });
+    // Mais novos no topo (cliente pediu 21/07/2026 — mesmo padrao de
+    // /prefeitura/contratos e /admin/contratos).
+    contratos.sort((a, b) => (b.atualizadoEm ?? "").localeCompare(a.atualizadoEm ?? ""));
     return c.json({ contratos, total: contratos.length });
   })
 
