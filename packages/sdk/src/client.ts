@@ -1658,7 +1658,13 @@ export class AtlasClient {
       this.request<{
         convenioId: string;
         meses: { competencia: string; contratos: number; valorFinanciado: number; comissaoEstimada: number }[];
+        pctComissao: number;
       }>("/v1/portal/banco/relatorios/faturamento"),
+
+    // Bate de carteira mensal (escopado ao banco logado — jwt.banco_id).
+    // Substitui o baterCarteira() client-side que era pseudo-random.
+    bateCarteira: (body: { competencia: string; prefeituraId?: number }) =>
+      this.request<AdminBateCarteiraResultado>("/v1/portal/banco/bate-carteira", { method: "POST", body }),
 
     // ===== Ofertas de credito (banco -> servidores) =====
     ofertas: {
