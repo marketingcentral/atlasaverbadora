@@ -201,19 +201,10 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     // (nao apenas ensureServidoresLoaded) pra pegar mutacoes de outros isolates —
     // ex.: F6 marca situacaoFuncional="DESLIGADO", auth precisa ver isso pra
     // bloquear login em qualquer isolate.
-    //
-    // TIMEOUT DE 3s (unico, PARALELO): se PG/Hyperdrive pendurar, autenticar com
-    // dado em memoria (isolate quente ou DEV_USERS) e' melhor que rejeitar por
-    // lentidao de infra. Antes eram dois timeouts sequenciais de 5s (= 10s no
-    // pior caso) + 6s do middleware = 16s ate o login responder. Agora paralelo:
-    // 3s total. Cai no fallback DEV_USERS se der timeout, entao servidor de teste
-    // continua entrando mesmo com PG fora.
-    const withTimeout = <T,>(p: Promise<T>, ms: number): Promise<T | undefined> =>
-      Promise.race([p, new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), ms))]);
-    await withTimeout(
-      Promise.all([refreshServidores(c.env), ensurePerfisLoaded(c.env)]),
-      3_000,
-    );
+    await refreshServidores(c.env);
+    // Perfis da averbadora tambem sao persistidos (admin_perfis) — hidrata antes
+    // de tentar resolver senao Carla/Rafael/Sandra/etc ficariam invisiveis.
+    await ensurePerfisLoaded(c.env);
 
     // 1) Servidor cadastrado via averbadora (login = CPF) com senha SHA-256.
     const servidorAuth = await resolveServidorByCredentials(body.identifier, body.password);

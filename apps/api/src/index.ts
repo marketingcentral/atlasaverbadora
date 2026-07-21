@@ -44,16 +44,9 @@ app.route("/", prefeituraPublicRoutes);
 app.use("/v1/*", rateLimit({ scope: "global", max: 600, perSeconds: 60 }));
 // Hidrata os stores persistidos (bancos) do Postgres uma vez por isolate. Fail-safe:
 // se o banco estiver indisponível, segue com as fixtures em memória.
-//
-// TIMEOUT DE 6s: as ensureXxxLoaded usam _hydrationPromise cached. Se a promise
-// PENDURAR (Hyperdrive/PG que aceita conexao mas nao responde — nao e erro, so
-// nunca resolve), o try/catch interno nao pega, e TODA request /v1/* subsequente
-// fica travada aguardando a mesma promise morta. Race com timeout garante que
-// o middleware sempre avanca; a proxima request tenta hidratar de novo (sem
-// _hydrationPromise cached — invalidamos abaixo).
 app.use("/v1/*", async (c, next) => {
   // ensureServidoresLoaded encadeia prefeituras (FK) antes de servidores.
-  const hydrate = Promise.all([
+  await Promise.all([
     ensureBancosLoaded(c.env).catch(() => undefined),
     ensureServidoresLoaded(c.env).catch(() => undefined),
     ensurePerfisLoaded(c.env).catch(() => undefined),
@@ -61,8 +54,6 @@ app.use("/v1/*", async (c, next) => {
     ensureTombamentoLoaded(c.env).catch(() => undefined),
     ensureContratosLoaded(c.env).catch(() => undefined),
   ]);
-  const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 3_000));
-  await Promise.race([hydrate, timeout]);
   await next();
 });
 app.route("/", authRoutes);
