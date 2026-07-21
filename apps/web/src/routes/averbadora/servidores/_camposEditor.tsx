@@ -92,7 +92,16 @@ export function CamposEditor({
   const removeCampo = (idx: number) => {
     const c = campos[idx];
     if (!c || c.sistema || c.travado) return;
-    const next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
+    let next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
+    // Regra bidirecional (cliente 21/07/2026): excluir um preset custom
+    // segue a mesma logica de desmarcar visivel — se nao sobrar nenhum
+    // custom visivel, re-marca sistema visivel:true (menos travados).
+    if (c.visivel) {
+      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
+      if (!aindaTemCustomVisivel) {
+        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
+      }
+    }
     onChange(next);
   };
 
