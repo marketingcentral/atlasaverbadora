@@ -749,6 +749,20 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // andamento" com passo a passo). Trava margem de EMPRESTIMO enquanto
     // averbadora nao decide — servidor nao pode pedir consignado em paralelo.
     await refreshContratos(c.env);
+    // Bloqueia se ja ha proposta/contrato de EMPRESTIMO ocupando a margem: o
+    // plano de Telemedicina desconta da mesma margem consignavel, entao pedir
+    // cotacao com um emprestimo em analise geraria duplo comprometimento. O
+    // fluxo reciproco (bloquear emprestimo com telemedicina em analise) ja
+    // existe via comprometeMargem no POST /me/propostas.
+    const emprestimoAtivo = listContratos({ matricula: entryAtivo.matricula })
+      .some((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO");
+    if (emprestimoAtivo) {
+      throw new HttpError(
+        422,
+        "emprestimo_em_andamento",
+        "Voce tem um emprestimo em analise que ocupa sua margem consignavel. Aguarde a conclusao (ou cancele) antes de solicitar Telemedicina — o plano desconta da mesma margem.",
+      );
+    }
     const reserva = criarContratoOuReserva({
       bancoId: conv?.bancoId ?? 1,
       servidorId: s.id,
