@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Pill } from "@atlas/ui/web";
 import {
   ContratoElegivelMock as ContratoElegivel,
@@ -100,31 +100,85 @@ export function ServidorPortabilidade() {
     nav(`/servidor/termo?${params.toString()}`);
   }
 
+  // Bloqueio: se ja ha proposta em analise (emprestimo/portabilidade/refin/
+  // telemedicina), o servidor NAO pode iniciar outra — a margem ja esta
+  // travada. O backend rejeita com 422 proposta_em_andamento; aqui na UI
+  // e' pra o servidor ver antes de perder tempo selecionando contratos.
+  // refetchInterval de 10s pra desbloquear rapido quando o banco decide.
+  const propostasQ = useQuery({
+    queryKey: ["servidor", "propostas", info?.matricula ?? "all"],
+    queryFn: () => atlas.servidor.propostas(info?.matricula),
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+  const propostaBloqueadora = (propostasQ.data?.propostas ?? []).find((p) => {
+    // Whitelist EXPLICITA (mesma logica do backend em POST /me/propostas):
+    // proposta esta "em analise" se aguard/aprov/formaliz/em analise. Ativo
+    // ou Averbado significa que ja passou pra contrato — nao bloqueia mais.
+    // Nao dava pra usar blacklist (t.includes("averb")) porque "aguardando
+    // averbacao" tambem contem "averb".
+    const t = p.situacao.toLowerCase();
+    return t.includes("aguard") || t.startsWith("aprov") || t.includes("formaliz") || t.includes("em analise") || t.includes("em análise");
+  });
+
+  const voltarBtn = (
+    <button
+      type="button"
+      onClick={() => nav("/servidor/marketplace/portabilidade")}
+      style={{
+        alignSelf: "flex-start",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 12px",
+        borderRadius: 999,
+        border: "1px solid var(--border)",
+        background: "transparent",
+        color: "var(--text-muted)",
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+    >
+      ← Voltar ao MarketPlace
+    </button>
+  );
+
+  // Estado bloqueado: proposta em analise ocupa margem. Servidor precisa
+  // aguardar decisao (banco aprovar/recusar) OU cancelar em /servidor/contratos
+  // antes de solicitar outra.
+  if (propostaBloqueadora) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {voltarBtn}
+        <Card style={{ borderColor: "var(--gold-500)", padding: 28, textAlign: "center" }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: "50%",
+            background: "color-mix(in srgb, var(--gold-500) 20%, transparent)",
+            color: "var(--gold-500)", display: "grid", placeItems: "center",
+            fontSize: 26, margin: "0 auto 12px",
+          }}>
+            🔒
+          </div>
+          <h2 style={{ margin: "0 0 6px", fontSize: "1.35rem" }}>Você tem uma proposta em andamento</h2>
+          <p style={{ color: "var(--text-muted)", margin: "0 auto", maxWidth: 520, lineHeight: 1.5 }}>
+            A proposta <b style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{propostaBloqueadora.id}</b> ({propostaBloqueadora.banco}) está aguardando decisão do banco e ocupa sua margem consignável.
+            Aguarde a resposta ou cancele antes de solicitar uma nova portabilidade.
+          </p>
+          <div style={{ marginTop: 20, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <Button onClick={() => nav("/servidor/contratos")}>Acompanhar proposta →</Button>
+            <Button variant="ghost" onClick={() => nav("/servidor/dashboard")}>Voltar ao início</Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <MarketplaceBlock />
-      <button
-        type="button"
-        onClick={() => nav("/servidor/marketplace/portabilidade")}
-        style={{
-          alignSelf: "flex-start",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "6px 12px",
-          borderRadius: 999,
-          border: "1px solid var(--border)",
-          background: "transparent",
-          color: "var(--text-muted)",
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
-      >
-        ← Voltar ao MarketPlace
-      </button>
+      {voltarBtn}
 
       <header>
         <span className="eyebrow">
@@ -296,104 +350,3 @@ function KV({ label, v, accent, muted }: { label: string; v: string; accent?: bo
   );
 }
 
-
-// Marketplace de portabilidade: publica intencao a partir de um contrato
-// ativo (dados vem da averbadora automaticamente). Depois bancos ofertam.
-function MarketplaceBlock() {
-  const qc = useQueryClient();
-  const q = useQuery({ queryKey: ["servidor", "portabilidade"], queryFn: () => atlas.portabilidade.minhas(), refetchInterval: 15000 });
-  const [info, setInfo] = useState<MatriculaInfo | null>(() => readActiveMatricula());
-  // Listener de storage: sem isso, elegiveisPortabilidade ficava congelado
-  // na matricula da montagem. Trocar matricula no switcher nao atualizava.
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY_META || e.key === STORAGE_KEY_ID) {
-        setInfo(readActiveMatricula());
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-  const publicar = useMutation({
-    mutationFn: (adf: string) => atlas.portabilidade.publicar(adf),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),
-  });
-  const cancelar = useMutation({
-    mutationFn: (id: string) => atlas.portabilidade.cancelar(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),
-  });
-  const aceitar = useMutation({
-    mutationFn: (v: { id: string; ofertaId: string }) => atlas.portabilidade.aceitar(v.id, v.ofertaId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),
-  });
-  const intencoes = q.data?.intencoes ?? [];
-  const elegiveis = info?.elegiveisPortabilidade ?? [];
-  const jaPublicados = new Set(intencoes.filter((i) => i.status === "aberta").map((i) => i.contratoAdfOrigem));
-  return (
-    <Card style={{ borderColor: "var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 6%, var(--surface))" }}>
-      <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase", marginBottom: 8 }}>
-        Marketplace: deixe os bancos disputarem sua divida
-      </div>
-      <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted)" }}>
-        Publique um contrato ativo aqui e bancos concorrentes ofertam propostas de portabilidade. Voce escolhe a melhor.
-      </p>
-      {elegiveis.length === 0 ? (
-        <p style={{ margin: 0, fontSize: 13, color: "var(--text-muted)" }}>Voce nao tem contratos elegiveis agora.</p>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {elegiveis.map((c) => (
-            <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 10px", background: "var(--bg-elev)", borderRadius: 8, gap: 8, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 13 }}>
-                <b>{c.banco}</b> · ADF {c.id} · {fmtBRL(c.saldoDevedor)} saldo · {fmtBRL(c.parcela)} × {c.parcelasRestantes}x
-              </div>
-              {jaPublicados.has(c.id) ? (
-                <Pill variant="aceita">publicado</Pill>
-              ) : (
-                <Button size="sm" onClick={() => publicar.mutate(c.id)} disabled={publicar.isPending}>Publicar</Button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {intencoes.length > 0 ? (
-        <div style={{ marginTop: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 8 }}>Minhas intencoes publicadas</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {intencoes.map((i) => (
-              <div key={i.id} style={{ border: "1px solid var(--border)", borderRadius: 8, padding: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                  <span style={{ fontSize: 13 }}><b>{i.bancoOrigemNome}</b> · ADF {i.contratoAdfOrigem} · {fmtBRL(i.saldoDevedor)}</span>
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <Pill variant={i.status === "aceita" ? "averbado" : i.status === "aberta" ? "aceita" : "expirado"}>{i.status}</Pill>
-                    {i.status === "aberta" ? (
-                      <Button size="sm" variant="ghost" onClick={() => { if (confirm("Cancelar publicacao?")) cancelar.mutate(i.id); }}>Cancelar</Button>
-                    ) : null}
-                  </div>
-                </div>
-                {i.ofertas.length > 0 ? (
-                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                    {i.ofertas.filter((o) => o.status === "ativa" || o.status === "aceita").map((o) => (
-                      <div key={o.id} style={{ padding: 8, borderRadius: 6, background: o.status === "aceita" ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "var(--bg-elev-2)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 12 }}>
-                          <b>{o.bancoDestinoNome}</b> · {fmtBRL(o.novaParcela)} × {o.novoPrazo}x @ {(o.taxaAmProposta * 100).toFixed(2)}% a.m.
-                          {o.economia > 0 ? <span style={{ color: "var(--emerald-500)", marginLeft: 6 }}>economia {fmtBRL(o.economia)}</span> : null}
-                        </span>
-                        {i.status === "aberta" && o.status === "ativa" ? (
-                          <Button size="sm" onClick={() => aceitar.mutate({ id: i.id, ofertaId: o.id })}>Aceitar</Button>
-                        ) : o.status === "aceita" ? (
-                          <Pill variant="averbado">aceita</Pill>
-                        ) : null}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-muted)" }}>Aguardando ofertas dos bancos…</div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </Card>
-  );
-}

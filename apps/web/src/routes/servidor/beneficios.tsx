@@ -384,6 +384,25 @@ function TelemedicinaCard({ matricula }: { matricula?: string }) {
     queryFn: () => atlas.servidor.minhasCotacoesTelemedicina(),
     refetchOnWindowFocus: true,
   });
+  // Propostas do servidor — pra bloquear cotacao quando ha emprestimo ocupando
+  // a margem consignavel (telemedicina desconta da MESMA margem, entao pedir
+  // as duas em paralelo geraria duplo comprometimento). O backend tambem
+  // bloqueia (422 emprestimo_em_andamento) — aqui e' pra o UX ja mostrar
+  // sem precisar clicar e receber erro.
+  const propostasQ = useQuery({
+    queryKey: ["servidor", "propostas", matricula ?? "all"],
+    queryFn: () => atlas.servidor.propostas(matricula),
+    refetchOnWindowFocus: true,
+  });
+  const emprestimoAtivo = (propostasQ.data?.propostas ?? []).some((p) => {
+    // Whitelist EXPLICITA: bloqueia apenas se ha proposta EM ANALISE (aguardando/
+    // aprovada/formalizada). Contrato ja Ativo/Averbado NAO bloqueia — a
+    // margem ja foi descontada e a telemedicina roda em cima do que sobra.
+    // Ignora a propria reserva da telemedicina (obs contem "telemedicina").
+    if (/telemedicina/i.test(p.observacoes ?? "")) return false;
+    const t = p.situacao.toLowerCase();
+    return t.includes("aguard") || t.startsWith("aprov") || t.includes("formaliz") || t.includes("em analise") || t.includes("em análise");
+  });
   const cotacoes = q.data?.cotacoes ?? [];
   const pendente = cotacoes.some((c) => c.situacao === "nova" || c.situacao === "contatado");
   const ativo = cotacoes.find((c) => c.situacao === "fechado");
@@ -458,6 +477,16 @@ function TelemedicinaCard({ matricula }: { matricula?: string }) {
               background: "rgba(255,255,255,.18)", color: "white", textAlign: "center", maxWidth: 280,
             }}>
               Cotação em análise. Em breve, a equipe da Atlas entrará em contato.
+            </span>
+          ) : emprestimoAtivo ? (
+            // Bloqueio: telemedicina usa a mesma margem consignavel do
+            // emprestimo. Enquanto ha uma proposta/contrato ativo, o botao
+            // fica travado com o motivo explicito (evita clique + erro 422).
+            <span style={{
+              padding: "10px 16px", borderRadius: 10, fontSize: 13, fontWeight: 700,
+              background: "rgba(255,255,255,.18)", color: "white", textAlign: "center", maxWidth: 280,
+            }}>
+              🔒 Empréstimo em andamento ocupa sua margem. Aguarde a conclusão para solicitar Telemedicina.
             </span>
           ) : (
             <button

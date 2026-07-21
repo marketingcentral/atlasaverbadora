@@ -840,6 +840,9 @@ export interface ServidorCampoConfig {
   ordem: number;
   sistema: boolean;
   travado?: boolean;
+  /** Snapshot dos sistema fields quando este preset custom foi criado. Usado
+   *  pelo csv-template quando chamado com ?preset=<key>. */
+  snapshotCampos?: ServidorCampoConfig[];
 }
 export interface ServidorCamposConfig {
   prefeituraId: number;
@@ -1336,10 +1339,13 @@ export class AtlasClient {
         },
       ),
     /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
-    criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string; tipo?: "novo" | "portabilidade" | "refinanciamento" }) =>
+    criarProposta: (
+      input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string; tipo?: "novo" | "portabilidade" | "refinanciamento" },
+      opts?: { signal?: AbortSignal },
+    ) =>
       this.request<{ id: string; situacao: string; banco: string; valor: number; parcelas: number; parcela: number; expira_em: string | null }>(
         "/v1/servidores/me/propostas",
-        { method: "POST", body: input },
+        { method: "POST", body: input, signal: opts?.signal },
       ),
     /** Registra o clique do servidor no botao "Acessar" de um beneficio.
      *  Best-effort — o botao abre a URL de qualquer jeito (nao bloqueia se falhar). */
@@ -1371,13 +1377,16 @@ export class AtlasClient {
      *  (o modelo ainda so aceita EMPRESTIMO/REFIN/ECONSIGNADO) — registra a
      *  solicitacao pra averbadora e devolve um protocolo. O banco recebe pra
      *  emitir/ativar o cartao via canal proprio (padrao do mercado). */
-    solicitarCartao: (input: {
-      produto: "cartao_consignado" | "cartao_beneficio";
-      bancoNome: string;
-      limite: number;
-      matricula?: string;
-      ofertaId?: string;
-    }) =>
+    solicitarCartao: (
+      input: {
+        produto: "cartao_consignado" | "cartao_beneficio";
+        bancoNome: string;
+        limite: number;
+        matricula?: string;
+        ofertaId?: string;
+      },
+      opts?: { signal?: AbortSignal },
+    ) =>
       this.request<{
         ok: true;
         protocolo: string;
@@ -1385,7 +1394,7 @@ export class AtlasClient {
         bancoNome: string;
         limite: number;
         mensagem: string;
-      }>("/v1/servidores/me/cartoes", { method: "POST", body: input }),
+      }>("/v1/servidores/me/cartoes", { method: "POST", body: input, signal: opts?.signal }),
     /** Propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
      *  Filtra pela matrícula ativa quando informada — evita misturar histórico
      *  entre matrículas de servidor com acumulação de cargos. */
@@ -1652,7 +1661,13 @@ export class AtlasClient {
       this.request<{
         convenioId: string;
         meses: { competencia: string; contratos: number; valorFinanciado: number; comissaoEstimada: number }[];
+        pctComissao: number;
       }>("/v1/portal/banco/relatorios/faturamento"),
+
+    // Bate de carteira mensal (escopado ao banco logado — jwt.banco_id).
+    // Substitui o baterCarteira() client-side que era pseudo-random.
+    bateCarteira: (body: { competencia: string; prefeituraId?: number }) =>
+      this.request<AdminBateCarteiraResultado>("/v1/portal/banco/bate-carteira", { method: "POST", body }),
 
     // ===== Ofertas de credito (banco -> servidores) =====
     ofertas: {
@@ -1909,12 +1924,18 @@ export class AtlasClient {
     /** Salva a config de campos. Backend re-injeta cpf/matricula/email como travados. */
     updateServidorCamposConfig: (prefeituraId: number, campos: ServidorCampoConfig[]) =>
       this.request<{ config: ServidorCamposConfig }>(`/v1/admin/servidores/campos-config/${prefeituraId}`, { method: "PUT", body: { campos } }),
-    /** URL do CSV modelo dinamico da prefeitura (colunas seguem a config). */
-    servidoresCsvTemplateUrl: (prefeituraId: number): string =>
-      `${this.opts.baseUrl}/v1/admin/servidores/csv-template?prefeituraId=${prefeituraId}`,
+    /** URL do CSV modelo dinamico da prefeitura (colunas seguem a config).
+     *  Se `presetKey` for informado, usa o snapshot daquele preset custom
+     *  (o CSV replica exatamente o estado dos sistema no momento em que o
+     *  preset foi criado + o proprio custom). */
+    servidoresCsvTemplateUrl: (prefeituraId: number, presetKey?: string): string => {
+      const base = `${this.opts.baseUrl}/v1/admin/servidores/csv-template?prefeituraId=${prefeituraId}`;
+      return presetKey ? `${base}&preset=${encodeURIComponent(presetKey)}` : base;
+    },
     listFolhas: () => this.request<{ folhas: AdminFolha[] }>("/v1/admin/folhas"),
     upsertFolha: (f: AdminFolhaInput) => this.request<{ folha: AdminFolha }>("/v1/admin/folhas", { method: "POST", body: f }),
     consolidarFolha: (id: string) => this.request<{ folha: AdminFolha }>(`/v1/admin/folhas/${id}/consolidar`, { method: "POST" }),
+    deleteFolha: (id: string) => this.request<{ ok: true; id: string }>(`/v1/admin/folhas/${id}`, { method: "DELETE" }),
     // Visao global de contratos averbados (ADF averbadora — todos os bancos).
     contratos: () =>
       this.request<{

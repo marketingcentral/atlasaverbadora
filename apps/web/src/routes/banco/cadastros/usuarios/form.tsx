@@ -112,7 +112,7 @@ export function BancoUsuariosForm() {
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
           Cadastros • Usuários
         </span>
-        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>{id ? `Editar ${id}` : "Novo usuário"}</h1>
+        <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>{id ? `Editar ${id}` : "Novo operador"}</h1>
         <p style={{ color: "var(--text-muted)", margin: "6px 0 0", maxWidth: 780, fontSize: 13 }}>
           Escolha um preset como ponto de partida ou marque/desmarque caixa a caixa para customizar o que este usuário pode ver e fazer.
         </p>

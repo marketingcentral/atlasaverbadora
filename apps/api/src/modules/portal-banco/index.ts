@@ -458,6 +458,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // ficariam sorteados por lancamento (data BR do contrato original), o que
     // e uma proxy ruim de "novidade".
     const contratosBase = [...outrosConvenios, ...rows];
+    // Parseia DD/MM/YYYY -> ISO 00:00 pra fallback do atualizadoEm sem
+    // introduzir `new Date()` que muda a cada request (bug corrigido no
+    // admin/contratos, replicado aqui). Ordem de precedencia:
+    //   1) evento mais recente  2) ccb anexada  3) criadoEmIso  4) lancamento ISO
+    const parseLanc = (s: string): string | undefined => {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s ?? "");
+      return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : undefined;
+    };
     const contratos = contratosBase.map((ct) => {
       const eventos = getContratoEventos(ct.adf);
       const ultimo = eventos.length > 0 ? eventos[eventos.length - 1]?.criadoEm : undefined;
@@ -468,13 +476,16 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const srv = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === ct.matricula);
       return {
         ...ct,
-        atualizadoEm: ultimo ?? new Date().toISOString(),
+        atualizadoEm: ultimo ?? ct.ccbAnexadoEm ?? ct.criadoEmIso ?? parseLanc(ct.lancamento) ?? "",
         telefoneServidor: srv?.telefone,
         ccbKey: ct.ccbKey,
         ccbAnexadoEm: ct.ccbAnexadoEm,
         ccbHistorico: ct.ccbHistorico,
       };
     });
+    // Mais novos no topo (cliente pediu 21/07/2026 — mesmo padrao de
+    // /prefeitura/contratos e /admin/contratos).
+    contratos.sort((a, b) => (b.atualizadoEm ?? "").localeCompare(a.atualizadoEm ?? ""));
     return c.json({ contratos, total: contratos.length });
   })
 
@@ -1006,19 +1017,54 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     return c.json({ ok: true });
   })
 
+  // --------- Bate de carteira (mesma logica do /admin/bate-carteira, mas
+  // escopado ao banco logado — nao aceita bancoId no body, usa jwt.banco_id).
+  // Substitui o baterCarteira() local do frontend que era 100% pseudo-random.
+  .post("/v1/portal/banco/bate-carteira", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const body = z.object({
+      competencia: z.string().regex(/^\d{6}$/, "competencia formato YYYYMM"),
+      prefeituraId: z.number().int().optional(),
+    }).parse(await c.req.json());
+    const banco = bancos.find((b) => b.id === j.banco_id);
+    if (!banco) throw Errors.notFound("banco");
+    // Import dinamico pra evitar ciclo (bate-carteira.ts esta em admin/, que
+    // por sua vez ja importa portal-banco/store).
+    const { gerarBateCarteira } = await import("../admin/bate-carteira.js");
+    const resolver = (id: number) => bancos.find((b) => b.id === id)?.nome ?? "?";
+    const r = gerarBateCarteira({ bancoId: j.banco_id, competencia: body.competencia, prefeituraId: body.prefeituraId }, resolver);
+    return c.json(r);
+  })
+
   // --------- Relatorios ----------
   .get("/v1/portal/banco/relatorios/consignacoes", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
+    await refreshContratos(c.env);
     const activeConv = await getActiveConvenioId(c.env, j);
     const url = new URL(c.req.url);
     const tipo = url.searchParams.get("tipo");
-    const inicio = url.searchParams.get("inicio");
-    const fim = url.searchParams.get("fim");
+    const inicio = url.searchParams.get("inicio"); // YYYY-MM-DD
+    const fim = url.searchParams.get("fim");       // YYYY-MM-DD
     let rows = listContratos({ convenioId: activeConv });
     if (tipo) rows = rows.filter((r) => r.tipoContrato === tipo);
+    // Filtro de data agora e' real. dataContrato vem em DD/MM/YYYY (BR); converte
+    // pra ISO YYYY-MM-DD antes de comparar. Antes: filtro era no-op ("simples:
+    // nao calcula intervalos") — cliente selecionava intervalo e via TUDO.
     if (inicio || fim) {
-      // simples: nao calcula intervalos, apenas sinaliza
+      const toIso = (br: string): string => {
+        const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(br);
+        return m ? `${m[3]}-${m[2]}-${m[1]}` : br; // ja ISO ou invalido
+      };
+      rows = rows.filter((r) => {
+        const iso = toIso(r.dataContrato ?? "");
+        if (!iso) return false;
+        if (inicio && iso < inicio) return false;
+        if (fim && iso > fim) return false;
+        return true;
+      });
     }
     const total = rows.reduce((acc, r) => acc + r.valorFinanciado, 0);
     return c.json({
@@ -1031,26 +1077,57 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
   .get("/v1/portal/banco/relatorios/faturamento", async (c) => {
     const j = c.get("jwt");
     requireBancoRole(j);
+    await refreshContratos(c.env);
     const activeConv = await getActiveConvenioId(c.env, j);
     const contratos = listContratos({ convenioId: activeConv });
-    // Apuracao mensal simulada: agrupa pela folha primeiro desconto.
+    // Comissao configuravel por convenio (percentualComissao 0..1). Antes era
+    // 0.02 fixo — nao refletia acordos reais entre averbadora e banco.
+    // Fallback 2% pra convenio sem config (comportamento antigo preservado).
+    const convCfg = activeConv ? getConvenioConfig(activeConv) : undefined;
+    const pctComissao = (convCfg as unknown as { percentualComissao?: number })?.percentualComissao ?? 0.02;
+    // Meses BR (usados em folhaPrimeiroDesconto e folhaUltimoDesconto).
+    const MESES = ["janeiro","fevereiro","marco","abril","maio","junho","julho","agosto","setembro","outubro","novembro","dezembro"];
+    // Deriva competencia REAL do primeiro desconto em folha do contrato. Antes
+    // agrupava por c.folhaPrimeiroDesconto direto — mas TODO contrato novo
+    // sai hardcoded "Abril/2026" (store.ts), entao TUDO caia num mes so.
+    // Agora: se folhaPrimeiroDesconto veio "Mes/Ano", converte pra YYYY-MM;
+    // senao, deriva de dataContrato (DD/MM/YYYY) + 1 mes de carencia.
+    const toCompetencia = (ct: typeof contratos[number]): string => {
+      const parseMesAno = (raw: string): string | null => {
+        const [mes, ano] = (raw ?? "").split("/");
+        if (!mes || !ano) return null;
+        const idx = MESES.indexOf(mes.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
+        if (idx < 0) return null;
+        return `${ano}-${String(idx + 1).padStart(2, "0")}`;
+      };
+      const fromLabel = parseMesAno(ct.folhaPrimeiroDesconto);
+      if (fromLabel) return fromLabel;
+      // Fallback: dataContrato + 1 mes (carencia padrao).
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(ct.dataContrato ?? "");
+      if (m) {
+        const d = new Date(Number(m[3]), Number(m[2]), 1); // ja soma 1 pq month e' zero-based
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      }
+      return "sem_data";
+    };
     const grupos = new Map<string, { competencia: string; contratos: number; valorFinanciado: number; comissaoEstimada: number }>();
-    for (const c of contratos) {
-      const key = c.folhaPrimeiroDesconto;
+    for (const ct of contratos) {
+      const key = toCompetencia(ct);
       const cur = grupos.get(key) ?? { competencia: key, contratos: 0, valorFinanciado: 0, comissaoEstimada: 0 };
       cur.contratos += 1;
-      cur.valorFinanciado += c.valorFinanciado;
-      cur.comissaoEstimada += c.valorFinanciado * 0.02;
+      cur.valorFinanciado += ct.valorFinanciado;
+      cur.comissaoEstimada += ct.valorFinanciado * pctComissao;
       grupos.set(key, cur);
     }
-    return c.json({
-      convenioId: activeConv,
-      meses: Array.from(grupos.values()).map((g) => ({
+    // Ordena por competencia ASC pra o grafico ficar cronologico.
+    const meses = Array.from(grupos.values())
+      .sort((a, b) => a.competencia.localeCompare(b.competencia))
+      .map((g) => ({
         ...g,
         valorFinanciado: Math.round(g.valorFinanciado * 100) / 100,
         comissaoEstimada: Math.round(g.comissaoEstimada * 100) / 100,
-      })),
-    });
+      }));
+    return c.json({ convenioId: activeConv, meses, pctComissao });
   })
 
   // --------- /me ----------

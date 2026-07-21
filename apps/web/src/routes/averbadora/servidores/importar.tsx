@@ -37,10 +37,31 @@ export function AdminServidoresImportar() {
   const [rascunho, setRascunho] = useState<ServidorCampoConfig[] | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const configIndisponivel = configQ.isError;
+  // Ao trocar de prefeitura, limpa o rascunho IMEDIATO — senao a UI mostra a
+  // config da prefeitura anterior enquanto o novo fetch nao chega (cliente
+  // reportou 21/07/2026: "estava em capistrano com preset, mudei pra guarulhos
+  // e apareceu o preset de capistrano"). Reset separado por prefId; effect
+  // abaixo popula quando os dados novos chegarem.
+  useEffect(() => {
+    setRascunho(null);
+    setSavedAt(null);
+  }, [prefId]);
   useEffect(() => {
     if (!prefId) { setRascunho(null); setSavedAt(null); return; }
     if (configQ.data?.config?.campos) {
-      setRascunho(configQ.data.config.campos);
+      // Cliente pediu 21/07/2026: ao carregar a prefeitura, presets NAO vem
+      // pre-ativados. Sistema fica visivel (default view), customs aparecem
+      // na lista mas desmarcados. Usuario ativa manualmente marcando o Visivel.
+      const campos = configQ.data.config.campos;
+      const temPresetVisivel = campos.some((c) => !c.sistema && c.visivel);
+      const camposParaEditar = temPresetVisivel
+        ? campos.map((c) => {
+            if (!c.sistema) return { ...c, visivel: false, obrigatorio: false };
+            if (c.travado) return c;
+            return { ...c, visivel: true };
+          })
+        : campos;
+      setRascunho(camposParaEditar);
       setSavedAt(configQ.data.config.atualizadoEm ?? null);
     } else if (configQ.isError) {
       setRascunho(DEFAULT_CAMPOS_FALLBACK);
@@ -60,6 +81,9 @@ export function AdminServidoresImportar() {
       qc.setQueryData<{ config: ServidorCamposConfig }>(["admin", "servidor-campos-config", prefIdNum], { config: r.config });
     },
   });
+
+  // Auto-save REMOVIDO 21/07/2026: cliente prefere save manual via botao
+  // Salvar (que tambem cria preset se o nome do campo estiver preenchido).
 
   // ===== Import =====
   const [pasted, setPasted] = useState("");
@@ -164,6 +188,14 @@ export function AdminServidoresImportar() {
             campos={rascunho}
             onChange={setRascunho}
             onSave={() => saveConfig.mutate(rascunho)}
+            /** Chamado pelo "+ Adicionar" do editor: recebe a lista JA com o custom
+             *  anexado e salva imediatamente (sem esperar debounce nem clique manual
+             *  de Salvar). Fluxo pedido pelo cliente 21/07/2026: "clicar em adicionar
+             *  ai sim vai salvar". */
+            onSaveWith={(campos) => saveConfig.mutate(campos)}
+            /** URL do CSV modelo pra cada preset custom (snapshot dos sistema
+             *  no momento em que o preset foi criado). */
+            presetTemplateUrl={(presetKey) => atlas.admin.servidoresCsvTemplateUrl(prefIdNum, presetKey)}
             onRestoreDefault={() => {
               // "Restaurar padrao" via backend: manda array vazio -> sanitizeCampos
               // reconstroi so os travados. Mais simples do lado do frontend: pega

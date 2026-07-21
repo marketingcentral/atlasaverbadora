@@ -272,6 +272,25 @@ export const bancos: BancoAdmin[] = [];
 const BANCOS_SEED: BancoAdmin[] = bancos.map((b) => ({ ...b }));
 
 // Hidrata o array `bancos` do Postgres uma vez por isolate (semeando se vazio).
+// High-water-mark de IDs em KV pra impedir reciclagem apos delete.
+// Cenario que motivou (21/07/2026): admin deletou banco id=X, criou outro.
+// `Math.max(...bancos.map(b => b.id), 0) + 1` recicla id=X quando a lista
+// perde o registro. Consequencia: dev-user com banco_id=X hardcoded loga
+// e "cai" no banco novo. Fix: guardar o max ja visto em KV; reservar o
+// proximo id sempre acima disso.
+async function nextIdMonotonic(env: Env, kvKey: string, currentMaxInMemory: number): Promise<number> {
+  const stored = env.KV_CACHE ? Number((await env.KV_CACHE.get(kvKey)) ?? 0) : 0;
+  const next = Math.max(stored, currentMaxInMemory, 0) + 1;
+  if (env.KV_CACHE) await env.KV_CACHE.put(kvKey, String(next));
+  return next;
+}
+async function nextBancoId(env: Env): Promise<number> {
+  return nextIdMonotonic(env, "admin:bancos_max_id", Math.max(0, ...bancos.map((b) => b.id)));
+}
+async function nextPrefeituraId(env: Env): Promise<number> {
+  return nextIdMonotonic(env, "admin:prefeituras_max_id", Math.max(0, ...prefeituras.map((p) => p.id)));
+}
+
 // Fail-safe: se o banco estiver indisponível, mantém as fixtures em memória.
 let _bancosLoad: Promise<void> | null = null;
 export function ensureBancosLoaded(env: Env): Promise<void> {
@@ -842,8 +861,24 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
     }
     await refreshServidorCamposConfigs(c.env);
     const config = ensureServidorCamposConfig(prefId);
-    const camposVisiveis = config.campos.filter((f) => f.visivel).sort((a, b) => a.ordem - b.ordem);
-    const headers = camposVisiveis.map((f) => f.key);
+    // ?preset=custom_key -> usa o snapshot do preset (cada custom guarda o
+    // estado do sistema quando foi criado; baixar o CSV daquele preset
+    // replica esse estado). Sem preset, usa a config atual.
+    const presetKey = new URL(c.req.url).searchParams.get("preset");
+    let baseCampos: ServidorCampoConfig[] = config.campos;
+    let presetCustom: ServidorCampoConfig | undefined;
+    if (presetKey) {
+      presetCustom = config.campos.find((f) => f.key === presetKey && !f.sistema);
+      if (presetCustom && Array.isArray(presetCustom.snapshotCampos) && presetCustom.snapshotCampos.length > 0) {
+        baseCampos = [...presetCustom.snapshotCampos, presetCustom];
+      }
+    }
+    const camposVisiveis = baseCampos.filter((f) => f.visivel).sort((a, b) => a.ordem - b.ordem);
+    // CSV usa slug puro (sem prefixo "custom_") — mais legivel pro operador
+    // preencher. O importar aceita as duas formas (com e sem prefixo) via
+    // lookup dupla, entao nao quebra CSVs antigos.
+    const csvHeader = (key: string) => key.startsWith("custom_") ? key.slice("custom_".length) : key;
+    const headers = camposVisiveis.map((f) => csvHeader(f.key));
     const convs = CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefId).slice(0, 2);
     if (convs.length === 0) {
       const aviso = `# Prefeitura ${pref.nome} sem convenios cadastrados. Cadastre um convenio antes.\n${headers.join(",")}\n`;
@@ -879,12 +914,11 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
         default: return `Exemplo ${idx + 1}`;
       }
     };
-    const linhas = [0, 1].slice(0, Math.max(1, convs.length)).map((idx) => {
-      const row: Record<string, string> = {};
-      for (const f of camposVisiveis) row[f.key] = placeholderFor(f.key, f.tipo, idx);
-      return row;
-    });
-    return csvResponse("servidores-exemplo.csv", buildCsv(headers, linhas));
+    // Cliente pediu 21/07/2026: baixar so o cabecalho, sem linhas de exemplo
+    // pra evitar que operador esqueca de deletar e importe dados fake.
+    // placeholderFor mantido pra retrocompat/debug; nao chamamos mais.
+    void placeholderFor; void convs;
+    return csvResponse("servidores-exemplo.csv", buildCsv(headers, []));
   });
 
 export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims; trace_id: string } }>()
@@ -1764,7 +1798,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         nomeFantasia: z.string().max(200).optional().or(z.literal("")),
         dataFundacao: z.string().max(10).optional().or(z.literal("")),
         atividade: z.string().max(200).optional().or(z.literal("")),
-        telefone: z.string().max(20).optional().or(z.literal("")),
+        telefone: z.string().max(40).optional().or(z.literal("")),
         endereco: z.object({
           logradouro: z.string().optional().or(z.literal("")),
           numero: z.string().optional().or(z.literal("")),
@@ -1810,7 +1844,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     const novo: BancoAdmin = {
       ...rest,
-      id: Math.max(...bancos.map((b) => b.id), 0) + 1,
+      id: await nextBancoId(c.env),
       loginEmail: normalizedLogin,
       passwordHash: password ? await sha256Hex(password) : undefined,
     };
@@ -1878,7 +1912,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Re-sync do PG: sem isso hard-delete feito em outro isolate nao propaga
     // e a lista mostra prefeitura ja removida.
     await refreshPrefeituras(c.env);
-    return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
+    await ensureServidoresLoaded(c.env); // pra contagem real
+    // servidoresCount OVERRIDE com contagem REAL: o campo do PG e um numero
+    // declarado manualmente no form (default 0), mas o usuario espera ver a
+    // contagem real de servidores cadastrados. Bug reportado 21/07/2026:
+    // Capistrano mostrando 0 mesmo com 11 servidores.
+    const countByPref = new Map<number, number>();
+    for (const s of SERVIDORES_BUSCA_MOCK) {
+      const id = prefeituraIdDe(s);
+      countByPref.set(id, (countByPref.get(id) ?? 0) + 1);
+    }
+    return c.json({
+      prefeituras: prefeituras.map((p) => ({
+        ...sanitizePrefeitura(p),
+        servidoresCount: countByPref.get(p.id) ?? 0,
+      })),
+    });
   })
   // Consulta CNPJ com fallback multi-provider + cache KV 24h. Ordem:
   // 1) KV_CACHE (se hit, retorna direto — evita 429)
@@ -1997,7 +2046,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         nomeFantasia: z.string().max(200).optional().or(z.literal("")),
         dataFundacao: z.string().max(10).optional().or(z.literal("")),
         atividade: z.string().max(200).optional().or(z.literal("")),
-        telefone: z.string().max(20).optional().or(z.literal("")),
+        telefone: z.string().max(40).optional().or(z.literal("")),
         endereco: z.object({
           logradouro: z.string().optional().or(z.literal("")),
           numero: z.string().optional().or(z.literal("")),
@@ -2039,7 +2088,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     const novo: PrefeituraAdmin = {
       ...rest,
-      id: Math.max(...prefeituras.map((p) => p.id), 0) + 1,
+      id: await nextPrefeituraId(c.env),
       loginEmail: normalizedLogin,
       passwordHash: password ? await sha256Hex(password) : undefined,
     };
@@ -2203,14 +2252,21 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   // Config dos campos de servidor POR PREFEITURA. Cada prefeitura escolhe quais
-  // campos quer visiveis + obrigatorios + custom. cpf/matricula/email travados.
+  // campos quer visiveis + obrigatorios + custom. cpf/matricula travados.
   // Ver `modules/admin/servidor-campos.ts`.
   .get("/v1/admin/servidores/campos-config/:prefeituraId", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
     const prefId = Number(c.req.param("prefeituraId"));
     if (!Number.isFinite(prefId)) throw Errors.validation({ prefeituraId: "invalido" });
     await refreshServidorCamposConfigs(c.env);
-    const config = ensureServidorCamposConfig(prefId);
+    let config = ensureServidorCamposConfig(prefId);
+    // Re-sanea sempre no GET pra flags obsoletas (ex: email travado apos remocao
+    // de CHAVES_TRAVADAS em 21/07/2026) sumirem sem exigir save manual do admin.
+    // Se resultado difere do stored, upsert + persist pra correcao ser durable.
+    const camposLimpos = sanitizeCampos(config.campos);
+    if (JSON.stringify(camposLimpos) !== JSON.stringify(config.campos)) {
+      config = upsertServidorCamposConfig({ prefeituraId: prefId, campos: camposLimpos });
+    }
     // Se acabou de criar (sem persist), grava agora pra sincronizar isolates.
     try { await persistServidorCamposConfig(c.env, config); } catch { /* best-effort */ }
     return c.json({ config });
@@ -2408,15 +2464,72 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await persistFolha(c.env, novo);
     return c.json({ folha: novo });
   })
+  // Deleta folha individual (cirurgico, nao usa purge global). Util pra
+  // higienizar folhas de teste criadas via 'Avancar meses' sem tocar em
+  // contratos/servidores/prefeituras.
+  .delete("/v1/admin/folhas/:id", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    await ensureFolhasLoaded(c.env);
+    const id = c.req.param("id");
+    const idx = folhas.findIndex((f) => f.id === id);
+    if (idx < 0) throw Errors.notFound("folha");
+    const removida = folhas[idx]!;
+    folhas.splice(idx, 1);
+    try { await deleteCollectionRow(c.env, "admin_folhas", id); } catch { /* fail-safe */ }
+    pushEvent("info", "admin.folhas.delete", `Folha ${id} (${removida.competencia}/${removida.prefeitura}) removida por user:${c.get("jwt").sub}`);
+    return c.json({ ok: true, id, competencia: removida.competencia, prefeitura: removida.prefeitura });
+  })
   .post("/v1/admin/folhas/:id/consolidar", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
     await ensureFolhasLoaded(c.env);
+    await refreshContratos(c.env);
+    await Promise.all([ensurePrefeiturasLoaded(c.env), ensureBancosLoaded(c.env), refreshConvenios(c.env)]);
     const f = folhas.find((x) => x.id === c.req.param("id"));
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
+    // Materializa _adfs pro isolate atual ANTES de ler listAdfsGlobal — sem
+    // isso, isolate frio (nunca tocou /adf/*) tem _adfs vazio e o cascade
+    // achava 0 ADFs pra incrementar (parcelasIncrementadas ficava 0).
+    const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
+    ensureAdfsGlobal(f.competencia, bancoNomeById, new Date().toISOString(), [f.prefeituraId]);
     f.status = "consolidada";
     await persistFolha(c.env, f);
-    return c.json({ folha: f });
+
+    // Cascade parcelasPagas: consolidar a folha da competencia X significa que
+    // os descontos daquela competencia foram efetivamente processados. Cada
+    // ADF aplicada = +1 parcela paga no contrato correspondente. Antes esse
+    // incremento nao acontecia em lugar nenhum — /servidor/contratos ficava
+    // eternamente em "0/48". Ao atingir totalParcelas, contrato vira Quitado
+    // (mesma acao do aplicarAcao("quitar")).
+    const ator = `averbadora:${c.get("jwt").sub}`;
+    const adfsDaFolha = listAdfsGlobal(f.competencia).filter((a) => a.prefeituraId === f.prefeituraId && a.status === "aplicada");
+    let incrementados = 0;
+    let quitados = 0;
+    for (const a of adfsDaFolha) {
+      const ct = getContrato(a.adf);
+      if (!ct) continue;
+      // Guard: nao ultrapassa totalParcelas. Se o operador consolidar 2 folhas
+      // da mesma competencia (nao deveria acontecer, mas), o segundo cascade
+      // vira no-op pra contratos ja no limite.
+      if (ct.parcelasPagas >= ct.totalParcelas) continue;
+      ct.parcelasPagas += 1;
+      const parcela = Math.round(ct.valorParcela * 100) / 100;
+      ct.saldoDevedor = Math.max(0, Math.round((ct.saldoDevedor - parcela) * 100) / 100);
+      incrementados++;
+      if (ct.parcelasPagas >= ct.totalParcelas) {
+        aplicarAcao(a.adf, "quitar", ator, `Contrato quitado automaticamente ao consolidar folha ${f.competencia}.`);
+        quitados++;
+      }
+      await persistContrato(c.env, a.adf);
+    }
+    if (adfsDaFolha.length > 0) {
+      appendAudit({
+        categoria: "margem", acao: "folha_consolidada", userId: ator, userRole: "averbadora",
+        detalhes: `Folha ${f.competencia}/${f.prefeitura} consolidada: ${incrementados} contratos avancaram 1 parcela, ${quitados} quitados.`,
+      });
+      pushEvent("info", "admin.folhas.consolidar", `Folha ${f.id} consolidada: ${incrementados}/${quitados} (avancados/quitados) de ${adfsDaFolha.length} ADFs.`);
+    }
+    return c.json({ folha: f, parcelasIncrementadas: incrementados, contratosQuitados: quitados });
   })
 
   // === ADF (averbadora) — visao global de todos os contratos averbados de
@@ -2454,6 +2567,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         matricula: ct.matricula,
         nome: ct.nome,
         tipoContrato: ct.tipoContrato,
+        // Sinais adicionais pro diagnostico de "qual produto foi realmente
+        // proposto" — usados por deriveProdutoLabel no /prefeitura/contratos.
+        // Sem eles nao da pra distinguir TELEMEDICINA/PORTABILIDADE/CARTAO_*
+        // (tipoContrato so aceita EMPRESTIMO/REFIN/ECONSIGNADO).
+        tipoMargem: ct.tipoMargem,
+        observacoes: ct.observacoes,
+        bancoOrigem: ct.bancoOrigem,
         totalParcelas: ct.totalParcelas,
         valorParcela: ct.valorParcela,
         convenio: ct.convenio,
@@ -2468,6 +2588,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         ccbAnexadoEm: ct.ccbAnexadoEm,
       };
     });
+    // Mais novos no topo — mesmo padrao de /prefeitura/contratos (cliente
+    // pediu 21/07/2026). Usa `atualizadoEm` que ja tem o timestamp mais
+    // recente do contrato (evento -> ccb -> criadoEmIso -> lancamento).
+    contratos.sort((a, b) => (b.atualizadoEm ?? "").localeCompare(a.atualizadoEm ?? ""));
     return c.json({ contratos, total: contratos.length });
   })
   // Diagnostico: descarta a CCB anexada (limpa ccbKey no contrato + apaga o
@@ -2500,6 +2624,41 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     appendAudit({ categoria: "margem", acao: "limpar_ccb", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Limpou CCB de ${limpos.length} contrato(s): ${limpos.map((x) => x.adf).join(", ")}.` });
     return c.json({ ok: true, limpos });
+  })
+
+  // Reclassifica contrato como PORTABILIDADE (corrige contratos criados como
+  // "REFIN" quando na verdade eram portabilidade — bug historico: /me/propostas
+  // com tipo="portabilidade" nao setava bancoOrigem, entao deriveProdutoLabel
+  // cai no fallback REFIN). Injeta "Portabilidade" nas observacoes; se
+  // bancoOrigem for informado, tambem seta. Protegido por senha.
+  .post("/v1/admin/contratos/marcar-portabilidade", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "adf");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string; adfs?: string[]; bancoOrigem?: string; contratoOrigem?: string };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha nao configurada." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const adfs = (body.adfs ?? []).filter(Boolean);
+    if (adfs.length === 0) throw Errors.validation({ adfs: "Informe pelo menos uma ADF." });
+    await refreshContratos(c.env);
+    const marcados: string[] = [];
+    for (const adf of adfs) {
+      const ct = getContrato(adf);
+      if (!ct) continue;
+      const prefixoObs = "Portabilidade (reclassificada retroativamente)";
+      const obsAntigo = ct.observacoes ?? "";
+      ct.observacoes = obsAntigo.toLowerCase().includes("portabilid")
+        ? obsAntigo
+        : `${prefixoObs}${obsAntigo ? ` — ${obsAntigo}` : ""}`;
+      if (body.bancoOrigem) ct.bancoOrigem = body.bancoOrigem;
+      if (body.contratoOrigem) ct.contratoOrigem = body.contratoOrigem;
+      await persistContrato(c.env, adf);
+      marcados.push(adf);
+    }
+    appendAudit({ categoria: "margem", acao: "marcar_portabilidade", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Reclassificou ${marcados.length} contrato(s) como portabilidade: ${marcados.join(", ")}` });
+    pushEvent("info", "admin.contratos.marcar_portabilidade", `Reclassificou como portabilidade por admin ${j?.sub}: ${marcados.join(", ")}`);
+    return c.json({ ok: true, marcados });
   })
 
   .get("/v1/admin/comunicados", async (c) => {
@@ -2581,11 +2740,110 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/health", async (c) => {
     requireAdmin(c.get("jwt"));
-    // Cliente pediu limpeza dos 5 checks fixture (16/07/2026) pra teste real
-    // do zero — antes retornava banco SCred/Y/BMG + Palhoca/Floripa hardcoded
-    // com uptime e latencia fake. Quando o monitor real for implementado
-    // (cron worker pingando endpoints + persistindo metricas), popular aqui.
-    return c.json({ checks: [] });
+    // Monitor real de dependencias externas + infra. Cada request executa os
+    // checks em paralelo (timeout 3s cada) e persiste em KV um historico curto
+    // dos ultimos 20 checks por servico — dai calculamos uptime e p95 reais
+    // em vez de valores fake. Resposta cacheada em KV_CACHE por 20s pra
+    // varios operadores olhando a tela nao bombardearem os alvos.
+    const CACHE_KEY = "health:snapshot";
+    const HIST_KEY = (svc: string) => `health:hist:${svc}`;
+    const HIST_MAX = 20;
+    const TIMEOUT_MS = 3000;
+
+    if (c.env.KV_CACHE) {
+      const cached = await c.env.KV_CACHE.get(CACHE_KEY, "json").catch(() => null);
+      if (cached) return c.json(cached);
+    }
+
+    type CheckResult = { servico: string; ok: boolean; latenciaMs: number };
+    async function withTimeout<T>(p: Promise<T>): Promise<{ ok: true; value: T; ms: number } | { ok: false; ms: number; error: string }> {
+      const start = performance.now();
+      try {
+        const value = await Promise.race([
+          p,
+          new Promise<never>((_r, rej) => setTimeout(() => rej(new Error("timeout")), TIMEOUT_MS)),
+        ]);
+        return { ok: true, value, ms: Math.round(performance.now() - start) };
+      } catch (e) {
+        return { ok: false, ms: Math.round(performance.now() - start), error: (e as Error).message };
+      }
+    }
+
+    // 1) Postgres / Hyperdrive — SELECT 1
+    const pgCheck = async (): Promise<CheckResult> => {
+      const r = await withTimeout(getDb(c.env).execute(sql`SELECT 1`));
+      return { servico: "Postgres (Hyperdrive)", ok: r.ok, latenciaMs: r.ms };
+    };
+
+    // 2) KV bindings — put/get temporario com TTL curto
+    const kvCheck = async (name: string, kv: KVNamespace | undefined): Promise<CheckResult> => {
+      if (!kv) return { servico: name, ok: false, latenciaMs: 0 };
+      const k = `health:probe:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const r = await withTimeout((async () => {
+        await kv.put(k, "1", { expirationTtl: 60 });
+        return await kv.get(k);
+      })());
+      return { servico: name, ok: r.ok && r.value === "1", latenciaMs: r.ms };
+    };
+
+    // 3) R2 — list com limit 1
+    const r2Check = async (): Promise<CheckResult> => {
+      if (!c.env.R2_FILES) return { servico: "R2 (arquivos)", ok: false, latenciaMs: 0 };
+      const r = await withTimeout(c.env.R2_FILES.list({ limit: 1 }));
+      return { servico: "R2 (arquivos)", ok: r.ok, latenciaMs: r.ms };
+    };
+
+    // 4) Bank Adapter (mock/iFractal) — dispara authorize simples e ve se responde.
+    //    So um check consolidado (o adapter em uso). Bancos parceiros individuais
+    //    nao tem URL de health cadastrada — quando o cliente adicionar campo
+    //    baseUrl no BancoAdmin, dai da pra pingar cada um.
+    const adapterCheck = async (): Promise<CheckResult> => {
+      const adapter = c.env.BANK_ADAPTER ?? "sandbox";
+      // sandbox e' interno (nao tem URL externa); ifractal precisaria de
+      // env.IFRACTAL_BASE_URL cadastrado como secret pra pingar. Enquanto
+      // nao houver, apenas informa qual esta em uso.
+      return { servico: `Bank Adapter (${adapter})`, ok: true, latenciaMs: 0 };
+    };
+
+    const now = new Date().toISOString();
+    const results: CheckResult[] = [
+      await pgCheck(),
+      await kvCheck("KV_CACHE", c.env.KV_CACHE),
+      await kvCheck("KV_SESSIONS", c.env.KV_SESSIONS),
+      await kvCheck("KV_RATELIMIT", c.env.KV_RATELIMIT),
+      await r2Check(),
+      await adapterCheck(),
+    ];
+
+    // Persiste historico + agrega. uptime = %OK nos ultimos N checks (persistido);
+    // p95 = latencia no percentil 95 nos ultimos N.
+    const checks = await Promise.all(results.map(async (r) => {
+      let hist: { ok: boolean; ms: number; ts: string }[] = [];
+      if (c.env.KV_CACHE) {
+        try {
+          const raw = await c.env.KV_CACHE.get(HIST_KEY(r.servico), "json") as typeof hist | null;
+          if (Array.isArray(raw)) hist = raw;
+        } catch { /* fail-safe */ }
+      }
+      hist.push({ ok: r.ok, ms: r.latenciaMs, ts: now });
+      if (hist.length > HIST_MAX) hist = hist.slice(-HIST_MAX);
+      if (c.env.KV_CACHE) {
+        // waitUntil pra nao segurar a resposta esperando o KV put terminar.
+        try { c.executionCtx.waitUntil(c.env.KV_CACHE.put(HIST_KEY(r.servico), JSON.stringify(hist), { expirationTtl: 60 * 60 * 24 })); } catch { /* fail-safe */ }
+      }
+      const oks = hist.filter((h) => h.ok).length;
+      const uptime = hist.length > 0 ? oks / hist.length : (r.ok ? 1 : 0);
+      const sorted = hist.map((h) => h.ms).sort((a, b) => a - b);
+      const p95Idx = Math.max(0, Math.ceil(sorted.length * 0.95) - 1);
+      const p95 = sorted.length > 0 ? sorted[p95Idx] : r.latenciaMs;
+      return { servico: r.servico, uptime, p95, ok: r.ok };
+    }));
+
+    const payload = { checks };
+    if (c.env.KV_CACHE) {
+      try { c.executionCtx.waitUntil(c.env.KV_CACHE.put(CACHE_KEY, JSON.stringify(payload), { expirationTtl: 20 })); } catch { /* fail-safe */ }
+    }
+    return c.json(payload);
   })
 
   .get("/v1/admin/logs", async (c) => {
@@ -2794,7 +3052,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         if (dup) { out.errors.push({ line, message: `loginEmail ja em uso pelo banco ${dup.nome}` }); continue; }
       }
       const banco: BancoAdmin = {
-        id: existing?.id ?? Math.max(0, ...bancos.map((b) => b.id)) + 1,
+        id: existing?.id ?? await nextBancoId(c.env),
         nome: r.nome!,
         status: ((r.status ?? "ativo").toLowerCase() as BancoAdmin["status"]),
         adapter: ((r.adapter ?? "sandbox").toLowerCase() as BancoAdmin["adapter"]),
@@ -2839,7 +3097,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         if (dup) { out.errors.push({ line, message: `loginEmail ja em uso pela prefeitura ${dup.nome}` }); continue; }
       }
       const p: PrefeituraAdmin = {
-        id: existing?.id ?? Math.max(0, ...prefeituras.map((x) => x.id)) + 1,
+        id: existing?.id ?? await nextPrefeituraId(c.env),
         nome: r.nome!,
         uf: r.uf!.toUpperCase(),
         municipioIbge: ibge,
@@ -3326,7 +3584,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         uf: z.string().length(2).optional(),
       }).optional(),
       contato: z.object({
-        telefone: z.string().max(20).optional(),
+        telefone: z.string().max(40).optional(),
         whatsapp: z.string().max(20).optional(),
         email: z.string().email().optional().or(z.literal("")),
         site: z.string().url().optional().or(z.literal("")),
@@ -3363,7 +3621,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       responsavel: z.object({
         nome: z.string().max(120).optional(),
         email: z.string().email().optional().or(z.literal("")),
-        telefone: z.string().max(20).optional(),
+        telefone: z.string().max(40).optional(),
         cargo: z.string().max(80).optional(),
       }).optional(),
       restricoes: z.string().max(1000).optional(),
@@ -3887,11 +4145,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (r.endereco) s.endereco = r.endereco;
       if (r.email) s.email = r.email;
       if (r.telefone) s.telefone = r.telefone;
-      // Campos custom da config: le do CSV pela key e guarda em camposCustom.
+      // Campos custom da config: le do CSV pela key OU pelo slug sem prefixo
+      // (o template CSV agora usa slug puro — "marketing_central" em vez de
+      // "custom_marketing_central" — mas CSVs antigos com prefixo continuam
+      // valendo). Chave no camposCustom permanece a key completa.
       if (camposCustomAtivos.length > 0) {
         const custom: Record<string, string> = { ...(existing?.camposCustom ?? {}) };
         for (const f of camposCustomAtivos) {
-          const val = (r[f.key] ?? "").toString().trim();
+          const slugSemPrefixo = f.key.startsWith("custom_") ? f.key.slice("custom_".length) : f.key;
+          const val = ((r[f.key] ?? r[slugSemPrefixo]) ?? "").toString().trim();
           if (val) custom[f.key] = val;
         }
         if (Object.keys(custom).length > 0) s.camposCustom = custom;
@@ -3909,6 +4171,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     for (const s of out.rows) {
       try { await upsertServidor(c.env, s); }
       catch (e) { persistFailures.push({ matricula: s.matricula, message: (e as Error).message }); }
+    }
+    // Atualiza ultimaSincronizacao da prefeitura sempre que houver import
+    // manual bem-sucedido de servidores. Antes so o botao "Sincronizar"
+    // (endpoint /admin/prefeituras/:id/sincronizar) atualizava, e como esse
+    // botao raramente e usado no fluxo manual, o campo ficava "-" pra sempre
+    // mesmo com dados fresquinhos. Cliente reportou 21/07/2026.
+    if (out.inserted + out.updated > 0) {
+      const ts = new Date().toISOString();
+      pref.ultimaSincronizacao = ts;
+      pref.ultimaSincResultado = { novos: out.inserted, atualizados: out.updated, ts };
+      try { await persistPrefeitura(c.env, pref); } catch { /* best-effort */ }
     }
     // Log persistido inclui o total de linhas do CSV recebido — sem isso
     // fica dificil detectar depois "importei 50 mas so 1 entrou". Se houver

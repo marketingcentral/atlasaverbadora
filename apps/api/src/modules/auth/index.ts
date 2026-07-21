@@ -9,7 +9,7 @@ import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
-import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded, refreshServidores } from "../admin/index.js";
+import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded, refreshServidores, ensureBancosLoaded, ensurePrefeiturasLoaded } from "../admin/index.js";
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
 import { verifyTotp } from "../../_shared/totp.js";
 import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf, loadServidores, upsertPrefeitura, upsertBanco, upsertCollectionRow } from "../../db/repos.js";
@@ -159,8 +159,11 @@ async function resolvePrefeituraByCredentials(
  * Replace with real DB-backed lookup + Argon2 comparison once `users` is populated.
  */
 const DEV_USERS: DevUser[] = [
-  { id: 1, identifier: "00011122233", password: "teste123", role: "servidor", nome: "ADRIANA MARQUES DA SILVA", servidor_id: 1, cpf: "00011122233", email: "adriana.silva@palhoca.sc.gov.br" },
-  { id: 2, identifier: "00011122234", password: "teste123", role: "servidor", nome: "FERNANDA KELLI TOMAZONI", servidor_id: 2, cpf: "00011122234", email: "fernanda.tomazoni@floripa.sc.gov.br" },
+  // Dev-users de SERVIDOR removidos (21/07/2026 — cliente). Antes: Adriana
+  // (00011122233) e Fernanda (00011122234) logavam sempre via fallback,
+  // mesmo apos serem "excluidas" do cadastro real. Regra: CPF que nao existe
+  // como servidor cadastrado NAO tem acesso — nem via demo. Pra testar,
+  // cadastrar via import CSV em /averbadora/servidores/importar.
   { id: 100, identifier: "banco@atlas.test", password: "teste123", role: "banco", nome: "Operador Banco SCred", banco_id: 1 },
   { id: 200, identifier: "admin@atlas.test", password: "teste123", role: "averbadora", nome: "Admin Atlas" },
   { id: 300, identifier: "prefeitura@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Palhoca", prefeitura_id: 1 },
@@ -243,21 +246,56 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
 
     // 5) Fallback DEV_USERS — só se o identifier NÃO foi reivindicado por servidor/banco/prefeitura/averbadora
     //    cadastrado (caso contrário a senha demo continuaria valendo mesmo após o admin trocar).
+    //    Dev-users de banco/prefeitura tem banco_id/prefeitura_id HARDCODED (=1),
+    //    entao "logam" no primeiro banco/prefeitura real que o admin cadastrar. Fix
+    //    (21/07/2026): bloqueia dev-user de banco quando ja existir qualquer banco
+    //    cadastrado; mesmo pra prefeitura. Assim so servem em base vazia (bootstrap).
+    //    admin@atlas.test continua passando sempre (nao aponta pra recurso especifico).
     if (!resolved && !claimed) {
       const dev = DEV_USERS.find((u) => u.identifier === identifier);
       if (dev && dev.password === body.password) {
-        resolved = {
-          id: dev.id,
-          nome: dev.nome,
-          role: dev.role,
-          servidor_id: "servidor_id" in dev ? dev.servidor_id : undefined,
-          banco_id: "banco_id" in dev ? dev.banco_id : undefined,
-          prefeitura_id: "prefeitura_id" in dev ? dev.prefeitura_id : undefined,
-        };
+        let bloquear = false;
+        if (dev.role === "banco") {
+          await ensureBancosLoaded(c.env);
+          if (bancosStore.length > 0) bloquear = true;
+        } else if (dev.role === "prefeitura") {
+          await ensurePrefeiturasLoaded(c.env);
+          if (prefeiturasStore.length > 0) bloquear = true;
+        }
+        if (!bloquear) {
+          resolved = {
+            id: dev.id,
+            nome: dev.nome,
+            role: dev.role,
+            servidor_id: "servidor_id" in dev ? dev.servidor_id : undefined,
+            banco_id: "banco_id" in dev ? dev.banco_id : undefined,
+            prefeitura_id: "prefeitura_id" in dev ? dev.prefeitura_id : undefined,
+          };
+        }
       }
     }
 
     if (!resolved) throw Errors.unauthorized("Credenciais invalidas");
+
+    // Validacao de referencia: se o usuario resolvido carrega banco_id ou
+    // prefeitura_id, valida que a entidade referenciada EXISTE e esta ATIVA.
+    // Sem isso, dev-user com banco_id=1 hardcoded loga mesmo quando o admin
+    // deletou o banco 1 e criou outro — mostrando dados do "novo banco 1"
+    // (se id foi reciclado) ou dados orfaos in-memory (bug reportado 21/07).
+    if (resolved.banco_id != null) {
+      await ensureBancosLoaded(c.env);
+      const b = bancosStore.find((x) => x.id === resolved!.banco_id);
+      if (!b) throw Errors.unauthorized(`Banco vinculado a esta conta (id=${resolved.banco_id}) nao existe mais. Peca ao admin cadastrar um novo banco e vincular a esta conta.`);
+      if (b.status === "inativo") throw Errors.unauthorized(`Banco "${b.nome}" esta INATIVO. Peca ao admin reativar antes de logar.`);
+      if (b.status === "pausado") throw Errors.unauthorized(`Banco "${b.nome}" esta PAUSADO. Peca ao admin reativar antes de logar.`);
+    }
+    if (resolved.prefeitura_id != null) {
+      await ensurePrefeiturasLoaded(c.env);
+      const p = prefeiturasStore.find((x) => x.id === resolved!.prefeitura_id);
+      if (!p) throw Errors.unauthorized(`Prefeitura vinculada a esta conta (id=${resolved.prefeitura_id}) nao existe mais. Peca ao admin cadastrar uma nova prefeitura e vincular a esta conta.`);
+      if (p.status === "inativo") throw Errors.unauthorized(`Prefeitura "${p.nome}" esta INATIVA. Peca ao admin reativar antes de logar.`);
+      if (p.status === "pausado") throw Errors.unauthorized(`Prefeitura "${p.nome}" esta PAUSADA. Peca ao admin reativar antes de logar.`);
+    }
 
     // 2FA: se o usuario resolvido tem twoFactorEnabled=true e twoFactorSecret
     // configurado, NAO emite JWT de sessao ainda. Emite um mfa_token curto

@@ -34,6 +34,14 @@ export interface ServidorCampoConfig {
   sistema: boolean;
   /** true SO para cpf/matricula/email — visivel+obrigatorio sao imutaveis. */
   travado?: boolean;
+  /** SO em customs (sistema:false). Snapshot completo do estado dos sistema
+   *  no momento em que este preset foi criado (ou re-salvo). Usado pelo
+   *  csv-template quando chamado com ?preset=<key> — o CSV baixado replica
+   *  exatamente as colunas visiveis/obrigatorias que estavam marcadas ao
+   *  criar o preset. Cliente pediu 21/07/2026 modelo "custom = preset".
+   *  Nao mexemos aqui na estrutura completa pra evitar migracao de dados
+   *  antigos — undefined significa "usar o estado atual (fallback)". */
+  snapshotCampos?: ServidorCampoConfig[];
 }
 
 export interface ServidorCamposConfig {
@@ -42,8 +50,10 @@ export interface ServidorCamposConfig {
   atualizadoEm: string;
 }
 
-/** Chaves travadas — visivel:true + obrigatorio:true sao imutaveis via API. */
-export const CHAVES_TRAVADAS: readonly string[] = ["cpf", "matricula", "email"];
+/** Chaves travadas — visivel:true + obrigatorio:true sao imutaveis via API.
+ *  Cliente pediu 21/07/2026 pra destravar email — vira editavel como qualquer
+ *  outro campo. So cpf e matricula continuam travados (identidade do servidor). */
+export const CHAVES_TRAVADAS: readonly string[] = ["cpf", "matricula"];
 
 /** Chaves built-in (sistema:true). Devem existir no shape ServidorBuscaMock.
  *  Ordem aqui = ordem default de exibicao. */
@@ -100,6 +110,9 @@ export function sanitizeCampos(input: ServidorCampoConfig[]): ServidorCampoConfi
       ordem: typeof c.ordem === "number" ? c.ordem : out.length,
       sistema: !!c.sistema,
       travado: travado ? true : undefined,
+      // Preserva snapshot do preset se veio no payload (customs so — nao mexemos
+      // se for sistema).
+      snapshotCampos: !c.sistema && Array.isArray(c.snapshotCampos) ? c.snapshotCampos : undefined,
     });
   }
   // Garante que todo travado esteja na config, mesmo que o payload nao mande.

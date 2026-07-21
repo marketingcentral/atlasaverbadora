@@ -108,7 +108,11 @@ export function BancoUsuariosLista() {
           <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
             Cadastros
           </span>
-          <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Usuários do banco</h1>
+          <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>Operadores</h1>
+          <p style={{ margin: "6px 0 0", fontSize: 13, color: "var(--text-muted)", maxWidth: 640 }}>
+            Sub-usuários do time do banco que acessam este painel (analistas, gerentes, atendentes).
+            Servidores/clientes que têm contrato com este banco aparecem em <b>Meus Contratos</b> e <b>Bate de Carteira</b>.
+          </p>
         </div>
         <Button onClick={() => nav("novo")}>+ Inserir</Button>
       </header>

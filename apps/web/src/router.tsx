@@ -77,7 +77,6 @@ import { BancoCarteira } from "./routes/banco/carteira/index";
 import { BancoFalhas } from "./routes/banco/falhas";
 import { BancoBateCarteira } from "./routes/banco/bate-carteira";
 import { BancoConvenios } from "./routes/banco/convenios";
-import { BancoPortabilidade } from "./routes/banco/portabilidade";
 import { BancoMargemContratacaoBusca } from "./routes/banco/margem-contratacao/index";
 import { BancoMargemContratacaoFicha } from "./routes/banco/margem-contratacao/ficha";
 import { OperacaoForm } from "./routes/banco/margem-contratacao/OperacaoForm";
@@ -162,7 +161,6 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "falhas", element: <BancoFalhas /> },
           { path: "bate-carteira", element: <BancoBateCarteira /> },
           { path: "convenios", element: <BancoConvenios /> },
-          { path: "portabilidade", element: <BancoPortabilidade /> },
 
           { path: "cadastros/tabela-emprestimos", element: <BancoTabelaEmprestimosLista /> },
           { path: "cadastros/tabela-emprestimos/novo", element: <BancoTabelaEmprestimosForm /> },

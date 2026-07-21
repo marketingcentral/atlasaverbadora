@@ -13,7 +13,7 @@ import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel } from "../portal-banco/store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit } from "../admin/auditoria.js";
@@ -231,6 +231,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // descontos/contratos mesmo com propostas ja aprovadas.
     await refreshContratos(c.env);
     await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
+    await refreshAnuencias(c.env);  // pra anuenciaVigente(id) ver o PG (bug: dashboard mostrava "pendente" mesmo com anuencia real gravada)
     const servidores = servidoresDaPrefeitura(id);
     const contratos = contratosDaPrefeitura(id); // usado so nos KPIs de contagem
     const todosContratos = listContratos();      // usado no comprometido (inclui telemedicina/outros)
@@ -698,13 +699,50 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 7 — Contratos / Tombamento =====
-  .get("/v1/prefeitura/contratos", (c) => {
+  .get("/v1/prefeitura/contratos", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    const rows = contratosDaPrefeitura(id).map((ct) => ({
-      adf: ct.adf, bancoNome: bancoNome(ct.bancoId), matricula: ct.matricula, nome: ct.nome,
-      situacao: ct.situacao, tipoContrato: ct.tipoContrato, valorParcela: ct.valorParcela,
-      totalParcelas: ct.totalParcelas, lancamento: ct.lancamento,
-    }));
+    // Sincroniza convenios + contratos com PG antes de filtrar. Sem esses
+    // refreshes, isolate frio (recem-deployado) tem CONVENIOS_MOCK e
+    // _contratos vazios -> contratosDaPrefeitura(id) retorna [] mesmo com
+    // dados reais no PG. Cliente reportou 21/07 apos deploy: "Total: 0".
+    await refreshConvenios(c.env);
+    await refreshContratos(c.env);
+    // Ordena por data de criacao DESC (mais novos primeiro) — cliente pediu
+    // 21/07/2026 que contratos novos apareçam no topo da tabela. Usa criadoEmIso
+    // quando presente (formato ISO 8601, ordem exata por segundo); fallback pra
+    // `lancamento` (DD/MM/YYYY) parseado pra ISO — mantem ordem cronologica
+    // pra contratos antigos que ainda nao tinham criadoEmIso.
+    const parseLancIso = (s: string): string => {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s ?? "");
+      return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : "";
+    };
+    const rows = contratosDaPrefeitura(id)
+      .slice()
+      .sort((a, b) => {
+        const da = a.criadoEmIso ?? parseLancIso(a.lancamento);
+        const db = b.criadoEmIso ?? parseLancIso(b.lancamento);
+        return db.localeCompare(da); // DESC
+      })
+      .map((ct) => {
+      // deriveProdutoLabel usa TODOS os sinais (observacoes/bancoOrigem/
+      // tipoMargem/tipoContrato) pra decidir o produto real que foi proposto,
+      // nao so o tipoContrato cru (que fica EMPRESTIMO pra telemedicina,
+      // portabilidade, refin, etc). Ver portal-banco/store.ts:deriveProdutoLabel.
+      const produto = deriveProdutoLabel(ct);
+      const isTelemedicina = produto === "TELEMEDICINA";
+      return {
+        adf: ct.adf,
+        // Telemedicina eh oferecida pela AVERBADORA (nao pelo banco parceiro);
+        // rotula "Telemedicina Atlas" pra bater com o rotulo do ADF averbadora.
+        // Outros produtos: mantem bancoNome do bancoId (banco averbador do contrato).
+        bancoNome: isTelemedicina ? "Telemedicina Atlas" : bancoNome(ct.bancoId),
+        matricula: ct.matricula, nome: ct.nome,
+        situacao: ct.situacao,
+        tipoContrato: produto,
+        valorParcela: ct.valorParcela,
+        totalParcelas: ct.totalParcelas, lancamento: ct.lancamento,
+      };
+    });
     return c.json({ contratos: rows, total: rows.length });
   })
   .get("/v1/prefeitura/tombamento/lotes", async (c) => {

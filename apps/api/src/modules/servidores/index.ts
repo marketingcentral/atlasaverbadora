@@ -760,6 +760,20 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // andamento" com passo a passo). Trava margem de EMPRESTIMO enquanto
     // averbadora nao decide — servidor nao pode pedir consignado em paralelo.
     await refreshContratos(c.env);
+    // Bloqueia se ja ha proposta/contrato de EMPRESTIMO ocupando a margem: o
+    // plano de Telemedicina desconta da mesma margem consignavel, entao pedir
+    // cotacao com um emprestimo em analise geraria duplo comprometimento. O
+    // fluxo reciproco (bloquear emprestimo com telemedicina em analise) ja
+    // existe via comprometeMargem no POST /me/propostas.
+    const emprestimoAtivo = listContratos({ matricula: entryAtivo.matricula })
+      .some((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO");
+    if (emprestimoAtivo) {
+      throw new HttpError(
+        422,
+        "emprestimo_em_andamento",
+        "Voce tem um emprestimo em analise que ocupa sua margem consignavel. Aguarde a conclusao (ou cancele) antes de solicitar Telemedicina — o plano desconta da mesma margem.",
+      );
+    }
     const reserva = criarContratoOuReserva({
       bancoId: conv?.bancoId ?? 1,
       servidorId: s.id,
@@ -932,6 +946,28 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio);
     const cet = calcCET({ valor: body.valor, parcelas: body.parcelas, taxaMensal: body.taxaAm });
     await refreshContratos(c.env); // sincroniza o contador de adf entre isolates antes de criar
+    // Bloqueia se JA HA proposta/reserva EM ANALISE ocupando a margem do bucket
+    // EMPRESTIMO. Antes o servidor conseguia criar 2, 3 propostas empilhadas
+    // (uma REFIN de portabilidade + uma de emprestimo novo + etc), o que
+    // resultava em duplo comprometimento e propostas duplicadas no card do
+    // banco. Regra: 1 proposta por vez do MESMO bucket. Passou a averbacao
+    // (Ativo/Averbado), pode pedir outra em cima do saldo restante.
+    const emAnalise = listContratos({ matricula: entry.matricula })
+      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
+      .find((ct) => {
+        const s = (ct.situacao ?? "").toLowerCase();
+        // "em analise" = qualquer estado ANTES de virar contrato averbado.
+        // Ativo/Averbado nao sao "em analise" — ja consumiram margem, mas o
+        // servidor pode pedir mais em cima do que sobra.
+        return s.includes("aguard") || s.includes("aprov") || s.includes("formaliz") || s.includes("em analise") || s.includes("em análise");
+      });
+    if (emAnalise) {
+      throw new HttpError(
+        422,
+        "proposta_em_andamento",
+        `Voce ja tem uma proposta em analise (ADF ${emAnalise.adf}). Aguarde a conclusao (ou cancele) antes de solicitar outra.`,
+      );
+    }
     // SEGURANÇA (server-side): a parcela nunca pode exceder a margem consignável
     // disponível da matrícula. O cliente já limita o valor, mas o backend é a fonte
     // de verdade — sem isto, uma chamada adulterada criaria empréstimo acima da margem.
@@ -970,7 +1006,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       diasCarencia: 30,
       valorParcela: round2(cet.parcela),
       codigoVerba: conv?.codigoVerba ?? "",
-      observacoes: `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
+      // observacoes carregam o TIPO DA PROPOSTA — usado por deriveProdutoLabel
+      // pra distinguir PORTABILIDADE/REFIN quando bancoOrigem nao vem preenchido
+      // (o fluxo /me/propostas nao coleta banco de origem — so o /portabilidade
+      // marketplace faz). Sem isso, portabilidade caia no default REFIN.
+      observacoes: body.tipo === "portabilidade"
+        ? `Portabilidade solicitada via app do servidor (destino: ${body.bancoNome ?? "Banco Atlas"})`
+        : body.tipo === "refinanciamento"
+          ? `Refinanciamento solicitado via app do servidor (${body.bancoNome ?? "Banco Atlas"})`
+          : `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
       isReserva: true,
       tipoMargem: "EMPRESTIMO", // explicit bucket — nao confunde com margem de cartao
       ator: `servidor:${s.id}`,
@@ -1282,35 +1326,77 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     const body = z.object({ adf: z.string().min(3) }).parse(await c.req.json());
+    const matriculasDoCpf = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((x) => x.matricula);
+
+    // Duas fontes de contrato pra portar:
+    //  1. Interno (getContrato) — proposta/contrato feito NO Atlas.
+    //  2. External loan (getExternalLoan) — contrato em outro banco importado
+    //     pela prefeitura via tombamento. E' o caso comum aqui (ex.: CEF/Bradesco
+    //     que o servidor tinha antes de conhecer o Atlas). Antes o handler so
+    //     olhava (1), entao clicar "Publicar" nos externos dava 404 silencioso
+    //     e nada aparecia no portal do banco.
     const ct = getContrato(body.adf);
-    if (!ct) throw Errors.notFound("contrato");
-    // Isolamento: contrato tem que ser de uma matricula desse CPF.
-    const matriculasDoCpf = new Set(SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((x) => x.matricula));
-    if (!matriculasDoCpf.has(ct.matricula)) throw Errors.notFound("contrato");
-    // So contrato ATIVO ou AVERBADO faz sentido portar.
-    const sit = (ct.situacao ?? "").toLowerCase();
-    if (!(sit.includes("ativ") || sit.includes("averb"))) {
-      throw Errors.validation({ contrato: "so contrato ativo/averbado pode ser portado" });
+    if (ct) {
+      // Fluxo (1) — contrato interno.
+      if (!matriculasDoCpf.includes(ct.matricula)) throw Errors.notFound("contrato");
+      const sit = (ct.situacao ?? "").toLowerCase();
+      if (!(sit.includes("ativ") || sit.includes("averb"))) {
+        throw Errors.validation({ contrato: "so contrato ativo/averbado pode ser portado" });
+      }
+      const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === ct.matricula);
+      const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+      const bancoOrigem = bancos.find((b) => b.id === ct.bancoId);
+      const parcelasRestantes = Math.max(1, ct.totalParcelas - ct.parcelasPagas);
+      const intencao = await criarIntencao(c.env, {
+        servidorNome: entry?.nome ?? ct.nome,
+        servidorMatricula: ct.matricula,
+        servidorCpfMasked: entry?.cpfMasked ?? "***.***.***-**",
+        prefeituraId: conv ? Number(conv.prefeituraId ?? 0) : 0,
+        prefeituraNome: conv?.prefeitura ?? "",
+        convenioId: ct.convenioId,
+        contratoAdfOrigem: ct.adf,
+        bancoOrigemId: ct.bancoId,
+        bancoOrigemNome: bancoOrigem?.nome ?? `Banco ${ct.bancoId}`,
+        saldoDevedor: Math.round(ct.saldoDevedor * 100) / 100,
+        valorParcela: Math.round(ct.valorParcela * 100) / 100,
+        parcelasRestantes,
+        totalParcelasOriginal: ct.totalParcelas,
+        taxaAm: ct.taxaAm,
+      });
+      return c.json({ intencao });
     }
-    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === ct.matricula);
-    const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
-    const bancoOrigem = bancos.find((b) => b.id === ct.bancoId);
-    const parcelasRestantes = Math.max(1, ct.totalParcelas - ct.parcelasPagas);
+
+    // Fluxo (2) — external loan (tombamento). Procura em cada matricula do CPF.
+    let external: ReturnType<typeof getExternalLoan> = undefined;
+    let matEncontrada: string | undefined;
+    for (const m of matriculasDoCpf) {
+      const l = getExternalLoan(m, body.adf);
+      if (l) { external = l; matEncontrada = m; break; }
+    }
+    if (!external || !matEncontrada) throw Errors.notFound("contrato");
+
+    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === matEncontrada);
+    const conv = entry ? CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio) : undefined;
+    // Resolve bancoOrigemId: nome do external tipo "104-Caixa Economica Federal".
+    // Tenta match por nome contido (case-insensitive). Se nao achar (banco externo
+    // que nao existe no Atlas — o mais comum), usa 0 — nenhum banco tem id=0,
+    // entao TODOS os bancos veem a intencao (comportamento desejado).
+    const bancoOrigem = bancos.find((b) => external!.bancoNome.toLowerCase().includes(b.nome.toLowerCase()));
     const intencao = await criarIntencao(c.env, {
-      servidorNome: entry?.nome ?? ct.nome,
-      servidorMatricula: ct.matricula,
+      servidorNome: entry?.nome ?? external.bancoNome,
+      servidorMatricula: matEncontrada,
       servidorCpfMasked: entry?.cpfMasked ?? "***.***.***-**",
       prefeituraId: conv ? Number(conv.prefeituraId ?? 0) : 0,
       prefeituraNome: conv?.prefeitura ?? "",
-      convenioId: ct.convenioId,
-      contratoAdfOrigem: ct.adf,
-      bancoOrigemId: ct.bancoId,
-      bancoOrigemNome: bancoOrigem?.nome ?? `Banco ${ct.bancoId}`,
-      saldoDevedor: Math.round(ct.saldoDevedor * 100) / 100,
-      valorParcela: Math.round(ct.valorParcela * 100) / 100,
-      parcelasRestantes,
-      totalParcelasOriginal: ct.totalParcelas,
-      taxaAm: ct.taxaAm,
+      convenioId: String(conv?.id ?? ""),
+      contratoAdfOrigem: external.id,
+      bancoOrigemId: bancoOrigem?.id ?? 0,
+      bancoOrigemNome: external.bancoNome,
+      saldoDevedor: Math.round(external.saldoDevedor * 100) / 100,
+      valorParcela: Math.round(external.valorParcela * 100) / 100,
+      parcelasRestantes: external.parcelasRestantes,
+      totalParcelasOriginal: external.totalParcelas,
+      taxaAm: external.taxaAm,
     });
     return c.json({ intencao });
   })

@@ -25,7 +25,7 @@ const NAV = [
     icon: "▢",
     children: [
       { key: "tabela-emprestimos", label: "Tabela de Empréstimos", href: "/banco/cadastros/tabela-emprestimos" },
-      { key: "usuarios", label: "Usuários", href: "/banco/cadastros/usuarios" },
+      { key: "usuarios", label: "Operadores", href: "/banco/cadastros/usuarios" },
     ],
   },
   { key: "margem-contratacao", label: "Margem / Contratação", href: "/banco/margem-contratacao", icon: "▤" },
@@ -33,7 +33,6 @@ const NAV = [
   { key: "falhas", label: "Falhas em folha", href: "/banco/falhas", icon: "⚠" },
   { key: "bate-carteira", label: "Bate de Carteira", href: "/banco/bate-carteira", icon: "▦" },
   { key: "convenios", label: "Convênios", href: "/banco/convenios", icon: "◈" },
-  { key: "portabilidade", label: "Portabilidade", href: "/banco/portabilidade", icon: "⇌" },
   {
     key: "relatorios",
     label: "Relatórios",

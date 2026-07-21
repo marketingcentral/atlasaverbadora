@@ -43,7 +43,7 @@ const readOnlyInputStyle: React.CSSProperties = {
 
 /** Input de senha com toggle de visualizacao (olho). */
 function PasswordFieldWithToggle({
-  label, value, onChange, placeholder, hint, required,
+  label, value, onChange, placeholder, hint, required, autoComplete, name,
 }: {
   label: string;
   value: string;
@@ -51,6 +51,8 @@ function PasswordFieldWithToggle({
   placeholder?: string;
   hint?: string;
   required?: boolean;
+  autoComplete?: string;
+  name?: string;
 }) {
   const [show, setShow] = useState(false);
   return (
@@ -65,6 +67,8 @@ function PasswordFieldWithToggle({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           required={required}
+          autoComplete={autoComplete}
+          name={name}
           style={{
             width: "100%", padding: "10px 44px 10px 12px", borderRadius: 8,
             border: "1px solid var(--border-strong)",
@@ -230,6 +234,8 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
   const [cnpjInput, setCnpjInput] = useState<string>(initial?.cnpj ?? "");
   const [cnpjError, setCnpjError] = useState<string | null>(null);
   const [avancado, setAvancado] = useState(false);
+  // Aviso "Falta preencher" so aparece apos primeira tentativa de submit.
+  const [triedSubmit, setTriedSubmit] = useState(false);
   // Consulta CNPJ — mesmo endpoint das prefeituras.
   const consulta = useMutation({
     mutationFn: (cnpj: string) => atlas.admin.consultarCnpjPrefeitura(cnpj),
@@ -244,7 +250,9 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
         nomeFantasia: (d.nome_fantasia as string | undefined) ?? "",
         dataFundacao: (d.data_inicio_atividade as string | undefined) ?? "",
         atividade: (d.cnae_fiscal_descricao as string | undefined) ?? "",
-        telefone: (d.ddd_telefone_1 as string | undefined) ?? "",
+        // BrasilAPI/ReceitaWS as vezes retorna 2 telefones concatenados
+        // ("(11) 2475-8641 / (011) 6440-1929"). Pega so o primeiro.
+        telefone: ((d.ddd_telefone_1 as string | undefined) ?? "").split(/\s*\/\s*/)[0]?.trim() ?? "",
         contatoEmail: prev.contatoEmail || (d.email as string | undefined) || "",
         endereco: {
           logradouro: (d.logradouro as string | undefined) ?? "",
@@ -395,6 +403,8 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
               placeholder="operador@banco.com.br"
               required
               hint="O banco usa este e-mail em /login toda vez que acessa."
+              autoComplete="off"
+              name="atlas-novo-banco-login-email"
             />
             <PasswordFieldWithToggle
               label={initial?.hasPassword ? "Nova senha (opcional)" : "Senha"}
@@ -403,6 +413,8 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
               placeholder={initial?.hasPassword ? "••••••••" : "min. 6 caracteres"}
               hint={senhaHint}
               required={!initial?.hasPassword}
+              autoComplete="new-password"
+              name="atlas-novo-banco-senha"
             />
             <TextField
               label="E-mail de contato do responsável"
@@ -461,9 +473,10 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
 
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         {(() => {
+          // Aviso so aparece APOS o user clicar Salvar sem preencher tudo.
+          if (!triedSubmit) return null;
           const faltando: string[] = [];
           if (!form.nome) faltando.push("razão social (busque o CNPJ)");
-          if (!form.telefone) faltando.push("telefone");
           if (!form.loginEmail) faltando.push("e-mail de login");
           if (!form.contatoEmail) faltando.push("e-mail de contato");
           if (!initial?.hasPassword && !form.password) faltando.push("senha");
@@ -478,15 +491,19 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
           <Button
             type="button"
-            disabled={
-              save.isPending
-              || !form.nome
-              || !form.loginEmail
-              || !form.contatoEmail
-              || !form.telefone
-              || (!initial?.hasPassword && !form.password)
-            }
-            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            onClick={() => {
+              const faltando =
+                !form.nome
+                || !form.loginEmail
+                || !form.contatoEmail
+                || (!initial?.hasPassword && !form.password);
+              if (faltando) {
+                setTriedSubmit(true);
+                return;
+              }
+              save.mutate();
+            }}
           >
             {save.isPending ? "Salvando..." : "Salvar"}
           </Button>

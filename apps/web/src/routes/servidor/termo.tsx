@@ -105,6 +105,12 @@ export function ServidorTermo() {
     const ip = "189.41." + Math.floor(Math.random() * 200) + "." + Math.floor(Math.random() * 200);
     const device = navigator.userAgent.includes("Mobi") ? "Smartphone (web)" : "Desktop (web)";
 
+    // Timeout de 20s pra evitar "Registrando aceite..." infinito quando a API
+    // fica travada (cold start Hyperdrive, lock no PG, worker esperando algum
+    // recurso). Sem isso, o fetch aguarda indefinidamente e nao ha feedback.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 20_000);
+
     // Fluxos separados por produto — cartao usa POST /me/cartoes (com tipoMargem
     // proprio) e emprestimo/portabilidade/refin usa POST /me/propostas.
     try {
@@ -115,7 +121,7 @@ export function ServidorTermo() {
           bancoNome: banco,
           limite,
           matricula: readActiveMatricula()?.matricula,
-        });
+        }, { signal: ac.signal });
         setDone({ propostaId: res.protocolo, quando, ip, device });
       } else {
         // Emprestimo/Portabilidade/Refin. Taxa mensal em fração (1.8% -> 0.018).
@@ -132,12 +138,20 @@ export function ServidorTermo() {
           // (portabilidade/refinanciamento). Sem isso, portabilidade/refin
           // apareciam em /servidor/contratos rotuladas como "Empréstimo".
           tipo: tipo === "portabilidade" ? "portabilidade" : tipo === "refinanciamento" ? "refinanciamento" : "novo",
-        });
+        }, { signal: ac.signal });
         setDone({ propostaId: res.id, quando, ip, device });
       }
     } catch (e) {
-      setErro((e as Error).message || "Não foi possível registrar a proposta. Tente novamente.");
+      const err = e as Error;
+      // AbortError = timeout de 20s estourou. Mensagem separada porque a causa
+      // e "servidor demorou a responder", nao "servidor recusou o pedido".
+      if (err.name === "AbortError" || /abort/i.test(err.message)) {
+        setErro("A resposta demorou demais. Verifique sua conexão e tente novamente.");
+      } else {
+        setErro(err.message || "Não foi possível registrar a proposta. Tente novamente.");
+      }
     } finally {
+      clearTimeout(timer);
       setSubmitting(false);
     }
   }
@@ -295,7 +309,9 @@ export function ServidorTermo() {
         <Button onClick={autorizar} disabled={!aceito || submitting}>
           {submitting ? "Registrando aceite..." : "Aceito e autorizo →"}
         </Button>
-        <Button variant="ghost" onClick={() => nav("/servidor/dashboard")} disabled={submitting}>
+        {/* Voltar sempre habilitado — se o POST enroscar, o servidor consegue
+         *  sair da tela em vez de ficar preso olhando "Registrando aceite...". */}
+        <Button variant="ghost" onClick={() => nav("/servidor/dashboard")}>
           Voltar ao inicio
         </Button>
       </div>

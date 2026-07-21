@@ -73,6 +73,35 @@ export function deriveTipoMargem(ct: Pick<ContratoFull, "tipoMargem" | "tipoCont
   return ct.tipoContrato === "ECONSIGNADO" ? "CARTAO_CONSIGNADO" : "EMPRESTIMO";
 }
 
+/** Deriva o rotulo do PRODUTO originalmente proposto, usando TODOS os sinais.
+ *  Alinhado com a regra da /servidor/contratos:produtoContratoLabel: por default,
+ *  `tipoContrato === "REFIN"` vira PORTABILIDADE (a UI do servidor sempre trata
+ *  REFIN como portabilidade). REFIN "puro" (renegociacao no mesmo banco) so
+ *  aparece se observacoes disser explicitamente "refinancia".
+ *
+ *  Ordem de precedencia:
+ *    1. observacoes contem "telemedicina"                    -> TELEMEDICINA.
+ *    2. observacoes contem "refinancia"                      -> REFIN (explicito).
+ *    3. bancoOrigem OU observacoes com "portabilid"          -> PORTABILIDADE.
+ *    4. tipoContrato === "REFIN"                             -> PORTABILIDADE.
+ *       (fallback: contratos historicos que caiam em REFIN eram na verdade
+ *       portabilidade — bug: /me/propostas com tipo="portabilidade" nao
+ *       setava bancoOrigem, entao muitos contratos ficam so como REFIN puro.)
+ *    5. tipoMargem === CARTAO_BENEFICIOS                     -> CARTAO_BENEFICIO.
+ *    6. tipoContrato === ECONSIGNADO OU
+ *       tipoMargem === CARTAO_CONSIGNADO                     -> CARTAO_CONSIGNADO.
+ *    7. default                                              -> EMPRESTIMO. */
+export function deriveProdutoLabel(ct: Pick<ContratoFull, "tipoContrato" | "tipoMargem" | "observacoes" | "bancoOrigem">): string {
+  const obs = (ct.observacoes ?? "").toLowerCase();
+  if (/telemedic/.test(obs)) return "TELEMEDICINA";
+  if (/refinancia/.test(obs)) return "REFIN";
+  if (ct.bancoOrigem || /portabilid/.test(obs)) return "PORTABILIDADE";
+  if (ct.tipoContrato === "REFIN") return "PORTABILIDADE";
+  if (ct.tipoMargem === "CARTAO_BENEFICIOS") return "CARTAO_BENEFICIO";
+  if (ct.tipoContrato === "ECONSIGNADO" || ct.tipoMargem === "CARTAO_CONSIGNADO") return "CARTAO_CONSIGNADO";
+  return "EMPRESTIMO";
+}
+
 export interface ContratoEvento {
   id: number;
   contratoId: string;
@@ -644,6 +673,14 @@ export function aplicarAcao(
       break;
     case "cancelar":
       para = "Cancelado";
+      // Cancela a ADF na folha tambem. Antes: se o contrato ja estava averbado
+      // (folhaStatus="aplicada") e o admin cancelava, a situacao virava
+      // "Cancelado" mas folhaStatus continuava "aplicada" — averbadora via
+      // "CANCELADO | APLICADA" na mesma linha, contradicao visivel.
+      // Semantica: cancelamento zera a folha; se o desconto ja rodou em folha
+      // anterior, o rastro fica nos eventos (linha ~694+).
+      c.folhaStatus = undefined;
+      c.folhaMotivo = motivo;
       break;
     case "alongar":
       if (extra && typeof extra.parcelasExtras === "number" && extra.parcelasExtras > 0) {
