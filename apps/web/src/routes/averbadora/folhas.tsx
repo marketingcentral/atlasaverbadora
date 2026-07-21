@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -146,7 +146,11 @@ export function AdminFolhas() {
         </Button>
       </header>
 
-      <DataTable columns={columns} rows={data.data?.folhas ?? []} rowKey={(f) => f.id} loading={data.isLoading} />
+      <FolhasFiltros
+        todas={data.data?.folhas ?? []}
+        columns={columns}
+        loading={data.isLoading}
+      />
 
       {showSim ? (
         <div
@@ -201,5 +205,102 @@ export function AdminFolhas() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Filtros aplicados client-side (todas as folhas ja vem no /admin/folhas):
+ *   - Prefeitura (dropdown com as prefeituras que tem folha)
+ *   - Competencia INI/FIM (YYYY-MM inputs)
+ *  Default: ultimas 12 competencias, todas prefeituras. Ordena DESC (mais
+ *  recente primeiro) — cliente pediu pra evitar poluicao visual quando a
+ *  base envelhecer (5 anos = 60 folhas por prefeitura). */
+function FolhasFiltros({
+  todas,
+  columns,
+  loading,
+}: {
+  todas: AdminFolha[];
+  columns: Column<AdminFolha>[];
+  loading: boolean;
+}) {
+  // YYYY-MM (input browser). Backend usa YYYYMM sem separador.
+  const compToInput = (c: string): string => /^\d{6}$/.test(c) ? `${c.slice(0, 4)}-${c.slice(4, 6)}` : c;
+  const inputToComp = (v: string): string => v.replace(/[^0-9]/g, "");
+
+  const prefs = useMemo(
+    () => Array.from(new Map(todas.map((f) => [f.prefeituraId, f.prefeitura])).entries()),
+    [todas],
+  );
+  const [prefFiltro, setPrefFiltro] = useState<number | "">("");
+  // Default competencia FIM = mais recente; INI = 12 meses antes.
+  const compsExistentes = useMemo(() => Array.from(new Set(todas.map((f) => f.competencia))).sort(), [todas]);
+  const maisRecente = compsExistentes[compsExistentes.length - 1] ?? "";
+  const doze = compsExistentes.length >= 12
+    ? (compsExistentes[compsExistentes.length - 12] ?? "")
+    : (compsExistentes[0] ?? "");
+  const [compIni, setCompIni] = useState(compToInput(doze));
+  const [compFim, setCompFim] = useState(compToInput(maisRecente));
+
+  const filtradas = useMemo(() => {
+    const iniComp = inputToComp(compIni);
+    const fimComp = inputToComp(compFim);
+    return todas
+      .filter((f) => {
+        if (typeof prefFiltro === "number" && f.prefeituraId !== prefFiltro) return false;
+        if (iniComp && f.competencia < iniComp) return false;
+        if (fimComp && f.competencia > fimComp) return false;
+        return true;
+      })
+      .sort((a, b) => b.competencia.localeCompare(a.competencia)); // DESC
+  }, [todas, prefFiltro, compIni, compFim]);
+
+  const reset = () => { setPrefFiltro(""); setCompIni(compToInput(doze)); setCompFim(compToInput(maisRecente)); };
+
+  return (
+    <>
+      <div style={{
+        display: "flex", gap: 12, alignItems: "end", flexWrap: "wrap",
+        padding: 12, background: "var(--bg-elev)", border: "1px solid var(--border)", borderRadius: 10,
+      }}>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Prefeitura
+          <select
+            value={prefFiltro}
+            onChange={(e) => setPrefFiltro(e.target.value ? Number(e.target.value) : "")}
+            style={{ minWidth: 220, padding: "8px 10px", borderRadius: 8, background: "var(--bg-elev-2)", border: "1px solid var(--border-strong)", color: "var(--text)", fontSize: 13, textTransform: "none", fontWeight: 400, letterSpacing: 0 }}
+          >
+            <option value="">Todas</option>
+            {prefs.map(([id, nome]) => (
+              <option key={id} value={id}>{nome}</option>
+            ))}
+          </select>
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          De (competência)
+          <input
+            type="month"
+            value={compIni}
+            onChange={(e) => setCompIni(e.target.value)}
+            style={{ padding: "8px 10px", borderRadius: 8, background: "var(--bg-elev-2)", border: "1px solid var(--border-strong)", color: "var(--text)", fontSize: 13 }}
+          />
+        </label>
+        <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11, color: "var(--text-muted)", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+          Até (competência)
+          <input
+            type="month"
+            value={compFim}
+            onChange={(e) => setCompFim(e.target.value)}
+            style={{ padding: "8px 10px", borderRadius: 8, background: "var(--bg-elev-2)", border: "1px solid var(--border-strong)", color: "var(--text)", fontSize: 13 }}
+          />
+        </label>
+        <Button variant="ghost" onClick={reset} title="Volta pra ultimas 12 competencias / todas prefeituras">
+          Limpar filtros
+        </Button>
+        <span style={{ marginLeft: "auto", fontSize: 12, color: "var(--text-muted)" }}>
+          {filtradas.length} de {todas.length} folha(s)
+        </span>
+      </div>
+      <DataTable columns={columns} rows={filtradas} rowKey={(f) => f.id} loading={loading} />
+    </>
   );
 }
