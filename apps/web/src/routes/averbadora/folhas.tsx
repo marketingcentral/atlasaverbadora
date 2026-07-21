@@ -21,6 +21,17 @@ export function AdminFolhas() {
     mutationFn: (id: string) => atlas.admin.consolidarFolha(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "folhas"] }),
   });
+  // Fechar folha aqui e' atalho pra teste solo (fluxo normal e' prefeitura
+  // fechar em /prefeitura/folhas). Como usa o mesmo endpoint upsert de
+  // /admin/folhas com status="fechada", nao precisa handler novo.
+  const fechar = useMutation({
+    mutationFn: (f: AdminFolha) => atlas.admin.upsertFolha({
+      id: f.id, prefeituraId: f.prefeituraId, prefeitura: f.prefeitura,
+      competencia: f.competencia, dataCorte: f.dataCorte, dataRepasse: f.dataRepasse,
+      status: "fechada",
+    }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["admin", "folhas"] }),
+  });
 
   const columns: Column<AdminFolha>[] = [
     { key: "id", header: "ID", mono: true },
@@ -65,17 +76,36 @@ export function AdminFolhas() {
       key: "acoes",
       header: "",
       align: "right",
-      render: (f) =>
-        f.status === "fechada" ? (
-          <Button
-            size="sm"
-            type="button"
-            disabled={consolidar.isPending}
-            onClick={() => consolidar.mutate(f.id)}
-          >
-            ✓ Consolidar
-          </Button>
-        ) : null,
+      render: (f) => {
+        if (f.status === "aberta") {
+          return (
+            <Button
+              size="sm"
+              variant="ghost"
+              type="button"
+              disabled={fechar.isPending}
+              onClick={() => fechar.mutate(f)}
+              title="Marca folha como fechada (normalmente a prefeitura faz isso em /prefeitura/folhas)"
+            >
+              Fechar
+            </Button>
+          );
+        }
+        if (f.status === "fechada") {
+          return (
+            <Button
+              size="sm"
+              type="button"
+              disabled={consolidar.isPending}
+              onClick={() => consolidar.mutate(f.id)}
+              title="Ao consolidar, cada contrato averbado da competencia avanca +1 parcela paga"
+            >
+              ✓ Consolidar
+            </Button>
+          );
+        }
+        return null;
+      },
     },
   ];
 
