@@ -2509,6 +2509,41 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ ok: true, limpos });
   })
 
+  // Reclassifica contrato como PORTABILIDADE (corrige contratos criados como
+  // "REFIN" quando na verdade eram portabilidade — bug historico: /me/propostas
+  // com tipo="portabilidade" nao setava bancoOrigem, entao deriveProdutoLabel
+  // cai no fallback REFIN). Injeta "Portabilidade" nas observacoes; se
+  // bancoOrigem for informado, tambem seta. Protegido por senha.
+  .post("/v1/admin/contratos/marcar-portabilidade", async (c) => {
+    const j = c.get("jwt");
+    requireAdmin(j);
+    requirePermissao(j, "adf");
+    const body = (await c.req.json().catch(() => ({}))) as { senha?: string; adfs?: string[]; bancoOrigem?: string; contratoOrigem?: string };
+    const expected = c.env.ADMIN_PURGE_PASSWORD;
+    if (!expected) throw Errors.validation({ senha: "Senha nao configurada." });
+    if (!body.senha || body.senha !== expected) throw Errors.forbidden("Senha invalida");
+    const adfs = (body.adfs ?? []).filter(Boolean);
+    if (adfs.length === 0) throw Errors.validation({ adfs: "Informe pelo menos uma ADF." });
+    await refreshContratos(c.env);
+    const marcados: string[] = [];
+    for (const adf of adfs) {
+      const ct = getContrato(adf);
+      if (!ct) continue;
+      const prefixoObs = "Portabilidade (reclassificada retroativamente)";
+      const obsAntigo = ct.observacoes ?? "";
+      ct.observacoes = obsAntigo.toLowerCase().includes("portabilid")
+        ? obsAntigo
+        : `${prefixoObs}${obsAntigo ? ` — ${obsAntigo}` : ""}`;
+      if (body.bancoOrigem) ct.bancoOrigem = body.bancoOrigem;
+      if (body.contratoOrigem) ct.contratoOrigem = body.contratoOrigem;
+      await persistContrato(c.env, adf);
+      marcados.push(adf);
+    }
+    appendAudit({ categoria: "margem", acao: "marcar_portabilidade", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Reclassificou ${marcados.length} contrato(s) como portabilidade: ${marcados.join(", ")}` });
+    pushEvent("info", "admin.contratos.marcar_portabilidade", `Reclassificou como portabilidade por admin ${j?.sub}: ${marcados.join(", ")}`);
+    return c.json({ ok: true, marcados });
+  })
+
   .get("/v1/admin/comunicados", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "comunicados");
     await refreshComunicados(c.env);
