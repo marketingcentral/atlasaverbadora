@@ -2437,12 +2437,48 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .post("/v1/admin/folhas/:id/consolidar", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
     await ensureFolhasLoaded(c.env);
+    await refreshContratos(c.env);
     const f = folhas.find((x) => x.id === c.req.param("id"));
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
     f.status = "consolidada";
     await persistFolha(c.env, f);
-    return c.json({ folha: f });
+
+    // Cascade parcelasPagas: consolidar a folha da competencia X significa que
+    // os descontos daquela competencia foram efetivamente processados. Cada
+    // ADF aplicada = +1 parcela paga no contrato correspondente. Antes esse
+    // incremento nao acontecia em lugar nenhum — /servidor/contratos ficava
+    // eternamente em "0/48". Ao atingir totalParcelas, contrato vira Quitado
+    // (mesma acao do aplicarAcao("quitar")).
+    const ator = `averbadora:${c.get("jwt").sub}`;
+    const adfsDaFolha = listAdfsGlobal(f.competencia).filter((a) => a.prefeituraId === f.prefeituraId && a.status === "aplicada");
+    let incrementados = 0;
+    let quitados = 0;
+    for (const a of adfsDaFolha) {
+      const ct = getContrato(a.adf);
+      if (!ct) continue;
+      // Guard: nao ultrapassa totalParcelas. Se o operador consolidar 2 folhas
+      // da mesma competencia (nao deveria acontecer, mas), o segundo cascade
+      // vira no-op pra contratos ja no limite.
+      if (ct.parcelasPagas >= ct.totalParcelas) continue;
+      ct.parcelasPagas += 1;
+      const parcela = Math.round(ct.valorParcela * 100) / 100;
+      ct.saldoDevedor = Math.max(0, Math.round((ct.saldoDevedor - parcela) * 100) / 100);
+      incrementados++;
+      if (ct.parcelasPagas >= ct.totalParcelas) {
+        aplicarAcao(a.adf, "quitar", ator, `Contrato quitado automaticamente ao consolidar folha ${f.competencia}.`);
+        quitados++;
+      }
+      await persistContrato(c.env, a.adf);
+    }
+    if (adfsDaFolha.length > 0) {
+      appendAudit({
+        categoria: "margem", acao: "folha_consolidada", userId: ator, userRole: "averbadora",
+        detalhes: `Folha ${f.competencia}/${f.prefeitura} consolidada: ${incrementados} contratos avancaram 1 parcela, ${quitados} quitados.`,
+      });
+      pushEvent("info", "admin.folhas.consolidar", `Folha ${f.id} consolidada: ${incrementados}/${quitados} (avancados/quitados) de ${adfsDaFolha.length} ADFs.`);
+    }
+    return c.json({ folha: f, parcelasIncrementadas: incrementados, contratosQuitados: quitados });
   })
 
   // === ADF (averbadora) — visao global de todos os contratos averbados de
