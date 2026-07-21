@@ -46,6 +46,20 @@ export function CamposEditor({
 }) {
   const [novoNome, setNovoNome] = useState("");
   const [novoTipo, setNovoTipo] = useState<ServidorCampoTipo>("texto");
+  // Drag & drop pra reordenar linhas segurando (alem dos botoes ↑↓). Guarda
+  // apenas o indice da linha sendo arrastada; a reordem acontece em dragOver
+  // do target usando o mesmo move() dos botoes (mas com step arbitrario).
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
+
+  const reorder = (from: number, to: number) => {
+    if (from === to || from < 0 || to < 0) return;
+    const next = campos.slice();
+    const [moved] = next.splice(from, 1);
+    if (!moved) return;
+    next.splice(to, 0, moved);
+    onChange(next.map((c, i) => ({ ...c, ordem: i })));
+  };
 
   const updateCampo = (idx: number, patch: Partial<ServidorCampoConfig>) => {
     const c = campos[idx];
@@ -137,10 +151,51 @@ export function CamposEditor({
           <tbody>
             {campos.sort((a, b) => a.ordem - b.ordem).map((c, i) => {
               const bloqueado = c.travado === true;
+              const arrastando = dragIdx === i;
+              const alvo = overIdx === i && dragIdx != null && dragIdx !== i;
               return (
-                <tr key={c.key} style={{ borderTop: "1px solid var(--border)", opacity: c.visivel ? 1 : 0.55 }}>
+                <tr
+                  key={c.key}
+                  draggable={!bloqueado}
+                  onDragStart={(e) => {
+                    if (bloqueado) return;
+                    setDragIdx(i);
+                    e.dataTransfer.effectAllowed = "move";
+                    // Firefox exige dataTransfer.setData pra iniciar o drag.
+                    try { e.dataTransfer.setData("text/plain", String(i)); } catch { /* ignore */ }
+                  }}
+                  onDragOver={(e) => {
+                    if (dragIdx == null || dragIdx === i) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    if (overIdx !== i) setOverIdx(i);
+                  }}
+                  onDragLeave={() => { if (overIdx === i) setOverIdx(null); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (dragIdx != null && dragIdx !== i) reorder(dragIdx, i);
+                    setDragIdx(null);
+                    setOverIdx(null);
+                  }}
+                  onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                  style={{
+                    borderTop: "1px solid var(--border)",
+                    opacity: c.visivel ? (arrastando ? 0.4 : 1) : 0.55,
+                    background: alvo ? "color-mix(in srgb, var(--gold-500) 12%, transparent)" : undefined,
+                    cursor: bloqueado ? "default" : "grab",
+                  }}
+                >
                   <td style={td}>
-                    <div style={{ display: "flex", gap: 2 }}>
+                    <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+                      <span
+                        title={bloqueado ? "Campo travado — nao pode reordenar" : "Segure e arraste pra reordenar (ou use as setas)"}
+                        style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          width: 16, color: "var(--text-dim)", fontSize: 12, fontWeight: 700,
+                          cursor: bloqueado ? "not-allowed" : "grab", userSelect: "none",
+                          opacity: bloqueado ? 0.3 : 0.7,
+                        }}
+                      >⋮⋮</span>
                       <button type="button" style={arrowBtn} onClick={() => move(i, -1)} disabled={i === 0} title="Subir">↑</button>
                       <button type="button" style={arrowBtn} onClick={() => move(i, +1)} disabled={i === campos.length - 1} title="Descer">↓</button>
                     </div>
