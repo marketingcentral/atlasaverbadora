@@ -64,14 +64,20 @@ export function CamposEditor({
   const updateCampo = (idx: number, patch: Partial<ServidorCampoConfig>) => {
     const c = campos[idx];
     if (!c) return;
-    const next = campos.slice();
+    let next = campos.slice();
     next[idx] = { ...c, ...patch };
-    // Regra 21/07/2026 (final, versao usuario): custom NAO mexe em sistema.
-    // Cada checkbox controla apenas o proprio campo. Se o operador quiser
-    // esconder um sistema quando ativa um custom, desmarca manualmente.
-    // Antes essa regra bidirecional derrubava a checkbox de visivel dos
-    // sistema toda vez que um custom era marcado — comportamento invasivo
-    // que impedia o operador de manter email/nome/etc + custom juntos.
+    // Regra bidirecional (cliente 21/07/2026, versao final):
+    //  - MARCAR visivel de um preset custom -> DESMARCA sistema (menos travados).
+    //  - DESMARCAR visivel de um custom (e nao sobrar outro custom visivel)
+    //    -> RE-MARCA sistema visivel:true (obrigatorio fica off).
+    if (!c.sistema && patch.visivel === true) {
+      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
+    } else if (!c.sistema && patch.visivel === false) {
+      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
+      if (!aindaTemCustomVisivel) {
+        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
+      }
+    }
     onChange(next);
   };
 
