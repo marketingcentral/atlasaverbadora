@@ -231,6 +231,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // descontos/contratos mesmo com propostas ja aprovadas.
     await refreshContratos(c.env);
     await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
+    await refreshAnuencias(c.env);  // pra anuenciaVigente(id) ver o PG (bug: dashboard mostrava "pendente" mesmo com anuencia real gravada)
     const servidores = servidoresDaPrefeitura(id);
     const contratos = contratosDaPrefeitura(id); // usado so nos KPIs de contagem
     const todosContratos = listContratos();      // usado no comprometido (inclui telemedicina/outros)
