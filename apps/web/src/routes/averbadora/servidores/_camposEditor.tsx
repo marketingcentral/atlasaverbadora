@@ -48,12 +48,19 @@ export function CamposEditor({
     if (!c) return;
     let next = campos.slice();
     next[idx] = { ...c, ...patch };
-    // Regra 21/07/2026: ativar visivel de um custom -> desmarca AUTOMATICAMENTE
-    // visivel+obrigatorio de TODOS os sistema (menos travados cpf/matricula).
-    // Desativar visivel do custom nao remarca automaticamente — user faz manual
-    // (nao ha "estado anterior" pra restaurar sem ambiguidade).
+    // Regra 21/07/2026 (bidirecional):
+    //  - ATIVAR visivel de um custom -> DESMARCA sistema (menos travados).
+    //  - DESATIVAR visivel de um custom -> se nao sobrar NENHUM outro custom
+    //    visivel, re-marca visivel dos sistema (obrigatorio fica off — user
+    //    ajusta se quiser). Assim quando o user "desliga o preset" volta ao
+    //    default editavel pra fazer outras configuracoes.
     if (!c.sistema && patch.visivel === true) {
       next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
+    } else if (!c.sistema && patch.visivel === false) {
+      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
+      if (!aindaTemCustomVisivel) {
+        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
+      }
     }
     onChange(next);
   };
@@ -69,7 +76,14 @@ export function CamposEditor({
   const removeCampo = (idx: number) => {
     const c = campos[idx];
     if (!c || c.sistema || c.travado) return;
-    onChange(campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i })));
+    let next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
+    // Se removeu o ultimo custom visivel, re-marca visivel dos sistema (mesmo
+    // padrao do toggle desativa). Deixa o editor de volta ao default editavel.
+    const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
+    if (!aindaTemCustomVisivel) {
+      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
+    }
+    onChange(next);
   };
 
   const addCustom = () => {
