@@ -272,6 +272,25 @@ export const bancos: BancoAdmin[] = [];
 const BANCOS_SEED: BancoAdmin[] = bancos.map((b) => ({ ...b }));
 
 // Hidrata o array `bancos` do Postgres uma vez por isolate (semeando se vazio).
+// High-water-mark de IDs em KV pra impedir reciclagem apos delete.
+// Cenario que motivou (21/07/2026): admin deletou banco id=X, criou outro.
+// `Math.max(...bancos.map(b => b.id), 0) + 1` recicla id=X quando a lista
+// perde o registro. Consequencia: dev-user com banco_id=X hardcoded loga
+// e "cai" no banco novo. Fix: guardar o max ja visto em KV; reservar o
+// proximo id sempre acima disso.
+async function nextIdMonotonic(env: Env, kvKey: string, currentMaxInMemory: number): Promise<number> {
+  const stored = env.KV_CACHE ? Number((await env.KV_CACHE.get(kvKey)) ?? 0) : 0;
+  const next = Math.max(stored, currentMaxInMemory, 0) + 1;
+  if (env.KV_CACHE) await env.KV_CACHE.put(kvKey, String(next));
+  return next;
+}
+async function nextBancoId(env: Env): Promise<number> {
+  return nextIdMonotonic(env, "admin:bancos_max_id", Math.max(0, ...bancos.map((b) => b.id)));
+}
+async function nextPrefeituraId(env: Env): Promise<number> {
+  return nextIdMonotonic(env, "admin:prefeituras_max_id", Math.max(0, ...prefeituras.map((p) => p.id)));
+}
+
 // Fail-safe: se o banco estiver indisponível, mantém as fixtures em memória.
 let _bancosLoad: Promise<void> | null = null;
 export function ensureBancosLoaded(env: Env): Promise<void> {
@@ -1810,7 +1829,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     const novo: BancoAdmin = {
       ...rest,
-      id: Math.max(...bancos.map((b) => b.id), 0) + 1,
+      id: await nextBancoId(c.env),
       loginEmail: normalizedLogin,
       passwordHash: password ? await sha256Hex(password) : undefined,
     };
@@ -2039,7 +2058,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     const novo: PrefeituraAdmin = {
       ...rest,
-      id: Math.max(...prefeituras.map((p) => p.id), 0) + 1,
+      id: await nextPrefeituraId(c.env),
       loginEmail: normalizedLogin,
       passwordHash: password ? await sha256Hex(password) : undefined,
     };
@@ -2840,7 +2859,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         if (dup) { out.errors.push({ line, message: `loginEmail ja em uso pelo banco ${dup.nome}` }); continue; }
       }
       const banco: BancoAdmin = {
-        id: existing?.id ?? Math.max(0, ...bancos.map((b) => b.id)) + 1,
+        id: existing?.id ?? await nextBancoId(c.env),
         nome: r.nome!,
         status: ((r.status ?? "ativo").toLowerCase() as BancoAdmin["status"]),
         adapter: ((r.adapter ?? "sandbox").toLowerCase() as BancoAdmin["adapter"]),
@@ -2885,7 +2904,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         if (dup) { out.errors.push({ line, message: `loginEmail ja em uso pela prefeitura ${dup.nome}` }); continue; }
       }
       const p: PrefeituraAdmin = {
-        id: existing?.id ?? Math.max(0, ...prefeituras.map((x) => x.id)) + 1,
+        id: existing?.id ?? await nextPrefeituraId(c.env),
         nome: r.nome!,
         uf: r.uf!.toUpperCase(),
         municipioIbge: ibge,

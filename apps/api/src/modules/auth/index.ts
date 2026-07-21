@@ -9,7 +9,7 @@ import { sha256Hex } from "../admin/api-tokens.js";
 import { enviarCodigo } from "../admin/mailer.js";
 import { gerarCodigoUnico } from "../admin/codes.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
-import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded, refreshServidores } from "../admin/index.js";
+import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidoresLoaded, ensurePerfisLoaded, refreshServidores, ensureBancosLoaded, ensurePrefeiturasLoaded } from "../admin/index.js";
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
 import { verifyTotp } from "../../_shared/totp.js";
 import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf, loadServidores, upsertPrefeitura, upsertBanco, upsertCollectionRow } from "../../db/repos.js";
@@ -258,6 +258,26 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     }
 
     if (!resolved) throw Errors.unauthorized("Credenciais invalidas");
+
+    // Validacao de referencia: se o usuario resolvido carrega banco_id ou
+    // prefeitura_id, valida que a entidade referenciada EXISTE e esta ATIVA.
+    // Sem isso, dev-user com banco_id=1 hardcoded loga mesmo quando o admin
+    // deletou o banco 1 e criou outro — mostrando dados do "novo banco 1"
+    // (se id foi reciclado) ou dados orfaos in-memory (bug reportado 21/07).
+    if (resolved.banco_id != null) {
+      await ensureBancosLoaded(c.env);
+      const b = bancosStore.find((x) => x.id === resolved!.banco_id);
+      if (!b) throw Errors.unauthorized(`Banco vinculado a esta conta (id=${resolved.banco_id}) nao existe mais. Peca ao admin cadastrar um novo banco e vincular a esta conta.`);
+      if (b.status === "inativo") throw Errors.unauthorized(`Banco "${b.nome}" esta INATIVO. Peca ao admin reativar antes de logar.`);
+      if (b.status === "pausado") throw Errors.unauthorized(`Banco "${b.nome}" esta PAUSADO. Peca ao admin reativar antes de logar.`);
+    }
+    if (resolved.prefeitura_id != null) {
+      await ensurePrefeiturasLoaded(c.env);
+      const p = prefeiturasStore.find((x) => x.id === resolved!.prefeitura_id);
+      if (!p) throw Errors.unauthorized(`Prefeitura vinculada a esta conta (id=${resolved.prefeitura_id}) nao existe mais. Peca ao admin cadastrar uma nova prefeitura e vincular a esta conta.`);
+      if (p.status === "inativo") throw Errors.unauthorized(`Prefeitura "${p.nome}" esta INATIVA. Peca ao admin reativar antes de logar.`);
+      if (p.status === "pausado") throw Errors.unauthorized(`Prefeitura "${p.nome}" esta PAUSADA. Peca ao admin reativar antes de logar.`);
+    }
 
     // 2FA: se o usuario resolvido tem twoFactorEnabled=true e twoFactorSecret
     // configurado, NAO emite JWT de sessao ainda. Emite um mfa_token curto
