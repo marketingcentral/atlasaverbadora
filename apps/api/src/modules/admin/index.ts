@@ -2454,6 +2454,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         matricula: ct.matricula,
         nome: ct.nome,
         tipoContrato: ct.tipoContrato,
+        // Sinais adicionais pro diagnostico de "qual produto foi realmente
+        // proposto" — usados por deriveProdutoLabel no /prefeitura/contratos.
+        // Sem eles nao da pra distinguir TELEMEDICINA/PORTABILIDADE/CARTAO_*
+        // (tipoContrato so aceita EMPRESTIMO/REFIN/ECONSIGNADO).
+        tipoMargem: ct.tipoMargem,
+        observacoes: ct.observacoes,
+        bancoOrigem: ct.bancoOrigem,
         totalParcelas: ct.totalParcelas,
         valorParcela: ct.valorParcela,
         convenio: ct.convenio,
