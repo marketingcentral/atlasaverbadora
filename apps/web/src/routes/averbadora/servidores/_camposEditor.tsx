@@ -101,6 +101,15 @@ export function CamposEditor({
     setNovoTipo("texto");
   };
 
+  // Preview dos campos EFETIVOS (que vao pro CSV modelo, importacao e tabela
+  // de visualizacao). Cliente pediu 21/07/2026: mostrar o que foi editado no
+  // custom selecionado. Aqui mostramos TODOS os visiveis (travados + custom
+  // ativos + sistema restantes) na ordem — deixa claro o que sera usado.
+  const efetivos = campos
+    .filter((c) => c.visivel)
+    .sort((a, b) => a.ordem - b.ordem);
+  const customsAtivos = efetivos.filter((c) => !c.sistema);
+
   return (
     <div style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 12, padding: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" }}>
@@ -120,6 +129,38 @@ export function CamposEditor({
           </Button>
         </div>
       </div>
+
+      {customsAtivos.length > 0 ? (
+        <div style={{
+          marginBottom: 14, padding: "12px 14px", borderRadius: 10,
+          border: "1px solid var(--gold-500)",
+          background: "color-mix(in srgb, var(--gold-500) 10%, transparent)",
+          fontSize: 13,
+        }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "var(--gold-500)", marginBottom: 8 }}>
+            {customsAtivos.length === 1 ? "Custom ativa" : `${customsAtivos.length} customs ativos`} — o CSV modelo e o import vão usar exatamente estes campos:
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {efetivos.map((c) => (
+              <div key={c.key} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: c.sistema ? "var(--text-muted)" : "var(--gold-500)", minWidth: 200 }}>
+                  {c.key}{!c.sistema ? " (custom)" : ""}{c.travado ? " · travado" : ""}
+                </span>
+                <span style={{ fontSize: 13, fontWeight: 600, flex: 1 }}>{c.label}</span>
+                <span style={{ fontSize: 11, color: "var(--text-dim)", background: "var(--bg-elev-2)", padding: "2px 8px", borderRadius: 4 }}>{c.tipo}</span>
+                {c.obrigatorio ? (
+                  <span style={{ fontSize: 11, color: "var(--danger-500)", background: "color-mix(in srgb, var(--danger-500) 15%, transparent)", padding: "2px 8px", borderRadius: 4, fontWeight: 700 }}>obrigatório</span>
+                ) : (
+                  <span style={{ fontSize: 11, color: "var(--text-dim)", padding: "2px 8px" }}>opcional</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--text-dim)" }}>
+            Pra reativar campos do sistema (nome, telefone, cargo, etc.), desmarque o "Visível" do custom abaixo.
+          </div>
+        </div>
+      ) : null}
 
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
