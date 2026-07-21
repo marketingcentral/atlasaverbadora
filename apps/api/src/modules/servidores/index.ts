@@ -1285,35 +1285,77 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     const body = z.object({ adf: z.string().min(3) }).parse(await c.req.json());
+    const matriculasDoCpf = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((x) => x.matricula);
+
+    // Duas fontes de contrato pra portar:
+    //  1. Interno (getContrato) — proposta/contrato feito NO Atlas.
+    //  2. External loan (getExternalLoan) — contrato em outro banco importado
+    //     pela prefeitura via tombamento. E' o caso comum aqui (ex.: CEF/Bradesco
+    //     que o servidor tinha antes de conhecer o Atlas). Antes o handler so
+    //     olhava (1), entao clicar "Publicar" nos externos dava 404 silencioso
+    //     e nada aparecia no portal do banco.
     const ct = getContrato(body.adf);
-    if (!ct) throw Errors.notFound("contrato");
-    // Isolamento: contrato tem que ser de uma matricula desse CPF.
-    const matriculasDoCpf = new Set(SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).map((x) => x.matricula));
-    if (!matriculasDoCpf.has(ct.matricula)) throw Errors.notFound("contrato");
-    // So contrato ATIVO ou AVERBADO faz sentido portar.
-    const sit = (ct.situacao ?? "").toLowerCase();
-    if (!(sit.includes("ativ") || sit.includes("averb"))) {
-      throw Errors.validation({ contrato: "so contrato ativo/averbado pode ser portado" });
+    if (ct) {
+      // Fluxo (1) — contrato interno.
+      if (!matriculasDoCpf.includes(ct.matricula)) throw Errors.notFound("contrato");
+      const sit = (ct.situacao ?? "").toLowerCase();
+      if (!(sit.includes("ativ") || sit.includes("averb"))) {
+        throw Errors.validation({ contrato: "so contrato ativo/averbado pode ser portado" });
+      }
+      const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === ct.matricula);
+      const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+      const bancoOrigem = bancos.find((b) => b.id === ct.bancoId);
+      const parcelasRestantes = Math.max(1, ct.totalParcelas - ct.parcelasPagas);
+      const intencao = await criarIntencao(c.env, {
+        servidorNome: entry?.nome ?? ct.nome,
+        servidorMatricula: ct.matricula,
+        servidorCpfMasked: entry?.cpfMasked ?? "***.***.***-**",
+        prefeituraId: conv ? Number(conv.prefeituraId ?? 0) : 0,
+        prefeituraNome: conv?.prefeitura ?? "",
+        convenioId: ct.convenioId,
+        contratoAdfOrigem: ct.adf,
+        bancoOrigemId: ct.bancoId,
+        bancoOrigemNome: bancoOrigem?.nome ?? `Banco ${ct.bancoId}`,
+        saldoDevedor: Math.round(ct.saldoDevedor * 100) / 100,
+        valorParcela: Math.round(ct.valorParcela * 100) / 100,
+        parcelasRestantes,
+        totalParcelasOriginal: ct.totalParcelas,
+        taxaAm: ct.taxaAm,
+      });
+      return c.json({ intencao });
     }
-    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === ct.matricula);
-    const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
-    const bancoOrigem = bancos.find((b) => b.id === ct.bancoId);
-    const parcelasRestantes = Math.max(1, ct.totalParcelas - ct.parcelasPagas);
+
+    // Fluxo (2) — external loan (tombamento). Procura em cada matricula do CPF.
+    let external: ReturnType<typeof getExternalLoan> = undefined;
+    let matEncontrada: string | undefined;
+    for (const m of matriculasDoCpf) {
+      const l = getExternalLoan(m, body.adf);
+      if (l) { external = l; matEncontrada = m; break; }
+    }
+    if (!external || !matEncontrada) throw Errors.notFound("contrato");
+
+    const entry = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === matEncontrada);
+    const conv = entry ? CONVENIOS_MOCK.find((cv) => cv.id === entry.idConvenio) : undefined;
+    // Resolve bancoOrigemId: nome do external tipo "104-Caixa Economica Federal".
+    // Tenta match por nome contido (case-insensitive). Se nao achar (banco externo
+    // que nao existe no Atlas — o mais comum), usa 0 — nenhum banco tem id=0,
+    // entao TODOS os bancos veem a intencao (comportamento desejado).
+    const bancoOrigem = bancos.find((b) => external!.bancoNome.toLowerCase().includes(b.nome.toLowerCase()));
     const intencao = await criarIntencao(c.env, {
-      servidorNome: entry?.nome ?? ct.nome,
-      servidorMatricula: ct.matricula,
+      servidorNome: entry?.nome ?? external.bancoNome,
+      servidorMatricula: matEncontrada,
       servidorCpfMasked: entry?.cpfMasked ?? "***.***.***-**",
       prefeituraId: conv ? Number(conv.prefeituraId ?? 0) : 0,
       prefeituraNome: conv?.prefeitura ?? "",
-      convenioId: ct.convenioId,
-      contratoAdfOrigem: ct.adf,
-      bancoOrigemId: ct.bancoId,
-      bancoOrigemNome: bancoOrigem?.nome ?? `Banco ${ct.bancoId}`,
-      saldoDevedor: Math.round(ct.saldoDevedor * 100) / 100,
-      valorParcela: Math.round(ct.valorParcela * 100) / 100,
-      parcelasRestantes,
-      totalParcelasOriginal: ct.totalParcelas,
-      taxaAm: ct.taxaAm,
+      convenioId: String(conv?.id ?? ""),
+      contratoAdfOrigem: external.id,
+      bancoOrigemId: bancoOrigem?.id ?? 0,
+      bancoOrigemNome: external.bancoNome,
+      saldoDevedor: Math.round(external.saldoDevedor * 100) / 100,
+      valorParcela: Math.round(external.valorParcela * 100) / 100,
+      parcelasRestantes: external.parcelasRestantes,
+      totalParcelasOriginal: external.totalParcelas,
+      taxaAm: external.taxaAm,
     });
     return c.json({ intencao });
   })

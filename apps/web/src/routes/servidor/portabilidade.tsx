@@ -317,6 +317,11 @@ function MarketplaceBlock() {
   const publicar = useMutation({
     mutationFn: (adf: string) => atlas.portabilidade.publicar(adf),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["servidor", "portabilidade"] }),
+    onError: (e) => {
+      // Feedback: antes era mudo, servidor clicava e nada visivel acontecia.
+      // Erro mais comum: 404 (contrato nao existe) ou 4xx de validacao.
+      alert(`Nao foi possivel publicar: ${(e as Error).message}`);
+    },
   });
   const cancelar = useMutation({
     mutationFn: (id: string) => atlas.portabilidade.cancelar(id),
