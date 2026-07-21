@@ -46,12 +46,22 @@ export function CamposEditor({
   const updateCampo = (idx: number, patch: Partial<ServidorCampoConfig>) => {
     const c = campos[idx];
     if (!c) return;
-    const next = campos.slice();
+    let next = campos.slice();
     next[idx] = { ...c, ...patch };
-    // Regra revertida 21/07/2026: custom NAO desmarca/remarca sistema mais.
-    // Cliente pediu: "quando fizer campo customizado e baixar exemplo, e' pra
-    // puxar tudo". Sistema fica sempre editavel; user decide manualmente quais
-    // campos entram no CSV via checkbox Visivel.
+    // Regra bidirecional (cliente 21/07/2026, versao final):
+    //  - MARCAR visivel de um custom -> DESMARCA visivel+obrigatorio de todos
+    //    os sistema (menos travados cpf/matricula).
+    //  - DESMARCAR visivel de um custom (e nao sobrar outro custom visivel)
+    //    -> RE-MARCA visivel de todos os sistema (obrigatorio fica off).
+    //  Sistema NAO fica desabilitado visualmente — user pode reeditar manual.
+    if (!c.sistema && patch.visivel === true) {
+      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
+    } else if (!c.sistema && patch.visivel === false) {
+      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
+      if (!aindaTemCustomVisivel) {
+        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
+      }
+    }
     onChange(next);
   };
 
@@ -66,7 +76,13 @@ export function CamposEditor({
   const removeCampo = (idx: number) => {
     const c = campos[idx];
     if (!c || c.sistema || c.travado) return;
-    const next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
+    let next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
+    // Se removeu o ultimo custom visivel, re-marca sistema (mesmo padrao do
+    // toggle desativa).
+    const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
+    if (!aindaTemCustomVisivel) {
+      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
+    }
     onChange(next);
   };
 
@@ -75,19 +91,18 @@ export function CamposEditor({
     if (!slug) return;
     const key = `custom_${slug}`;
     if (campos.some((c) => c.key === key)) return;
-    // Clicar em "+ Adicionar" = commit da alteracao. Anexa custom + persiste
-    // com TODAS as alteracoes pendentes (labels/visivel/obrigatorio) num call
-    // so. Sistema fica intacto — custom acumula, nao substitui (regra revertida
-    // 21/07/2026).
+    // Novo custom visivel:true -> desmarca sistema (menos travados). Mesma
+    // regra do toggle manual (updateCampo).
+    const semSistema = campos.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
     const nextCampos: ServidorCampoConfig[] = [
-      ...campos,
+      ...semSistema,
       {
         key,
         label: novoNome.trim(),
         tipo: novoTipo,
         obrigatorio: false,
         visivel: true,
-        ordem: campos.length,
+        ordem: semSistema.length,
         sistema: false,
       },
     ];
