@@ -707,7 +707,23 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // dados reais no PG. Cliente reportou 21/07 apos deploy: "Total: 0".
     await refreshConvenios(c.env);
     await refreshContratos(c.env);
-    const rows = contratosDaPrefeitura(id).map((ct) => {
+    // Ordena por data de criacao DESC (mais novos primeiro) — cliente pediu
+    // 21/07/2026 que contratos novos apareçam no topo da tabela. Usa criadoEmIso
+    // quando presente (formato ISO 8601, ordem exata por segundo); fallback pra
+    // `lancamento` (DD/MM/YYYY) parseado pra ISO — mantem ordem cronologica
+    // pra contratos antigos que ainda nao tinham criadoEmIso.
+    const parseLancIso = (s: string): string => {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s ?? "");
+      return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : "";
+    };
+    const rows = contratosDaPrefeitura(id)
+      .slice()
+      .sort((a, b) => {
+        const da = a.criadoEmIso ?? parseLancIso(a.lancamento);
+        const db = b.criadoEmIso ?? parseLancIso(b.lancamento);
+        return db.localeCompare(da); // DESC
+      })
+      .map((ct) => {
       // deriveProdutoLabel usa TODOS os sinais (observacoes/bancoOrigem/
       // tipoMargem/tipoContrato) pra decidir o produto real que foi proposto,
       // nao so o tipoContrato cru (que fica EMPRESTIMO pra telemedicina,
