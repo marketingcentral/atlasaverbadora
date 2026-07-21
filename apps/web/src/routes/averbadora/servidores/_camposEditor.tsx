@@ -46,22 +46,12 @@ export function CamposEditor({
   const updateCampo = (idx: number, patch: Partial<ServidorCampoConfig>) => {
     const c = campos[idx];
     if (!c) return;
-    let next = campos.slice();
+    const next = campos.slice();
     next[idx] = { ...c, ...patch };
-    // Regra 21/07/2026 (bidirecional):
-    //  - ATIVAR visivel de um custom -> DESMARCA sistema (menos travados).
-    //  - DESATIVAR visivel de um custom -> se nao sobrar NENHUM outro custom
-    //    visivel, re-marca visivel dos sistema (obrigatorio fica off — user
-    //    ajusta se quiser). Assim quando o user "desliga o preset" volta ao
-    //    default editavel pra fazer outras configuracoes.
-    if (!c.sistema && patch.visivel === true) {
-      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
-    } else if (!c.sistema && patch.visivel === false) {
-      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
-      if (!aindaTemCustomVisivel) {
-        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
-      }
-    }
+    // Regra revertida 21/07/2026: custom NAO desmarca/remarca sistema mais.
+    // Cliente pediu: "quando fizer campo customizado e baixar exemplo, e' pra
+    // puxar tudo". Sistema fica sempre editavel; user decide manualmente quais
+    // campos entram no CSV via checkbox Visivel.
     onChange(next);
   };
 
@@ -76,13 +66,7 @@ export function CamposEditor({
   const removeCampo = (idx: number) => {
     const c = campos[idx];
     if (!c || c.sistema || c.travado) return;
-    let next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
-    // Se removeu o ultimo custom visivel, re-marca visivel dos sistema (mesmo
-    // padrao do toggle desativa). Deixa o editor de volta ao default editavel.
-    const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
-    if (!aindaTemCustomVisivel) {
-      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
-    }
+    const next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
     onChange(next);
   };
 
@@ -93,19 +77,17 @@ export function CamposEditor({
     if (campos.some((c) => c.key === key)) return;
     // Clicar em "+ Adicionar" = commit da alteracao. Anexa custom + persiste
     // com TODAS as alteracoes pendentes (labels/visivel/obrigatorio) num call
-    // so. Sem auto-save entre cliques (cliente pediu 21/07/2026).
-    // Regra: novo custom com visivel:true -> desmarca visivel/obrigatorio
-    // de todos os sistema (menos travados). Mesmo padrao do toggle manual.
-    const semSistemaAtivo = campos.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
+    // so. Sistema fica intacto — custom acumula, nao substitui (regra revertida
+    // 21/07/2026).
     const nextCampos: ServidorCampoConfig[] = [
-      ...semSistemaAtivo,
+      ...campos,
       {
         key,
         label: novoNome.trim(),
         tipo: novoTipo,
         obrigatorio: false,
         visivel: true,
-        ordem: semSistemaAtivo.length,
+        ordem: campos.length,
         sistema: false,
       },
     ];
@@ -146,74 +128,65 @@ export function CamposEditor({
             </tr>
           </thead>
           <tbody>
-            {(() => {
-              // Se ha algum campo CUSTOM com visivel=true, os campos SISTEMA
-              // (menos os travados cpf/matricula) ficam desabilitados. Cliente
-              // pediu 21/07/2026: enquanto o custom estiver ativo, outros
-              // campos ficam bloqueados; desmarcar o visivel do custom libera.
-              const customAtivo = campos.some((c) => !c.sistema && c.visivel);
-              return campos.sort((a, b) => a.ordem - b.ordem).map((c, i) => {
-                const bloqueado = c.travado === true;
-                const sistemaTravadoPorCustom = c.sistema && !bloqueado && customAtivo;
-                const rowDisabled = bloqueado || sistemaTravadoPorCustom;
-                return (
-                  <tr key={c.key} style={{ borderTop: "1px solid var(--border)", opacity: c.visivel ? (sistemaTravadoPorCustom ? 0.5 : 1) : 0.55 }}>
-                    <td style={td}>
-                      <div style={{ display: "flex", gap: 2 }}>
-                        <button type="button" style={arrowBtn} onClick={() => move(i, -1)} disabled={i === 0 || rowDisabled} title="Subir">↑</button>
-                        <button type="button" style={arrowBtn} onClick={() => move(i, +1)} disabled={i === campos.length - 1 || rowDisabled} title="Descer">↓</button>
-                      </div>
-                    </td>
-                    <td style={{ ...td, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)" }}>
-                      {c.key}{c.sistema ? "" : " (custom)"}
-                    </td>
-                    <td style={td}>
-                      <input
-                        value={c.label}
-                        onChange={(e) => updateCampo(i, { label: e.target.value })}
-                        style={inputStyle}
-                        disabled={rowDisabled}
-                      />
-                    </td>
-                    <td style={td}>
-                      <select
-                        value={c.tipo}
-                        onChange={(e) => updateCampo(i, { tipo: e.target.value as ServidorCampoTipo })}
-                        style={inputStyle}
-                        disabled={bloqueado || c.sistema || sistemaTravadoPorCustom}
-                      >
-                        {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                      </select>
-                    </td>
-                    <td style={{ ...td, textAlign: "center" }}>
-                      <input
-                        type="checkbox"
-                        checked={c.visivel}
-                        disabled={rowDisabled}
-                        onChange={(e) => updateCampo(i, { visivel: e.target.checked })}
-                      />
-                    </td>
-                    <td style={{ ...td, textAlign: "center" }}>
-                      <input
-                        type="checkbox"
-                        checked={c.obrigatorio}
-                        disabled={rowDisabled}
-                        onChange={(e) => updateCampo(i, { obrigatorio: e.target.checked })}
-                      />
-                    </td>
-                    <td style={{ ...td, textAlign: "right" }}>
-                      {c.sistema || bloqueado ? (
-                        <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                          {bloqueado ? "travado" : sistemaTravadoPorCustom ? "bloq. por custom" : "sistema"}
-                        </span>
-                      ) : (
-                        <button type="button" style={removeBtn} onClick={() => removeCampo(i)} title="Remover campo custom">✕</button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              });
-            })()}
+            {campos.sort((a, b) => a.ordem - b.ordem).map((c, i) => {
+              const bloqueado = c.travado === true;
+              return (
+                <tr key={c.key} style={{ borderTop: "1px solid var(--border)", opacity: c.visivel ? 1 : 0.55 }}>
+                  <td style={td}>
+                    <div style={{ display: "flex", gap: 2 }}>
+                      <button type="button" style={arrowBtn} onClick={() => move(i, -1)} disabled={i === 0} title="Subir">↑</button>
+                      <button type="button" style={arrowBtn} onClick={() => move(i, +1)} disabled={i === campos.length - 1} title="Descer">↓</button>
+                    </div>
+                  </td>
+                  <td style={{ ...td, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)" }}>
+                    {c.key}{c.sistema ? "" : " (custom)"}
+                  </td>
+                  <td style={td}>
+                    <input
+                      value={c.label}
+                      onChange={(e) => updateCampo(i, { label: e.target.value })}
+                      style={inputStyle}
+                      disabled={bloqueado}
+                    />
+                  </td>
+                  <td style={td}>
+                    <select
+                      value={c.tipo}
+                      onChange={(e) => updateCampo(i, { tipo: e.target.value as ServidorCampoTipo })}
+                      style={inputStyle}
+                      disabled={bloqueado || c.sistema}
+                    >
+                      {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ ...td, textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={c.visivel}
+                      disabled={bloqueado}
+                      onChange={(e) => updateCampo(i, { visivel: e.target.checked })}
+                    />
+                  </td>
+                  <td style={{ ...td, textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={c.obrigatorio}
+                      disabled={bloqueado}
+                      onChange={(e) => updateCampo(i, { obrigatorio: e.target.checked })}
+                    />
+                  </td>
+                  <td style={{ ...td, textAlign: "right" }}>
+                    {c.sistema || bloqueado ? (
+                      <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
+                        {bloqueado ? "travado" : "sistema"}
+                      </span>
+                    ) : (
+                      <button type="button" style={removeBtn} onClick={() => removeCampo(i)} title="Remover campo custom">✕</button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
