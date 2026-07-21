@@ -75,20 +75,19 @@ export function deriveTipoMargem(ct: Pick<ContratoFull, "tipoMargem" | "tipoCont
 
 /** Deriva o rotulo do PRODUTO originalmente proposto, usando TODOS os sinais.
  *  Ordem de precedencia (mais especifico primeiro):
- *    1. observacoes contem "telemedicina" -> TELEMEDICINA (cotacao ativada em
- *       /admin/telemedicina/cotacoes/:id/ativar cria contrato com tipoContrato
- *       EMPRESTIMO mas com "Telemedicina" nas observacoes).
- *    2. bancoOrigem preenchido -> PORTABILIDADE (contrato substitui outro banco).
- *    3. observacoes contem "refinancia" -> REFIN (renegociacao de contrato ativo).
+ *    1. observacoes contem "telemedicina" -> TELEMEDICINA.
+ *    2. bancoOrigem preenchido OU observacoes contem "portabilid" -> PORTABILIDADE.
+ *       (portabilidade via /servidor/propostas so seta observacoes; via marketplace
+ *       seta bancoOrigem. Aceitar os dois pra nao classificar erroneamente como REFIN.)
+ *    3. observacoes contem "refinancia" -> REFIN.
  *    4. tipoMargem === CARTAO_BENEFICIOS -> CARTAO_BENEFICIO.
  *    5. tipoContrato === ECONSIGNADO OU tipoMargem === CARTAO_CONSIGNADO -> CARTAO_CONSIGNADO.
  *    6. tipoContrato === REFIN -> REFIN.
- *    7. default -> EMPRESTIMO.
- *  Usado por /prefeitura/contratos + poderia ser usado em ADF/carteira/etc. */
+ *    7. default -> EMPRESTIMO. */
 export function deriveProdutoLabel(ct: Pick<ContratoFull, "tipoContrato" | "tipoMargem" | "observacoes" | "bancoOrigem">): string {
   const obs = (ct.observacoes ?? "").toLowerCase();
   if (/telemedic/.test(obs)) return "TELEMEDICINA";
-  if (ct.bancoOrigem) return "PORTABILIDADE";
+  if (ct.bancoOrigem || /portabilid/.test(obs)) return "PORTABILIDADE";
   if (/refinancia/.test(obs)) return "REFIN";
   if (ct.tipoMargem === "CARTAO_BENEFICIOS") return "CARTAO_BENEFICIO";
   if (ct.tipoContrato === "ECONSIGNADO" || ct.tipoMargem === "CARTAO_CONSIGNADO") return "CARTAO_CONSIGNADO";

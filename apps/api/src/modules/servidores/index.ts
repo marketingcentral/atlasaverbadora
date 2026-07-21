@@ -995,7 +995,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       diasCarencia: 30,
       valorParcela: round2(cet.parcela),
       codigoVerba: conv?.codigoVerba ?? "",
-      observacoes: `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
+      // observacoes carregam o TIPO DA PROPOSTA — usado por deriveProdutoLabel
+      // pra distinguir PORTABILIDADE/REFIN quando bancoOrigem nao vem preenchido
+      // (o fluxo /me/propostas nao coleta banco de origem — so o /portabilidade
+      // marketplace faz). Sem isso, portabilidade caia no default REFIN.
+      observacoes: body.tipo === "portabilidade"
+        ? `Portabilidade solicitada via app do servidor (destino: ${body.bancoNome ?? "Banco Atlas"})`
+        : body.tipo === "refinanciamento"
+          ? `Refinanciamento solicitado via app do servidor (${body.bancoNome ?? "Banco Atlas"})`
+          : `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
       isReserva: true,
       tipoMargem: "EMPRESTIMO", // explicit bucket — nao confunde com margem de cartao
       ator: `servidor:${s.id}`,
