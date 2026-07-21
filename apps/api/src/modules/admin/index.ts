@@ -2449,6 +2449,21 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     await persistFolha(c.env, novo);
     return c.json({ folha: novo });
   })
+  // Deleta folha individual (cirurgico, nao usa purge global). Util pra
+  // higienizar folhas de teste criadas via 'Avancar meses' sem tocar em
+  // contratos/servidores/prefeituras.
+  .delete("/v1/admin/folhas/:id", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    await ensureFolhasLoaded(c.env);
+    const id = c.req.param("id");
+    const idx = folhas.findIndex((f) => f.id === id);
+    if (idx < 0) throw Errors.notFound("folha");
+    const removida = folhas[idx]!;
+    folhas.splice(idx, 1);
+    try { await deleteCollectionRow(c.env, "admin_folhas", id); } catch { /* fail-safe */ }
+    pushEvent("info", "admin.folhas.delete", `Folha ${id} (${removida.competencia}/${removida.prefeitura}) removida por user:${c.get("jwt").sub}`);
+    return c.json({ ok: true, id, competencia: removida.competencia, prefeitura: removida.prefeitura });
+  })
   .post("/v1/admin/folhas/:id/consolidar", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
     await ensureFolhasLoaded(c.env);

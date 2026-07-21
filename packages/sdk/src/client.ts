@@ -1927,6 +1927,7 @@ export class AtlasClient {
     listFolhas: () => this.request<{ folhas: AdminFolha[] }>("/v1/admin/folhas"),
     upsertFolha: (f: AdminFolhaInput) => this.request<{ folha: AdminFolha }>("/v1/admin/folhas", { method: "POST", body: f }),
     consolidarFolha: (id: string) => this.request<{ folha: AdminFolha }>(`/v1/admin/folhas/${id}/consolidar`, { method: "POST" }),
+    deleteFolha: (id: string) => this.request<{ ok: true; id: string }>(`/v1/admin/folhas/${id}`, { method: "DELETE" }),
     /** Atalho de teste: cria+consolida N folhas em sequencia (a partir da
      *  proxima competencia sem folha) pra simular meses passando. Cada folha
      *  consolidada dispara cascade parcelasPagas +1 em contratos averbados. */
