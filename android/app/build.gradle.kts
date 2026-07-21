@@ -6,14 +6,14 @@ plugins {
 
 android {
     namespace = "io.atlas.servidor"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "io.atlas.servidor"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 55
-        versionName = "3.33.0"
+        targetSdk = 35
+        versionCode = 56
+        versionName = "3.34.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
