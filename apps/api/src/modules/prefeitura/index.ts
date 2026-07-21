@@ -701,11 +701,22 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   // ===== Passo 7 — Contratos / Tombamento =====
   .get("/v1/prefeitura/contratos", (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    const rows = contratosDaPrefeitura(id).map((ct) => ({
-      adf: ct.adf, bancoNome: bancoNome(ct.bancoId), matricula: ct.matricula, nome: ct.nome,
-      situacao: ct.situacao, tipoContrato: ct.tipoContrato, valorParcela: ct.valorParcela,
-      totalParcelas: ct.totalParcelas, lancamento: ct.lancamento,
-    }));
+    const rows = contratosDaPrefeitura(id).map((ct) => {
+      // Telemedicina: contrato criado pelo /admin/telemedicina/cotacoes/:id/ativar
+      // vem com tipoContrato=EMPRESTIMO e bancoId do parceiro (ATLAS TECH). Detecta
+      // via observacoes e sobrescreve pros rotulos corretos. Mesma logica da
+      // materializacao de ADF em modules/prefeitura/store.ts:249-276.
+      const isTelemedicina = /telemedicina/i.test(ct.observacoes ?? "");
+      return {
+        adf: ct.adf,
+        bancoNome: isTelemedicina ? "Telemedicina Atlas" : bancoNome(ct.bancoId),
+        matricula: ct.matricula, nome: ct.nome,
+        situacao: ct.situacao,
+        tipoContrato: isTelemedicina ? "TELEMEDICINA" : ct.tipoContrato,
+        valorParcela: ct.valorParcela,
+        totalParcelas: ct.totalParcelas, lancamento: ct.lancamento,
+      };
+    });
     return c.json({ contratos: rows, total: rows.length });
   })
   .get("/v1/prefeitura/tombamento/lotes", async (c) => {
