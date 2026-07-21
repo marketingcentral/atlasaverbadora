@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { Button, Card, Pill } from "@atlas/ui/web";
 import {
   ContratoElegivelMock as ContratoElegivel,
@@ -8,6 +9,7 @@ import {
   STORAGE_KEY_ID,
   STORAGE_KEY_META,
 } from "../../lib/matricula-data";
+import { atlas } from "../../lib/sdk";
 
 // Bancos que aceitariam portabilidade (mock — em prod viria de
 // atlas.servidor.ofertas() filtrado por convenio + produto portabilidade).
@@ -98,30 +100,85 @@ export function ServidorPortabilidade() {
     nav(`/servidor/termo?${params.toString()}`);
   }
 
+  // Bloqueio: se ja ha proposta em analise (emprestimo/portabilidade/refin/
+  // telemedicina), o servidor NAO pode iniciar outra — a margem ja esta
+  // travada. O backend rejeita com 422 proposta_em_andamento; aqui na UI
+  // e' pra o servidor ver antes de perder tempo selecionando contratos.
+  // refetchInterval de 10s pra desbloquear rapido quando o banco decide.
+  const propostasQ = useQuery({
+    queryKey: ["servidor", "propostas", info?.matricula ?? "all"],
+    queryFn: () => atlas.servidor.propostas(info?.matricula),
+    refetchInterval: 10_000,
+    refetchOnWindowFocus: true,
+  });
+  const propostaBloqueadora = (propostasQ.data?.propostas ?? []).find((p) => {
+    // Whitelist EXPLICITA (mesma logica do backend em POST /me/propostas):
+    // proposta esta "em analise" se aguard/aprov/formaliz/em analise. Ativo
+    // ou Averbado significa que ja passou pra contrato — nao bloqueia mais.
+    // Nao dava pra usar blacklist (t.includes("averb")) porque "aguardando
+    // averbacao" tambem contem "averb".
+    const t = p.situacao.toLowerCase();
+    return t.includes("aguard") || t.startsWith("aprov") || t.includes("formaliz") || t.includes("em analise") || t.includes("em análise");
+  });
+
+  const voltarBtn = (
+    <button
+      type="button"
+      onClick={() => nav("/servidor/marketplace/portabilidade")}
+      style={{
+        alignSelf: "flex-start",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "6px 12px",
+        borderRadius: 999,
+        border: "1px solid var(--border)",
+        background: "transparent",
+        color: "var(--text-muted)",
+        fontSize: 13,
+        fontWeight: 600,
+        cursor: "pointer",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+    >
+      ← Voltar ao MarketPlace
+    </button>
+  );
+
+  // Estado bloqueado: proposta em analise ocupa margem. Servidor precisa
+  // aguardar decisao (banco aprovar/recusar) OU cancelar em /servidor/contratos
+  // antes de solicitar outra.
+  if (propostaBloqueadora) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {voltarBtn}
+        <Card style={{ borderColor: "var(--gold-500)", padding: 28, textAlign: "center" }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: "50%",
+            background: "color-mix(in srgb, var(--gold-500) 20%, transparent)",
+            color: "var(--gold-500)", display: "grid", placeItems: "center",
+            fontSize: 26, margin: "0 auto 12px",
+          }}>
+            🔒
+          </div>
+          <h2 style={{ margin: "0 0 6px", fontSize: "1.35rem" }}>Você tem uma proposta em andamento</h2>
+          <p style={{ color: "var(--text-muted)", margin: "0 auto", maxWidth: 520, lineHeight: 1.5 }}>
+            A proposta <b style={{ color: "var(--text)", fontFamily: "var(--font-mono)" }}>{propostaBloqueadora.id}</b> ({propostaBloqueadora.banco}) está aguardando decisão do banco e ocupa sua margem consignável.
+            Aguarde a resposta ou cancele antes de solicitar uma nova portabilidade.
+          </p>
+          <div style={{ marginTop: 20, display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+            <Button onClick={() => nav("/servidor/contratos")}>Acompanhar proposta →</Button>
+            <Button variant="ghost" onClick={() => nav("/servidor/dashboard")}>Voltar ao início</Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      <button
-        type="button"
-        onClick={() => nav("/servidor/marketplace/portabilidade")}
-        style={{
-          alignSelf: "flex-start",
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "6px 12px",
-          borderRadius: 999,
-          border: "1px solid var(--border)",
-          background: "transparent",
-          color: "var(--text-muted)",
-          fontSize: 13,
-          fontWeight: 600,
-          cursor: "pointer",
-        }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = "var(--text)"; e.currentTarget.style.borderColor = "var(--border-strong)"; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = "var(--text-muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
-      >
-        ← Voltar ao MarketPlace
-      </button>
+      {voltarBtn}
 
       <header>
         <span className="eyebrow">
