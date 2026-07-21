@@ -61,7 +61,7 @@ app.use("/v1/*", async (c, next) => {
     ensureTombamentoLoaded(c.env).catch(() => undefined),
     ensureContratosLoaded(c.env).catch(() => undefined),
   ]);
-  const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 6_000));
+  const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 3_000));
   await Promise.race([hydrate, timeout]);
   await next();
 });
