@@ -1336,10 +1336,13 @@ export class AtlasClient {
         },
       ),
     /** Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco (o banco recebe). */
-    criarProposta: (input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string; tipo?: "novo" | "portabilidade" | "refinanciamento" }) =>
+    criarProposta: (
+      input: { valor: number; parcelas: number; taxaAm: number; matricula?: string; bancoNome?: string; tipo?: "novo" | "portabilidade" | "refinanciamento" },
+      opts?: { signal?: AbortSignal },
+    ) =>
       this.request<{ id: string; situacao: string; banco: string; valor: number; parcelas: number; parcela: number; expira_em: string | null }>(
         "/v1/servidores/me/propostas",
-        { method: "POST", body: input },
+        { method: "POST", body: input, signal: opts?.signal },
       ),
     /** Registra o clique do servidor no botao "Acessar" de um beneficio.
      *  Best-effort — o botao abre a URL de qualquer jeito (nao bloqueia se falhar). */
@@ -1371,13 +1374,16 @@ export class AtlasClient {
      *  (o modelo ainda so aceita EMPRESTIMO/REFIN/ECONSIGNADO) — registra a
      *  solicitacao pra averbadora e devolve um protocolo. O banco recebe pra
      *  emitir/ativar o cartao via canal proprio (padrao do mercado). */
-    solicitarCartao: (input: {
-      produto: "cartao_consignado" | "cartao_beneficio";
-      bancoNome: string;
-      limite: number;
-      matricula?: string;
-      ofertaId?: string;
-    }) =>
+    solicitarCartao: (
+      input: {
+        produto: "cartao_consignado" | "cartao_beneficio";
+        bancoNome: string;
+        limite: number;
+        matricula?: string;
+        ofertaId?: string;
+      },
+      opts?: { signal?: AbortSignal },
+    ) =>
       this.request<{
         ok: true;
         protocolo: string;
@@ -1385,7 +1391,7 @@ export class AtlasClient {
         bancoNome: string;
         limite: number;
         mensagem: string;
-      }>("/v1/servidores/me/cartoes", { method: "POST", body: input }),
+      }>("/v1/servidores/me/cartoes", { method: "POST", body: input, signal: opts?.signal }),
     /** Propostas/pré-reservas do próprio servidor (mesma fonte que o banco lê).
      *  Filtra pela matrícula ativa quando informada — evita misturar histórico
      *  entre matrículas de servidor com acumulação de cargos. */
