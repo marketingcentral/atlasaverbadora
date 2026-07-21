@@ -40,7 +40,19 @@ export function AdminServidoresImportar() {
   useEffect(() => {
     if (!prefId) { setRascunho(null); setSavedAt(null); return; }
     if (configQ.data?.config?.campos) {
-      setRascunho(configQ.data.config.campos);
+      // Cliente pediu 21/07/2026: ao carregar a prefeitura, presets NAO vem
+      // pre-ativados. Sistema fica visivel (default view), customs aparecem
+      // na lista mas desmarcados. Usuario ativa manualmente marcando o Visivel.
+      const campos = configQ.data.config.campos;
+      const temPresetVisivel = campos.some((c) => !c.sistema && c.visivel);
+      const camposParaEditar = temPresetVisivel
+        ? campos.map((c) => {
+            if (!c.sistema) return { ...c, visivel: false, obrigatorio: false };
+            if (c.travado) return c;
+            return { ...c, visivel: true };
+          })
+        : campos;
+      setRascunho(camposParaEditar);
       setSavedAt(configQ.data.config.atualizadoEm ?? null);
     } else if (configQ.isError) {
       setRascunho(DEFAULT_CAMPOS_FALLBACK);
