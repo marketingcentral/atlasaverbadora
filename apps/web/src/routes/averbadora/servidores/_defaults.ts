@@ -16,7 +16,7 @@ export const DEFAULT_CAMPOS_FALLBACK: ServidorCampoConfig[] = [
   { key: "situacaoFuncional", label: "Situação funcional", tipo: "texto", visivel: true, obrigatorio: false, ordem: 6, sistema: true },
   { key: "salarioLiquido", label: "Salário líq.", tipo: "moeda", visivel: true, obrigatorio: false, ordem: 7, sistema: true },
   { key: "idConvenio", label: "Convênio", tipo: "texto", visivel: true, obrigatorio: false, ordem: 8, sistema: true },
-  { key: "email", label: "E-mail", tipo: "email", visivel: true, obrigatorio: true, ordem: 9, sistema: true, travado: true },
+  { key: "email", label: "E-mail", tipo: "email", visivel: true, obrigatorio: true, ordem: 9, sistema: true },
   { key: "telefone", label: "Telefone", tipo: "telefone", visivel: true, obrigatorio: false, ordem: 10, sistema: true },
   { key: "dataAdmissao", label: "Admissão", tipo: "data", visivel: true, obrigatorio: false, ordem: 11, sistema: true },
   { key: "dataNascimento", label: "Nascimento", tipo: "data", visivel: true, obrigatorio: false, ordem: 12, sistema: true },

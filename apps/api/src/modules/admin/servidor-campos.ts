@@ -42,8 +42,10 @@ export interface ServidorCamposConfig {
   atualizadoEm: string;
 }
 
-/** Chaves travadas — visivel:true + obrigatorio:true sao imutaveis via API. */
-export const CHAVES_TRAVADAS: readonly string[] = ["cpf", "matricula", "email"];
+/** Chaves travadas — visivel:true + obrigatorio:true sao imutaveis via API.
+ *  Cliente pediu 21/07/2026 pra destravar email — vira editavel como qualquer
+ *  outro campo. So cpf e matricula continuam travados (identidade do servidor). */
+export const CHAVES_TRAVADAS: readonly string[] = ["cpf", "matricula"];
 
 /** Chaves built-in (sistema:true). Devem existir no shape ServidorBuscaMock.
  *  Ordem aqui = ordem default de exibicao. */
