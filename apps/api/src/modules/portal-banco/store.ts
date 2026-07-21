@@ -73,6 +73,29 @@ export function deriveTipoMargem(ct: Pick<ContratoFull, "tipoMargem" | "tipoCont
   return ct.tipoContrato === "ECONSIGNADO" ? "CARTAO_CONSIGNADO" : "EMPRESTIMO";
 }
 
+/** Deriva o rotulo do PRODUTO originalmente proposto, usando TODOS os sinais.
+ *  Ordem de precedencia (mais especifico primeiro):
+ *    1. observacoes contem "telemedicina" -> TELEMEDICINA (cotacao ativada em
+ *       /admin/telemedicina/cotacoes/:id/ativar cria contrato com tipoContrato
+ *       EMPRESTIMO mas com "Telemedicina" nas observacoes).
+ *    2. bancoOrigem preenchido -> PORTABILIDADE (contrato substitui outro banco).
+ *    3. observacoes contem "refinancia" -> REFIN (renegociacao de contrato ativo).
+ *    4. tipoMargem === CARTAO_BENEFICIOS -> CARTAO_BENEFICIO.
+ *    5. tipoContrato === ECONSIGNADO OU tipoMargem === CARTAO_CONSIGNADO -> CARTAO_CONSIGNADO.
+ *    6. tipoContrato === REFIN -> REFIN.
+ *    7. default -> EMPRESTIMO.
+ *  Usado por /prefeitura/contratos + poderia ser usado em ADF/carteira/etc. */
+export function deriveProdutoLabel(ct: Pick<ContratoFull, "tipoContrato" | "tipoMargem" | "observacoes" | "bancoOrigem">): string {
+  const obs = (ct.observacoes ?? "").toLowerCase();
+  if (/telemedic/.test(obs)) return "TELEMEDICINA";
+  if (ct.bancoOrigem) return "PORTABILIDADE";
+  if (/refinancia/.test(obs)) return "REFIN";
+  if (ct.tipoMargem === "CARTAO_BENEFICIOS") return "CARTAO_BENEFICIO";
+  if (ct.tipoContrato === "ECONSIGNADO" || ct.tipoMargem === "CARTAO_CONSIGNADO") return "CARTAO_CONSIGNADO";
+  if (ct.tipoContrato === "REFIN") return "REFIN";
+  return "EMPRESTIMO";
+}
+
 export interface ContratoEvento {
   id: number;
   contratoId: string;

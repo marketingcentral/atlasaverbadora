@@ -13,7 +13,7 @@ import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, persistContrato, comprometeMargem } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel } from "../portal-banco/store.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit } from "../admin/auditoria.js";
@@ -702,17 +702,21 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/prefeitura/contratos", (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     const rows = contratosDaPrefeitura(id).map((ct) => {
-      // Telemedicina: contrato criado pelo /admin/telemedicina/cotacoes/:id/ativar
-      // vem com tipoContrato=EMPRESTIMO e bancoId do parceiro (ATLAS TECH). Detecta
-      // via observacoes e sobrescreve pros rotulos corretos. Mesma logica da
-      // materializacao de ADF em modules/prefeitura/store.ts:249-276.
-      const isTelemedicina = /telemedicina/i.test(ct.observacoes ?? "");
+      // deriveProdutoLabel usa TODOS os sinais (observacoes/bancoOrigem/
+      // tipoMargem/tipoContrato) pra decidir o produto real que foi proposto,
+      // nao so o tipoContrato cru (que fica EMPRESTIMO pra telemedicina,
+      // portabilidade, refin, etc). Ver portal-banco/store.ts:deriveProdutoLabel.
+      const produto = deriveProdutoLabel(ct);
+      const isTelemedicina = produto === "TELEMEDICINA";
       return {
         adf: ct.adf,
+        // Telemedicina eh oferecida pela AVERBADORA (nao pelo banco parceiro);
+        // rotula "Telemedicina Atlas" pra bater com o rotulo do ADF averbadora.
+        // Outros produtos: mantem bancoNome do bancoId (banco averbador do contrato).
         bancoNome: isTelemedicina ? "Telemedicina Atlas" : bancoNome(ct.bancoId),
         matricula: ct.matricula, nome: ct.nome,
         situacao: ct.situacao,
-        tipoContrato: isTelemedicina ? "TELEMEDICINA" : ct.tipoContrato,
+        tipoContrato: produto,
         valorParcela: ct.valorParcela,
         totalParcelas: ct.totalParcelas, lancamento: ct.lancamento,
       };
