@@ -61,20 +61,6 @@ export function AdminServidoresImportar() {
     },
   });
 
-  // Auto-save com debounce de 800ms — evita o problema de "adicionei mas nao
-  // salvei" (cliente reportou 21/07/2026: custom aparecia na UI mas nao
-  // persistia no PG porque exigia clique manual em "Salvar"). Toda mudanca em
-  // `rascunho` que deixa dirty=true agenda um save; edicoes rapidas ficam
-  // agrupadas.
-  useEffect(() => {
-    if (!prefId || !dirty || !rascunho || saveConfig.isPending) return;
-    const timer = setTimeout(() => {
-      saveConfig.mutate(rascunho);
-    }, 800);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rascunho, dirty, prefId]);
-
   // ===== Import =====
   const [pasted, setPasted] = useState("");
   const [importResult, setImportResult] = useState<CsvImportOutcome | null>(null);
@@ -178,6 +164,11 @@ export function AdminServidoresImportar() {
             campos={rascunho}
             onChange={setRascunho}
             onSave={() => saveConfig.mutate(rascunho)}
+            /** Chamado pelo "+ Adicionar" do editor: recebe a lista JA com o custom
+             *  anexado e salva imediatamente (sem esperar debounce nem clique manual
+             *  de Salvar). Fluxo pedido pelo cliente 21/07/2026: "clicar em adicionar
+             *  ai sim vai salvar". */
+            onSaveWith={(campos) => saveConfig.mutate(campos)}
             onRestoreDefault={() => {
               // "Restaurar padrao" via backend: manda array vazio -> sanitizeCampos
               // reconstroi so os travados. Mais simples do lado do frontend: pega

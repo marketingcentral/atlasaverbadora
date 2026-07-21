@@ -25,6 +25,7 @@ export function CamposEditor({
   campos,
   onChange,
   onSave,
+  onSaveWith,
   onRestoreDefault,
   saving,
   dirty,
@@ -32,6 +33,9 @@ export function CamposEditor({
   campos: ServidorCampoConfig[];
   onChange: (next: ServidorCampoConfig[]) => void;
   onSave: () => void;
+  /** Salva IMEDIATAMENTE com a lista fornecida (sem esperar re-render).
+   *  Usado pelo "+ Adicionar": append custom + persist na mesma acao. */
+  onSaveWith: (campos: ServidorCampoConfig[]) => void;
   onRestoreDefault: () => void;
   saving: boolean;
   dirty: boolean;
@@ -64,7 +68,10 @@ export function CamposEditor({
     if (!slug) return;
     const key = `custom_${slug}`;
     if (campos.some((c) => c.key === key)) return;
-    onChange([
+    // Clicar em "+ Adicionar" = commit da alteracao. Anexa custom + persiste
+    // com TODAS as alteracoes pendentes (labels/visivel/obrigatorio) num call
+    // so. Sem auto-save entre cliques (cliente pediu 21/07/2026).
+    const nextCampos: ServidorCampoConfig[] = [
       ...campos,
       {
         key,
@@ -75,7 +82,9 @@ export function CamposEditor({
         ordem: campos.length,
         sistema: false,
       },
-    ]);
+    ];
+    onChange(nextCampos);
+    onSaveWith(nextCampos);
     setNovoNome("");
     setNovoTipo("texto");
   };
@@ -86,7 +95,7 @@ export function CamposEditor({
         <div>
           <div style={{ fontSize: 15, fontWeight: 700 }}>Campos do servidor</div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            Ligue/desligue os campos, marque obrigatórios e edite os rótulos. Alterações salvam automaticamente. CPF e matrícula ficam travados (identidade do servidor).
+            Ligue/desligue os campos, marque obrigatórios e edite os rótulos. Use "+ Adicionar" para criar um campo customizado — o clique salva também todas as alterações pendentes. CPF e matrícula ficam travados (identidade do servidor).
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
