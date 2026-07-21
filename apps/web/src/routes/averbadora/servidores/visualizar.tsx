@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, FilterBar, IconButton, Pill, SelectField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
@@ -144,11 +143,6 @@ export function AdminServidoresVisualizar() {
             return row;
           }),
         ) : undefined}
-        actions={
-          <Link to="/averbadora/servidores/importar" style={{ textDecoration: "none" }}>
-            <Button size="sm">↑ Importar servidores</Button>
-          </Link>
-        }
       >
         <div style={{ maxWidth: 320 }}>
           <SelectField
