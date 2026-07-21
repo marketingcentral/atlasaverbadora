@@ -62,7 +62,19 @@ async function resolveServidorByCredentials(
   const comSenha = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === cpfDigits && x.passwordHash);
   if (comSenha.length === 0) return { match: null, claimedBy: false };
   const hash = await sha256Hex(password);
-  const s = comSenha.find((x) => x.passwordHash === hash);
+  const candidatos = comSenha.filter((x) => x.passwordHash === hash);
+  if (candidatos.length === 0) return { match: null, claimedBy: true };
+  // O servidor_id emitido aqui e o ID SINTETICO = ultimos 5 digitos da matricula.
+  // Quando o CPF tem mais de uma linha (ex.: matricula antiga arquivada + a nova),
+  // escolher a linha "errada" emitia um id que resolvia para OUTRA linha — as vezes
+  // de outro CPF, quando existem matriculas duplicadas na base. Resultado: o servidor
+  // logava e /me/matriculas filtrava por um CPF que nao era o dele, devolvendo lista
+  // VAZIA (tela "Selecione a matricula" em branco, sem erro).
+  // Por isso preferimos uma linha cujo id sintetico resolva de volta para ELA MESMA.
+  const idDe = (x: { idMatricula: string }) => Number(x.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
+  const resolveDeVolta = (x: { idMatricula: string; cpf: string }) =>
+    SERVIDORES_BUSCA_MOCK.find((y) => idDe(y) === idDe(x))?.cpf === x.cpf;
+  const s = candidatos.find(resolveDeVolta) ?? candidatos[0];
   if (!s) return { match: null, claimedBy: true };
   // F6 arquivamento: servidor desligado/aposentado pela prefeitura nao pode
   // logar mais. Cascade de desligamento (F6) marca situacaoFuncional; aqui
