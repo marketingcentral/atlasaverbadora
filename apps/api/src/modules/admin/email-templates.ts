@@ -114,17 +114,18 @@ function tplSimulacao(tipo: SimulacaoTipo, status: SimulacaoStatus, publico: Ema
 }
 
 const SEED: EmailTemplate[] = [
-  // Cliente pediu remocao de TODOS os templates fixos (primeiro-acesso +
-  // recuperar-senha + redefinir-senha + simulacao) em 16/07/2026 pra teste
-  // real do zero — os 4 fluxos caem no fallback hardcoded do mailer.ts. Se
-  // restaurar pra demo, adicionar de volta:
-  //   ...PERFIS.map(tplPrimeiroAcesso),
-  //   ...PERFIS.map(tplRecuperarSenha),
-  //   ...PERFIS.map(tplRedefinirSenha),
-  //   ...SIM_TIPOS.flatMap((t) => SIM_STATUS.flatMap((s) => [
-  //     tplSimulacao(t, s, "servidor"),
-  //     tplSimulacao(t, s, "banco"),
-  //   ])),
+  // Templates fixos por perfil. Foram removidos em 16/07/2026 pra teste do
+  // zero e restaurados em 21/07/2026 a pedido do cliente (tela /averbadora/
+  // emails/primeiro-acesso vazia). Se a coleção admin_email_templates ja
+  // estiver populada, seedCollectionIfEmpty NAO sobrescreve — templates
+  // editados manualmente sobrevivem.
+  ...PERFIS.map(tplPrimeiroAcesso),
+  ...PERFIS.map(tplRecuperarSenha),
+  ...PERFIS.map(tplRedefinirSenha),
+  ...SIM_TIPOS.flatMap((t) => SIM_STATUS.flatMap((s) => [
+    tplSimulacao(t, s, "servidor"),
+    tplSimulacao(t, s, "banco"),
+  ])),
 ];
 
 function capitalize(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
