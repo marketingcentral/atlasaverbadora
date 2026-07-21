@@ -699,8 +699,14 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 7 — Contratos / Tombamento =====
-  .get("/v1/prefeitura/contratos", (c) => {
+  .get("/v1/prefeitura/contratos", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    // Sincroniza convenios + contratos com PG antes de filtrar. Sem esses
+    // refreshes, isolate frio (recem-deployado) tem CONVENIOS_MOCK e
+    // _contratos vazios -> contratosDaPrefeitura(id) retorna [] mesmo com
+    // dados reais no PG. Cliente reportou 21/07 apos deploy: "Total: 0".
+    await refreshConvenios(c.env);
+    await refreshContratos(c.env);
     const rows = contratosDaPrefeitura(id).map((ct) => {
       // deriveProdutoLabel usa TODOS os sinais (observacoes/bancoOrigem/
       // tipoMargem/tipoContrato) pra decidir o produto real que foi proposto,
