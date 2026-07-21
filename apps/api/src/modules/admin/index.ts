@@ -1897,7 +1897,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Re-sync do PG: sem isso hard-delete feito em outro isolate nao propaga
     // e a lista mostra prefeitura ja removida.
     await refreshPrefeituras(c.env);
-    return c.json({ prefeituras: prefeituras.map(sanitizePrefeitura) });
+    await ensureServidoresLoaded(c.env); // pra contagem real
+    // servidoresCount OVERRIDE com contagem REAL: o campo do PG e um numero
+    // declarado manualmente no form (default 0), mas o usuario espera ver a
+    // contagem real de servidores cadastrados. Bug reportado 21/07/2026:
+    // Capistrano mostrando 0 mesmo com 11 servidores.
+    const countByPref = new Map<number, number>();
+    for (const s of SERVIDORES_BUSCA_MOCK) {
+      const id = prefeituraIdDe(s);
+      countByPref.set(id, (countByPref.get(id) ?? 0) + 1);
+    }
+    return c.json({
+      prefeituras: prefeituras.map((p) => ({
+        ...sanitizePrefeitura(p),
+        servidoresCount: countByPref.get(p.id) ?? 0,
+      })),
+    });
   })
   // Consulta CNPJ com fallback multi-provider + cache KV 24h. Ordem:
   // 1) KV_CACHE (se hit, retorna direto — evita 429)

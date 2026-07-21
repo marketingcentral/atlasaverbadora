@@ -498,7 +498,6 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
                 onChange={(e) => setForm({ ...form, contatoEmail: e.target.value })}
                 placeholder="responsavel@prefeitura.gov.br"
               />
-              <NumberField label="Servidores cadastrados" value={form.servidoresCount} onChange={(e) => setForm({ ...form, servidoresCount: Number(e.target.value) })} />
               <TextField
                 label="URL do CSV da folha (modo CSV)"
                 value={form.folhaSincUrl ?? ""}
