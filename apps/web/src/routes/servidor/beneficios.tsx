@@ -395,13 +395,13 @@ function TelemedicinaCard({ matricula }: { matricula?: string }) {
     refetchOnWindowFocus: true,
   });
   const emprestimoAtivo = (propostasQ.data?.propostas ?? []).some((p) => {
-    const t = p.situacao.toLowerCase();
-    // Situacoes que NAO consomem margem: recusada, cancelada, expirada, quitada.
-    // Tambem ignora a propria reserva da telemedicina (obs contem "telemedicina")
-    // pra o card nao se auto-bloquear.
-    if (t.includes("cancel") || t.includes("recus") || t.includes("expir") || t.includes("quitad")) return false;
+    // Whitelist EXPLICITA: bloqueia apenas se ha proposta EM ANALISE (aguardando/
+    // aprovada/formalizada). Contrato ja Ativo/Averbado NAO bloqueia — a
+    // margem ja foi descontada e a telemedicina roda em cima do que sobra.
+    // Ignora a propria reserva da telemedicina (obs contem "telemedicina").
     if (/telemedicina/i.test(p.observacoes ?? "")) return false;
-    return true;
+    const t = p.situacao.toLowerCase();
+    return t.includes("aguard") || t.startsWith("aprov") || t.includes("formaliz") || t.includes("em analise") || t.includes("em análise");
   });
   const cotacoes = q.data?.cotacoes ?? [];
   const pendente = cotacoes.some((c) => c.situacao === "nova" || c.situacao === "contatado");
