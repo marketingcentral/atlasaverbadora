@@ -25,7 +25,7 @@ const NAV = [
     icon: "▢",
     children: [
       { key: "tabela-emprestimos", label: "Tabela de Empréstimos", href: "/banco/cadastros/tabela-emprestimos" },
-      { key: "usuarios", label: "Usuários", href: "/banco/cadastros/usuarios" },
+      { key: "usuarios", label: "Operadores", href: "/banco/cadastros/usuarios" },
     ],
   },
   { key: "margem-contratacao", label: "Margem / Contratação", href: "/banco/margem-contratacao", icon: "▤" },
