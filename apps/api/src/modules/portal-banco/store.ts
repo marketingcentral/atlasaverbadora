@@ -173,12 +173,16 @@ for (const c of CONTRATOS_MOCK) {
 let _hydrated = false;
 let _hydrationPromise: Promise<void> | null = null;
 
-/** Hidrata `_contratos` do Postgres uma vez por isolate (semeando do seed se vazio). */
+/** Hidrata `_contratos` do Postgres uma vez por isolate (semeando do seed se vazio).
+ *  Race com timeout de 5s: se PG/Hyperdrive nao responder (conexao aceita mas
+ *  request pendurada), invalida o cache da promise pra proxima chamada tentar
+ *  de novo em vez de reencontrar a promise morta. Sem isso, um unico episodio
+ *  de lentidao inicial envenena o isolate ate ele morrer. */
 export function ensureContratosLoaded(env: Env): Promise<void> {
   if (_hydrated) return Promise.resolve();
   if (!_hydrationPromise) {
     _hydrationPromise = (async () => {
-      try {
+      const work = (async () => {
         await ensureSchema(env);
         await seedContratosIfEmpty(env, Array.from(_contratos.values()) as unknown as { adf: string; [k: string]: unknown }[]);
         const rows = await loadContratos(env);
@@ -187,6 +191,13 @@ export function ensureContratosLoaded(env: Env): Promise<void> {
           for (const r of rows) _contratos.set(r.adf, r as unknown as ContratoFull);
         }
         _hydrated = true;
+      })();
+      const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 5_000));
+      try {
+        const r = await Promise.race([work.then(() => "ok" as const), timeout]);
+        if (r === "timeout") {
+          _hydrationPromise = null; // libera a proxima request pra retentar
+        }
       } catch {
         _hydrated = true; // sem DB → segue in-memory (demo)
       }
