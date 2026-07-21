@@ -287,7 +287,18 @@ function resolveServidor(j: JwtClaims): ResolvedServidor | null {
     const fx =
       SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf && s.idConvenio === dev.idConvenio) ??
       SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf);
-    return fx ? fromFixture(fx) : { ...dev, fromFixture: true };
+    if (fx) return fromFixture(fx);
+    // O CPF do DEV nao esta mais na base (seed purgado). NAO devolve o shadow do
+    // DEV aqui: o mesmo id pode pertencer a um servidor REAL importado cuja
+    // matricula termina nos mesmos 5 digitos — ex.: matricula 700100001 gera
+    // id 1, que colide com o DEV id 1. Devolvendo o shadow, /me/matriculas
+    // filtrava pelo CPF do DEV (inexistente na base) e vinha VAZIO: o servidor
+    // logava e a tela "Selecione a matricula" ficava em branco.
+    const real = SERVIDORES_BUSCA_MOCK.find(
+      (s) => Number(s.idMatricula.replace(/\D/g, "").slice(-5)) === id,
+    );
+    if (real) return fromFixture(real);
+    return { ...dev, fromFixture: true };
   }
   // ids sintéticos (últimos 5 dígitos da idMatricula) usados quando o servidor vem da fixture
   const fx = SERVIDORES_BUSCA_MOCK.find((s) => Number(s.idMatricula.replace(/\D/g, "").slice(-5)) === id);
