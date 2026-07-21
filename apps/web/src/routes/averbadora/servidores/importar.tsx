@@ -61,16 +61,8 @@ export function AdminServidoresImportar() {
     },
   });
 
-  // Auto-save silencioso (debounce 800ms). Cliente pediu 21/07/2026: nao
-  // ficar pedindo pra salvar quando mexer nos toggles/label do custom, so
-  // salva automatico. UI nao mostra "Alteracoes nao salvas" nem "Salvar agora"
-  // — passa a ser transparente pra quem esta editando.
-  useEffect(() => {
-    if (!prefId || !dirty || !rascunho || saveConfig.isPending) return;
-    const timer = setTimeout(() => saveConfig.mutate(rascunho), 800);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rascunho, dirty, prefId]);
+  // Auto-save REMOVIDO 21/07/2026: cliente prefere save manual via botao
+  // Salvar (que tambem cria preset se o nome do campo estiver preenchido).
 
   // ===== Import =====
   const [pasted, setPasted] = useState("");

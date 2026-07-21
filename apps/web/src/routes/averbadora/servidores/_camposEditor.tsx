@@ -110,7 +110,7 @@ export function CamposEditor({
         <div>
           <div style={{ fontSize: 15, fontWeight: 700 }}>Campos do servidor</div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            Ligue/desligue os campos, marque obrigatórios e edite os rótulos. Use "+ Adicionar" para criar um campo customizado — o clique salva também todas as alterações pendentes. CPF e matrícula ficam travados (identidade do servidor).
+            Ligue/desligue os campos, marque obrigatórios e edite os rótulos. Use "Salvar" abaixo — se preencher o nome do campo, cria um preset novo com o snapshot atual. CPF e matrícula ficam travados (identidade do servidor).
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -216,16 +216,33 @@ export function CamposEditor({
 
       <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
         <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 8 }}>
-          Adicionar campo customizado
+          Salvar alterações {"/"}  criar preset customizado
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
+          Preencha o nome pra criar um preset novo (captura snapshot dos sistema visíveis).
+          Deixe vazio pra só salvar as alterações dos campos sem criar preset.
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 10, alignItems: "end" }}>
-          <TextField label="Nome do campo" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex.: Lotação" />
+          <TextField label="Nome do campo (opcional)" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex.: Lotação (deixe vazio pra só salvar)" />
           <SelectField label="Tipo" value={novoTipo} onChange={(e) => setNovoTipo(e.target.value as ServidorCampoTipo)} options={TIPOS.map((t) => ({ value: t.value, label: t.label }))} />
-          <Button size="sm" onClick={addCustom} disabled={!novoNome.trim()} type="button">+ Adicionar</Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              if (novoNome.trim()) {
+                addCustom(); // cria preset + salva
+              } else {
+                onSave(); // so salva estado atual
+              }
+            }}
+            disabled={saving || (!novoNome.trim() && !dirty)}
+            type="button"
+          >
+            {saving ? "Salvando…" : "Salvar"}
+          </Button>
         </div>
         {novoNome.trim() ? (
           <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-dim)" }}>
-            Key: <code style={{ fontFamily: "var(--font-mono)" }}>custom_{slugify(novoNome)}</code>
+            Key do preset: <code style={{ fontFamily: "var(--font-mono)" }}>custom_{slugify(novoNome)}</code>
           </div>
         ) : null}
       </div>
