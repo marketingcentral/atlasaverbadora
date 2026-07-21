@@ -158,10 +158,17 @@ export function CamposEditor({
             </tr>
           </thead>
           <tbody>
-            {campos.sort((a, b) => a.ordem - b.ordem).map((c, i) => {
-              const bloqueado = c.travado === true;
-              const arrastando = dragIdx === i;
-              const alvo = overIdx === i && dragIdx != null && dragIdx !== i;
+            {(() => {
+              // Enquanto tiver um preset custom marcado como visivel, os
+              // campos sistema ficam bloqueados (nao pode editar label/tipo/
+              // visivel/obrigatorio nem reordenar). Cliente pediu 21/07/2026.
+              const customAtivo = campos.some((c) => !c.sistema && c.visivel);
+              return campos.sort((a, b) => a.ordem - b.ordem).map((c, i) => {
+                const bloqueado = c.travado === true;
+                const sistemaBloqPorPreset = c.sistema && !bloqueado && customAtivo;
+                const inputDisabled = bloqueado || sistemaBloqPorPreset;
+                const arrastando = dragIdx === i;
+                const alvo = overIdx === i && dragIdx != null && dragIdx !== i;
               return (
                 <tr
                   key={c.key}
@@ -194,9 +201,9 @@ export function CamposEditor({
                         // O handle e' o UNICO elemento draggable. Segurar aqui
                         // inicia o drag da linha inteira; segurar qualquer
                         // outro lugar (input, select, etc) NAO dispara drag.
-                        draggable={!bloqueado}
+                        draggable={!inputDisabled}
                         onDragStart={(e) => {
-                          if (bloqueado) return;
+                          if (inputDisabled) return;
                           setDragIdx(i);
                           e.dataTransfer.effectAllowed = "move";
                           try { e.dataTransfer.setData("text/plain", String(i)); } catch { /* ignore */ }
@@ -214,8 +221,8 @@ export function CamposEditor({
                         onMouseUp={(e) => { e.currentTarget.style.cursor = bloqueado ? "not-allowed" : "grab"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.cursor = bloqueado ? "not-allowed" : "grab"; }}
                       >⋮⋮</span>
-                      <button type="button" style={arrowBtn} onClick={() => move(i, -1)} disabled={i === 0} title="Subir">↑</button>
-                      <button type="button" style={arrowBtn} onClick={() => move(i, +1)} disabled={i === campos.length - 1} title="Descer">↓</button>
+                      <button type="button" style={arrowBtn} onClick={() => move(i, -1)} disabled={i === 0 || inputDisabled} title="Subir">↑</button>
+                      <button type="button" style={arrowBtn} onClick={() => move(i, +1)} disabled={i === campos.length - 1 || inputDisabled} title="Descer">↓</button>
                     </div>
                   </td>
                   <td style={{ ...td, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)" }}>
@@ -226,7 +233,7 @@ export function CamposEditor({
                       value={c.label}
                       onChange={(e) => updateCampo(i, { label: e.target.value })}
                       style={inputStyle}
-                      disabled={bloqueado}
+                      disabled={inputDisabled}
                     />
                   </td>
                   <td style={td}>
@@ -238,7 +245,7 @@ export function CamposEditor({
                       // matricula). Antes sistema tinha tipo travado; agora
                       // averbadora pode ajustar (ex.: mudar salarioLiquido
                       // de moeda pra numero, ou telefone pra texto).
-                      disabled={bloqueado}
+                      disabled={inputDisabled}
                     >
                       {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
@@ -247,7 +254,7 @@ export function CamposEditor({
                     <input
                       type="checkbox"
                       checked={c.visivel}
-                      disabled={bloqueado}
+                      disabled={inputDisabled}
                       onChange={(e) => updateCampo(i, { visivel: e.target.checked })}
                     />
                   </td>
@@ -255,14 +262,14 @@ export function CamposEditor({
                     <input
                       type="checkbox"
                       checked={c.obrigatorio}
-                      disabled={bloqueado}
+                      disabled={inputDisabled}
                       onChange={(e) => updateCampo(i, { obrigatorio: e.target.checked })}
                     />
                   </td>
                   <td style={{ ...td, textAlign: "right" }}>
                     {c.sistema || bloqueado ? (
                       <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                        {bloqueado ? "travado" : "sistema"}
+                        {bloqueado ? "travado" : sistemaBloqPorPreset ? "bloq. por preset" : "sistema"}
                       </span>
                     ) : (
                       <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
@@ -286,7 +293,8 @@ export function CamposEditor({
                   </td>
                 </tr>
               );
-            })}
+              });
+            })()}
           </tbody>
         </table>
       </div>
