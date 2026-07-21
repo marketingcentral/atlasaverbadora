@@ -1783,7 +1783,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         nomeFantasia: z.string().max(200).optional().or(z.literal("")),
         dataFundacao: z.string().max(10).optional().or(z.literal("")),
         atividade: z.string().max(200).optional().or(z.literal("")),
-        telefone: z.string().max(20).optional().or(z.literal("")),
+        telefone: z.string().max(40).optional().or(z.literal("")),
         endereco: z.object({
           logradouro: z.string().optional().or(z.literal("")),
           numero: z.string().optional().or(z.literal("")),
@@ -2016,7 +2016,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         nomeFantasia: z.string().max(200).optional().or(z.literal("")),
         dataFundacao: z.string().max(10).optional().or(z.literal("")),
         atividade: z.string().max(200).optional().or(z.literal("")),
-        telefone: z.string().max(20).optional().or(z.literal("")),
+        telefone: z.string().max(40).optional().or(z.literal("")),
         endereco: z.object({
           logradouro: z.string().optional().or(z.literal("")),
           numero: z.string().optional().or(z.literal("")),
@@ -3497,7 +3497,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         uf: z.string().length(2).optional(),
       }).optional(),
       contato: z.object({
-        telefone: z.string().max(20).optional(),
+        telefone: z.string().max(40).optional(),
         whatsapp: z.string().max(20).optional(),
         email: z.string().email().optional().or(z.literal("")),
         site: z.string().url().optional().or(z.literal("")),
@@ -3534,7 +3534,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       responsavel: z.object({
         nome: z.string().max(120).optional(),
         email: z.string().email().optional().or(z.literal("")),
-        telefone: z.string().max(20).optional(),
+        telefone: z.string().max(40).optional(),
         cargo: z.string().max(80).optional(),
       }).optional(),
       restricoes: z.string().max(1000).optional(),
