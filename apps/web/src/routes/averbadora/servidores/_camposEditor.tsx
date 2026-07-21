@@ -125,13 +125,10 @@ export function CamposEditor({
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 12, color: saving ? "var(--gold-500)" : dirty ? "var(--gold-500)" : "var(--emerald-500)" }}>
-            {saving ? "Salvando..." : dirty ? "Alterações não salvas" : "✓ Tudo salvo"}
-          </span>
+          {saving ? (
+            <span style={{ fontSize: 12, color: "var(--gold-500)" }}>Salvando...</span>
+          ) : null}
           <Button size="sm" variant="ghost" onClick={onRestoreDefault} type="button">Restaurar padrão</Button>
-          <Button size="sm" onClick={onSave} disabled={saving || !dirty} type="button">
-            {saving ? "Salvando…" : dirty ? "Salvar agora" : "Salvo"}
-          </Button>
         </div>
       </div>
 
@@ -257,4 +254,7 @@ const arrowBtn: React.CSSProperties = {
 const removeBtn: React.CSSProperties = {
   width: 26, height: 26, borderRadius: 6, border: "1px solid var(--danger-500)",
   background: "transparent", color: "var(--danger-500)", cursor: "pointer",
+  // Centralizacao do ✕ (antes ficava desalinhado por causa do line-height do char).
+  display: "inline-flex", alignItems: "center", justifyContent: "center",
+  padding: 0, fontSize: 14, lineHeight: 1,
 };
