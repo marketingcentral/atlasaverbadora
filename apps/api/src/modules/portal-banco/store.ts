@@ -74,24 +74,31 @@ export function deriveTipoMargem(ct: Pick<ContratoFull, "tipoMargem" | "tipoCont
 }
 
 /** Deriva o rotulo do PRODUTO originalmente proposto, usando TODOS os sinais.
- *  Ordem de precedencia (mais especifico primeiro):
- *    1. observacoes contem "telemedicina" -> TELEMEDICINA.
- *    2. bancoOrigem preenchido OU observacoes contem "portabilid" -> PORTABILIDADE.
- *       (portabilidade via /servidor/propostas so seta observacoes; via marketplace
- *       seta bancoOrigem. Aceitar os dois pra nao classificar erroneamente como REFIN.)
- *    3. observacoes contem "refinancia" -> REFIN.
- *    4. tipoMargem === CARTAO_BENEFICIOS -> CARTAO_BENEFICIO.
- *    5. tipoContrato === ECONSIGNADO OU tipoMargem === CARTAO_CONSIGNADO -> CARTAO_CONSIGNADO.
- *    6. tipoContrato === REFIN -> REFIN.
- *    7. default -> EMPRESTIMO. */
+ *  Alinhado com a regra da /servidor/contratos:produtoContratoLabel: por default,
+ *  `tipoContrato === "REFIN"` vira PORTABILIDADE (a UI do servidor sempre trata
+ *  REFIN como portabilidade). REFIN "puro" (renegociacao no mesmo banco) so
+ *  aparece se observacoes disser explicitamente "refinancia".
+ *
+ *  Ordem de precedencia:
+ *    1. observacoes contem "telemedicina"                    -> TELEMEDICINA.
+ *    2. observacoes contem "refinancia"                      -> REFIN (explicito).
+ *    3. bancoOrigem OU observacoes com "portabilid"          -> PORTABILIDADE.
+ *    4. tipoContrato === "REFIN"                             -> PORTABILIDADE.
+ *       (fallback: contratos historicos que caiam em REFIN eram na verdade
+ *       portabilidade — bug: /me/propostas com tipo="portabilidade" nao
+ *       setava bancoOrigem, entao muitos contratos ficam so como REFIN puro.)
+ *    5. tipoMargem === CARTAO_BENEFICIOS                     -> CARTAO_BENEFICIO.
+ *    6. tipoContrato === ECONSIGNADO OU
+ *       tipoMargem === CARTAO_CONSIGNADO                     -> CARTAO_CONSIGNADO.
+ *    7. default                                              -> EMPRESTIMO. */
 export function deriveProdutoLabel(ct: Pick<ContratoFull, "tipoContrato" | "tipoMargem" | "observacoes" | "bancoOrigem">): string {
   const obs = (ct.observacoes ?? "").toLowerCase();
   if (/telemedic/.test(obs)) return "TELEMEDICINA";
-  if (ct.bancoOrigem || /portabilid/.test(obs)) return "PORTABILIDADE";
   if (/refinancia/.test(obs)) return "REFIN";
+  if (ct.bancoOrigem || /portabilid/.test(obs)) return "PORTABILIDADE";
+  if (ct.tipoContrato === "REFIN") return "PORTABILIDADE";
   if (ct.tipoMargem === "CARTAO_BENEFICIOS") return "CARTAO_BENEFICIO";
   if (ct.tipoContrato === "ECONSIGNADO" || ct.tipoMargem === "CARTAO_CONSIGNADO") return "CARTAO_CONSIGNADO";
-  if (ct.tipoContrato === "REFIN") return "REFIN";
   return "EMPRESTIMO";
 }
 
