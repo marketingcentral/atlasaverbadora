@@ -250,7 +250,9 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
         nomeFantasia: (d.nome_fantasia as string | undefined) ?? "",
         dataFundacao: (d.data_inicio_atividade as string | undefined) ?? "",
         atividade: (d.cnae_fiscal_descricao as string | undefined) ?? "",
-        telefone: (d.ddd_telefone_1 as string | undefined) ?? "",
+        // BrasilAPI/ReceitaWS as vezes retorna 2 telefones concatenados
+        // ("(11) 2475-8641 / (011) 6440-1929"). Pega so o primeiro.
+        telefone: ((d.ddd_telefone_1 as string | undefined) ?? "").split(/\s*\/\s*/)[0]?.trim() ?? "",
         contatoEmail: prev.contatoEmail || (d.email as string | undefined) || "",
         endereco: {
           logradouro: (d.logradouro as string | undefined) ?? "",

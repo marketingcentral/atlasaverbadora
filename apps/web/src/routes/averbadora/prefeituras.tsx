@@ -267,7 +267,10 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
         nomeFantasia: (d.nome_fantasia as string | undefined) ?? "",
         dataFundacao: (d.data_inicio_atividade as string | undefined) ?? "",
         atividade: (d.cnae_fiscal_descricao as string | undefined) ?? "",
-        telefone: (d.ddd_telefone_1 as string | undefined) ?? "",
+        // BrasilAPI/ReceitaWS as vezes retorna 2 telefones concatenados
+        // ("(11) 2475-8641 / (011) 6440-1929"). Pega so o primeiro pra caber
+        // no campo e nao confundir o usuario (cliente 21/07/2026).
+        telefone: ((d.ddd_telefone_1 as string | undefined) ?? "").split(/\s*\/\s*/)[0]?.trim() ?? "",
         uf: ((d.uf as string | undefined) ?? prev.uf).slice(0, 2).toUpperCase(),
         municipioIbge: (d.codigo_municipio_ibge as number | undefined) ?? prev.municipioIbge,
         contatoEmail: prev.contatoEmail || (d.email as string | undefined) || "",
