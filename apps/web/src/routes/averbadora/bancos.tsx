@@ -475,7 +475,6 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
           if (!triedSubmit) return null;
           const faltando: string[] = [];
           if (!form.nome) faltando.push("razão social (busque o CNPJ)");
-          if (!form.telefone) faltando.push("telefone");
           if (!form.loginEmail) faltando.push("e-mail de login");
           if (!form.contatoEmail) faltando.push("e-mail de contato");
           if (!initial?.hasPassword && !form.password) faltando.push("senha");
@@ -496,7 +495,6 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
                 !form.nome
                 || !form.loginEmail
                 || !form.contatoEmail
-                || !form.telefone
                 || (!initial?.hasPassword && !form.password);
               if (faltando) {
                 setTriedSubmit(true);
