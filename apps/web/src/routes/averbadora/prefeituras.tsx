@@ -167,7 +167,7 @@ const readOnlyInputStyle: React.CSSProperties = {
 /** Input de senha com toggle de visualizacao (olho). Mantem semantica HTML
  *  correta: type=password por padrao, alterna pra text ao clicar no botao. */
 function PasswordFieldWithToggle({
-  label, value, onChange, placeholder, hint, required,
+  label, value, onChange, placeholder, hint, required, autoComplete, name,
 }: {
   label: string;
   value: string;
@@ -175,6 +175,8 @@ function PasswordFieldWithToggle({
   placeholder?: string;
   hint?: string;
   required?: boolean;
+  autoComplete?: string;
+  name?: string;
 }) {
   const [show, setShow] = useState(false);
   return (
@@ -189,6 +191,8 @@ function PasswordFieldWithToggle({
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
           required={required}
+          autoComplete={autoComplete}
+          name={name}
           style={{
             width: "100%", padding: "10px 44px 10px 12px", borderRadius: 8,
             border: "1px solid var(--border-strong)",
@@ -246,6 +250,9 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
   const [cnpjInput, setCnpjInput] = useState<string>(initial?.cnpj ?? "");
   const [cnpjError, setCnpjError] = useState<string | null>(null);
   const [avancado, setAvancado] = useState(false);
+  // Aviso "Falta preencher" so aparece apos primeira tentativa de submit.
+  // Antes: aparecia assim que o modal abria, poluindo a UI (cliente 21/07/2026).
+  const [triedSubmit, setTriedSubmit] = useState(false);
   // Consulta CNPJ — BrasilAPI (Receita + Junta Comercial). Prefill do form.
   const consulta = useMutation({
     mutationFn: (cnpj: string) => atlas.admin.consultarCnpjPrefeitura(cnpj),
@@ -435,6 +442,10 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
               placeholder="rh@prefeitura.gov.br"
               required
               hint="A prefeitura usa este e-mail em /login toda vez que acessa."
+              // Evita Chrome autofill (com CPF do login) — nome unico +
+              // autoComplete off (cliente 21/07/2026: nao vazar credencial anterior).
+              autoComplete="off"
+              name="atlas-nova-prefeitura-login-email"
             />
             <PasswordFieldWithToggle
               label={initial?.hasPassword ? "Nova senha (opcional)" : "Senha"}
@@ -443,6 +454,8 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
               placeholder={initial?.hasPassword ? "••••••••" : "min. 6 caracteres"}
               hint={senhaHint}
               required={!initial?.hasPassword}
+              autoComplete="new-password"
+              name="atlas-nova-prefeitura-senha"
             />
           </FormGrid>
         </div>
@@ -527,8 +540,8 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
 
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         {(() => {
-          // Validacao unificada — mostra o motivo do botao Salvar ficar desabilitado
-          // pra o usuario nao ficar adivinhando o que falta.
+          // Aviso so aparece APOS o user clicar Salvar sem preencher tudo.
+          if (!triedSubmit) return null;
           const faltando: string[] = [];
           if (!form.nome) faltando.push("razão social (busque o CNPJ)");
           if (!form.municipioIbge || form.municipioIbge <= 0) faltando.push("código IBGE (refaça a busca do CNPJ)");
@@ -546,16 +559,22 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
           <Button
             type="button"
-            disabled={
-              save.isPending
-              || !form.nome
-              || !form.loginEmail
-              || (!initial?.hasPassword && !form.password)
-              || !form.telefone
-              || !form.municipioIbge
-              || form.municipioIbge <= 0
-            }
-            onClick={() => save.mutate()}
+            disabled={save.isPending}
+            onClick={() => {
+              // Validacao: se algo faltar, marca triedSubmit e nao dispara save.
+              const faltando =
+                !form.nome
+                || !form.loginEmail
+                || (!initial?.hasPassword && !form.password)
+                || !form.telefone
+                || !form.municipioIbge
+                || form.municipioIbge <= 0;
+              if (faltando) {
+                setTriedSubmit(true);
+                return;
+              }
+              save.mutate();
+            }}
           >
             {save.isPending ? "Salvando..." : "Salvar"}
           </Button>
