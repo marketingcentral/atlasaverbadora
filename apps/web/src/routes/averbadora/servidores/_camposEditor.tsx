@@ -64,20 +64,14 @@ export function CamposEditor({
   const updateCampo = (idx: number, patch: Partial<ServidorCampoConfig>) => {
     const c = campos[idx];
     if (!c) return;
-    let next = campos.slice();
+    const next = campos.slice();
     next[idx] = { ...c, ...patch };
-    // Regra bidirecional (cliente 21/07/2026):
-    //  - MARCAR visivel de um preset custom -> DESMARCA sistema (menos travados).
-    //  - DESMARCAR visivel de um custom (e nao sobrar outro custom visivel)
-    //    -> RE-MARCA sistema visivel:true (obrigatorio fica off).
-    if (!c.sistema && patch.visivel === true) {
-      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
-    } else if (!c.sistema && patch.visivel === false) {
-      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
-      if (!aindaTemCustomVisivel) {
-        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
-      }
-    }
+    // Regra 21/07/2026 (final, versao usuario): custom NAO mexe em sistema.
+    // Cada checkbox controla apenas o proprio campo. Se o operador quiser
+    // esconder um sistema quando ativa um custom, desmarca manualmente.
+    // Antes essa regra bidirecional derrubava a checkbox de visivel dos
+    // sistema toda vez que um custom era marcado — comportamento invasivo
+    // que impedia o operador de manter email/nome/etc + custom juntos.
     onChange(next);
   };
 
@@ -92,12 +86,7 @@ export function CamposEditor({
   const removeCampo = (idx: number) => {
     const c = campos[idx];
     if (!c || c.sistema || c.travado) return;
-    let next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
-    // Removeu ultimo custom visivel -> re-marca sistema (mesmo padrao do desmarcar).
-    const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
-    if (!aindaTemCustomVisivel) {
-      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
-    }
+    const next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
     onChange(next);
   };
 
@@ -106,23 +95,22 @@ export function CamposEditor({
     if (!slug) return;
     const key = `custom_${slug}`;
     if (campos.some((c) => c.key === key)) return;
-    // Captura SNAPSHOT dos sistema fields no estado atual — este preset
-    // "lembra" o que estava marcado ao criar. csv-template deste preset
-    // (via ?preset=<key>) usa exatamente esse snapshot.
+    // Captura SNAPSHOT dos sistema fields no estado atual — o preset "lembra"
+    // o que estava marcado ao criar; csv-template deste preset (via ?preset=
+    // <key>) usa exatamente esse snapshot. Custom entra AO LADO dos sistema
+    // ja ativos — NAO desmarca ninguem.
     const snapshot: ServidorCampoConfig[] = campos
       .filter((c) => c.sistema)
       .map((c) => ({ ...c }));
-    // Novo custom visivel:true -> DESMARCA sistema (mesma regra do toggle).
-    const semSistema = campos.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
     const nextCampos: ServidorCampoConfig[] = [
-      ...semSistema,
+      ...campos,
       {
         key,
         label: novoNome.trim(),
         tipo: novoTipo,
         obrigatorio: false,
         visivel: true,
-        ordem: semSistema.length,
+        ordem: campos.length,
         sistema: false,
         snapshotCampos: snapshot,
       },
