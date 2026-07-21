@@ -29,6 +29,7 @@ export function CamposEditor({
   onRestoreDefault,
   saving,
   dirty,
+  presetTemplateUrl,
 }: {
   campos: ServidorCampoConfig[];
   onChange: (next: ServidorCampoConfig[]) => void;
@@ -39,6 +40,9 @@ export function CamposEditor({
   onRestoreDefault: () => void;
   saving: boolean;
   dirty: boolean;
+  /** Se fornecido, cada custom ganha botao "Baixar exemplo deste preset"
+   *  que usa a URL retornada. `presetKey` = campo custom.key (custom_slug). */
+  presetTemplateUrl?: (presetKey: string) => string;
 }) {
   const [novoNome, setNovoNome] = useState("");
   const [novoTipo, setNovoTipo] = useState<ServidorCampoTipo>("texto");
@@ -46,22 +50,10 @@ export function CamposEditor({
   const updateCampo = (idx: number, patch: Partial<ServidorCampoConfig>) => {
     const c = campos[idx];
     if (!c) return;
-    let next = campos.slice();
+    const next = campos.slice();
     next[idx] = { ...c, ...patch };
-    // Regra bidirecional (cliente 21/07/2026, versao final):
-    //  - MARCAR visivel de um custom -> DESMARCA visivel+obrigatorio de todos
-    //    os sistema (menos travados cpf/matricula).
-    //  - DESMARCAR visivel de um custom (e nao sobrar outro custom visivel)
-    //    -> RE-MARCA visivel de todos os sistema (obrigatorio fica off).
-    //  Sistema NAO fica desabilitado visualmente — user pode reeditar manual.
-    if (!c.sistema && patch.visivel === true) {
-      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
-    } else if (!c.sistema && patch.visivel === false) {
-      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
-      if (!aindaTemCustomVisivel) {
-        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
-      }
-    }
+    // Regra simplificada final (cliente 21/07/2026): custom nao mexe em sistema.
+    // Tudo marcado como visivel vai pro CSV. User controla cada checkbox manual.
     onChange(next);
   };
 
@@ -76,13 +68,7 @@ export function CamposEditor({
   const removeCampo = (idx: number) => {
     const c = campos[idx];
     if (!c || c.sistema || c.travado) return;
-    let next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
-    // Se removeu o ultimo custom visivel, re-marca sistema (mesmo padrao do
-    // toggle desativa).
-    const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
-    if (!aindaTemCustomVisivel) {
-      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
-    }
+    const next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
     onChange(next);
   };
 
@@ -91,19 +77,23 @@ export function CamposEditor({
     if (!slug) return;
     const key = `custom_${slug}`;
     if (campos.some((c) => c.key === key)) return;
-    // Novo custom visivel:true -> desmarca sistema (menos travados). Mesma
-    // regra do toggle manual (updateCampo).
-    const semSistema = campos.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
+    // Captura SNAPSHOT dos sistema fields no estado atual — este preset
+    // "lembra" o que estava marcado ao criar. csv-template deste preset
+    // (via ?preset=<key>) vai usar exatamente esse snapshot.
+    const snapshot: ServidorCampoConfig[] = campos
+      .filter((c) => c.sistema)
+      .map((c) => ({ ...c })); // clone raso
     const nextCampos: ServidorCampoConfig[] = [
-      ...semSistema,
+      ...campos,
       {
         key,
         label: novoNome.trim(),
         tipo: novoTipo,
         obrigatorio: false,
         visivel: true,
-        ordem: semSistema.length,
+        ordem: campos.length,
         sistema: false,
+        snapshotCampos: snapshot,
       },
     ];
     onChange(nextCampos);
@@ -196,7 +186,23 @@ export function CamposEditor({
                         {bloqueado ? "travado" : "sistema"}
                       </span>
                     ) : (
-                      <button type="button" style={removeBtn} onClick={() => removeCampo(i)} title="Remover campo custom">✕</button>
+                      <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+                        {presetTemplateUrl ? (
+                          <a
+                            href={presetTemplateUrl(c.key)}
+                            download
+                            title="Baixar CSV modelo deste preset (com colunas snapshot)"
+                            style={{
+                              display: "inline-flex", alignItems: "center", justifyContent: "center",
+                              width: 26, height: 26, borderRadius: 6,
+                              border: "1px solid var(--gold-500)",
+                              background: "transparent", color: "var(--gold-500)",
+                              cursor: "pointer", fontSize: 12, textDecoration: "none",
+                            }}
+                          >↓</a>
+                        ) : null}
+                        <button type="button" style={removeBtn} onClick={() => removeCampo(i)} title="Remover campo custom">✕</button>
+                      </div>
                     )}
                   </td>
                 </tr>

@@ -861,7 +861,20 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
     }
     await refreshServidorCamposConfigs(c.env);
     const config = ensureServidorCamposConfig(prefId);
-    const camposVisiveis = config.campos.filter((f) => f.visivel).sort((a, b) => a.ordem - b.ordem);
+    // ?preset=custom_key -> usa o snapshot do preset (cliente 21/07/2026:
+    // cada custom guarda o estado do sistema quando foi criado; downloading
+    // o CSV daquele preset replica esse estado). Sem preset, usa estado atual.
+    const presetKey = new URL(c.req.url).searchParams.get("preset");
+    let baseCampos: ServidorCampoConfig[] = config.campos;
+    let presetCustom: ServidorCampoConfig | undefined;
+    if (presetKey) {
+      presetCustom = config.campos.find((f) => f.key === presetKey && !f.sistema);
+      if (presetCustom && Array.isArray(presetCustom.snapshotCampos) && presetCustom.snapshotCampos.length > 0) {
+        // Combina: sistema fields do snapshot + o proprio custom
+        baseCampos = [...presetCustom.snapshotCampos, presetCustom];
+      }
+    }
+    const camposVisiveis = baseCampos.filter((f) => f.visivel).sort((a, b) => a.ordem - b.ordem);
     const headers = camposVisiveis.map((f) => f.key);
     const convs = CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefId).slice(0, 2);
     if (convs.length === 0) {
@@ -4152,6 +4165,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     for (const s of out.rows) {
       try { await upsertServidor(c.env, s); }
       catch (e) { persistFailures.push({ matricula: s.matricula, message: (e as Error).message }); }
+    }
+    // Atualiza ultimaSincronizacao da prefeitura sempre que houver import
+    // manual bem-sucedido de servidores. Antes so o botao "Sincronizar"
+    // (endpoint /admin/prefeituras/:id/sincronizar) atualizava, e como esse
+    // botao raramente e usado no fluxo manual, o campo ficava "-" pra sempre
+    // mesmo com dados fresquinhos. Cliente reportou 21/07/2026.
+    if (out.inserted + out.updated > 0) {
+      const ts = new Date().toISOString();
+      pref.ultimaSincronizacao = ts;
+      pref.ultimaSincResultado = { novos: out.inserted, atualizados: out.updated, ts };
+      try { await persistPrefeitura(c.env, pref); } catch { /* best-effort */ }
     }
     // Log persistido inclui o total de linhas do CSV recebido — sem isso
     // fica dificil detectar depois "importei 50 mas so 1 entrou". Se houver

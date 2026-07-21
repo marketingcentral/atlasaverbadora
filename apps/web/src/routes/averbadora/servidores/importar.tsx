@@ -180,6 +180,9 @@ export function AdminServidoresImportar() {
              *  de Salvar). Fluxo pedido pelo cliente 21/07/2026: "clicar em adicionar
              *  ai sim vai salvar". */
             onSaveWith={(campos) => saveConfig.mutate(campos)}
+            /** URL do CSV modelo pra cada preset custom (snapshot dos sistema
+             *  no momento em que o preset foi criado). */
+            presetTemplateUrl={(presetKey) => atlas.admin.servidoresCsvTemplateUrl(prefIdNum, presetKey)}
             onRestoreDefault={() => {
               // "Restaurar padrao" via backend: manda array vazio -> sanitizeCampos
               // reconstroi so os travados. Mais simples do lado do frontend: pega
