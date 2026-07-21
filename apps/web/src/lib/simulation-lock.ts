@@ -74,13 +74,14 @@ export function clearLock(idMatricula: string, produto: LockProduto = "EMPRESTIM
 
 /** Formata `ms` restantes em HH:MM:SS. */
 export function formatRemaining(ms: number): string {
-  if (ms <= 0) return "00:00:00";
+  if (ms <= 0) return "00:00:00:00";
   const totalSeconds = Math.floor(ms / 1000);
-  const h = Math.floor(totalSeconds / 3600);
+  const d = Math.floor(totalSeconds / 86400);
+  const h = Math.floor((totalSeconds % 86400) / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
   const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return `${pad(d)}:${pad(h)}:${pad(m)}:${pad(s)}`;
 }
 
 export const SIMULATION_LOCK_KEY = KEY;
