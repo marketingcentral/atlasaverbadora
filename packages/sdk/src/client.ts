@@ -1928,16 +1928,6 @@ export class AtlasClient {
     upsertFolha: (f: AdminFolhaInput) => this.request<{ folha: AdminFolha }>("/v1/admin/folhas", { method: "POST", body: f }),
     consolidarFolha: (id: string) => this.request<{ folha: AdminFolha }>(`/v1/admin/folhas/${id}/consolidar`, { method: "POST" }),
     deleteFolha: (id: string) => this.request<{ ok: true; id: string }>(`/v1/admin/folhas/${id}`, { method: "DELETE" }),
-    /** Atalho de teste: cria+consolida N folhas em sequencia (a partir da
-     *  proxima competencia sem folha) pra simular meses passando. Cada folha
-     *  consolidada dispara cascade parcelasPagas +1 em contratos averbados. */
-    simularMesesFolha: (body: { prefeituraId: number; meses: number }) =>
-      this.request<{
-        prefeitura: string;
-        folhas: { id: string; competencia: string; incrementados: number; quitados: number }[];
-        totalIncrementados: number;
-        totalQuitados: number;
-      }>("/v1/admin/folhas/simular-meses", { method: "POST", body }),
     // Visao global de contratos averbados (ADF averbadora — todos os bancos).
     contratos: () =>
       this.request<{
