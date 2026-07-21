@@ -135,7 +135,19 @@ let _cache: EmailTemplate[] | null = null;
 export async function loadTemplates(env: Env): Promise<EmailTemplate[]> {
   if (_cache) return _cache;
   await seedCollectionIfEmpty(env, TABLE, SEED.map((t) => ({ id: t.id, data: t })));
-  const rows = await loadCollection<EmailTemplate>(env, TABLE);
+  let rows = await loadCollection<EmailTemplate>(env, TABLE);
+  // Backfill dos SEED: seedCollectionIfEmpty so roda se a colecao esta 100%
+  // vazia. Se ela tem 5 templates residuais mas o SEED cresceu pra 44, os 39
+  // novos nunca entram. Aqui garantimos que TODO id do SEED existe. Templates
+  // editados manualmente (mesmo id) sobrevivem porque nao sobrescrevemos.
+  const existentes = new Set(rows.map((r) => r.id));
+  const faltantes = SEED.filter((s) => !existentes.has(s.id));
+  if (faltantes.length > 0) {
+    for (const t of faltantes) {
+      try { await upsertCollectionRow(env, TABLE, t.id, t); } catch { /* fail-safe */ }
+    }
+    rows = await loadCollection<EmailTemplate>(env, TABLE);
+  }
   _cache = rows.sort((a, b) => a.nome.localeCompare(b.nome));
   return _cache;
 }
