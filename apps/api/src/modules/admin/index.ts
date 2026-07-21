@@ -2453,9 +2453,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
     await ensureFolhasLoaded(c.env);
     await refreshContratos(c.env);
+    await Promise.all([ensurePrefeiturasLoaded(c.env), ensureBancosLoaded(c.env), refreshConvenios(c.env)]);
     const f = folhas.find((x) => x.id === c.req.param("id"));
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
+    // Materializa _adfs pro isolate atual ANTES de ler listAdfsGlobal — sem
+    // isso, isolate frio (nunca tocou /adf/*) tem _adfs vazio e o cascade
+    // achava 0 ADFs pra incrementar (parcelasIncrementadas ficava 0).
+    const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
+    ensureAdfsGlobal(f.competencia, bancoNomeById, new Date().toISOString(), [f.prefeituraId]);
     f.status = "consolidada";
     await persistFolha(c.env, f);
 
