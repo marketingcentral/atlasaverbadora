@@ -86,13 +86,16 @@ export function CamposEditor({
         <div>
           <div style={{ fontSize: 15, fontWeight: 700 }}>Campos do servidor</div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            Ligue/desligue os campos, marque obrigatórios e edite os rótulos. CPF, matrícula e e-mail (login) ficam travados.
+            Ligue/desligue os campos, marque obrigatórios e edite os rótulos. Alterações salvam automaticamente. CPF e matrícula ficam travados (identidade do servidor).
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <span style={{ fontSize: 12, color: saving ? "var(--gold-500)" : dirty ? "var(--gold-500)" : "var(--emerald-500)" }}>
+            {saving ? "Salvando..." : dirty ? "Alterações não salvas" : "✓ Tudo salvo"}
+          </span>
           <Button size="sm" variant="ghost" onClick={onRestoreDefault} type="button">Restaurar padrão</Button>
           <Button size="sm" onClick={onSave} disabled={saving || !dirty} type="button">
-            {saving ? "Salvando…" : dirty ? "Salvar" : "Salvo"}
+            {saving ? "Salvando…" : dirty ? "Salvar agora" : "Salvo"}
           </Button>
         </div>
       </div>
