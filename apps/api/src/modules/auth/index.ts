@@ -243,17 +243,32 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
 
     // 5) Fallback DEV_USERS — só se o identifier NÃO foi reivindicado por servidor/banco/prefeitura/averbadora
     //    cadastrado (caso contrário a senha demo continuaria valendo mesmo após o admin trocar).
+    //    Dev-users de banco/prefeitura tem banco_id/prefeitura_id HARDCODED (=1),
+    //    entao "logam" no primeiro banco/prefeitura real que o admin cadastrar. Fix
+    //    (21/07/2026): bloqueia dev-user de banco quando ja existir qualquer banco
+    //    cadastrado; mesmo pra prefeitura. Assim so servem em base vazia (bootstrap).
+    //    admin@atlas.test continua passando sempre (nao aponta pra recurso especifico).
     if (!resolved && !claimed) {
       const dev = DEV_USERS.find((u) => u.identifier === identifier);
       if (dev && dev.password === body.password) {
-        resolved = {
-          id: dev.id,
-          nome: dev.nome,
-          role: dev.role,
-          servidor_id: "servidor_id" in dev ? dev.servidor_id : undefined,
-          banco_id: "banco_id" in dev ? dev.banco_id : undefined,
-          prefeitura_id: "prefeitura_id" in dev ? dev.prefeitura_id : undefined,
-        };
+        let bloquear = false;
+        if (dev.role === "banco") {
+          await ensureBancosLoaded(c.env);
+          if (bancosStore.length > 0) bloquear = true;
+        } else if (dev.role === "prefeitura") {
+          await ensurePrefeiturasLoaded(c.env);
+          if (prefeiturasStore.length > 0) bloquear = true;
+        }
+        if (!bloquear) {
+          resolved = {
+            id: dev.id,
+            nome: dev.nome,
+            role: dev.role,
+            servidor_id: "servidor_id" in dev ? dev.servidor_id : undefined,
+            banco_id: "banco_id" in dev ? dev.banco_id : undefined,
+            prefeitura_id: "prefeitura_id" in dev ? dev.prefeitura_id : undefined,
+          };
+        }
       }
     }
 
