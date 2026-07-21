@@ -2222,14 +2222,21 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
 
   // Config dos campos de servidor POR PREFEITURA. Cada prefeitura escolhe quais
-  // campos quer visiveis + obrigatorios + custom. cpf/matricula/email travados.
+  // campos quer visiveis + obrigatorios + custom. cpf/matricula travados.
   // Ver `modules/admin/servidor-campos.ts`.
   .get("/v1/admin/servidores/campos-config/:prefeituraId", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
     const prefId = Number(c.req.param("prefeituraId"));
     if (!Number.isFinite(prefId)) throw Errors.validation({ prefeituraId: "invalido" });
     await refreshServidorCamposConfigs(c.env);
-    const config = ensureServidorCamposConfig(prefId);
+    let config = ensureServidorCamposConfig(prefId);
+    // Re-sanea sempre no GET pra flags obsoletas (ex: email travado apos remocao
+    // de CHAVES_TRAVADAS em 21/07/2026) sumirem sem exigir save manual do admin.
+    // Se resultado difere do stored, upsert + persist pra correcao ser durable.
+    const camposLimpos = sanitizeCampos(config.campos);
+    if (JSON.stringify(camposLimpos) !== JSON.stringify(config.campos)) {
+      config = upsertServidorCamposConfig({ prefeituraId: prefId, campos: camposLimpos });
+    }
     // Se acabou de criar (sem persist), grava agora pra sincronizar isolates.
     try { await persistServidorCamposConfig(c.env, config); } catch { /* best-effort */ }
     return c.json({ config });
