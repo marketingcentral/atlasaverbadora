@@ -52,8 +52,9 @@ export function CamposEditor({
     if (!c) return;
     const next = campos.slice();
     next[idx] = { ...c, ...patch };
-    // Regra simplificada final (cliente 21/07/2026): custom nao mexe em sistema.
-    // Tudo marcado como visivel vai pro CSV. User controla cada checkbox manual.
+    // Regra 21/07/2026 (final): custom nao mexe em sistema. Tudo marcado
+    // como visivel vai pro CSV. User controla cada checkbox manualmente —
+    // se quiser esconder um sistema, desmarca a checkbox correspondente.
     onChange(next);
   };
 
@@ -79,10 +80,11 @@ export function CamposEditor({
     if (campos.some((c) => c.key === key)) return;
     // Captura SNAPSHOT dos sistema fields no estado atual — este preset
     // "lembra" o que estava marcado ao criar. csv-template deste preset
-    // (via ?preset=<key>) vai usar exatamente esse snapshot.
+    // (via ?preset=<key>) usa exatamente esse snapshot. Custom entra ao
+    // lado dos sistema ja ativos — nao desmarca ninguem.
     const snapshot: ServidorCampoConfig[] = campos
       .filter((c) => c.sistema)
-      .map((c) => ({ ...c })); // clone raso
+      .map((c) => ({ ...c }));
     const nextCampos: ServidorCampoConfig[] = [
       ...campos,
       {

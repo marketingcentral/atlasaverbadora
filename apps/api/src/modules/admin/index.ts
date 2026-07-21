@@ -861,21 +861,24 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
     }
     await refreshServidorCamposConfigs(c.env);
     const config = ensureServidorCamposConfig(prefId);
-    // ?preset=custom_key -> usa o snapshot do preset (cliente 21/07/2026:
-    // cada custom guarda o estado do sistema quando foi criado; downloading
-    // o CSV daquele preset replica esse estado). Sem preset, usa estado atual.
+    // ?preset=custom_key -> usa o snapshot do preset (cada custom guarda o
+    // estado do sistema quando foi criado; baixar o CSV daquele preset
+    // replica esse estado). Sem preset, usa a config atual.
     const presetKey = new URL(c.req.url).searchParams.get("preset");
     let baseCampos: ServidorCampoConfig[] = config.campos;
     let presetCustom: ServidorCampoConfig | undefined;
     if (presetKey) {
       presetCustom = config.campos.find((f) => f.key === presetKey && !f.sistema);
       if (presetCustom && Array.isArray(presetCustom.snapshotCampos) && presetCustom.snapshotCampos.length > 0) {
-        // Combina: sistema fields do snapshot + o proprio custom
         baseCampos = [...presetCustom.snapshotCampos, presetCustom];
       }
     }
     const camposVisiveis = baseCampos.filter((f) => f.visivel).sort((a, b) => a.ordem - b.ordem);
-    const headers = camposVisiveis.map((f) => f.key);
+    // CSV usa slug puro (sem prefixo "custom_") — mais legivel pro operador
+    // preencher. O importar aceita as duas formas (com e sem prefixo) via
+    // lookup dupla, entao nao quebra CSVs antigos.
+    const csvHeader = (key: string) => key.startsWith("custom_") ? key.slice("custom_".length) : key;
+    const headers = camposVisiveis.map((f) => csvHeader(f.key));
     const convs = CONVENIOS_MOCK.filter((cv) => cv.prefeituraId === prefId).slice(0, 2);
     if (convs.length === 0) {
       const aviso = `# Prefeitura ${pref.nome} sem convenios cadastrados. Cadastre um convenio antes.\n${headers.join(",")}\n`;
@@ -913,7 +916,7 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
     };
     const linhas = [0, 1].slice(0, Math.max(1, convs.length)).map((idx) => {
       const row: Record<string, string> = {};
-      for (const f of camposVisiveis) row[f.key] = placeholderFor(f.key, f.tipo, idx);
+      for (const f of camposVisiveis) row[csvHeader(f.key)] = placeholderFor(f.key, f.tipo, idx);
       return row;
     });
     return csvResponse("servidores-exemplo.csv", buildCsv(headers, linhas));
@@ -4143,11 +4146,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (r.endereco) s.endereco = r.endereco;
       if (r.email) s.email = r.email;
       if (r.telefone) s.telefone = r.telefone;
-      // Campos custom da config: le do CSV pela key e guarda em camposCustom.
+      // Campos custom da config: le do CSV pela key OU pelo slug sem prefixo
+      // (o template CSV agora usa slug puro — "marketing_central" em vez de
+      // "custom_marketing_central" — mas CSVs antigos com prefixo continuam
+      // valendo). Chave no camposCustom permanece a key completa.
       if (camposCustomAtivos.length > 0) {
         const custom: Record<string, string> = { ...(existing?.camposCustom ?? {}) };
         for (const f of camposCustomAtivos) {
-          const val = (r[f.key] ?? "").toString().trim();
+          const slugSemPrefixo = f.key.startsWith("custom_") ? f.key.slice("custom_".length) : f.key;
+          const val = ((r[f.key] ?? r[slugSemPrefixo]) ?? "").toString().trim();
           if (val) custom[f.key] = val;
         }
         if (Object.keys(custom).length > 0) s.camposCustom = custom;
