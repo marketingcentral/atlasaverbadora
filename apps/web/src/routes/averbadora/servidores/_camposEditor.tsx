@@ -156,14 +156,10 @@ export function CamposEditor({
               return (
                 <tr
                   key={c.key}
-                  draggable={!bloqueado}
-                  onDragStart={(e) => {
-                    if (bloqueado) return;
-                    setDragIdx(i);
-                    e.dataTransfer.effectAllowed = "move";
-                    // Firefox exige dataTransfer.setData pra iniciar o drag.
-                    try { e.dataTransfer.setData("text/plain", String(i)); } catch { /* ignore */ }
-                  }}
+                  // Draggable NAO fica no <tr> inteiro — so no handle ⋮⋮.
+                  // Antes: draggable no tr pegava eventos de clique em input/
+                  // select da linha e disparava drag acidental. Agora o drag
+                  // so comeca quando o usuario segura o ⋮⋮ explicitamente.
                   onDragOver={(e) => {
                     if (dragIdx == null || dragIdx === i) return;
                     e.preventDefault();
@@ -177,24 +173,37 @@ export function CamposEditor({
                     setDragIdx(null);
                     setOverIdx(null);
                   }}
-                  onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
                   style={{
                     borderTop: "1px solid var(--border)",
                     opacity: c.visivel ? (arrastando ? 0.4 : 1) : 0.55,
                     background: alvo ? "color-mix(in srgb, var(--gold-500) 12%, transparent)" : undefined,
-                    cursor: bloqueado ? "default" : "grab",
                   }}
                 >
                   <td style={td}>
                     <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
                       <span
-                        title={bloqueado ? "Campo travado — nao pode reordenar" : "Segure e arraste pra reordenar (ou use as setas)"}
+                        // O handle e' o UNICO elemento draggable. Segurar aqui
+                        // inicia o drag da linha inteira; segurar qualquer
+                        // outro lugar (input, select, etc) NAO dispara drag.
+                        draggable={!bloqueado}
+                        onDragStart={(e) => {
+                          if (bloqueado) return;
+                          setDragIdx(i);
+                          e.dataTransfer.effectAllowed = "move";
+                          try { e.dataTransfer.setData("text/plain", String(i)); } catch { /* ignore */ }
+                        }}
+                        onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                        title={bloqueado ? "Campo travado — nao pode reordenar" : "Segure aqui e arraste pra reordenar"}
                         style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
-                          width: 16, color: "var(--text-dim)", fontSize: 12, fontWeight: 700,
+                          width: 20, height: 26, color: "var(--text-dim)", fontSize: 14, fontWeight: 700,
                           cursor: bloqueado ? "not-allowed" : "grab", userSelect: "none",
                           opacity: bloqueado ? 0.3 : 0.7,
+                          borderRadius: 4,
                         }}
+                        onMouseDown={(e) => { if (!bloqueado) e.currentTarget.style.cursor = "grabbing"; }}
+                        onMouseUp={(e) => { e.currentTarget.style.cursor = bloqueado ? "not-allowed" : "grab"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.cursor = bloqueado ? "not-allowed" : "grab"; }}
                       >⋮⋮</span>
                       <button type="button" style={arrowBtn} onClick={() => move(i, -1)} disabled={i === 0} title="Subir">↑</button>
                       <button type="button" style={arrowBtn} onClick={() => move(i, +1)} disabled={i === campos.length - 1} title="Descer">↓</button>
@@ -216,7 +225,11 @@ export function CamposEditor({
                       value={c.tipo}
                       onChange={(e) => updateCampo(i, { tipo: e.target.value as ServidorCampoTipo })}
                       style={inputStyle}
-                      disabled={bloqueado || c.sistema}
+                      // Tipo editavel em TODOS os campos (menos travados cpf/
+                      // matricula). Antes sistema tinha tipo travado; agora
+                      // averbadora pode ajustar (ex.: mudar salarioLiquido
+                      // de moeda pra numero, ou telefone pra texto).
+                      disabled={bloqueado}
                     >
                       {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
