@@ -27,7 +27,11 @@ import type { ContratoFull } from "./store.js";
  *  beneficio/cartao caem em outros buckets; o resto e EMPRESTIMO. */
 function externosEmprestimo(matricula: string): { valorParcela: number; parcelasRestantes: number }[] {
   return listExternalLoans(matricula).filter((l) => {
-    const t = (l.tipo ?? "").toLowerCase();
+    // Combina tipo + motivo — no relatorio real o `tipo` costuma ser 'Novo'/
+    // 'Refinanciamento' e o `motivo` e' que carrega 'Cartao Consignado' vs
+    // 'Emprestimo'. Olhar so `tipo` fazia o cartao (ex.: BMG) cair no emprestimo.
+    // Mesma logica do bucketFromTombamento em servidores/index.ts.
+    const t = `${l.tipo ?? ""} ${l.motivo ?? ""}`.toLowerCase();
     return !(t.includes("benef") || t.includes("cartao") || t.includes("cartão"));
   });
 }

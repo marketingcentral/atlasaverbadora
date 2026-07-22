@@ -13,7 +13,7 @@ import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, getContrato } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
 import { enviarNotificacao } from "../admin/mailer.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
@@ -89,6 +89,26 @@ function comprometidoDe(matricula: string, todosContratos: ReturnType<typeof lis
     .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao))
     .reduce((acc, ct) => acc + ct.valorParcela, 0);
   const externos = listExternalLoans(matricula).reduce((acc, l) => acc + l.valorParcela, 0);
+  return atlas + externos;
+}
+
+/** Comprometido SO do bucket EMPRESTIMO (35%) — usado pra MARGEM consignavel de
+ *  emprestimo. Contratos Atlas com deriveTipoMargem EMPRESTIMO + externos cujo
+ *  tipo+motivo NAO e' cartao/beneficio. Separado do comprometidoDe (que soma
+ *  TODOS os buckets pra "descontos do mes"/folha). Cliente reportou 21/07/2026:
+ *  o cartao externo (BMG R$90) estava sendo descontado da margem de EMPRESTIMO,
+ *  fazendo prefeitura mostrar R$490,30 e o servidor R$580,30 pro mesmo servidor.
+ *  Mesma logica de bucket do servidor (servidores/index.ts) e do banco. */
+function comprometidoEmprestimoDe(matricula: string, todosContratos: ReturnType<typeof listContratos>): number {
+  const atlas = todosContratos
+    .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
+    .reduce((acc, ct) => acc + ct.valorParcela, 0);
+  const externos = listExternalLoans(matricula)
+    .filter((l) => {
+      const t = `${l.tipo ?? ""} ${l.motivo ?? ""}`.toLowerCase();
+      return !(t.includes("benef") || t.includes("cartao") || t.includes("cartão"));
+    })
+    .reduce((acc, l) => acc + l.valorParcela, 0);
   return atlas + externos;
 }
 
@@ -259,10 +279,14 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     let margemTotalAgg = 0, margemComprometidaAgg = 0, descontosMes = 0;
     for (const s of servidores) {
       const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
-      const comprometido = comprometidoDe(s.matricula, todosContratos);
+      // Margem: so o bucket EMPRESTIMO (cartao/beneficio tem margem propria).
+      const compEmprestimo = comprometidoEmprestimoDe(s.matricula, todosContratos);
+      // Descontos do mes: TODAS as consignacoes (emprestimo + cartao + beneficio),
+      // e' o total que cai na folha.
+      const compTotal = comprometidoDe(s.matricula, todosContratos);
       margemTotalAgg += total;
-      margemComprometidaAgg += Math.min(comprometido, total);
-      descontosMes += comprometido;
+      margemComprometidaAgg += Math.min(compEmprestimo, total);
+      descontosMes += compTotal;
     }
 
     const folhaAtual = folhasPref.find((f) => f.status === "aberta") ?? folhasPref[folhasPref.length - 1];
@@ -310,7 +334,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       .filter((s) => !situacao || s.situacaoFuncional === situacao)
       .map((s) => {
         const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
-        const comprometido = Math.min(comprometidoDe(s.matricula, contratos), total);
+        // Margem de EMPRESTIMO desconta so o bucket EMPRESTIMO (cartao/beneficio
+        // externos nao entram — tem margem propria). Casa com servidor e banco.
+        const comprometido = Math.min(comprometidoEmprestimoDe(s.matricula, contratos), total);
         return {
           matricula: s.matricula, nome: s.nome, cpf: s.cpf, cpfMasked: s.cpfMasked, vinculo: s.vinculo,
           situacaoFuncional: s.situacaoFuncional, salarioLiquido: s.salarioLiquido, idConvenio: s.idConvenio,
