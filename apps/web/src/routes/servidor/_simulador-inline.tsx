@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
+import { calcCET } from "@atlas/domain";
 import { atlas } from "../../lib/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import {
@@ -268,18 +269,22 @@ export function SimuladorInline({
     if (valor > maxValor) setValor(maxValor);
   }, [maxValor, valor]);
 
-  const parcela = useMemo(() => {
-    if (valor <= 0 || parcelas <= 0) return 0;
-    if (taxaAm <= 0) return valor / parcelas;
-    return (valor * taxaAm) / (1 - Math.pow(1 + taxaAm, -parcelas));
+  // CET calculado pelo helper compartilhado (@atlas/domain) — Newton-Raphson
+  // pra IRR, mesma implementacao usada no backend. Cliente reportou 22/07/2026
+  // que o CET aparecia MENOR que a taxa nominal (0.59% < 1.00%), impossivel:
+  // era formula caseira `(total/liquido)^(1/parcelas)-1` que so calcula taxa
+  // media incorreta. CET real >= taxaNominal porque inclui IOF+tarifas.
+  const { parcela, iof, mensal: cetMensal, totalPago: total } = useMemo(() => {
+    if (valor <= 0 || parcelas <= 0 || taxaAm <= 0) {
+      return { parcela: 0, iof: 0, mensal: 0, totalPago: 0 };
+    }
+    try {
+      return calcCET({ valor, parcelas, taxaMensal: taxaAm });
+    } catch {
+      return { parcela: 0, iof: 0, mensal: 0, totalPago: 0 };
+    }
   }, [valor, parcelas, taxaAm]);
-
-  const iof = valor * 0.0038 + valor * 0.000082 * Math.min(parcelas * 30, 365);
-  const total = parcela * parcelas;
-  const cetBase = valor - iof;
-  const cet = cetBase > 0 && total > 0 && parcelas > 0
-    ? ((total / cetBase) ** (1 / parcelas) - 1) * 100
-    : 0;
+  const cet = cetMensal * 100;
 
   const excedeMargem = info ? parcela > margemEmprestimo : false;
   const locked = !!lockExpiresAt && lockExpiresAt > now;
