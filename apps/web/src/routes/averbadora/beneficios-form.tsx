@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Button, Card, TextField, TextareaField } from "@atlas/ui/web";
+import { Button, Card, TextField, TextareaField, CnpjField, CepField, TelefoneField } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type {
   AdminBeneficio, AdminBeneficioInput, CategoriaBeneficio,
@@ -246,7 +246,7 @@ export function AdminBeneficiosForm() {
       <Secao titulo="Identificação" descricao="Nome, categoria e visual do card." icone="🏷️" defaultOpen>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <TextField label="Nome do parceiro" value={form.nome} onChange={(e) => set("nome", e.target.value)} placeholder="Ex.: Farmácia São João" />
-          <TextField label="CNPJ (opcional)" value={form.cnpj ?? ""} onChange={(e) => set("cnpj", e.target.value)} placeholder="00.000.000/0000-00" />
+          <CnpjField label="CNPJ (opcional)" value={form.cnpj ?? ""} onChange={(e) => set("cnpj", e.target.value)} />
         </div>
 
         <TextField label="Descrição curta (aparece no card)" value={form.descricaoCurta ?? ""} onChange={(e) => set("descricaoCurta", e.target.value)} placeholder="Ex.: Rede de farmácias com atendimento 24h em Palhoça" maxLength={280} />
@@ -540,7 +540,7 @@ export function AdminBeneficiosForm() {
       {/* ============ 3. ENDERECO E CONTATO ============ */}
       <Secao titulo="Endereço e contato" descricao="Onde e como o servidor encontra o parceiro." icone="📍">
         <div style={{ display: "grid", gridTemplateColumns: "1fr 3fr 1fr", gap: 12 }}>
-          <TextField label="CEP" value={form.endereco?.cep ?? ""} onChange={(e) => set("endereco", { ...form.endereco, cep: e.target.value })} placeholder="00000-000" />
+          <CepField label="CEP" value={form.endereco?.cep ?? ""} onChange={(e) => set("endereco", { ...form.endereco, cep: e.target.value })} />
           <TextField label="Logradouro" value={form.endereco?.logradouro ?? ""} onChange={(e) => set("endereco", { ...form.endereco, logradouro: e.target.value })} placeholder="Rua Principal" />
           <TextField label="Número" value={form.endereco?.numero ?? ""} onChange={(e) => set("endereco", { ...form.endereco, numero: e.target.value })} placeholder="123" />
         </div>
@@ -562,7 +562,7 @@ export function AdminBeneficiosForm() {
         <TextField label="Local (bairro/cidade que aparece no card)" value={form.local} onChange={(e) => set("local", e.target.value)} placeholder="Ex.: Palhoça Centro" />
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <TextField label="Telefone" value={form.contato?.telefone ?? ""} onChange={(e) => set("contato", { ...form.contato, telefone: e.target.value })} placeholder="(48) 3000-0000" />
+          <TelefoneField label="Telefone" value={form.contato?.telefone ?? ""} onChange={(e) => set("contato", { ...form.contato, telefone: e.target.value })} />
           <TextField label="WhatsApp" value={form.contato?.whatsapp ?? ""} onChange={(e) => set("contato", { ...form.contato, whatsapp: e.target.value })} placeholder="(48) 99999-9999" />
           <TextField label="E-mail" type="email" value={form.contato?.email ?? ""} onChange={(e) => set("contato", { ...form.contato, email: e.target.value })} placeholder="contato@parceiro.com" />
           <TextField label="Site" value={form.contato?.site ?? ""} onChange={(e) => set("contato", { ...form.contato, site: e.target.value })} placeholder="https://..." />
@@ -783,7 +783,7 @@ export function AdminBeneficiosForm() {
           <TextField label="Nome" value={form.responsavel?.nome ?? ""} onChange={(e) => set("responsavel", { ...form.responsavel, nome: e.target.value })} placeholder="Maria Silva" />
           <TextField label="Cargo" value={form.responsavel?.cargo ?? ""} onChange={(e) => set("responsavel", { ...form.responsavel, cargo: e.target.value })} placeholder="Diretora Comercial" />
           <TextField label="E-mail" type="email" value={form.responsavel?.email ?? ""} onChange={(e) => set("responsavel", { ...form.responsavel, email: e.target.value })} />
-          <TextField label="Telefone" value={form.responsavel?.telefone ?? ""} onChange={(e) => set("responsavel", { ...form.responsavel, telefone: e.target.value })} placeholder="(48) 99999-9999" />
+          <TelefoneField label="Telefone" value={form.responsavel?.telefone ?? ""} onChange={(e) => set("responsavel", { ...form.responsavel, telefone: e.target.value })} />
         </div>
       </Secao>
 

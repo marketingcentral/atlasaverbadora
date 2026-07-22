@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Button, TextField, SelectField, CurrencyField, FormGrid } from "@atlas/ui/web";
+import { Button, TextField, SelectField, CurrencyField, FormGrid, CpfField, TelefoneField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import type { AdminServidor, AdminServidorUpdate } from "@atlas/sdk";
 
@@ -46,12 +46,10 @@ export function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServi
 
         <FormGrid>
           <TextField label="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-          <TextField
+          <CpfField
             label="CPF (login do servidor)"
             value={cpf}
             onChange={(e) => setCpf(e.target.value)}
-            inputMode="numeric"
-            maxLength={14}
             hint={cpf && !cpfValido ? undefined : "11 dígitos · usado como login"}
             error={cpf && !cpfValido ? "CPF deve ter 11 dígitos" : undefined}
           />
@@ -78,7 +76,7 @@ export function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServi
           </div>
           <FormGrid>
             <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="servidor@exemplo.com" />
-            <TextField label="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="(48) 99999-0000" />
+            <TelefoneField label="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
           </FormGrid>
           <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-dim)" }}>
             A senha do servidor não é editável por aqui — apenas o próprio servidor pode alterar, em <b>Conta → Redefinir senha</b>, com verificação por e-mail.
