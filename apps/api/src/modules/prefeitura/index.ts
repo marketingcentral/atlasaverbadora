@@ -578,11 +578,21 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       dataCorte: z.string().optional(),
       dataRepasse: z.string().nullable().optional(),
     }).parse(await c.req.json());
-    // Regra do cliente (17/07/2026): nao pode fechar folha sem ter enviado
-    // ao menos 1 movimentacao. Um mes so eh "confirmado como sem mudancas"
-    // depois que a prefeitura reportou explicitamente — silencio nao vale.
+    // Regra ajustada (cliente 21/07/2026): pra fechar, a folha precisa ter
+    // ALGUMA atividade — movimentacao de pessoal OU desconto averbado (ADF
+    // aplicada). Antes exigia SO movimentacao, o que travava folha com
+    // averbacao mas sem mudanca de pessoal. Se a folha ja tem desconto, ele
+    // e' a confirmacao do mes; fecha direto. So folha 100% vazia (sem
+    // movimentacao E sem desconto) ainda exige movimentacao explicita.
     if (body.status === "fechada" && countMovimentacoes(f.id) === 0) {
-      throw Errors.validation({ status: "Envie ao menos 1 movimentacao antes de fechar a folha. Se realmente nao houve movimentacao no mes, faca uma linha de tipo=alteracao sem alterar cargo/salario (so preencha detalhe: 'sem movimentacoes no mes')." });
+      const now = new Date().toISOString();
+      const bancoNomeById = (bid: number) => bancos.find((b) => b.id === bid)?.nome ?? `Banco ${bid}`;
+      await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
+      ensureAdfs(pid, f.competencia, bancoNomeById, now);
+      const temDesconto = listAdfs(pid, f.competencia).some((a) => a.status === "aplicada");
+      if (!temDesconto) {
+        throw Errors.validation({ status: "Folha sem movimentação e sem desconto averbado — não há o que fechar. Registre ao menos 1 movimentação de pessoal, ou aguarde a averbadora aplicar uma ADF nesta competência." });
+      }
     }
     if (body.status) f.status = body.status;
     if (body.dataCorte) f.dataCorte = body.dataCorte;

@@ -129,8 +129,10 @@ export function PrefeituraFolhas() {
               ) : null}
               <Button
                 size="sm"
-                disabled={f.movimentacoes === 0 || setStatus.isPending}
-                title={f.movimentacoes === 0 ? "Envie ao menos 1 movimentação antes de fechar" : undefined}
+                // Fecha se tem movimentacao OU desconto averbado (valorAplicado).
+                // Folha com averbacao nao precisa de movimentacao pra fechar.
+                disabled={(f.movimentacoes === 0 && (f.valorAplicado ?? 0) === 0) || setStatus.isPending}
+                title={(f.movimentacoes === 0 && (f.valorAplicado ?? 0) === 0) ? "Sem movimentação e sem desconto — nada a fechar" : undefined}
                 onClick={() => setStatus.mutate({ id: f.id, status: "fechada" })}
               >
                 Fechar
