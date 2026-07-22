@@ -1048,7 +1048,17 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       userRole: "servidor",
       detalhes: `Servidor ${entry.nome} criou pre-reserva ADF ${contrato.adf} (${body.tipo}) — R$ ${body.valor.toFixed(2)} em ${body.parcelas}x de R$ ${cet.parcela.toFixed(2)} com ${conv?.nome ?? "Banco Atlas"}.`,
     });
-    // Aceite implicito dos termos vigentes ao confirmar a proposta.
+    // Aceite implicito dos termos vigentes ao confirmar a proposta. Grava a
+    // VERSAO do termo vigente pra reconstruir depois o que o servidor viu (LGPD:
+    // se o texto do termo mudar, a trilha aponta a versao efetivamente aceita).
+    // Best-effort: se o termo nao existir no editor da averbadora, cai em "?".
+    await ensureTermosLoaded(c.env);
+    const termoTipoAceite: TermoTipo = body.tipo === "portabilidade"
+      ? "portabilidade"
+      : body.tipo === "refinanciamento"
+        ? "refinanciamento"
+        : "emprestimo";
+    const termoVersao = getTermo(termoTipoAceite)?.versao ?? "?";
     appendAudit(auditCtx(c), {
       categoria: "termo_aceite",
       acao: "termo_confirmado_na_proposta",
@@ -1057,8 +1067,8 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       cpf: entry.cpfMasked,
       userId: `servidor:${s.id}`,
       userRole: "servidor",
-      termoAceito: `proposta-${body.tipo}`,
-      detalhes: `Servidor ${entry.nome} confirmou termos ao criar proposta ADF ${contrato.adf}.`,
+      termoAceito: `${termoTipoAceite}@${termoVersao}`,
+      detalhes: `Servidor ${entry.nome} confirmou termos ao criar proposta ADF ${contrato.adf} — termo "${termoTipoAceite}" versao ${termoVersao}.`,
     });
     // Notificação em tempo real: e-mail pro servidor + e-mail pro banco.
     // Tenta template editavel em /averbadora/emails/simulacao primeiro;
@@ -1496,6 +1506,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!matriculasDoCpf.has(i.servidorMatricula)) throw Errors.notFound("intencao");
     const r = await aceitarOferta(c.env, i.id, body.ofertaId, i.servidorMatricula);
     if (!r.ok) throw Errors.validation({ oferta: r.motivo });
+    // Aceite de oferta de portabilidade cria divida nova (migra saldo entre
+    // bancos). Alto valor de auditoria — quem aceitou, qual oferta, saldo.
+    appendAudit(auditCtx(c), {
+      categoria: "pre_reserva",
+      acao: "portabilidade_oferta_aceita",
+      propostaId: i.id,
+      matricula: i.servidorMatricula,
+      cpf: i.servidorCpfMasked,
+      userId: `servidor:${j.sub}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${i.servidorNome} aceitou oferta ${body.ofertaId} pra portar contrato ${i.contratoAdfOrigem} do ${i.bancoOrigemNome} (saldo R$ ${i.saldoDevedor.toFixed(2)}, ${i.parcelasRestantes} parcelas restantes).`,
+    });
     return c.json({ intencao: r.intencao });
   })
   // ===== Termos (renderiza template editado no /averbadora/termos) =====

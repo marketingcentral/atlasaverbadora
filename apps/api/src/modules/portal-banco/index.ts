@@ -812,7 +812,15 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         prazoMaxMeses: `Prazo maximo do convenio e' de ${cfg.maxParcelas} parcelas (teto definido pela prefeitura). Reduza o prazo desta tabela.`,
       });
     }
-    return c.json({ tabela: await upsertTabela(c.env, body) });
+    const saved = await upsertTabela(c.env, body);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: body.id ? "banco_tabela_editada" : "banco_tabela_criada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} ${body.id ? "editou" : "criou"} tabela (id=${saved.id}) no convenio ${body.convenioId}: taxa=${body.taxaMinAm}%-${body.taxaMaxAm}% am, prazoMax=${body.prazoMaxMeses}, ativo=${body.ativo}. Muda o cardapio de credito exposto ao servidor.`,
+    });
+    return c.json({ tabela: saved });
   })
   .delete("/v1/portal/banco/cadastros/tabela-emprestimos/:id", async (c) => {
     const j = c.get("jwt");
@@ -822,6 +830,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
     if (!t || !meusConvenios.has(t.convenioId)) throw Errors.notFound("tabela");
     if (!(await removerTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "banco_tabela_desativada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} desativou tabela ${c.req.param("id")} (convenio ${t.convenioId}, taxa ${t.taxaMinAm}-${t.taxaMaxAm}% am).`,
+    });
     return c.body(null, 204);
   })
   .post("/v1/portal/banco/cadastros/tabela-emprestimos/:id/reativar", async (c) => {
@@ -831,6 +846,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
     if (!t || !meusConvenios.has(t.convenioId)) throw Errors.notFound("tabela");
     if (!(await reativarTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "banco_tabela_reativada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} reativou tabela ${c.req.param("id")} (convenio ${t.convenioId}).`,
+    });
     return c.json({ ok: true });
   })
 
@@ -994,6 +1016,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       tipo: body.tipo ?? "credito_novo",
     };
     await persistOferta(c.env, oferta);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: body.id ? "banco_oferta_editada" : "banco_oferta_criada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} ${body.id ? "editou" : "criou"} oferta "${oferta.titulo}" (${oferta.tipo}): taxa=${oferta.taxaAm}%, parcelasMax=${oferta.parcelasMax}, valorMax=${oferta.valorMax}, ativo=${oferta.ativo}. Cardapio exposto ao servidor.`,
+    });
     return c.json({ oferta });
   })
   .patch("/v1/portal/banco/ofertas/:id/pausar", async (c) => {
@@ -1004,6 +1033,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!o || o.bancoId !== j.banco_id) throw Errors.notFound("oferta");
     o.ativo = false;
     await persistOferta(c.env, o);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "banco_oferta_pausada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} pausou oferta "${o.titulo}" (id=${o.id}).`,
+    });
     return c.json({ oferta: o });
   })
   .patch("/v1/portal/banco/ofertas/:id/reativar", async (c) => {
@@ -1014,6 +1050,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!o || o.bancoId !== j.banco_id) throw Errors.notFound("oferta");
     o.ativo = true;
     await persistOferta(c.env, o);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "banco_oferta_reativada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} reativou oferta "${o.titulo}" (id=${o.id}).`,
+    });
     return c.json({ oferta: o });
   })
 
@@ -1086,6 +1129,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // Fallback bancoId=1 removido — banco sem banco_id nao pode criar usuario.
     if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     const saved = upsertUsuario({ ...body, bancoId: j.banco_id });
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: body.id ? "banco_usuario_editado" : "banco_usuario_criado",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} ${body.id ? "editou" : "criou"} usuario interno "${saved.nome}" (${saved.email}, perfil=${saved.perfil ?? "-"}, ativo=${saved.ativo}). Insider access — quem edita usuario define quem aprova propostas.`,
+    });
     const { cpf: _cpf, ...rest } = saved;
     return c.json({ usuario: rest });
   })
@@ -1096,6 +1146,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const u = getUsuario(c.req.param("id"));
     if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     if (!removerUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "banco_usuario_removido",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} removeu (soft-delete) usuario interno "${u.nome}" (${u.email}).`,
+    });
     return c.body(null, 204);
   })
   .post("/v1/portal/banco/cadastros/usuarios/:id/reativar", async (c) => {
@@ -1104,6 +1161,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const u = getUsuario(c.req.param("id"));
     if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     if (!reativarUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "banco_usuario_reativado",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} reativou usuario interno "${u.nome}" (${u.email}).`,
+    });
     return c.json({ ok: true });
   })
 

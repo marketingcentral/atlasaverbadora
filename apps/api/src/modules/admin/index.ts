@@ -1933,6 +1933,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const idx = bancos.findIndex((b) => b.id === body.id);
       if (idx < 0) throw Errors.notFound("banco");
       const current = bancos[idx]!;
+      // Snapshot antes → diff pra audit. Rastreia SO os campos que mudam
+      // (status, adapter, scopes, loginEmail, credencial). Sem PII no log.
+      const diff: string[] = [];
+      if (current.status !== body.status) diff.push(`status ${current.status}->${body.status}`);
+      if (current.adapter !== body.adapter) diff.push(`adapter ${current.adapter}->${body.adapter}`);
+      if (current.loginEmail !== normalizedLogin && normalizedLogin) diff.push(`loginEmail alterado`);
+      if (password) diff.push(`senha trocada`);
+      if (JSON.stringify(current.scopes ?? []) !== JSON.stringify(body.scopes)) diff.push(`scopes: [${(body.scopes ?? []).join(",")}]`);
+      if ((current.baseUrl ?? "") !== (body.baseUrl ?? "")) diff.push(`baseUrl alterada`);
       bancos[idx] = {
         ...current,
         ...rest,
@@ -1947,6 +1956,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         const verbo = bancos[idx]!.status === "ativo" ? "reativados" : "pausados";
         pushEvent("info", "admin.bancos.cascata", `Banco "${bancos[idx]!.nome}" ${bancos[idx]!.status}: ${casc.webhooks} webhook(s) ${verbo} junto.`);
       }
+      appendAudit(auditCtx(c), {
+        categoria: "acesso",
+        acao: "banco_editado",
+        userId: `averbadora:${j.sub}`,
+        userRole: "averbadora",
+        detalhes: `Banco "${bancos[idx]!.nome}" (id=${body.id}) editado${diff.length ? ` — mudou: ${diff.join(", ")}` : " (sem alteracao efetiva)"}.`,
+      });
       return c.json({ banco: sanitizeBanco(bancos[idx]!) });
     }
     const novo: BancoAdmin = {
@@ -1958,6 +1974,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     bancos.push(novo);
     pushEvent("info", "admin", `Banco "${novo.nome}" criado${password ? " com credencial de acesso" : ""}`);
     await persistBanco(c.env, novo);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "banco_criado",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Banco "${novo.nome}" (id=${novo.id}) criado — adapter=${novo.adapter}, status=${novo.status}${password ? ", com credencial" : ""}, scopes=[${(novo.scopes ?? []).join(",")}].`,
+    });
     return c.json({ banco: sanitizeBanco(novo) });
   })
   .post("/v1/admin/bancos/:id/testar-conexao", async (c) => {
@@ -1980,6 +2003,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.passwordHash = await sha256Hex(body.password);
     pushEvent("warn", "admin.bancos.reset-password", `Senha do banco "${b.nome}" trocada por user:${c.get("jwt").sub}`);
     await persistBanco(c.env, b);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "banco_reset_password",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Senha do banco "${b.nome}" (id=${b.id}) resetada pela averbadora. Ator: averbadora:${j.sub}.`,
+    });
     return c.json({ banco: sanitizeBanco(b) });
   })
   // Solicita um codigo de confirmacao para uma acao destrutiva. Envia (demo:
@@ -3336,9 +3366,23 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const idx = CONVENIOS_MOCK.findIndex((c) => c.id === body.id);
       if (idx < 0) throw Errors.notFound("convenio");
       const current = CONVENIOS_MOCK[idx]!;
+      const diff: string[] = [];
+      if (current.bancoId !== body.bancoId) diff.push(`bancoId ${current.bancoId}->${body.bancoId}`);
+      if (current.prefeituraId !== body.prefeituraId) diff.push(`prefeituraId ${current.prefeituraId}->${body.prefeituraId}`);
+      if (current.codigoVerba !== body.codigoVerba) diff.push(`codigoVerba ${current.codigoVerba}->${body.codigoVerba}`);
+      if (current.dataCorte !== body.dataCorte) diff.push(`dataCorte ${current.dataCorte}->${body.dataCorte}`);
+      if (current.diaRepasse !== body.diaRepasse) diff.push(`diaRepasse ${current.diaRepasse}->${body.diaRepasse}`);
+      if (current.nome !== body.nome) diff.push(`nome`);
       CONVENIOS_MOCK[idx] = { ...current, ...body, id: body.id, prefeitura: pref.nome, uf: pref.uf };
       await persistConvenio(c.env, CONVENIOS_MOCK[idx]!); // write-through: sobrevive ao reciclo
       pushEvent("info", "admin.convenios", `Convenio "${CONVENIOS_MOCK[idx]!.nome}" atualizado`);
+      appendAudit(auditCtx(c), {
+        categoria: "convenio_config",
+        acao: "convenio_editado",
+        userId: `averbadora:${j.sub}`,
+        userRole: "averbadora",
+        detalhes: `Convenio "${CONVENIOS_MOCK[idx]!.nome}" (id=${body.id}, ${pref.nome}) editado${diff.length ? ` — mudou: ${diff.join(", ")}` : ""}.`,
+      });
       return c.json({ convenio: CONVENIOS_MOCK[idx] });
     }
     const id = nextConvenioId();
@@ -3346,6 +3390,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     CONVENIOS_MOCK.push(novo);
     await persistConvenio(c.env, novo); // write-through: convenio novo persiste no Postgres
     pushEvent("info", "admin.convenios", `Convenio "${novo.nome}" criado`);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "convenio_criado",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Convenio "${novo.nome}" (id=${id}) criado: bancoId=${novo.bancoId}, prefeitura=${pref.nome} (id=${novo.prefeituraId}), codigoVerba=${novo.codigoVerba}, corte=${novo.dataCorte}, repasse=${novo.diaRepasse}.`,
+    });
     return c.json({ convenio: novo });
   })
   // Nunca apaga — DESATIVA (ativo=false). Sai das listagens; referências ficam intactas.
@@ -3358,6 +3409,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     cv.ativo = false;
     await persistConvenio(c.env, cv); // write-through: desativacao persiste (nunca some, so ativo=false)
     pushEvent("info", "admin.convenios", `Convenio "${cv.nome}" desativado por user:${c.get("jwt").sub}`);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "convenio_desativado",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Convenio "${cv.nome}" (id=${id}, ${cv.prefeitura}, banco ${cv.bancoId}) desativado (soft-delete).`,
+    });
     return c.body(null, 204);
   })
   // Hard-delete: remove PERMANENTEMENTE. Exige convenio INATIVO + sem
@@ -3378,6 +3436,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const { deleteConvenioHard } = await import("../portal-banco/convenios-store.js");
     await deleteConvenioHard(c.env, id);
     pushEvent("warn", "admin.convenios", `Convenio "${cv.nome}" (${id}) EXCLUIDO PERMANENTEMENTE por user:${c.get("jwt").sub}`);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "convenio_hard_deleted",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Convenio "${cv.nome}" (id=${id}, ${cv.prefeitura}) EXCLUIDO PERMANENTEMENTE (hard-delete) — sem contratos vinculados.`,
+    });
     return c.body(null, 204);
   })
   .get("/v1/admin/convenios/:id/config", async (c) => {
