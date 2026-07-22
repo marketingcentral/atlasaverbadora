@@ -44,7 +44,10 @@
 		<false/>
 	</dict>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
 
 	<!-- Segurança: todo tráfego é HTTPS (ATS sem exceções).
 	     A Apple rejeita apps que desabilitam o ATS sem justificativa. -->
