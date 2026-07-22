@@ -4,8 +4,11 @@ export interface TabelaEmprestimo {
   id: string;
   convenioId: string;
   convenio: string;
-  taxaMinAm: number;
-  taxaMaxAm: number;
+  /** Taxa de juros a.m. UNICA definida pelo banco (ex.: 0.0179 = 1.79%).
+   *  Cliente pediu 22/07/2026: antes era faixa taxaMinAm/taxaMaxAm mas nada
+   *  no sistema validava BETWEEN — puramente decorativo. Agora e' UMA taxa
+   *  especifica que o simulador do servidor consome direto. */
+  taxaAm: number;
   prazoMaxMeses: number;
   vigenciaInicio: string;
   vigenciaFim?: string;
@@ -146,7 +149,14 @@ async function hydrateTabelas(env: Env): Promise<void> {
         const rows = await loadTabelas(env);
         if (rows.length > 0) {
           _tabelas.length = 0;
-          _tabelas.push(...(rows as unknown as TabelaEmprestimo[]));
+          // Migracao suave: tabelas legadas so tem taxaMinAm/taxaMaxAm.
+          // Normaliza pra taxaAm (usa max — era a taxa efetivamente topada).
+          for (const r of rows as unknown as (TabelaEmprestimo & { taxaMinAm?: number; taxaMaxAm?: number })[]) {
+            if (r.taxaAm == null && r.taxaMaxAm != null) {
+              r.taxaAm = r.taxaMaxAm;
+            }
+            _tabelas.push(r as TabelaEmprestimo);
+          }
         }
         // Seqs por-banco recalculam sob demanda em nextTblId — nada a fazer.
         _tabelasHydrated = true;

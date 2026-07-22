@@ -248,7 +248,7 @@ function TokenModal({ scopesByAudience, onClose, onCreated }: { scopesByAudience
         <h3 style={{ marginTop: 0 }}>Novo token de API</h3>
         <div style={{ display: "grid", gap: 12 }}>
           <Fld lbl="Nome">
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Banco SCred — integração" style={inp} />
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Banco Delta — integração" style={inp} />
           </Fld>
           <Fld lbl="Camada (audience)">
             <div style={{ display: "flex", gap: 8 }}>

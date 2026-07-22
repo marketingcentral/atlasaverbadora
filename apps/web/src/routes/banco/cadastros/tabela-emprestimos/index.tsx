@@ -38,7 +38,7 @@ export function BancoTabelaEmprestimosLista() {
     { key: "vigenciaInicio", header: "Início Vigência", render: (t) => fmtDate(t.vigenciaInicio) },
     { key: "vigenciaFim", header: "Fim Vigência", render: (t) => fmtDate(t.vigenciaFim) },
     { key: "convenio", header: "Convênio" },
-    { key: "taxa", header: "Taxa min/max", render: (t) => `${fmtPct(t.taxaMinAm)} a ${fmtPct(t.taxaMaxAm)}` },
+    { key: "taxa", header: "Taxa a.m.", render: (t) => fmtPct(t.taxaAm ?? t.taxaMaxAm ?? 0) },
     { key: "prazoMaxMeses", header: "Prazo max" },
   ];
 

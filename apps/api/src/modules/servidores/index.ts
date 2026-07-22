@@ -39,12 +39,16 @@ function code6(): string {
   return String(100000 + (n % 900000));
 }
 
-// Dev shadow data — mirrors the SERVIDORES_BUSCA_MOCK identities (source of truth used
-// by todos os outros perfis), para o servidor ver os MESMOS dados.
-const DEV_SERVIDORES = [
-  { id: 1, nome: "ADRIANA MARQUES DA SILVA", cpf: "00011122233", matricula: "852029100", prefeitura_id: 1, vinculo: "ESTATUTARIO" as const, situacao_funcional: "ATIVO" as const, status: "ativo" as const, idConvenio: "CONV-001", idMatricula: "MAT-852029100", salarioLiquido: 4620 },
-  { id: 2, nome: "FERNANDA KELLI TOMAZONI", cpf: "00011122234", matricula: "843796302", prefeitura_id: 2, vinculo: "ESTATUTARIO" as const, situacao_funcional: "ATIVO" as const, status: "ativo" as const, idConvenio: "CONV-002", idMatricula: "MAT-843796302", salarioLiquido: 5320 },
-];
+// DEV_SERVIDORES removido 22/07/2026 — cliente reportou que o servidor via
+// dados DIFERENTES dos que apareciam pra averbadora/banco/prefeitura. Motivo:
+// esta lista shadow (ADRIANA/FERNANDA hardcoded) era consultada em
+// resolveServidor como fonte primaria de identidade + salario, enquanto os
+// outros perfis liam SERVIDORES_BUSCA_MOCK (hidratado do PG). Servidores REAIS
+// importados via CSV colidiam com os IDs sinteticos do DEV e a fonte
+// mentia — mesma matricula mostrava salario diferente por perfil.
+// Agora resolveServidor le exclusivamente SERVIDORES_BUSCA_MOCK. Se o
+// JWT.servidor_id nao bater em ninguem, retorna null (login deveria ter
+// bloqueado antes).
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const bancoNome = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
@@ -288,30 +292,8 @@ function fromFixture(s: ServidorBuscaMock): ResolvedServidor {
 function resolveServidor(j: JwtClaims): ResolvedServidor | null {
   const id = j.servidor_id;
   if (id == null) return null;
-  const dev = DEV_SERVIDORES.find((x) => x.id === id);
-  if (dev) {
-    // Prefer the Postgres-hydrated row for this identity (SERVIDORES_BUSCA_MOCK is
-    // replaced by loadServidores() em ensureServidoresLoaded). Fall back ao shadow dev.
-    // Um mesmo CPF pode estar em >1 convênio/prefeitura — casa pelo convênio do dev
-    // (determinístico) pra o servidor cair sempre na prefeitura esperada (login),
-    // senão a ordem do Postgres decide e o ciclo com a prefeitura logada não bate.
-    const fx =
-      SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf && s.idConvenio === dev.idConvenio) ??
-      SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf);
-    if (fx) return fromFixture(fx);
-    // O CPF do DEV nao esta mais na base (seed purgado). NAO devolve o shadow do
-    // DEV aqui: o mesmo id pode pertencer a um servidor REAL importado cuja
-    // matricula termina nos mesmos 5 digitos — ex.: matricula 700100001 gera
-    // id 1, que colide com o DEV id 1. Devolvendo o shadow, /me/matriculas
-    // filtrava pelo CPF do DEV (inexistente na base) e vinha VAZIO: o servidor
-    // logava e a tela "Selecione a matricula" ficava em branco.
-    const real = SERVIDORES_BUSCA_MOCK.find(
-      (s) => Number(s.idMatricula.replace(/\D/g, "").slice(-5)) === id,
-    );
-    if (real) return fromFixture(real);
-    return { ...dev, fromFixture: true };
-  }
-  // ids sintéticos (últimos 5 dígitos da idMatricula) usados quando o servidor vem da fixture
+  // Sem DEV_SERVIDORES — resolve exclusivamente pelo id sintetico (ultimos 5
+  // digitos da idMatricula) contra SERVIDORES_BUSCA_MOCK (hidratado do PG).
   const fx = SERVIDORES_BUSCA_MOCK.find((s) => Number(s.idMatricula.replace(/\D/g, "").slice(-5)) === id);
   return fx ? fromFixture(fx) : null;
 }
@@ -932,14 +914,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ofertas: tabelas.map((t) => {
         // "CASTRO / DELTA GLOBAL" -> banco = "DELTA GLOBAL", cidade = "CASTRO"
         const [cidade = "", banco = ""] = t.convenio.split("/").map((p) => p.trim());
+        // Compat: tabelas legadas so tem taxaMaxAm — usa como taxa unica.
+        const tAny = t as unknown as { taxaAm?: number; taxaMaxAm?: number };
         return {
           id: t.id,
           bancoNome: banco || t.convenio,
           convenioId: t.convenioId,
           convenio: t.convenio,
           cidade,
-          taxaMinAm: t.taxaMinAm,
-          taxaMaxAm: t.taxaMaxAm,
+          taxaAm: tAny.taxaAm ?? tAny.taxaMaxAm ?? 0,
           prazoMaxMeses: t.prazoMaxMeses,
           vigenciaInicio: t.vigenciaInicio,
           vigenciaFim: t.vigenciaFim ?? null,
@@ -1670,22 +1653,32 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/servidores/:id", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["averbadora"]);
+    await ensureServidoresLoaded(c.env);
     const id = Number(c.req.param("id"));
-    const s = DEV_SERVIDORES.find((x) => x.id === id);
+    // id sintetico = ultimos 5 digitos da idMatricula (mesma regra do JWT).
+    const s = SERVIDORES_BUSCA_MOCK.find((x) => Number(x.idMatricula.replace(/\D/g, "").slice(-5)) === id);
     if (!s) throw Errors.notFound("servidor");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio);
     return c.json({
-      id: s.id, nome: s.nome, cpf_masked: maskCPF(s.cpf), matricula: s.matricula,
-      prefeitura_id: s.prefeitura_id, vinculo: s.vinculo, situacao_funcional: s.situacao_funcional, status: s.status,
+      id, nome: s.nome, cpf_masked: maskCPF(s.cpf), matricula: s.matricula,
+      prefeitura_id: conv?.prefeituraId ?? null,
+      vinculo: s.vinculo, situacao_funcional: s.situacaoFuncional, status: "ativo",
     });
   })
   .get("/v1/servidores", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["averbadora"]);
+    await ensureServidoresLoaded(c.env);
     return c.json({
-      data: DEV_SERVIDORES.map((s) => ({
-        id: s.id, nome: s.nome, cpf_masked: maskCPF(s.cpf), matricula: s.matricula,
-        prefeitura_id: s.prefeitura_id, vinculo: s.vinculo, situacao_funcional: s.situacao_funcional, status: s.status,
-      })),
+      data: SERVIDORES_BUSCA_MOCK.map((s) => {
+        const id = Number(s.idMatricula.replace(/\D/g, "").slice(-5));
+        const conv = CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio);
+        return {
+          id, nome: s.nome, cpf_masked: maskCPF(s.cpf), matricula: s.matricula,
+          prefeitura_id: conv?.prefeituraId ?? null,
+          vinculo: s.vinculo, situacao_funcional: s.situacaoFuncional, status: "ativo",
+        };
+      }),
       meta: { has_more: false, next_cursor: null, limit: 25 },
     });
   });

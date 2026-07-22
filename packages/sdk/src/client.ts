@@ -409,8 +409,15 @@ export interface BancoTabela {
   id: string;
   convenioId: string;
   convenio: string;
-  taxaMinAm: number;
-  taxaMaxAm: number;
+  /** Taxa unica a.m. Cliente pediu 22/07/2026: antes era taxaMinAm/taxaMaxAm
+   *  mas o intervalo nao era usado por nada (nenhuma validacao ou consumo).
+   *  Agora e' UMA taxa que o simulador do servidor consome diretamente. */
+  taxaAm: number;
+  /** @deprecated Mantido pra compat com tabelas legadas ainda no PG.
+   *  Backend le taxaAm primeiro; se ausente, cai em taxaMaxAm (topo). */
+  taxaMinAm?: number;
+  /** @deprecated Ver taxaMinAm. */
+  taxaMaxAm?: number;
   prazoMaxMeses: number;
   vigenciaInicio: string;
   vigenciaFim?: string;
@@ -422,8 +429,7 @@ export interface BancoTabelaInput {
   id?: string;
   convenioId: string;
   convenio: string;
-  taxaMinAm: number;
-  taxaMaxAm: number;
+  taxaAm: number;
   prazoMaxMeses: number;
   vigenciaInicio: string;
   vigenciaFim?: string;
@@ -1341,8 +1347,7 @@ export class AtlasClient {
           convenioId: string;
           convenio: string;
           cidade: string;
-          taxaMinAm: number;
-          taxaMaxAm: number;
+          taxaAm: number;
           prazoMaxMeses: number;
           vigenciaInicio: string;
           vigenciaFim: string | null;
@@ -1557,7 +1562,10 @@ export class AtlasClient {
           cpf: string; cpfMasked: string; matricula: string; idMatricula: string;
           nome: string; dataAdmissao: string; dataNascimento: string;
           vinculo: string; origem: string; situacaoFuncional: string;
-          salarioLiquido: number; idConvenio: string;
+          // salarioLiquido NAO vem (LGPD — banco nao ve). Use `margens` pre-calculadas.
+          idConvenio: string;
+          margemDisponivel: number;
+          margens: { tipo: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS"; total: number; utilizado: number; disponivel: number }[];
         };
       }>("/v1/portal/banco/margem/buscar", { method: "POST", body: input }),
     margemExemplos: () =>

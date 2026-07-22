@@ -50,7 +50,9 @@ export function ServidorTermo() {
   const tipo: Tipo = ["portabilidade", "refinanciamento", "cartao_consignado", "cartao_beneficio"].includes(rawTipo)
     ? (rawTipo as Tipo)
     : "novo";
-  const banco = search.get("banco") ?? "SCred Financeira";
+  // Banco vem do simulador (nome real da oferta vencedora). Sem fallback
+  // hardcoded — se por algum motivo nao vier, mostra "—" em vez de banco fake.
+  const banco = search.get("banco") ?? "—";
   // Emprestimo: valor/parcelas/parcela/taxaAm. Cartao: so limite (parcela = 5%
   // do limite / capado pela margem — calculado no backend).
   const valor = num(search.get("valor"), 25000);

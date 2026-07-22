@@ -148,7 +148,8 @@ export function BancoPropostaDetalhe() {
         </InfoCard>
 
         <InfoCard title="Margem por matrícula">
-          <Row label="Salário líquido" value={fmtBRL(proposta.salarioLiquido)} />
+          {/* LGPD: banco NAO ve salario liquido do servidor — mesma politica
+              do /portal/banco/margem/buscar. Mostra so margens calculadas. */}
           <Row label="Margem comprometida (esta op.)" value={fmtBRL(proposta.margemComprometida)} />
           <Row label="Margem disponível" value={fmtBRL(proposta.margemDisponivel)} />
           <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-dim)" }}>

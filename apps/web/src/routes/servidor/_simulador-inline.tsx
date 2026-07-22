@@ -86,7 +86,6 @@ export function SimuladorInline({
   const lockProduto = lockProdutoDe(produto);
   const [valor, setValor] = useState<number>(valorDefault);
   const [parcelas, setParcelas] = useState<number>(parcelasDefault);
-  const taxaAm = taxaAmDefault;
 
   // Ofertas ativas do convenio dessa matricula — traz o prazoMaxMeses de cada
   // tabela publicada pelo(s) banco(s). Poll 5s = "tempo real": quando o banco
@@ -119,6 +118,24 @@ export function SimuladorInline({
     if (of.length === 0) return null;
     return Math.min(...of.map((o) => o.prazoMaxMeses));
   }, [ofertasQ.data]);
+  // Taxa vigente = MENOR taxa entre as tabelas ativas (melhor pro servidor).
+  // Cliente reportou 22/07/2026: taxaAm ficava travada em 1.79% mesmo quando
+  // banco editava a tabela. Antes o simulador so lia prazoMaxMeses e
+  // ignorava taxaAm. Fallback pro taxaAmDefault so quando nao ha oferta.
+  // Retorna a oferta vencedora (banco + taxa) — banco fica gravado no termo
+  // em vez de "SCred Financeira" hardcoded (banco fake removido 22/07/2026).
+  const ofertaVencedora = useMemo(() => {
+    const of = ofertasQ.data?.ofertas ?? [];
+    if (of.length === 0) return null;
+    return of.reduce<{ bancoNome: string; taxaAm: number } | null>((best, o) => {
+      const t = o.taxaAm ?? Number.POSITIVE_INFINITY;
+      if (!Number.isFinite(t) || t <= 0) return best;
+      if (!best || t < best.taxaAm) return { bancoNome: o.bancoNome, taxaAm: t };
+      return best;
+    }, null);
+  }, [ofertasQ.data]);
+  const taxaAm = ofertaVencedora?.taxaAm ?? taxaAmDefault;
+  const bancoVigente = ofertaVencedora?.bancoNome ?? "";
   const PARCELAS = useMemo(() => {
     // Enquanto a query nao trouxe dado (loading), fallback pra opcoes basicas
     // — evita "flash" de dropdown vazio no primeiro render.
@@ -266,7 +283,8 @@ export function SimuladorInline({
 
   const excedeMargem = info ? parcela > margemEmprestimo : false;
   const locked = !!lockExpiresAt && lockExpiresAt > now;
-  const podeSolicitar = !!info && !excedeMargem && valor > 0 && parcelas > 0 && !locked;
+  // Bloqueia solicitacao se nao ha banco/oferta ativa (nada de placeholder).
+  const podeSolicitar = !!info && !excedeMargem && valor > 0 && parcelas > 0 && !locked && !!bancoVigente;
 
   function solicitar() {
     if (!podeSolicitar || !info) return;
@@ -274,7 +292,7 @@ export function SimuladorInline({
     setClientLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
     const params = new URLSearchParams({
       tipo: "novo",
-      banco: "SCred Financeira",
+      banco: bancoVigente, // banco real da oferta vencedora
       valor: String(Math.round(valor)),
       parcelas: String(parcelas),
       parcela: parcela.toFixed(2),

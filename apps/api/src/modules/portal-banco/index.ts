@@ -389,20 +389,29 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const found = SERVIDORES_BUSCA_MOCK.find((s) => contatos.has(s.matricula) && matchPred(s));
     if (found) {
       // LGPD: o banco não vê o salário líquido — só a MARGEM disponível.
-      // Comprometido = parcelas de operações já APROVADAS pelo banco (não conta
-      // reserva/proposta pendente) — assim o banco enxerga a margem real que sobra.
+      // Cliente reportou 22/07/2026: UI da ficha mostrava R$ 0,00 nos 3 cards
+      // (total/utilizado/disponivel) porque a UI fazia `f.salarioLiquido ?? 0`
+      // e o endpoint tirava salario (LGPD). Fix: retornar `margens` pre-
+      // calculadas por bucket (mesma forma do /me/matriculas), zero salario.
       const { salarioLiquido, ...ficha } = found;
       await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
-      // Comprometido EMPRESTIMO = contratos Atlas (bucket EMPRESTIMO) + emprestimos
-      // externos (tombamento) do mesmo bucket. Antes so contava Atlas de qualquer
-      // bucket — ignorava os externos e liberava margem acima do teto real.
       const atlasComprometido = listContratos({ matricula: found.matricula })
         .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
         .reduce((a, ct) => a + ct.valorParcela, 0);
       const externoComprometido = externosEmprestimo(found.matricula).reduce((a, l) => a + l.valorParcela, 0);
       const comprometido = atlasComprometido + externoComprometido;
       const margemDisponivelValor = Math.round(margemDisponivel(salarioLiquido, comprometido, "EMPRESTIMO") * 100) / 100;
-      return c.json({ ficha: { ...ficha, margemDisponivel: margemDisponivelValor } });
+      // Margens por bucket — UI usa direto sem precisar de salario.
+      const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => {
+        const compBucket = tipo === "EMPRESTIMO" ? comprometido : 0;
+        return {
+          tipo,
+          total: Math.round(margemTotal(salarioLiquido, tipo) * 100) / 100,
+          utilizado: Math.round(compBucket * 100) / 100,
+          disponivel: Math.round(margemDisponivel(salarioLiquido, compBucket, tipo) * 100) / 100,
+        };
+      });
+      return c.json({ ficha: { ...ficha, margemDisponivel: margemDisponivelValor, margens } });
     }
     throw new HttpError(
       404,
@@ -802,8 +811,12 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         id: z.string().optional(),
         convenioId: z.string(),
         convenio: z.string(),
-        taxaMinAm: z.number().min(0).max(1),
-        taxaMaxAm: z.number().min(0).max(1),
+        // Taxa unica a.m. (0..1 = 0..100%). Cliente pediu 22/07/2026: antes
+        // era taxaMinAm/taxaMaxAm mas nada consumia o intervalo (puramente
+        // decorativo). Aceita legacy pra tabelas antigas ainda no PG.
+        taxaAm: z.number().min(0).max(1).optional(),
+        taxaMinAm: z.number().min(0).max(1).optional(),
+        taxaMaxAm: z.number().min(0).max(1).optional(),
         // Cliente pediu prazo max fechado — so aceita 12/24/36/48/60/72/96/120.
         // Bloqueio server-side alem do dropdown fechado no form.
         prazoMaxMeses: z.union([
@@ -814,7 +827,24 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         vigenciaFim: z.string().optional(),
         ativo: z.boolean().default(true),
       })
+      .refine((b) => b.taxaAm != null || b.taxaMaxAm != null, {
+        message: "taxaAm obrigatoria (ou taxaMaxAm em requests legadas)",
+        path: ["taxaAm"],
+      })
       .parse(await c.req.json());
+    // Normaliza pra taxaAm unica — legacy taxaMaxAm vira taxaAm (topo era o
+    // valor efetivamente praticado). Descarta taxaMinAm/taxaMaxAm no persist.
+    const taxaAmFinal = body.taxaAm ?? body.taxaMaxAm!;
+    const bodyNorm = {
+      id: body.id,
+      convenioId: body.convenioId,
+      convenio: body.convenio,
+      taxaAm: taxaAmFinal,
+      prazoMaxMeses: body.prazoMaxMeses,
+      vigenciaInicio: body.vigenciaInicio,
+      vigenciaFim: body.vigenciaFim,
+      ativo: body.ativo,
+    };
     // Isolamento: so pode criar/editar tabela em convenio proprio.
     const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
     if (!meusConvenios.has(body.convenioId)) throw Errors.notFound("convenio");
@@ -832,13 +862,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         prazoMaxMeses: `Prazo maximo do convenio e' de ${cfg.maxParcelas} parcelas (teto definido pela prefeitura). Reduza o prazo desta tabela.`,
       });
     }
-    const saved = await upsertTabela(c.env, body, j.banco_id!);
+    const saved = await upsertTabela(c.env, bodyNorm, j.banco_id!);
     appendAudit(auditCtx(c), {
       categoria: "convenio_config",
       acao: body.id ? "banco_tabela_editada" : "banco_tabela_criada",
       userId: `banco:${j.banco_id}`,
       userRole: "banco",
-      detalhes: `Banco ${j.banco_id} ${body.id ? "editou" : "criou"} tabela (id=${saved.id}) no convenio ${body.convenioId}: taxa=${body.taxaMinAm}%-${body.taxaMaxAm}% am, prazoMax=${body.prazoMaxMeses}, ativo=${body.ativo}. Muda o cardapio de credito exposto ao servidor.`,
+      detalhes: `Banco ${j.banco_id} ${body.id ? "editou" : "criou"} tabela (id=${saved.id}) no convenio ${body.convenioId}: taxa=${(taxaAmFinal * 100).toFixed(2)}% a.m., prazoMax=${body.prazoMaxMeses}, ativo=${body.ativo}. Muda o cardapio de credito exposto ao servidor.`,
     });
     return c.json({ tabela: saved });
   })
@@ -855,7 +885,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       acao: "banco_tabela_desativada",
       userId: `banco:${j.banco_id}`,
       userRole: "banco",
-      detalhes: `Banco ${j.banco_id} desativou tabela ${c.req.param("id")} (convenio ${t.convenioId}, taxa ${t.taxaMinAm}-${t.taxaMaxAm}% am).`,
+      detalhes: `Banco ${j.banco_id} desativou tabela ${c.req.param("id")} (convenio ${t.convenioId}, taxa ${((t as unknown as { taxaAm?: number; taxaMaxAm?: number }).taxaAm ?? (t as unknown as { taxaMaxAm?: number }).taxaMaxAm ?? 0)}).`,
     });
     return c.body(null, 204);
   })

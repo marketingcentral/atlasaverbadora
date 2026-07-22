@@ -35,8 +35,7 @@ export function BancoTabelaEmprestimosForm() {
   });
 
   const [convenioId, setConvenioId] = useState("");
-  const [taxaMinPct, setTaxaMinPct] = useState(1.5);
-  const [taxaMaxPct, setTaxaMaxPct] = useState(2.0);
+  const [taxaPct, setTaxaPct] = useState(1.79);
   const [prazoMaxMeses, setPrazoMaxMeses] = useState(120);
   const [vigenciaInicio, setVigenciaInicio] = useState(() => new Date().toISOString().slice(0, 10));
   const [vigenciaFim, setVigenciaFim] = useState("");
@@ -46,8 +45,11 @@ export function BancoTabelaEmprestimosForm() {
     if (existing.data) {
       const t = existing.data.tabela;
       setConvenioId(t.convenioId);
-      setTaxaMinPct(t.taxaMinAm * 100);
-      setTaxaMaxPct(t.taxaMaxAm * 100);
+      // Migracao suave: taxa unica (taxaAm) preferida; se tabela legada so
+      // tem taxaMinAm/taxaMaxAm, usa a max (que era o topo praticado) e
+      // proximo save ja persiste como unica.
+      const raw = (t as { taxaAm?: number; taxaMaxAm?: number; taxaMinAm?: number });
+      setTaxaPct(((raw.taxaAm ?? raw.taxaMaxAm ?? raw.taxaMinAm ?? 0.0179)) * 100);
       setPrazoMaxMeses(t.prazoMaxMeses);
       setVigenciaInicio(t.vigenciaInicio);
       setVigenciaFim(t.vigenciaFim ?? "");
@@ -75,8 +77,7 @@ export function BancoTabelaEmprestimosForm() {
         id,
         convenioId,
         convenio: convenioNome,
-        taxaMinAm: Number((taxaMinPct / 100).toFixed(6)),
-        taxaMaxAm: Number((taxaMaxPct / 100).toFixed(6)),
+        taxaAm: Number((taxaPct / 100).toFixed(6)),
         prazoMaxMeses,
         vigenciaInicio,
         vigenciaFim: vigenciaFim || undefined,
@@ -140,8 +141,7 @@ export function BancoTabelaEmprestimosForm() {
               { value: "0", label: "Inativo" },
             ]}
           />
-          <NumberField label="Taxa min (% a.m.)" step={0.01} value={taxaMinPct} onChange={(e) => setTaxaMinPct(Number(e.target.value))} required />
-          <NumberField label="Taxa max (% a.m.)" step={0.01} value={taxaMaxPct} onChange={(e) => setTaxaMaxPct(Number(e.target.value))} required />
+          <NumberField label="Taxa (% a.m.)" step={0.01} value={taxaPct} onChange={(e) => setTaxaPct(Number(e.target.value))} required hint="Taxa mensal única praticada nesta tabela. Vira o valor que o servidor simula." />
           {/* Prazo max fechado em opcoes fixas — filtradas pelo TETO DA
               PREFEITURA (convenio.maxParcelas). Servidor simulando so ve
               prazos ate esse teto. */}

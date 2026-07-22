@@ -190,7 +190,7 @@ const DEV_USERS: DevUser[] = [
   // mesmo apos serem "excluidas" do cadastro real. Regra: CPF que nao existe
   // como servidor cadastrado NAO tem acesso — nem via demo. Pra testar,
   // cadastrar via import CSV em /averbadora/servidores/importar.
-  { id: 100, identifier: "banco@atlas.test", password: "teste123", role: "banco", nome: "Operador Banco SCred", banco_id: 1 },
+  { id: 100, identifier: "banco@atlas.test", password: "teste123", role: "banco", nome: "Operador Banco Sandbox", banco_id: 1 },
   { id: 200, identifier: "admin@atlas.test", password: "teste123", role: "averbadora", nome: "Admin Atlas" },
   { id: 300, identifier: "prefeitura@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Palhoca", prefeitura_id: 1 },
   { id: 301, identifier: "florianopolis@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Florianopolis", prefeitura_id: 2 },

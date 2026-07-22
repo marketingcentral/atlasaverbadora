@@ -88,26 +88,29 @@ export function BancoMargemContratacaoFicha() {
   if (ficha.error || !ficha.data) return <div style={{ color: "var(--danger-500)" }}>Erro ao carregar colaborador.</div>;
 
   const f = ficha.data.ficha;
-  const salario = f.salarioLiquido ?? 0;
-
-  const margens: { tipo: TipoMargem; label: string; total: number; utilizado: number; disponivel: number }[] = (
-    ["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const
-  ).map((t) => {
-    const total = margemTotal(salario, t);
-    const utilizado = comprometidoPorTipo[t];
-    return {
-      tipo: t,
-      label:
-        t === "EMPRESTIMO"
-          ? "Empréstimo Consignado"
-          : t === "CARTAO_CONSIGNADO"
-            ? "Cartão de Crédito Consignado"
-            : "Cartão Benefício Consignado",
-      total,
-      utilizado,
-      disponivel: margemDisponivel(salario, utilizado, t),
-    };
-  });
+  // LGPD: banco NAO recebe salarioLiquido — usa `margens` pré-calculadas
+  // pelo backend (contem total/utilizado/disponivel por bucket).
+  // Fallback pro calculo local so quando o backend nao trouxer (SDK antigo).
+  const labelOf = (t: TipoMargem): string =>
+    t === "EMPRESTIMO"
+      ? "Empréstimo Consignado"
+      : t === "CARTAO_CONSIGNADO"
+        ? "Cartão de Crédito Consignado"
+        : "Cartão Benefício Consignado";
+  const margens: { tipo: TipoMargem; label: string; total: number; utilizado: number; disponivel: number }[] =
+    f.margens && f.margens.length > 0
+      ? f.margens.map((m) => ({ ...m, label: labelOf(m.tipo) }))
+      : (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((t) => {
+          const salario = 0; // sem backend, nao ha como calcular — retorna zero
+          const utilizado = comprometidoPorTipo[t];
+          return {
+            tipo: t,
+            label: labelOf(t),
+            total: margemTotal(salario, t),
+            utilizado,
+            disponivel: margemDisponivel(salario, utilizado, t),
+          };
+        });
 
   // Contratos "ativos do servidor" para a tabela do modelo (apenas os que ainda vivem).
   const contratosAtivos = (contratos.data?.contratos ?? []).filter((c) => consumeMargem(c.situacao));
