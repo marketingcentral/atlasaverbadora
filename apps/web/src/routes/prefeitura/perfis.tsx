@@ -276,7 +276,7 @@ function PerfilModal({
                 value={PREFEITURA_PRESET_LABELS.some((p) => p.value === presetEscolhido) ? presetEscolhido : ""}
                 onChange={(e) => { if (e.target.value) aplicarPreset(e.target.value); }}
               >
-                <option value="" disabled>— escolher —</option>
+                <option value="" disabled>Selecionar</option>
                 {PREFEITURA_PRESET_LABELS.map((p) => (
                   <option key={p.value} value={p.value}>{p.label}</option>
                 ))}
@@ -292,7 +292,7 @@ function PerfilModal({
                 onChange={(e) => { if (e.target.value) aplicarPreset(e.target.value); }}
                 disabled={presetsCustom.length === 0}
               >
-                <option value="" disabled>{presetsCustom.length === 0 ? "nenhum ainda" : "— escolher —"}</option>
+                <option value="" disabled>{presetsCustom.length === 0 ? "Nenhum salvo" : "Selecionar"}</option>
                 {presetsCustom.map((p) => (
                   <option key={p.key} value={p.key}>{p.nome}</option>
                 ))}
