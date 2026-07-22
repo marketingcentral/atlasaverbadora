@@ -2716,11 +2716,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       }
       await persistContrato(c.env, a.adf);
     }
+    // Auditoria SEMPRE — cliente pediu 22/07/2026: mesmo folha vazia (0 ADFs)
+    // precisa ficar rastreada. Antes o audit sumia quando adfsDaFolha=0 e nao
+    // dava pra explicar depois "quem consolidou esta folha vazia e quando".
+    appendAudit(auditCtx(c), {
+      categoria: "margem", acao: "folha_consolidada", userId: ator, userRole: "averbadora",
+      detalhes: adfsDaFolha.length === 0
+        ? `Folha ${f.competencia}/${f.prefeitura} consolidada VAZIA — 0 ADFs aplicadas na competencia. Nenhum contrato avancou.`
+        : `Folha ${f.competencia}/${f.prefeitura} consolidada: ${incrementados} contratos avancaram 1 parcela, ${quitados} quitados (de ${adfsDaFolha.length} ADFs aplicadas).`,
+    });
     if (adfsDaFolha.length > 0) {
-      appendAudit(auditCtx(c), {
-        categoria: "margem", acao: "folha_consolidada", userId: ator, userRole: "averbadora",
-        detalhes: `Folha ${f.competencia}/${f.prefeitura} consolidada: ${incrementados} contratos avancaram 1 parcela, ${quitados} quitados.`,
-      });
       pushEvent("info", "admin.folhas.consolidar", `Folha ${f.id} consolidada: ${incrementados}/${quitados} (avancados/quitados) de ${adfsDaFolha.length} ADFs.`);
     }
       return { status: 200, body: { folha: f, parcelasIncrementadas: incrementados, contratosQuitados: quitados } };

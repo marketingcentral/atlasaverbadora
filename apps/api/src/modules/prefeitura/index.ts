@@ -680,6 +680,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       return c.json(out);
     }
     // Todas validas — aplica de fato.
+    // Coleta granular de F6 (demissao/aposentadoria) pra audit dedicado.
+    // Cliente pediu 22/07/2026 evento proprio nomeando matriculas + contratos
+    // interrompidos — folha_movimentacao (agregado) nao dava rastro suficiente.
+    const f6Registros: { matricula: string; tipo: string; nome?: string; contratos: string[] }[] = [];
     for (let idx = 0; idx < rows.length; idx++) {
       const r = rows[idx]!;
       const line = idx + 2;
@@ -693,6 +697,14 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (!res.ok) { out.errors.push({ line, message: res.error }); continue; }
       out.inserted++;
       out.rows.push({ matricula, tipo });
+      if (tipo === "demissao" || tipo === "aposentadoria") {
+        f6Registros.push({
+          matricula,
+          tipo: tipo === "demissao" ? "DEMISSAO" : "APOSENTADORIA",
+          nome: res.servidorAtualizado?.nome,
+          contratos: [...res.contratosAtingidos],
+        });
+      }
       // AWAIT — sem isso a proxima request de login lia PG antes do upsert
       // terminar e via situacaoFuncional antigo (F6 nao bloqueava).
       if (res.servidorAtualizado) {
@@ -703,6 +715,20 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       }
     }
     appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_movimentacao", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia}: ${out.inserted} movimentações, ${out.errors.length} erros. Margem recalculada.` });
+    // Audit dedicado F6: um evento por servidor desligado/aposentado nomeando
+    // matricula + contratos que caíram em cobrança direta (ou nenhum se
+    // servidor sem contrato ativo). Categoria "margem" pois libera margem
+    // do servidor + move contratos pra cobrança.
+    for (const f6 of f6Registros) {
+      appendAudit(auditCtx(c), {
+        categoria: "margem",
+        acao: "servidor_desligado_f6",
+        matricula: f6.matricula,
+        userId: `prefeitura:${pid}`,
+        userRole: "prefeitura",
+        detalhes: `${f6.tipo} — servidor ${f6.nome ?? "(?)"} (matricula ${f6.matricula}) desligado via folha ${f.competencia}. ${f6.contratos.length === 0 ? "Nenhum contrato ativo afetado." : `${f6.contratos.length} contrato(s) interrompido(s) em cobranca direta: ${f6.contratos.join(", ")}.`}`,
+      });
+    }
 
     // Notifica bancos por email quando houve desligamento/aposentadoria.
     // Agrupa contratos afetados por bancoId, envia 1 email por banco listando
