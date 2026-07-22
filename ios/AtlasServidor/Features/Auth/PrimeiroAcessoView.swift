@@ -220,7 +220,12 @@ struct PrimeiroAcessoView: View {
             Button(action: toggle) {
                 Image(systemName: marcado ? "checkmark.square.fill" : "square")
                     .foregroundStyle(marcado ? Atlas.verde : Atlas.inkMuted)
+                    // Só o ícone (~17pt) era clicável, bem abaixo dos 44pt da Apple —
+                    // e sem marcar os aceites não dá pra concluir o primeiro acesso.
+                    .frame(width: 44, height: 44, alignment: .topLeading)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
             Button { termoAberto = link } label: {
                 Text(markdownParaTexto(texto))
                     .font(.system(size: 13))

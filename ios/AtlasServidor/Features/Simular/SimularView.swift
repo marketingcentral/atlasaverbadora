@@ -255,15 +255,26 @@ struct TermoAceiteSheet: View {
                     .padding(20)
                 }
                 VStack(spacing: 12) {
-                    Button { aceito.toggle() } label: {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: aceito ? "checkmark.square.fill" : "square")
-                                .foregroundStyle(aceito ? Atlas.verde : Atlas.inkMuted)
-                            Text("Li, entendi e **aceito o termo de autorização**")
-                                .font(.system(size: 13)).foregroundStyle(Atlas.ink)
-                            Spacer()
-                        }
+                    // ⚠️ BUG ABERTO: este aceite NÃO responde a toque no simulador.
+                    // Testado com `Button` e com `onTapGesture`, em várias coordenadas;
+                    // um print na ação nunca dispara — o toque não chega nesta barra
+                    // inferior da sheet. Consequência: "Autorizar e continuar" fica
+                    // travado e NÃO é possível concluir empréstimo/portabilidade no iOS.
+                    // Os 44pt + contentShape abaixo seguem corretos (mínimo da Apple),
+                    // mas NÃO resolveram — a causa provável é hit-testing da barra
+                    // sobre o ScrollView; investigar mover o aceite para dentro do
+                    // ScrollView ou usar .safeAreaInset para a barra.
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: aceito ? "checkmark.square.fill" : "square")
+                            .foregroundStyle(aceito ? Atlas.verde : Atlas.inkMuted)
+                        Text("Li, entendi e **aceito o termo de autorização**")
+                            .font(.system(size: 13)).foregroundStyle(Atlas.ink)
+                        Spacer()
                     }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                    .onTapGesture { aceito.toggle() }
+                    .accessibilityAddTraits(aceito ? [.isButton, .isSelected] : .isButton)
                     AtlasPrimaryButton(text: "Autorizar e continuar", enabled: aceito) {
                         onAceitar()
                     }

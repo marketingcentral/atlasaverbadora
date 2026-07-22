@@ -198,7 +198,11 @@ struct LoginView: View {
                                 .font(.system(size: 13))
                                 .foregroundStyle(Atlas.ink)
                         }
+                        // Alvo de toque de 44pt (mínimo da Apple) — ver SimularView.
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     Spacer()
                     Button("Esqueci minha senha", action: onEsqueciSenha)
                         .font(.system(size: 13, weight: .semibold))
