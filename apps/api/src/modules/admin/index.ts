@@ -3370,7 +3370,24 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/pre-reservas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "pre-reservas");
     await refreshContratos(c.env); // fluxo real: propostas/reservas criadas pelos servidores
-    const all = listContratos({}).map(contratoToPreReserva);
+    // Mais novas no TOPO (ordem de chegada) — mesmo padrao DESC por timestamp da
+    // tabela de contratos (cliente pediu 21/07/2026: "as que chegam ficam em
+    // primeiro, as antigas descem"). Ordena pelo criadoEmIso REAL do contrato
+    // (com hora), nao pelo criadoEm da pre-reserva que vem so da DATA do
+    // lancamento (empataria todas as do mesmo dia). Ordena antes do map — o
+    // filtro abaixo preserva a ordem.
+    const parseLanc = (s: string): string | undefined => {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s);
+      return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : undefined;
+    };
+    const all = listContratos({})
+      .slice()
+      .sort((a, b) => {
+        const ta = a.criadoEmIso ?? parseLanc(a.lancamento) ?? "";
+        const tb = b.criadoEmIso ?? parseLanc(b.lancamento) ?? "";
+        return tb.localeCompare(ta);
+      })
+      .map(contratoToPreReserva);
     const url = new URL(c.req.url);
     const status = url.searchParams.get("status") as PreReservaStatus | null;
     const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
