@@ -934,14 +934,19 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // recentemente. Mesmo padrao que /v1/admin/servidores usa.
     await refreshServidores(c.env);
     const todosContratos = listContratos({});
-    // Contagem REAL de servidores por prefeitura (mesmo pattern do
-    // GET /v1/admin/prefeituras). Sem isso, top prefeituras mostra 0 pra
-    // todas — servidoresCount armazenado e' o valor declarado no form
-    // (default 0), nao a soma dos servidores realmente importados.
+    // Contagem REAL de servidores por prefeitura — usa EXCLUSIVAMENTE o
+    // vinculo explicito (prefeituraId do servidor ou prefeituraId do
+    // convenio). Sem fallback pra id=1 (que prefeituraIdDe usa e infla
+    // Capistrano com servidores orfaos). Cliente reportou 21/07/2026:
+    // dashboard mostrava 31 pra Capistrano e visualizar mostrava 11 —
+    // desmentindo a contagem inflada pelo fallback.
     const servidoresPorPref = new Map<number, number>();
     for (const s of SERVIDORES_BUSCA_MOCK) {
-      const id = prefeituraIdDe(s);
-      servidoresPorPref.set(id, (servidoresPorPref.get(id) ?? 0) + 1);
+      const explicito =
+        s.prefeituraId ??
+        CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId;
+      if (explicito == null) continue; // servidor sem vinculo NAO conta
+      servidoresPorPref.set(explicito, (servidoresPorPref.get(explicito) ?? 0) + 1);
     }
     const totalVitrineMes = vitrine.reduce((acc, v) => acc + v.receitaMes, 0);
     const preResumo = resumoPreReservas(todosContratos.map(contratoToPreReserva));
@@ -1934,10 +1939,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // declarado manualmente no form (default 0), mas o usuario espera ver a
     // contagem real de servidores cadastrados. Bug reportado 21/07/2026:
     // Capistrano mostrando 0 mesmo com 11 servidores.
+    // Mesma regra do dashboard: vinculo EXPLICITO, sem fallback pra id=1.
+    // Cliente pediu 21/07/2026 dados reais — servidor orfao (sem prefeituraId
+    // e sem convenio com prefeituraId) NAO deve ser atribuido a Capistrano
+    // so porque prefeituraIdDe defaulta pra 1.
     const countByPref = new Map<number, number>();
     for (const s of SERVIDORES_BUSCA_MOCK) {
-      const id = prefeituraIdDe(s);
-      countByPref.set(id, (countByPref.get(id) ?? 0) + 1);
+      const explicito =
+        s.prefeituraId ??
+        CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId;
+      if (explicito == null) continue;
+      countByPref.set(explicito, (countByPref.get(explicito) ?? 0) + 1);
     }
     return c.json({
       prefeituras: prefeituras.map((p) => ({
@@ -2348,8 +2360,23 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       camposCustom: s.camposCustom ?? {},
     }));
     if (prefeituraId) {
-      const p = prefeituras.find((x) => x.id === Number(prefeituraId));
-      if (p) rows = rows.filter((r) => r.origem.toLowerCase().includes(p.nome.toLowerCase()));
+      const pid = Number(prefeituraId);
+      // Filtra por prefeituraId EXPLICITO (do servidor ou do convenio),
+      // sem fallback pra id=1. Cliente reportou 21/07/2026: filtro antigo
+      // por `origem.includes(pref.nome)` mostrava 11 servidores enquanto
+      // o dashboard (com fallback) mostrava 31. Agora ambos usam a mesma
+      // regra e o numero e' o mesmo em toda a UI.
+      const matriculasDaPref = new Set(
+        SERVIDORES_BUSCA_MOCK
+          .filter((s) => {
+            const explicito =
+              s.prefeituraId ??
+              CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId;
+            return explicito === pid;
+          })
+          .map((s) => s.matricula),
+      );
+      rows = rows.filter((r) => matriculasDaPref.has(r.matricula));
     }
     if (status) rows = rows.filter((r) => r.status === status);
     return c.json({ servidores: rows, total: rows.length });
