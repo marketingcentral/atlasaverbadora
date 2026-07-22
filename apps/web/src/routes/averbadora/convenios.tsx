@@ -38,6 +38,14 @@ export function AdminConvenios() {
       qc.invalidateQueries({ queryKey: ["admin", "convenios", "configs"] });
     },
   });
+  const hardDelete = useMutation({
+    mutationFn: (id: string) => atlas.admin.deleteConvenioHard(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "convenios"] });
+      qc.invalidateQueries({ queryKey: ["admin", "convenios", "configs"] });
+    },
+    onError: (e) => alert(`Nao foi possivel excluir: ${(e as Error).message}`),
+  });
   const [editing, setEditing] = useState<AdminConvenio | "new" | null>(null);
   const [configuring, setConfiguring] = useState<AdminConvenio | null>(null);
 
@@ -139,7 +147,21 @@ export function AdminConvenios() {
                 ⏸
               </IconButton>
             ) : (
-              <IconButton title="Reativar convênio" onClick={() => reactivate.mutate(c.id)}>▶</IconButton>
+              <>
+                <IconButton title="Reativar convênio" onClick={() => reactivate.mutate(c.id)}>▶</IconButton>
+                {/* Excluir permanentemente — so aparece em convenios INATIVOS.
+                 *  Backend valida que nao ha contratos vinculados antes de
+                 *  apagar. Util pra limpar duplicatas geradas por engano. */}
+                <IconButton
+                  title="Excluir permanentemente (sem contratos vinculados)"
+                  danger
+                  onClick={() => {
+                    if (confirm(`Excluir PERMANENTEMENTE o convênio ${c.nome} (${c.id})?\n\nSó funciona se não houver contratos vinculados. Ação irreversível.`)) hardDelete.mutate(c.id);
+                  }}
+                >
+                  🗑
+                </IconButton>
+              </>
             )}
           </>
         )}

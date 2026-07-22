@@ -3214,6 +3214,26 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     pushEvent("info", "admin.convenios", `Convenio "${cv.nome}" desativado por user:${c.get("jwt").sub}`);
     return c.body(null, 204);
   })
+  // Hard-delete: remove PERMANENTEMENTE. Exige convenio INATIVO + sem
+  // contratos vinculados. Usado pra limpar convenios duplicados criados por
+  // engano na matriz (antes do fix de reativar em vez de criar novo).
+  .delete("/v1/admin/convenios/:id/hard", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
+    const id = c.req.param("id");
+    await refreshConvenios(c.env);
+    await refreshContratos(c.env);
+    const cv = CONVENIOS_MOCK.find((x) => x.id === id);
+    if (!cv) throw Errors.notFound("convenio");
+    if (cv.ativo) throw Errors.validation({ ativo: "so convenio inativo pode ser excluido permanentemente. Desative antes." });
+    const usados = listContratos({ convenioId: id });
+    if (usados.length > 0) {
+      throw Errors.validation({ contratos: `convenio tem ${usados.length} contrato(s) vinculado(s). Nao pode ser excluido.` });
+    }
+    const { deleteConvenioHard } = await import("../portal-banco/convenios-store.js");
+    await deleteConvenioHard(c.env, id);
+    pushEvent("warn", "admin.convenios", `Convenio "${cv.nome}" (${id}) EXCLUIDO PERMANENTEMENTE por user:${c.get("jwt").sub}`);
+    return c.body(null, 204);
+  })
   .get("/v1/admin/convenios/:id/config", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const id = c.req.param("id");

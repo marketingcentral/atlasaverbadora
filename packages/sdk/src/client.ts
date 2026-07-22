@@ -1748,6 +1748,9 @@ export class AtlasClient {
       this.request<void>(`/v1/admin/convenios/${id}`, { method: "DELETE" }),
     reativarConvenio: (id: string) =>
       this.request<{ ok: boolean }>(`/v1/admin/convenios/${id}/reativar`, { method: "POST" }),
+    /** Hard-delete permanente. So convenio INATIVO + sem contratos. */
+    deleteConvenioHard: (id: string) =>
+      this.request<void>(`/v1/admin/convenios/${id}/hard`, { method: "DELETE" }),
     getConvenioConfig: (id: string) =>
       this.request<{ config: AdminConvenioConfig | null }>(`/v1/admin/convenios/${id}/config`),
     listConveniosConfigs: () =>
