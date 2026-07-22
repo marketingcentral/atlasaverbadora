@@ -928,7 +928,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/dashboard", async (c) => {
     requireAdmin(c.get("jwt"));
     await refreshContratos(c.env);
+    await ensureServidoresLoaded(c.env); // pra contagem real de servidores por prefeitura
     const todosContratos = listContratos({});
+    // Contagem REAL de servidores por prefeitura (mesmo pattern do
+    // GET /v1/admin/prefeituras). Sem isso, top prefeituras mostra 0 pra
+    // todas — servidoresCount armazenado e' o valor declarado no form
+    // (default 0), nao a soma dos servidores realmente importados.
+    const servidoresPorPref = new Map<number, number>();
+    for (const s of SERVIDORES_BUSCA_MOCK) {
+      const id = prefeituraIdDe(s);
+      servidoresPorPref.set(id, (servidoresPorPref.get(id) ?? 0) + 1);
+    }
     const totalVitrineMes = vitrine.reduce((acc, v) => acc + v.receitaMes, 0);
     const preResumo = resumoPreReservas(todosContratos.map(contratoToPreReserva));
     const folhasAbertas = folhas.filter((f) => f.status === "aberta").length;
@@ -970,7 +980,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         ticketMedio: todosContratos.length > 0 ? Math.round((todosContratos.reduce((a, c) => a + c.valorFinanciado, 0) / todosContratos.length) * 100) / 100 : 0,
         bancosAtivos: bancos.filter((b) => b.status === "ativo").length,
         prefeiturasAtivas: prefeituras.filter((p) => p.status === "ativo").length,
-        servidoresCadastrados: prefeituras.reduce((a, p) => a + p.servidoresCount, 0),
+        servidoresCadastrados: SERVIDORES_BUSCA_MOCK.length,
         receitaVitrineMes: totalVitrineMes,
         preReservasAtivas: preResumo.ativas,
         preReservasExpirandoEm24h: preResumo.expirandoEm24h,
@@ -978,7 +988,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         folhasAbertas,
       },
       topBancos,
-      topPrefeituras: prefeituras.slice(0, 3).map((p) => ({ nome: `${p.nome}/${p.uf}`, servidores: p.servidoresCount })),
+      topPrefeituras: prefeituras
+        .map((p) => ({ nome: `${p.nome}/${p.uf}`, servidores: servidoresPorPref.get(p.id) ?? 0 }))
+        .sort((a, b) => b.servidores - a.servidores)
+        .slice(0, 3),
       volumePorConvenio: Object.entries(volumePorConvenio).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
       volumePorBanco: Object.entries(volumePorBanco).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
     });
