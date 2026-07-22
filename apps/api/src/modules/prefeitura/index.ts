@@ -233,6 +233,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // isolate fresh (ou que perdeu writes de outro isolate) retornava zero
     // descontos/contratos mesmo com propostas ja aprovadas.
     await refreshContratos(c.env);
+    await refreshConvenios(c.env);  // sem isso CONVENIOS_MOCK fica vazio no isolate frio -> conveniosDaPrefeitura/contratosDaPrefeitura retornam 0 (bug 21/07/2026: "Convenios: 0" mesmo com CONV-001 ATIVO)
     await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
     await refreshAnuencias(c.env);  // pra anuenciaVigente(id) ver o PG (bug: dashboard mostrava "pendente" mesmo com anuencia real gravada)
     const servidores = servidoresDaPrefeitura(id);
@@ -292,8 +293,13 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 6 — Servidores (consulta) =====
-  .get("/v1/prefeitura/servidores", (c) => {
+  .get("/v1/prefeitura/servidores", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    // Refresh do PG antes de calcular margem — sem isso, isolate frio ve
+    // CONVENIOS_MOCK/contratos/tombamento vazios e a "margem disp." sai errada
+    // (comprometido nao considera contratos Atlas do convenio nem os externos).
+    // Bug 21/07/2026: margem aparecia R$0,00 (ou o teto cheio) por falta de sync.
+    await Promise.all([refreshContratos(c.env), refreshConvenios(c.env), refreshTombamento(c.env)]);
     const q = c.req.query("q")?.toLowerCase();
     const vinculo = c.req.query("vinculo");
     const situacao = c.req.query("situacao");
