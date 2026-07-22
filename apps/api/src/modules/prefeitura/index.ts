@@ -578,21 +578,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       dataCorte: z.string().optional(),
       dataRepasse: z.string().nullable().optional(),
     }).parse(await c.req.json());
-    // Regra ajustada (cliente 21/07/2026): pra fechar, a folha precisa ter
-    // ALGUMA atividade — movimentacao de pessoal OU desconto averbado (ADF
-    // aplicada). Antes exigia SO movimentacao, o que travava folha com
-    // averbacao mas sem mudanca de pessoal. Se a folha ja tem desconto, ele
-    // e' a confirmacao do mes; fecha direto. So folha 100% vazia (sem
-    // movimentacao E sem desconto) ainda exige movimentacao explicita.
+    // Regra do cliente (17/07/2026, mantida): pra fechar precisa de >=1
+    // movimentacao. Se nao houve mudanca de pessoal no mes, a prefeitura importa
+    // uma linha com tipo=desconto (nao altera ninguem, so confirma a folha) —
+    // conta como a movimentacao do mes e libera o fechamento.
     if (body.status === "fechada" && countMovimentacoes(f.id) === 0) {
-      const now = new Date().toISOString();
-      const bancoNomeById = (bid: number) => bancos.find((b) => b.id === bid)?.nome ?? `Banco ${bid}`;
-      await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
-      ensureAdfs(pid, f.competencia, bancoNomeById, now);
-      const temDesconto = listAdfs(pid, f.competencia).some((a) => a.status === "aplicada");
-      if (!temDesconto) {
-        throw Errors.validation({ status: "Folha sem movimentação e sem desconto averbado — não há o que fechar. Registre ao menos 1 movimentação de pessoal, ou aguarde a averbadora aplicar uma ADF nesta competência." });
-      }
+      throw Errors.validation({ status: "Envie ao menos 1 movimentação antes de fechar. Se não houve mudança de pessoal no mês, importe uma linha com tipo=desconto (não altera ninguém, só confirma a folha)." });
     }
     if (body.status) f.status = body.status;
     if (body.dataCorte) f.dataCorte = body.dataCorte;
@@ -637,7 +628,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const { rows } = parseCsv(await readCsvBody(c));
     const now = new Date().toISOString();
     const out: ImportOutcome<{ matricula: string; tipo: string }> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
-    const tipos: MovimentacaoTipo[] = ["admissao", "demissao", "aposentadoria", "promocao", "alteracao"];
+    const tipos: MovimentacaoTipo[] = ["admissao", "demissao", "aposentadoria", "promocao", "alteracao", "desconto"];
     const parseSal = (v?: string): number | undefined => {
       const s = (v ?? "").trim();
       if (!s) return undefined;
@@ -657,6 +648,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       const tipo = (r.tipo || "").trim().toLowerCase() as MovimentacaoTipo;
       const matricula = (r.matricula || "").trim();
       if (!tipos.includes(tipo)) { out.errors.push({ line, message: `tipo invalido — use ${tipos.join("/")}` }); continue; }
+      // "desconto" = linha de confirmacao (folha sem mudanca de pessoal). Nao
+      // exige matricula nem nenhum outro campo — e' valida sozinha.
+      if (tipo === "desconto") { continue; }
       if (!matricula) { out.errors.push({ line, message: "matricula obrigatoria" }); continue; }
       if (/exemplo/i.test(matricula) || /exemplo/i.test(r.nome || "")) {
         out.errors.push({ line, message: "linha de exemplo do modelo — substitua por dados reais antes de importar" }); continue;

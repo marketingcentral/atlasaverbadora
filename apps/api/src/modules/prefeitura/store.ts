@@ -11,7 +11,10 @@ import { issueIdUnico } from "../admin/id-unico.js";
 // Folha — movimentação mensal de pessoal
 // ============================================================
 
-export type MovimentacaoTipo = "admissao" | "demissao" | "aposentadoria" | "promocao" | "alteracao";
+// "desconto" = linha de CONFIRMACAO que NAO altera nenhum servidor. Serve pra
+// prefeitura fechar a folha num mes SEM mudanca de pessoal (a regra exige >=1
+// movimentacao pra fechar). Cliente pediu 21/07/2026.
+export type MovimentacaoTipo = "admissao" | "demissao" | "aposentadoria" | "promocao" | "alteracao" | "desconto";
 
 export interface Movimentacao {
   id: string;
@@ -43,6 +46,18 @@ export function applyMovimentacao(input: {
   folhaId: string; prefeituraId: number; tipo: MovimentacaoTipo; matricula: string;
   cargoNovo?: string; salarioNovo?: number; detalhe?: string; nomeNovo?: string; cpf?: string;
 }, now: string): { ok: true; mov: Movimentacao; contratosAtingidos: string[]; servidorAtualizado?: import("../portal-banco/fixtures.js").ServidorBuscaMock } | { ok: false; error: string } {
+  // "desconto": linha de confirmacao — NAO mexe em nenhum servidor, so registra
+  // a movimentacao (pra folha sem mudanca de pessoal poder ser fechada).
+  if (input.tipo === "desconto") {
+    const mov: Movimentacao = {
+      id: `MOV-${String(_movSeq++).padStart(6, "0")}`,
+      folhaId: input.folhaId, prefeituraId: input.prefeituraId, tipo: input.tipo,
+      matricula: (input.matricula || "").trim() || "—", cpfMasked: "", nome: "Folha sem alteração de pessoal",
+      detalhe: input.detalhe ?? defaultDetalhe(input.tipo), criadoEm: now,
+    };
+    _movimentacoes.push(mov);
+    return { ok: true, mov, contratosAtingidos: [] };
+  }
   const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === input.matricula && prefeituraIdDe(x) === input.prefeituraId);
 
   // Admissão pode criar um servidor novo se não existir.
@@ -122,7 +137,7 @@ export function applyMovimentacao(input: {
 }
 
 function defaultDetalhe(t: MovimentacaoTipo): string {
-  return { admissao: "Admissão", demissao: "Desligamento", aposentadoria: "Aposentadoria", promocao: "Promoção", alteracao: "Alteração de cargo/salário" }[t];
+  return { admissao: "Admissão", demissao: "Desligamento", aposentadoria: "Aposentadoria", promocao: "Promoção", alteracao: "Alteração de cargo/salário", desconto: "Sem movimentação de pessoal no mês" }[t];
 }
 
 function prefeituraNome(_id: number): string {
