@@ -88,6 +88,7 @@ function rowToBanco(row: typeof bancosTable.$inferSelect): BancoAdmin {
     passwordHash: cfg.passwordHash as string | undefined,
     scopes: (cfg.scopes as string[]) ?? [],
     mtlsHabilitado: Boolean(cfg.mtlsHabilitado),
+    baseUrl: cfg.baseUrl as string | undefined,
     ultimoTeste: cfg.ultimoTeste as string | undefined,
     ultimoTesteOk: cfg.ultimoTesteOk as boolean | undefined,
     // Campos do cadastro por CNPJ — hidratados do jsonb (mesma estrategia do PrefeituraAdmin).
@@ -117,6 +118,7 @@ export async function upsertBanco(env: Env, b: BancoAdmin): Promise<void> {
     passwordHash: b.passwordHash,
     scopes: b.scopes,
     mtlsHabilitado: b.mtlsHabilitado,
+    baseUrl: b.baseUrl, // health check URL (opcional)
     ultimoTeste: b.ultimoTeste,
     ultimoTesteOk: b.ultimoTesteOk,
     cnpj: b.cnpj,
