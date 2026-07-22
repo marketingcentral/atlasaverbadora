@@ -46,6 +46,17 @@ export async function persistConvenio(env: Env, c: ConvenioMock): Promise<void> 
   }
 }
 
+/** Hard-delete: remove convênio do PG + in-memory. Só usar em convênios
+ *  INATIVOS sem contratos vinculados (o handler valida isso). */
+export async function deleteConvenioHard(env: Env, id: string): Promise<void> {
+  const idx = CONVENIOS_MOCK.findIndex((c) => c.id === id);
+  if (idx >= 0) CONVENIOS_MOCK.splice(idx, 1);
+  try {
+    const { deleteCollectionRow } = await import("../../db/repos.js");
+    await deleteCollectionRow(env, TABLE, id);
+  } catch { /* fail-safe */ }
+}
+
 /** Próximo id de convênio livre (CONV-NNN), evitando colisão com desativados/persistidos. */
 export function nextConvenioId(): string {
   let max = 0;

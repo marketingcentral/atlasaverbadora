@@ -928,7 +928,26 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/dashboard", async (c) => {
     requireAdmin(c.get("jwt"));
     await refreshContratos(c.env);
+    // refreshServidores (nao ensureServidoresLoaded): o ensure e' memoized por
+    // isolate — se rodou 1x com PG vazio, cacheia vazio pra sempre. Precisamos
+    // ler do PG A CADA request pra topPrefeituras refletir servidores importados
+    // recentemente. Mesmo padrao que /v1/admin/servidores usa.
+    await refreshServidores(c.env);
     const todosContratos = listContratos({});
+    // Contagem REAL de servidores por prefeitura — usa EXCLUSIVAMENTE o
+    // vinculo explicito (prefeituraId do servidor ou prefeituraId do
+    // convenio). Sem fallback pra id=1 (que prefeituraIdDe usa e infla
+    // Capistrano com servidores orfaos). Cliente reportou 21/07/2026:
+    // dashboard mostrava 31 pra Capistrano e visualizar mostrava 11 —
+    // desmentindo a contagem inflada pelo fallback.
+    const servidoresPorPref = new Map<number, number>();
+    for (const s of SERVIDORES_BUSCA_MOCK) {
+      const explicito =
+        s.prefeituraId ??
+        CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId;
+      if (explicito == null) continue; // servidor sem vinculo NAO conta
+      servidoresPorPref.set(explicito, (servidoresPorPref.get(explicito) ?? 0) + 1);
+    }
     const totalVitrineMes = vitrine.reduce((acc, v) => acc + v.receitaMes, 0);
     const preResumo = resumoPreReservas(todosContratos.map(contratoToPreReserva));
     const folhasAbertas = folhas.filter((f) => f.status === "aberta").length;
@@ -970,7 +989,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         ticketMedio: todosContratos.length > 0 ? Math.round((todosContratos.reduce((a, c) => a + c.valorFinanciado, 0) / todosContratos.length) * 100) / 100 : 0,
         bancosAtivos: bancos.filter((b) => b.status === "ativo").length,
         prefeiturasAtivas: prefeituras.filter((p) => p.status === "ativo").length,
-        servidoresCadastrados: prefeituras.reduce((a, p) => a + p.servidoresCount, 0),
+        servidoresCadastrados: SERVIDORES_BUSCA_MOCK.length,
         receitaVitrineMes: totalVitrineMes,
         preReservasAtivas: preResumo.ativas,
         preReservasExpirandoEm24h: preResumo.expirandoEm24h,
@@ -978,7 +997,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         folhasAbertas,
       },
       topBancos,
-      topPrefeituras: prefeituras.slice(0, 3).map((p) => ({ nome: `${p.nome}/${p.uf}`, servidores: p.servidoresCount })),
+      topPrefeituras: prefeituras
+        .map((p) => ({ nome: `${p.nome}/${p.uf}`, servidores: servidoresPorPref.get(p.id) ?? 0 }))
+        .sort((a, b) => b.servidores - a.servidores)
+        .slice(0, 3),
       volumePorConvenio: Object.entries(volumePorConvenio).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
       volumePorBanco: Object.entries(volumePorBanco).map(([nome, valor]) => ({ nome, valor })).sort((a, b) => b.valor - a.valor),
     });
@@ -1917,10 +1939,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // declarado manualmente no form (default 0), mas o usuario espera ver a
     // contagem real de servidores cadastrados. Bug reportado 21/07/2026:
     // Capistrano mostrando 0 mesmo com 11 servidores.
+    // Mesma regra do dashboard: vinculo EXPLICITO, sem fallback pra id=1.
+    // Cliente pediu 21/07/2026 dados reais — servidor orfao (sem prefeituraId
+    // e sem convenio com prefeituraId) NAO deve ser atribuido a Capistrano
+    // so porque prefeituraIdDe defaulta pra 1.
     const countByPref = new Map<number, number>();
     for (const s of SERVIDORES_BUSCA_MOCK) {
-      const id = prefeituraIdDe(s);
-      countByPref.set(id, (countByPref.get(id) ?? 0) + 1);
+      const explicito =
+        s.prefeituraId ??
+        CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId;
+      if (explicito == null) continue;
+      countByPref.set(explicito, (countByPref.get(explicito) ?? 0) + 1);
     }
     return c.json({
       prefeituras: prefeituras.map((p) => ({
@@ -2331,8 +2360,23 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       camposCustom: s.camposCustom ?? {},
     }));
     if (prefeituraId) {
-      const p = prefeituras.find((x) => x.id === Number(prefeituraId));
-      if (p) rows = rows.filter((r) => r.origem.toLowerCase().includes(p.nome.toLowerCase()));
+      const pid = Number(prefeituraId);
+      // Filtra por prefeituraId EXPLICITO (do servidor ou do convenio),
+      // sem fallback pra id=1. Cliente reportou 21/07/2026: filtro antigo
+      // por `origem.includes(pref.nome)` mostrava 11 servidores enquanto
+      // o dashboard (com fallback) mostrava 31. Agora ambos usam a mesma
+      // regra e o numero e' o mesmo em toda a UI.
+      const matriculasDaPref = new Set(
+        SERVIDORES_BUSCA_MOCK
+          .filter((s) => {
+            const explicito =
+              s.prefeituraId ??
+              CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId;
+            return explicito === pid;
+          })
+          .map((s) => s.matricula),
+      );
+      rows = rows.filter((r) => matriculasDaPref.has(r.matricula));
     }
     if (status) rows = rows.filter((r) => r.status === status);
     return c.json({ servidores: rows, total: rows.length });
@@ -3195,6 +3239,26 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     cv.ativo = false;
     await persistConvenio(c.env, cv); // write-through: desativacao persiste (nunca some, so ativo=false)
     pushEvent("info", "admin.convenios", `Convenio "${cv.nome}" desativado por user:${c.get("jwt").sub}`);
+    return c.body(null, 204);
+  })
+  // Hard-delete: remove PERMANENTEMENTE. Exige convenio INATIVO + sem
+  // contratos vinculados. Usado pra limpar convenios duplicados criados por
+  // engano na matriz (antes do fix de reativar em vez de criar novo).
+  .delete("/v1/admin/convenios/:id/hard", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
+    const id = c.req.param("id");
+    await refreshConvenios(c.env);
+    await refreshContratos(c.env);
+    const cv = CONVENIOS_MOCK.find((x) => x.id === id);
+    if (!cv) throw Errors.notFound("convenio");
+    if (cv.ativo) throw Errors.validation({ ativo: "so convenio inativo pode ser excluido permanentemente. Desative antes." });
+    const usados = listContratos({ convenioId: id });
+    if (usados.length > 0) {
+      throw Errors.validation({ contratos: `convenio tem ${usados.length} contrato(s) vinculado(s). Nao pode ser excluido.` });
+    }
+    const { deleteConvenioHard } = await import("../portal-banco/convenios-store.js");
+    await deleteConvenioHard(c.env, id);
+    pushEvent("warn", "admin.convenios", `Convenio "${cv.nome}" (${id}) EXCLUIDO PERMANENTEMENTE por user:${c.get("jwt").sub}`);
     return c.body(null, 204);
   })
   .get("/v1/admin/convenios/:id/config", async (c) => {
