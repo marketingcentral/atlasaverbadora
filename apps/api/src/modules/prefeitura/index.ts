@@ -1116,22 +1116,45 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       const preset = upsertPerfilPreset({ prefeituraId: id, nome: body.presetNome, permissoes: body.permissoes }, new Date().toISOString());
       await persistPerfilPreset(c.env, preset);
     }
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: body.id ? "perfil_pref_atualizado" : "perfil_pref_criado",
+      userId: `prefeitura:${id}`,
+      userRole: "prefeitura",
+      detalhes: `Perfil ${perfil.email} (area=${perfil.area}, ativo=${perfil.ativo}) ${body.id ? "atualizado" : "criado"}${body.presetNome ? ` + preset "${body.presetNome}" salvo` : ""}.`,
+    });
     return c.json({ perfil: sanitizePerfil(perfil) }, body.id ? 200 : 201);
   })
   .delete("/v1/prefeitura/perfis/:id", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     await refreshPerfisPref(c.env);
-    if (!deletePerfil(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
-    const p = getPerfilRaw(id, Number(c.req.param("id")));
+    const perfilId = Number(c.req.param("id"));
+    if (!deletePerfil(id, perfilId)) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, perfilId);
     if (p) await persistPerfil(c.env, p);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "perfil_pref_desativado",
+      userId: `prefeitura:${id}`,
+      userRole: "prefeitura",
+      detalhes: `Perfil id=${perfilId}${p ? ` (${p.email})` : ""} desativado (soft-delete).`,
+    });
     return c.body(null, 204);
   })
   .post("/v1/prefeitura/perfis/:id/reativar", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     await refreshPerfisPref(c.env);
-    if (!reactivatePerfil(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
-    const p = getPerfilRaw(id, Number(c.req.param("id")));
+    const perfilId = Number(c.req.param("id"));
+    if (!reactivatePerfil(id, perfilId)) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, perfilId);
     if (p) await persistPerfil(c.env, p);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "perfil_pref_reativado",
+      userId: `prefeitura:${id}`,
+      userRole: "prefeitura",
+      detalhes: `Perfil id=${perfilId}${p ? ` (${p.email})` : ""} reativado.`,
+    });
     return c.json({ ok: true });
   })
   .post("/v1/prefeitura/perfis/:id/2fa/rotate", async (c) => {
@@ -1147,9 +1170,19 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/prefeitura/perfis/:id/2fa/disable", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     await refreshPerfisPref(c.env);
-    if (!disable2FA(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
-    const p = getPerfilRaw(id, Number(c.req.param("id")));
+    const perfilId = Number(c.req.param("id"));
+    if (!disable2FA(id, perfilId)) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, perfilId);
     if (p) await persistPerfil(c.env, p);
+    // Disable de 2FA remove camada de protecao — evento CRITICO (mesma
+    // gravidade do 2fa_desativado_self em me/index.ts).
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "2fa_desativado_perfil_pref",
+      userId: `prefeitura:${id}`,
+      userRole: "prefeitura",
+      detalhes: `2FA DESATIVADO no perfil id=${perfilId}${p ? ` (${p.email})` : ""} pela prefeitura ${id}. Perda de camada de protecao — verificar autorizacao.`,
+    });
     return c.json({ ok: true });
   })
   // Presets customizados de permissao (nomeados, reutilizaveis por prefeitura).

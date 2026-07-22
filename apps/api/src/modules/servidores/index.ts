@@ -689,6 +689,17 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       origemTela,
     };
     await persistClique(c.env, clique);
+    // Auditoria: clique em benefício é sinal analítico (nao muda margem),
+    // mas util pra rastrear engajamento pos-incidente ("quem clicou no X?").
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "beneficio_clique",
+      cpf: entryAtivo.cpfMasked,
+      matricula: entryAtivo.matricula,
+      userId: `servidor:${s.id}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${entryAtivo.nome} clicou em "Acessar" do beneficio ${beneficioId}${origemTela ? ` (origem: ${origemTela})` : ""}.`,
+    });
     return c.json({ ok: true });
   })
   // F5 do plano de fluxos: servidor clica "Contratar" no beneficio (mensalidade
@@ -742,6 +753,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       criadoEm: new Date().toISOString(),
     };
     await persistIntencao(c.env, intencao);
+    // Auditoria: contratar beneficio vira ADF de mensalidade — mesma classe
+    // de "aceite implicito" da pre_reserva de emprestimo.
+    appendAudit(auditCtx(c), {
+      categoria: "pre_reserva",
+      acao: "beneficio_intencao_criada",
+      propostaId: intencao.id,
+      cpf: entryAtivo.cpfMasked,
+      matricula: entryAtivo.matricula,
+      userId: `servidor:${s.id}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${entryAtivo.nome} solicitou contratacao do beneficio "${beneficio.nome}" — R$ ${valorMensal.toFixed(2)}/mes. Aguardando averbadora aprovar (viraria ADF).`,
+    });
     return c.json({ ok: true, intencao });
   })
   // Solicitacao de COTACAO de telemedicina. O servidor confirma o termo no banner de
@@ -826,6 +849,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     };
     await persistCotacao(c.env, cot);
     pushEvent("info", "servidor.telemedicina_cotacao", `${entryAtivo.nome} solicitou cotacao de telemedicina (adf ${reserva.adf}).`);
+    // Auditoria: cotacao de telemedicina cria RESERVA de margem — reserva
+    // R$ 50/mes x 12 meses (EMPRESTIMO bucket). Vale audit pre_reserva.
+    appendAudit(auditCtx(c), {
+      categoria: "pre_reserva",
+      acao: "telemedicina_cotacao_solicitada",
+      propostaId: reserva.adf,
+      cpf: entryAtivo.cpfMasked,
+      matricula: entryAtivo.matricula,
+      userId: `servidor:${s.id}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${entryAtivo.nome} solicitou cotacao de telemedicina (reserva ADF ${reserva.adf}, R$ 50,00 x 12). Averbadora tem 30 dias pra ativar.`,
+    });
     return c.json({ ok: true, id: cot.id, adf: reserva.adf });
   })
   // Cotacoes de telemedicina DO PROPRIO servidor — o app/web usa pra esconder o botao
