@@ -474,6 +474,8 @@ export interface AdminBanco {
   hasPassword: boolean;
   scopes: string[];
   mtlsHabilitado: boolean;
+  /** URL base pra health check (opcional). Ex: https://api.iFractal.com */
+  baseUrl?: string;
   ultimoTeste?: string;
   ultimoTesteOk?: boolean;
   // Dados oficiais preenchidos pela consulta CNPJ (BrasilAPI + fallback).
@@ -496,6 +498,7 @@ export interface AdminBancoInput {
   password?: string;
   scopes?: string[];
   mtlsHabilitado?: boolean;
+  baseUrl?: string;
   cnpj?: string;
   razaoSocial?: string;
   nomeFantasia?: string;

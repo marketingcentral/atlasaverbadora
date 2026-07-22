@@ -222,6 +222,7 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
     password: "",
     scopes: initial?.scopes ?? ["propostas:rw"],
     mtlsHabilitado: initial?.mtlsHabilitado ?? false,
+    baseUrl: initial?.baseUrl ?? "",
     cnpj: initial?.cnpj ?? "",
     razaoSocial: initial?.razaoSocial ?? "",
     nomeFantasia: initial?.nomeFantasia ?? "",
@@ -466,6 +467,14 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
                   { value: "0", label: "Desabilitado" },
                   { value: "1", label: "Habilitado" },
                 ]}
+              />
+              <TextField
+                label="URL base (health check)"
+                type="url"
+                value={form.baseUrl ?? ""}
+                onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+                placeholder="https://api.banco.com.br"
+                hint="Se preenchida, /averbadora/health pinga /health desse endpoint (uptime/latência reais)."
               />
             </FormGrid>
           </div>

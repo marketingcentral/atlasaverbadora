@@ -128,6 +128,10 @@ export interface BancoAdmin {
   passwordHash?: string;
   scopes: string[];
   mtlsHabilitado: boolean;
+  /** URL base pra health check (opcional). Ex: "https://api.iFractal.com".
+   *  Se preenchida, o monitor /averbadora/health pinga `${baseUrl}/health` a
+   *  cada 20s (uptime real). Sem baseUrl, banco aparece como "sem endpoint". */
+  baseUrl?: string;
   ultimoTeste?: string;
   ultimoTesteOk?: boolean;
   /** 2FA opcional pro operador do banco. Self-service via /banco/conta. */
@@ -1822,6 +1826,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         password: z.string().min(6).optional(),
         scopes: z.array(z.string()).default([]),
         mtlsHabilitado: z.boolean().default(false),
+        // URL base pra health check (opcional). Se preenchida, o monitor
+        // /averbadora/health pinga /health desse endpoint a cada request.
+        baseUrl: z.string().url().optional().or(z.literal("")),
         // Campos novos (consulta CNPJ) — armazenados no config jsonb via ...rest.
         cnpj: z.string().max(14).optional().or(z.literal("")),
         razaoSocial: z.string().max(200).optional().or(z.literal("")),
@@ -2857,16 +2864,26 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       return { servico: "R2 (arquivos)", ok: r.ok, latenciaMs: r.ms };
     };
 
-    // 4) Bank Adapter (mock/iFractal) — dispara authorize simples e ve se responde.
-    //    So um check consolidado (o adapter em uso). Bancos parceiros individuais
-    //    nao tem URL de health cadastrada — quando o cliente adicionar campo
-    //    baseUrl no BancoAdmin, dai da pra pingar cada um.
+    // 4) Bank Adapter (mock/iFractal) — informa qual esta em uso.
     const adapterCheck = async (): Promise<CheckResult> => {
       const adapter = c.env.BANK_ADAPTER ?? "sandbox";
-      // sandbox e' interno (nao tem URL externa); ifractal precisaria de
-      // env.IFRACTAL_BASE_URL cadastrado como secret pra pingar. Enquanto
-      // nao houver, apenas informa qual esta em uso.
       return { servico: `Bank Adapter (${adapter})`, ok: true, latenciaMs: 0 };
+    };
+
+    // 5) Cada banco ATIVO com baseUrl cadastrada — pinga /health individual
+    //    em paralelo. Bancos sem baseUrl entram como "sem endpoint" (nao
+    //    afeta uptime, so informativo).
+    const bankChecks = async (): Promise<CheckResult[]> => {
+      await ensureBancosLoaded(c.env);
+      const ativos = bancos.filter((b) => b.status === "ativo");
+      return Promise.all(ativos.map(async (b): Promise<CheckResult> => {
+        const url = (b.baseUrl ?? "").trim();
+        if (!url) return { servico: `Banco: ${b.nome}`, ok: true, latenciaMs: 0 };
+        const alvo = url.replace(/\/+$/, "") + "/health";
+        const r = await withTimeout(fetch(alvo, { method: "GET", headers: { Accept: "application/json,text/plain,*/*" } }).then((res) => res.ok));
+        const okReal = r.ok && (r as { value?: boolean }).value === true;
+        return { servico: `Banco: ${b.nome}`, ok: okReal, latenciaMs: r.ms };
+      }));
     };
 
     const now = new Date().toISOString();
@@ -2877,6 +2894,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await kvCheck("KV_RATELIMIT", c.env.KV_RATELIMIT),
       await r2Check(),
       await adapterCheck(),
+      ...(await bankChecks()),
     ];
 
     // Persiste historico + agrega. uptime = %OK nos ultimos N checks (persistido);
