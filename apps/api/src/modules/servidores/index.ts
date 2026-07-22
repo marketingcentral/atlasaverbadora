@@ -8,6 +8,7 @@ import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorB
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
 import { ensureTombamentoLoaded, refreshTombamento, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
 import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
+import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
@@ -913,6 +914,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
+    // Hidrata CONVENIOS_MOCK antes de resolver conv por idConvenio. Sem isso,
+    // isolate frio nao tinha os convenios carregados e caia no fallback
+    // "Banco Atlas" — proposta ficava orfa e sumia dos filtros do banco
+    // (que agrupam por convenioId, nao por texto).
+    await refreshConvenios(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     const body = z
