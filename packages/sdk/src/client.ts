@@ -2099,18 +2099,50 @@ export class AtlasClient {
       const token = await this.storage.getAccess();
       if (token) headers.Authorization = `Bearer ${token}`;
     }
+    // Idempotency-Key automatico em POSTs de mutacao. Se o cliente re-tenta
+    // o mesmo request por flake de rede / duplo clique, backend devolve a
+    // resposta cacheada (24h TTL) em vez de executar de novo. Passivo — se
+    // o handler nao usa withIdempotency, nao muda nada; se usa, ganha
+    // protecao automatica. Cliente pode sobrescrever passando o header
+    // custom em opts.headers (nao implementado ainda, so pra referencia).
+    const method = (options.method ?? "GET").toUpperCase();
+    if (method === "POST" && !options.isFormData) {
+      headers["Idempotency-Key"] = this.newIdempotencyKey();
+    }
     const buildBody = (): string | FormData | undefined => {
       if (options.body === undefined) return undefined;
       if (options.isFormData) return options.body as FormData;
       return JSON.stringify(options.body);
     };
 
-    let res = await this.fetchImpl(url, {
+    // Retry simples pra network errors ou 5xx transientes: 1 tentativa inicial +
+    // 2 retries com backoff (500ms, 1500ms). Mantem os MESMOS headers, incluindo
+    // Idempotency-Key — backend detecta a duplicata e devolve resposta cacheada.
+    // NAO retenta 4xx (erro do cliente — retentar nao vai corrigir).
+    const doFetch = () => this.fetchImpl(url, {
       method: options.method ?? "GET",
       headers,
       body: buildBody(),
       signal: options.signal,
     });
+    let res: Response;
+    let lastErr: unknown = null;
+    const backoff = [0, 500, 1500];
+    for (let attempt = 0; attempt < backoff.length; attempt++) {
+      if (backoff[attempt]) await new Promise((r) => setTimeout(r, backoff[attempt]));
+      try {
+        res = await doFetch();
+        // 5xx transiente -> retry. 4xx -> nao retenta.
+        if (res.status >= 500 && res.status < 600 && attempt < backoff.length - 1) continue;
+        break;
+      } catch (e) {
+        lastErr = e;
+        // Abort do usuario -> nao retenta.
+        if ((e as Error).name === "AbortError") throw e;
+        if (attempt === backoff.length - 1) throw e;
+      }
+    }
+    if (!res!) throw lastErr ?? new Error("network error");
 
     if (res.status === 401 && !options.skipAuth) {
       const ok = await this.tryRefresh();
@@ -2185,5 +2217,17 @@ export class AtlasClient {
       }
     }
     return url.toString();
+  }
+
+  /** Gera uma chave de idempotencia unica por request (uuid v4). Enviada
+   *  automaticamente no header 'Idempotency-Key' em todo POST. Se o request
+   *  falhar por rede/timeout e o usuario re-tentar, o backend devolve a
+   *  resposta cacheada (24h) em vez de duplicar a operacao. */
+  private newIdempotencyKey(): string {
+    // crypto.randomUUID esta em Node 19+, Deno, browsers modernos, Workers.
+    const c = (globalThis as unknown as { crypto?: { randomUUID?: () => string } }).crypto;
+    if (c?.randomUUID) return c.randomUUID();
+    // Fallback pra ambientes sem crypto.randomUUID (raro): timestamp + random.
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`;
   }
 }

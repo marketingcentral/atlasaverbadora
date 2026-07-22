@@ -10,6 +10,7 @@ import { refreshComunicados, persistComunicados, removerComunicadoPersistido } f
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
+import { withIdempotency } from "../../_shared/idempotency.js";
 import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, deleteCollectionRow, deleteTombamentoLote, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
@@ -2552,10 +2553,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   .post("/v1/admin/folhas/:id/consolidar", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    const folhaId = c.req.param("id");
+    // Idempotency: se o operador clica 2x no botao Consolidar (rede lenta,
+    // duplo-clique, retry do SDK), o cascade parcelasPagas roda so 1 vez.
+    // Sem isso, cada retry incrementava as parcelas de novo.
+    const idemKey = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idemScope = `admin:${j.sub}:POST:/v1/admin/folhas/${folhaId}/consolidar`;
+    const idem = await withIdempotency(c.env, idemKey, idemScope, async () => {
     await ensureFolhasLoaded(c.env);
     await refreshContratos(c.env);
     await Promise.all([ensurePrefeiturasLoaded(c.env), ensureBancosLoaded(c.env), refreshConvenios(c.env)]);
-    const f = folhas.find((x) => x.id === c.req.param("id"));
+    const f = folhas.find((x) => x.id === folhaId);
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
     // Materializa _adfs pro isolate atual ANTES de ler listAdfsGlobal — sem
@@ -2600,7 +2608,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
       pushEvent("info", "admin.folhas.consolidar", `Folha ${f.id} consolidada: ${incrementados}/${quitados} (avancados/quitados) de ${adfsDaFolha.length} ADFs.`);
     }
-    return c.json({ folha: f, parcelasIncrementadas: incrementados, contratosQuitados: quitados });
+      return { status: 200, body: { folha: f, parcelasIncrementadas: incrementados, contratosQuitados: quitados } };
+    });
+    if (idem.replayed) c.header("Idempotent-Replay", "true");
+    return c.json(idem.result, (idem.status === 200 || idem.status === 201) ? idem.status : 200);
   })
 
   // === ADF (averbadora) — visao global de todos os contratos averbados de
