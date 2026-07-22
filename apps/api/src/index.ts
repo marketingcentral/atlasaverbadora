@@ -7,6 +7,7 @@ import { portalBancoRoutes } from "./modules/portal-banco/index.js";
 import { adminRoutes, csvTemplateRoutes, ensureBancosLoaded, ensureServidoresLoaded, ensurePerfisLoaded, ensureFolhasLoaded, logMutacaoPersistido } from "./modules/admin/index.js";
 import { ensureTombamentoLoaded } from "./modules/admin/tombamento.js";
 import { ensureContratosLoaded } from "./modules/portal-banco/store.js";
+import { ensureAuditLoaded, setAuditContext } from "./modules/admin/auditoria.js";
 import type { JwtClaims } from "./middleware/auth.js";
 import { externalRoutes } from "./modules/external/index.js";
 import { confirmacaoRoutes } from "./modules/confirmacao/index.js";
@@ -53,7 +54,12 @@ app.use("/v1/*", async (c, next) => {
     ensureFolhasLoaded(c.env).catch(() => undefined),
     ensureTombamentoLoaded(c.env).catch(() => undefined),
     ensureContratosLoaded(c.env).catch(() => undefined),
+    ensureAuditLoaded(c.env).catch(() => undefined),
   ]);
+  // Propaga env + waitUntil pro appendAudit persistir em PG sem quebrar a
+  // assinatura sincrona dos 25+ callers. Sem isso, auditoria voltaria a viver
+  // so no cache in-memory do isolate.
+  setAuditContext(c.env, c.executionCtx?.waitUntil?.bind(c.executionCtx) ?? null);
   await next();
 });
 app.route("/", authRoutes);

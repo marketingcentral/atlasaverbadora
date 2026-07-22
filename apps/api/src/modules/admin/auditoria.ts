@@ -1,6 +1,15 @@
-// Dedicated audit log — separate from generic application events.
-// Captures: pre-reservation transitions, term acceptances, biometric authentications,
-// data changes with PII, margin movements. Append-only, never mutated.
+// Trilha de auditoria dedicada — append-only, nunca mutada.
+// Captura: pre-reservas, aceites de termo, biometria, alteracoes de dados
+// pessoais, movimentacoes de margem, tombamento, acessos.
+//
+// Persistencia (22/07/2026): antes era _entries: [] em memoria do isolate —
+// qualquer cold start / redeploy zerava a trilha (cliente reclamou dia 22
+// "so aparece 1 registro"). Agora hidrata do Postgres (admin_auditoria) no
+// primeiro request e cada appendAudit persiste via ctx.waitUntil (fail-safe:
+// se PG cair, cache in-memory continua funcionando pra sessao vigente).
+
+import type { Env } from "../../env.js";
+import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
 
 export type AuditCategoria =
   | "pre_reserva"
@@ -32,7 +41,35 @@ export interface AuditEntry {
   detalhes: string;
 }
 
+const TABLE = "admin_auditoria";
+const MAX_CACHE = 2000;
+
+// Cache em memoria (append-only, mais recentes primeiro). Hidratado do PG
+// no primeiro request. appendAudit atualiza sincronamente + fila de persist.
 const _entries: AuditEntry[] = [];
+let _loaded = false;
+
+// Holders setados pelo middleware — appendAudit e sincrono e nao recebe env,
+// entao usa esses holders pra fazer waitUntil(persist) sem quebrar 25 callers.
+let _env: Env | null = null;
+let _waitUntil: ((p: Promise<unknown>) => void) | null = null;
+
+/** Chamado por middleware a cada request pra propagar env + waitUntil. */
+export function setAuditContext(env: Env, waitUntil: ((p: Promise<unknown>) => void) | null): void {
+  _env = env;
+  _waitUntil = waitUntil;
+}
+
+/** Hidrata o cache do PG (idempotente). Chamado pelo middleware antes das rotas. */
+export async function ensureAuditLoaded(env: Env): Promise<void> {
+  if (_loaded) return;
+  const rows = await loadCollection<AuditEntry>(env, TABLE).catch(() => [] as AuditEntry[]);
+  // loadCollection retorna ORDER BY id — aqui queremos por ts desc (recentes topo).
+  rows.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+  _entries.length = 0;
+  _entries.push(...rows.slice(0, MAX_CACHE));
+  _loaded = true;
+}
 
 function uid(): string {
   const t = Date.now().toString(36);
@@ -64,7 +101,15 @@ export function appendAudit(input: Omit<AuditEntry, "id" | "ts" | "trace_id"> & 
     detalhes: input.detalhes,
   };
   _entries.unshift(entry);
-  if (_entries.length > 1000) _entries.length = 1000;
+  if (_entries.length > MAX_CACHE) _entries.length = MAX_CACHE;
+  // Persiste no PG via waitUntil (fail-safe — nunca quebra o request). Sem
+  // env/ctx no isolate atual (ex.: chamado fora de handler), so fica no cache.
+  const env = _env;
+  const wu = _waitUntil;
+  if (env) {
+    const p = upsertCollectionRow(env, TABLE, entry.id, entry).catch(() => undefined);
+    if (wu) wu(p); // deixa a Worker sobreviver ate o flush terminar
+  }
   return entry;
 }
 
@@ -101,9 +146,3 @@ export function auditCategorias(): { value: AuditCategoria; label: string }[] {
     { value: "acesso", label: "Acesso ao painel" },
   ];
 }
-
-// Cliente pediu remocao dos 8 seed entries de auditoria (16/07/2026) pra
-// teste real do zero — eram registros demo (PR-1A2B3C4D, Lote TB-1-202605,
-// login "averbadora:200") orfaos de dados ja removidos. Entradas reais
-// continuam chegando via appendAudit em cada acao do sistema.
-// Se restaurar pra demo, reverter este bloco.
