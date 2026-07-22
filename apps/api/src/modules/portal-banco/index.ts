@@ -12,7 +12,8 @@ import { prefeituras, bancos, pushEvent } from "../admin/index.js";
 import { getConvenioConfig } from "../admin/convenios-config.js";
 import { ensurePortabilidadesLoaded, listIntencoesAbertasParaBanco, adicionarOferta } from "../admin/portabilidade-store.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, deriveTipoMargem, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb, tratarFalhaContrato } from "./store.js";
-import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
+import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario, listBancoPresets, upsertBancoPreset, hydrateBancoPresets, exportBancoPresetsRaw, type BancoPerfilPreset } from "./cadastros.js";
+import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
 import { enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
 import { listExternalLoans, refreshTombamento } from "../admin/tombamento.js";
@@ -39,6 +40,25 @@ function externosEmprestimo(matricula: string): { valorParcela: number; parcelas
 
 function requireBancoRole(j: JwtClaims): void {
   if (j.role !== "banco") throw Errors.forbidden("Requer perfil banco");
+}
+
+// Presets CUSTOMIZADOS de permissao por banco (banco_perfil_presets).
+// Hidrata do PG no primeiro request; write-through em cada upsert.
+let _presetsBancoLoad: Promise<void> | null = null;
+async function ensurePresetsBancoLoaded(env: Env): Promise<void> {
+  if (_presetsBancoLoad) return _presetsBancoLoad;
+  _presetsBancoLoad = (async () => {
+    try {
+      const rows = await loadCollection<BancoPerfilPreset>(env, "banco_perfil_presets");
+      hydrateBancoPresets(rows);
+    } catch { _presetsBancoLoad = null; }
+  })();
+  return _presetsBancoLoad;
+}
+async function persistBancoPreset(env: Env, preset: BancoPerfilPreset): Promise<void> {
+  // Chave composta bancoId:key pra nao colidir entre bancos.
+  const id = `${preset.bancoId}:${preset.key}`;
+  try { await upsertCollectionRow(env, "banco_perfil_presets", id, preset); } catch { /* fail-safe */ }
 }
 
 const brlNotif = (n: number) => `R$ ${(Math.round(n * 100) / 100).toFixed(2).replace(".", ",")}`;
@@ -1073,7 +1093,32 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const usuarios = listUsuarios({ perfil: perfil ?? undefined, somenteAdmin })
       .filter((u) => u.bancoId === (j.banco_id ?? -1))
       .map(({ cpf: _cpf, ...rest }) => rest);
-    return c.json({ usuarios });
+    // Presets customizados nomeados desse banco — o front usa pra popular o
+    // dropdown no modal de criacao/edicao de usuario.
+    await ensurePresetsBancoLoaded(c.env);
+    const presets = j.banco_id != null
+      ? listBancoPresets(j.banco_id).map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes }))
+      : [];
+    return c.json({ usuarios, presets });
+  })
+  // Endpoints dedicados de presets — get/upsert em tela dedicada ou hot-save
+  // sem passar por criacao de usuario.
+  .get("/v1/portal/banco/perfil-presets", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    await ensurePresetsBancoLoaded(c.env);
+    return c.json({ presets: listBancoPresets(j.banco_id).map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })) });
+  })
+  .post("/v1/portal/banco/perfil-presets", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const body = z.object({ nome: z.string().min(2).max(60), permissoes: z.array(z.string().min(1).max(64)).min(1).max(200) }).parse(await c.req.json());
+    await ensurePresetsBancoLoaded(c.env);
+    const preset = upsertBancoPreset({ bancoId: j.banco_id, nome: body.nome, permissoes: body.permissoes }, new Date().toISOString());
+    await persistBancoPreset(c.env, preset);
+    return c.json({ preset: { key: preset.key, nome: preset.nome, permissoes: preset.permissoes } }, 201);
   })
   .get("/v1/portal/banco/cadastros/usuarios/:id", async (c) => {
     const j = c.get("jwt");
@@ -1119,6 +1164,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         permissoes: z.array(z.string().min(1).max(64)).max(200).optional(),
         ipsPermitidos: z.array(z.string()).default([]),
         ativo: z.boolean().default(true),
+        // Nome do preset customizado — obrigatorio no front quando perfil e'
+        // "personalizado" e esta CRIANDO. Salva a config como preset reusavel.
+        presetNome: z.string().min(2).max(60).optional(),
       })
       .parse(await c.req.json());
     // Isolamento: se editando, usuario existente tem que ser do proprio banco.
@@ -1128,7 +1176,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     }
     // Fallback bancoId=1 removido — banco sem banco_id nao pode criar usuario.
     if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
-    const saved = upsertUsuario({ ...body, bancoId: j.banco_id });
+    await ensurePresetsBancoLoaded(c.env);
+    const { presetNome, ...bodyUpsert } = body;
+    const saved = upsertUsuario({ ...bodyUpsert, bancoId: j.banco_id });
+    if (presetNome && Array.isArray(body.permissoes) && body.permissoes.length > 0) {
+      const preset = upsertBancoPreset({ bancoId: j.banco_id, nome: presetNome, permissoes: body.permissoes }, new Date().toISOString());
+      await persistBancoPreset(c.env, preset);
+    }
     appendAudit(auditCtx(c), {
       categoria: "acesso",
       acao: body.id ? "banco_usuario_editado" : "banco_usuario_criado",

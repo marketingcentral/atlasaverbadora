@@ -242,3 +242,44 @@ export function reativarUsuario(id: string): boolean {
   u.ativo = true;
   return true;
 }
+
+// ============================================================
+// Presets CUSTOMIZADOS nomeados por banco. Cliente pediu 22/07/2026:
+// ao criar usuario com config PERSONALIZADA, o admin do banco nomeia
+// a config e ela vira preset reutilizavel no dropdown. Isolado por
+// bancoId — cada banco enxerga so seus presets.
+// ============================================================
+export interface BancoPerfilPreset {
+  bancoId: number;
+  key: string;
+  nome: string;
+  permissoes: string[];
+  criadoEm: string;
+}
+const _presets: BancoPerfilPreset[] = [];
+
+function slugBancoPreset(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+export function listBancoPresets(bancoId: number): BancoPerfilPreset[] {
+  return _presets.filter((p) => p.bancoId === bancoId);
+}
+export function upsertBancoPreset(input: { bancoId: number; nome: string; permissoes: string[] }, now: string): BancoPerfilPreset {
+  const key = slugBancoPreset(input.nome);
+  const existing = _presets.find((p) => p.bancoId === input.bancoId && p.key === key);
+  if (existing) {
+    existing.nome = input.nome.trim();
+    existing.permissoes = [...input.permissoes];
+    return existing;
+  }
+  const novo: BancoPerfilPreset = { bancoId: input.bancoId, key, nome: input.nome.trim(), permissoes: [...input.permissoes], criadoEm: now };
+  _presets.push(novo);
+  return novo;
+}
+export function hydrateBancoPresets(rows: BancoPerfilPreset[]): void {
+  _presets.length = 0;
+  _presets.push(...rows);
+}
+export function exportBancoPresetsRaw(): BancoPerfilPreset[] {
+  return [..._presets];
+}

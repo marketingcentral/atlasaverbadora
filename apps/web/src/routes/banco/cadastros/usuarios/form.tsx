@@ -10,7 +10,7 @@ import {
   TextareaField,
 } from "@atlas/ui/web";
 import { atlas } from "../../../../lib/sdk";
-import type { BancoPerfil, BancoUsuarioInput } from "@atlas/sdk";
+import type { BancoPerfil, BancoPerfilPreset, BancoUsuarioInput } from "@atlas/sdk";
 import {
   BANCO_PRESETS,
   BANCO_PRESET_LABELS,
@@ -43,6 +43,20 @@ export function BancoUsuariosForm() {
   const [ipsRaw, setIpsRaw] = useState("");
   const [ativo, setAtivo] = useState(true);
   const [permissoes, setPermissoes] = useState<string[]>([...BANCO_PRESETS.operador]);
+  const [presetNome, setPresetNome] = useState("");
+  // Etapa 2: quando clicar Salvar com config personalizada em criacao, abre
+  // overlay dedicado pra nomear o preset ANTES de salvar. UX alinhado ao
+  // padrao da prefeitura (colega refinou 22/07/2026).
+  const [etapaNomePreset, setEtapaNomePreset] = useState(false);
+
+  // Presets customizados do banco (nomeados). Aparecem no dropdown junto com
+  // os presets nativos. Carrega uma vez no mount — invalida no onSuccess.
+  const presetsQ = useQuery({
+    queryKey: ["banco", "perfil-presets"],
+    queryFn: () => atlas.banco.perfilPresetsBanco(),
+    staleTime: 30_000,
+  });
+  const presetsCustom: BancoPerfilPreset[] = presetsQ.data?.presets ?? [];
 
   useEffect(() => {
     if (existing.data) {
@@ -59,12 +73,17 @@ export function BancoUsuariosForm() {
 
   const supervisor = permissoes.includes("*");
   const perfilDetectado = useMemo<BancoPerfilLabel>(() => detectarBancoPreset(permissoes), [permissoes]);
-  const [presetEscolhido, setPresetEscolhido] = useState<BancoPerfilLabel>(perfilDetectado);
+  const [presetEscolhido, setPresetEscolhido] = useState<string>(perfilDetectado);
   useEffect(() => { setPresetEscolhido(perfilDetectado); }, [perfilDetectado]);
+  // Nomear preset e' obrigatorio apenas ao CRIAR (isNovo) com config
+  // personalizada (nao bate com nenhum preset nativo nem salvo).
+  const exigePresetNome = isNovo && perfilDetectado === "personalizado";
 
-  function aplicarPreset(v: BancoPerfilLabel) {
+  function aplicarPreset(v: string) {
     setPresetEscolhido(v);
-    setPermissoes([...(BANCO_PRESETS[v] ?? [])]);
+    const custom = presetsCustom.find((p) => p.key === v);
+    if (custom) { setPermissoes([...custom.permissoes]); return; }
+    setPermissoes([...(BANCO_PRESETS[v as BancoPerfilLabel] ?? [])]);
   }
   function togglePermissao(key: string) {
     if (supervisor) {
@@ -88,11 +107,14 @@ export function BancoUsuariosForm() {
         permissoes,
         ipsPermitidos: ipsRaw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean),
         ativo,
+        // So manda o nome do preset quando for criar com config personalizada.
+        presetNome: exigePresetNome ? presetNome.trim() : undefined,
       };
       return atlas.banco.upsertUsuario(body);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["banco", "usuarios"] });
+      qc.invalidateQueries({ queryKey: ["banco", "perfil-presets"] });
       if (id) qc.invalidateQueries({ queryKey: ["banco", "usuario", id] });
       nav("/banco/cadastros/usuarios");
     },
@@ -104,10 +126,52 @@ export function BancoUsuariosForm() {
     <form
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
-        save.mutate();
+        if (exigePresetNome) { setEtapaNomePreset(true); } else { save.mutate(); }
       }}
       style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%" }}
     >
+      {etapaNomePreset ? (
+        <div
+          onClick={() => setEtapaNomePreset(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
+            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "var(--bg-elev)", border: "1px solid var(--border-strong)",
+              borderRadius: 12, padding: 24, width: "min(480px, 92vw)",
+              display: "flex", flexDirection: "column", gap: 12,
+            }}
+          >
+            <h3 style={{ margin: 0 }}>Nome do preset</h3>
+            <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
+              Você personalizou as permissões (<b>{totalMarcadas}</b> marcada(s)). Dê um nome pra essa
+              configuração — fica salva como preset e vira opção reutilizável pra outros usuários do banco.
+            </p>
+            <TextField
+              label="Nome do preset"
+              value={presetNome}
+              onChange={(e) => setPresetNome(e.target.value)}
+              placeholder="ex.: Analista de crédito"
+              autoFocus
+            />
+            {save.error ? (
+              <div style={{ color: "var(--danger-500)", fontSize: 13 }}>
+                {save.error instanceof Error ? save.error.message : "Erro ao salvar"}
+              </div>
+            ) : null}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
+              <Button variant="ghost" type="button" onClick={() => setEtapaNomePreset(false)}>Voltar</Button>
+              <Button type="button" onClick={() => save.mutate()} disabled={save.isPending || presetNome.trim().length < 2}>
+                {save.isPending ? "Salvando..." : "Salvar"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <header>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
           Cadastros • Usuários
@@ -171,17 +235,35 @@ export function BancoUsuariosForm() {
               Perfil atual: <b>{perfilDetectado}</b> · <b>{totalMarcadas}</b> {supervisor ? "(todas via *)" : "marcada(s)"}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <SelectField
-              label="Preset"
-              value={presetEscolhido}
-              onChange={(e) => aplicarPreset(e.target.value as BancoPerfilLabel)}
-              options={BANCO_PRESET_LABELS.map((p) => ({ value: p.value, label: p.label }))}
-            />
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-muted)" }}>
+              <span>Preset</span>
+              <select
+                value={presetEscolhido}
+                onChange={(e) => aplicarPreset(e.target.value)}
+                style={{
+                  minWidth: 180, padding: "8px 10px", borderRadius: 8,
+                  background: "var(--bg-elev-2)", color: "var(--text)",
+                  border: "1px solid var(--border-strong)", fontSize: 13,
+                }}
+              >
+                {BANCO_PRESET_LABELS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+                {presetsCustom.length > 0 ? (
+                  <optgroup label="Presets salvos">
+                    {presetsCustom.map((p) => (
+                      <option key={p.key} value={p.key}>{p.nome}</option>
+                    ))}
+                  </optgroup>
+                ) : null}
+              </select>
+            </label>
             <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes(["*"])}>Marcar tudo</Button>
             <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes([])}>Limpar</Button>
           </div>
         </div>
+
 
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",

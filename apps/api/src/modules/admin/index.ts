@@ -22,7 +22,7 @@ import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-rese
 import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria, refreshTombamento, marcarTombamentoSubstituido, persistLotePublic } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
 import { appendAudit, auditCategorias, listAudit, listAuditAsync, auditCtx, type AuditCategoria } from "./auditoria.js";
-import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
+import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, listAverbadoraPresets, upsertAverbadoraPreset, hydrateAverbadoraPresets, exportAverbadoraPresetsRaw, type AverbadoraUser, type AverbadoraPerfilPreset } from "./perfis-admin.js";
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
@@ -603,6 +603,22 @@ async function persistPerfis(env: Env): Promise<void> {
     // Criar/editar usuario libera o purge lock — base voltou a ser povoada.
     if (env.KV_CACHE && exportUsersRaw().length > 0) await env.KV_CACHE.delete("purge:usuarios");
   } catch { /* fail-safe */ }
+}
+// Presets CUSTOMIZADOS de permissao (admin_perfil_presets) — nomeados,
+// reutilizaveis no dropdown "Perfil" da UI de criacao de usuario averbadora.
+let _presetsAvbLoad: Promise<void> | null = null;
+async function ensurePresetsAvbLoaded(env: Env): Promise<void> {
+  if (_presetsAvbLoad) return _presetsAvbLoad;
+  _presetsAvbLoad = (async () => {
+    try {
+      const rows = await loadCollection<AverbadoraPerfilPreset>(env, "admin_perfil_presets");
+      hydrateAverbadoraPresets(rows);
+    } catch { _presetsAvbLoad = null; }
+  })();
+  return _presetsAvbLoad;
+}
+async function persistAverbadoraPreset(env: Env, preset: AverbadoraPerfilPreset): Promise<void> {
+  try { await upsertCollectionRow(env, "admin_perfil_presets", preset.key, preset); } catch { /* fail-safe */ }
 }
 // Persistência do status do servidor (ativo/bloqueado/arquivado) — o override em memória.
 let _servidorStatusLoad: Promise<void> | null = null;
@@ -3771,15 +3787,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
   })
 
-  // ===== Perfis admin (passo 1: perfis + 2FA) =====
+  // ===== Perfis admin (passo 1: perfis + 2FA + presets customizados) =====
   .get("/v1/admin/perfis", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
-    await ensurePerfisLoaded(c.env);
-    return c.json({ usuarios: listAverbadoraUsers(), perfis: perfilOptions() });
+    await Promise.all([ensurePerfisLoaded(c.env), ensurePresetsAvbLoaded(c.env)]);
+    return c.json({
+      usuarios: listAverbadoraUsers(),
+      perfis: perfilOptions(),
+      // Presets nomeados que o admin ja salvou (aparecem no dropdown do modal).
+      presets: listAverbadoraPresets().map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })),
+    });
   })
   .post("/v1/admin/perfis", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
-    await ensurePerfisLoaded(c.env);
+    await Promise.all([ensurePerfisLoaded(c.env), ensurePresetsAvbLoaded(c.env)]);
     const body = z.object({
       id: z.number().int().optional(),
       nome: z.string().min(2),
@@ -3789,11 +3810,32 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       ativo: z.boolean().default(true),
       password: z.string().min(6).optional(),
       twoFactorEnabled: z.boolean().optional(),
+      // Nome do preset customizado — obrigatorio no front quando a config e'
+      // "personalizado" e esta CRIANDO. Salva a config como preset reutilizavel.
+      presetNome: z.string().min(2).max(60).optional(),
     }).parse(await c.req.json());
     const u = await upsertAverbadoraUser(body);
     await persistPerfis(c.env);
-    appendAudit(auditCtx(c), { categoria: "acesso", acao: body.id ? "usuario_atualizado" : "usuario_criado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora ${u.email} (perfil=${u.perfil}, 2FA=${u.twoFactorEnabled}) ${body.id ? "atualizado" : "criado"}.` });
+    if (body.presetNome && Array.isArray(body.permissoes) && body.permissoes.length > 0) {
+      const preset = upsertAverbadoraPreset({ nome: body.presetNome, permissoes: body.permissoes }, new Date().toISOString());
+      await persistAverbadoraPreset(c.env, preset);
+    }
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: body.id ? "usuario_atualizado" : "usuario_criado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora ${u.email} (perfil=${u.perfil}, 2FA=${u.twoFactorEnabled}) ${body.id ? "atualizado" : "criado"}${body.presetNome ? ` + preset "${body.presetNome}" salvo` : ""}.` });
     return c.json({ usuario: u });
+  })
+  // Presets customizados de permissao (nomeados, globais na averbadora).
+  .get("/v1/admin/perfil-presets", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
+    await ensurePresetsAvbLoaded(c.env);
+    return c.json({ presets: listAverbadoraPresets().map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })) });
+  })
+  .post("/v1/admin/perfil-presets", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
+    await ensurePresetsAvbLoaded(c.env);
+    const body = z.object({ nome: z.string().min(2).max(60), permissoes: z.array(z.string().min(1).max(64)).min(1).max(200) }).parse(await c.req.json());
+    const preset = upsertAverbadoraPreset({ nome: body.nome, permissoes: body.permissoes }, new Date().toISOString());
+    await persistAverbadoraPreset(c.env, preset);
+    return c.json({ preset: { key: preset.key, nome: preset.nome, permissoes: preset.permissoes } }, 201);
   })
   .post("/v1/admin/perfis/:id/2fa/rotate", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
