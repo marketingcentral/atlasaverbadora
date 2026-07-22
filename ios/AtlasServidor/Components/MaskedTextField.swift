@@ -38,7 +38,14 @@ struct MaskedTextField: UIViewRepresentable {
     func updateUIView(_ tf: UITextField, context: Context) {
         let formatado = mask(text)
         if tf.text != formatado { tf.text = formatado }
-        tf.isSecureTextEntry = isSecure
+        // Ao alternar o "olho", o UIKit descarta o texto do campo seguro. Reatribuir
+        // logo depois preserva o que já foi digitado.
+        if tf.isSecureTextEntry != isSecure {
+            tf.isSecureTextEntry = isSecure
+            let atual = tf.text
+            tf.text = nil
+            tf.text = atual
+        }
         tf.placeholder = placeholder
     }
 

@@ -24,18 +24,14 @@ struct AtlasField: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Atlas.inkMuted)
             HStack(spacing: 8) {
+                // TODOS os campos usam o MaskedTextField (UIKit). Alternar entre
+                // SecureField e TextField do SwiftUI mantinha os DOIS vivos: a
+                // digitação chegava nos dois e o texto duplicava ("teste123" virava
+                // "teste123teste123"), além de vazar a senha em texto puro.
                 Group {
-                    if let mask {
-                        // Campo com máscara (CPF/telefone) — UIKit por baixo, para não
-                        // perder caracteres ao digitar rápido ou colar. Ver MaskedTextField.
-                        MaskedTextField(text: $texto, placeholder: placeholder,
-                                        keyboard: keyboard, isSecure: secure && !revelado,
-                                        mask: mask)
-                    } else if secure && !revelado {
-                        SecureField(placeholder, text: $texto)
-                    } else {
-                        TextField(placeholder, text: $texto)
-                    }
+                    MaskedTextField(text: $texto, placeholder: placeholder,
+                                    keyboard: keyboard, isSecure: secure && !revelado,
+                                    mask: mask ?? { $0 })
                 }
                 .font(.system(size: 16))
                 .keyboardType(keyboard)
@@ -66,7 +62,11 @@ struct AtlasField: View {
         // Propaga pra fora. A formatação em si é do MaskedTextField (quando há
         // máscara) — reatribuir `texto` aqui brigava com o campo e perdia teclas.
         .onChange(of: texto) { novo in
-            if let onChange { onChange(novo) } else { value = novo }
+            // SEMPRE escreve em `value`. Antes isso era um else do `onChange`, então
+            // o campo de senha (que passa onChange pra limpar o erro) nunca gravava
+            // em vm.senha — o login ia com a senha VAZIA e falhava sempre.
+            value = novo
+            onChange?(novo)
         }
         // Mudança vinda de fora (ex.: CPF pré-preenchido pelo "Lembre-me").
         .onChange(of: value) { novo in
@@ -78,7 +78,16 @@ struct AtlasField: View {
 
 @MainActor
 final class LoginModel: ObservableObject {
-    @Published var cpf = ""
+    /// Guarda SEMPRE só os dígitos. O campo exibe mascarado ("580.886.363-53"),
+    /// mas gravar a máscara aqui fazia a validação contar 14 e barrar um CPF
+    /// completo — e mandava o CPF formatado pra API. (Swift não re-dispara o
+    /// didSet numa atribuição feita dentro dele.)
+    @Published var cpf = "" {
+        didSet {
+            let d = String(cpf.filter(\.isNumber).prefix(11))
+            if d != cpf { cpf = d }
+        }
+    }
     @Published var senha = ""
     @Published var loading = false
     @Published var error: String?
@@ -95,14 +104,18 @@ final class LoginModel: ObservableObject {
     func onCpf(_ v: String) { cpf = String(v.filter(\.isNumber).prefix(11)); error = nil }
 
     func login(onSuccess: @escaping () -> Void) {
-        guard cpf.count == 11 else { error = "Informe um CPF válido (11 dígitos)."; return }
+        // O campo guarda o texto MASCARADO ("580.886.363-53"). Normaliza aqui em vez
+        // de confiar no formato que chegou: contar os 14 caracteres da máscara fazia
+        // o guard barrar um CPF completo com "Informe um CPF válido".
+        let digitos = String(cpf.filter(\.isNumber).prefix(11))
+        guard digitos.count == 11 else { error = "Informe um CPF válido (11 dígitos)."; return }
         guard senha.count >= 6 else { error = "A senha deve ter ao menos 6 caracteres."; return }
         loading = true; error = nil
         Task {
             do {
-                _ = try await Repo.login(cpf: cpf, senha: senha)
+                _ = try await Repo.login(cpf: digitos, senha: senha)
                 AppPrefs.shared.lembrarLogin = lembrar
-                AppPrefs.shared.cpfSalvo = lembrar ? cpf : nil
+                AppPrefs.shared.cpfSalvo = lembrar ? digitos : nil
                 loading = false
                 onSuccess()
             } catch let e as ApiError {

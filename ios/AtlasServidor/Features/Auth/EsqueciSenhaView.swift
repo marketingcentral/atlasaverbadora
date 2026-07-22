@@ -10,7 +10,16 @@ final class EsqueciSenhaModel: ObservableObject {
     @Published var loading = false
     @Published var error: String?
 
-    @Published var cpf = ""
+    /// Guarda SEMPRE só os dígitos. O campo exibe mascarado ("580.886.363-53"),
+    /// mas gravar a máscara aqui fazia a validação contar 14 e barrar um CPF
+    /// completo — e mandava o CPF formatado pra API. (Swift não re-dispara o
+    /// didSet numa atribuição feita dentro dele.)
+    @Published var cpf = "" {
+        didSet {
+            let d = String(cpf.filter(\.isNumber).prefix(11))
+            if d != cpf { cpf = d }
+        }
+    }
     @Published var destinoMasked = ""
     @Published var codigo = ""
     @Published var senha = ""

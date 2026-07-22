@@ -10,7 +10,16 @@ final class PrimeiroAcessoModel: ObservableObject {
     @Published var loading = false
     @Published var error: String?
 
-    @Published var cpf = ""
+    /// Guarda SEMPRE só os dígitos. O campo exibe mascarado ("580.886.363-53"),
+    /// mas gravar a máscara aqui fazia a validação contar 14 e barrar um CPF
+    /// completo — e mandava o CPF formatado pra API. (Swift não re-dispara o
+    /// didSet numa atribuição feita dentro dele.)
+    @Published var cpf = "" {
+        didSet {
+            let d = String(cpf.filter(\.isNumber).prefix(11))
+            if d != cpf { cpf = d }
+        }
+    }
     @Published var nome = ""
     @Published var cargo: String?
     @Published var origem: String?
@@ -26,11 +35,13 @@ final class PrimeiroAcessoModel: ObservableObject {
     @Published var codigo = ""
 
     func buscar() {
-        guard cpf.count == 11 else { error = "Informe um CPF válido (11 dígitos)."; return }
+        // O campo guarda o CPF MASCARADO — normaliza antes de validar/enviar.
+        let digitos = String(cpf.filter(\.isNumber).prefix(11))
+        guard digitos.count == 11 else { error = "Informe um CPF válido (11 dígitos)."; return }
         loading = true; error = nil
         Task {
             do {
-                let r = try await Repo.paBuscar(cpf: cpf)
+                let r = try await Repo.paBuscar(cpf: digitos)
                 nome = r.nome ?? ""
                 cargo = r.cargo
                 origem = r.origem
