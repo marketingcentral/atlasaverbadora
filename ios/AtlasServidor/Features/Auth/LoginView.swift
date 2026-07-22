@@ -13,6 +13,10 @@ struct AtlasField: View {
     var onChange: ((String) -> Void)? = nil
 
     @State private var revelado = false
+    /// Texto EXIBIDO no campo. Precisa ser um @State próprio: com um Binding
+    /// computado (get aplicando a máscara), o TextField do SwiftUI mantém o texto
+    /// interno enquanto se digita e nunca relê o get — a máscara não aparecia.
+    @State private var texto = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -21,10 +25,16 @@ struct AtlasField: View {
                 .foregroundStyle(Atlas.inkMuted)
             HStack(spacing: 8) {
                 Group {
-                    if secure && !revelado {
-                        SecureField(placeholder, text: binding)
+                    if let mask {
+                        // Campo com máscara (CPF/telefone) — UIKit por baixo, para não
+                        // perder caracteres ao digitar rápido ou colar. Ver MaskedTextField.
+                        MaskedTextField(text: $texto, placeholder: placeholder,
+                                        keyboard: keyboard, isSecure: secure && !revelado,
+                                        mask: mask)
+                    } else if secure && !revelado {
+                        SecureField(placeholder, text: $texto)
                     } else {
-                        TextField(placeholder, text: binding)
+                        TextField(placeholder, text: $texto)
                     }
                 }
                 .font(.system(size: 16))
@@ -52,16 +62,17 @@ struct AtlasField: View {
                     .stroke(Atlas.divider, lineWidth: 1)
             )
         }
-    }
-
-    private var binding: Binding<String> {
-        Binding(
-            get: { mask?(value) ?? value },
-            set: { novo in
-                value = novo
-                onChange?(novo)
-            }
-        )
+        .onAppear { texto = mask?(value) ?? value }
+        // Propaga pra fora. A formatação em si é do MaskedTextField (quando há
+        // máscara) — reatribuir `texto` aqui brigava com o campo e perdia teclas.
+        .onChange(of: texto) { novo in
+            if let onChange { onChange(novo) } else { value = novo }
+        }
+        // Mudança vinda de fora (ex.: CPF pré-preenchido pelo "Lembre-me").
+        .onChange(of: value) { novo in
+            let formatado = mask?(novo) ?? novo
+            if formatado != texto { texto = formatado }
+        }
     }
 }
 
