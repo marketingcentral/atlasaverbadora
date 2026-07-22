@@ -18,7 +18,7 @@ import { enviarNotificacao } from "../admin/mailer.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit, auditCtx } from "../admin/auditoria.js";
-import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
+import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs, refreshConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "../admin/id-unico.js";
 import { importTombamento, listLotes, listLinhas, refreshTombamento, listExternalLoans, ensureTombamentoLoaded } from "../admin/tombamento.js";
 import {
@@ -793,6 +793,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ensurePrefeiturasLoaded(c.env),
       refreshConvenios(c.env),
       refreshIdUnicoConfigs(c.env),
+      refreshConvenioConfigs(c.env), // ve a config REAL editada pela averbadora
     ]);
     // Backfill: se ainda nao tem config, gera default e persiste no PG.
     const p = prefeituras.find((x) => x.id === id);

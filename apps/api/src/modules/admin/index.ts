@@ -17,7 +17,7 @@ import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
 import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
 import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "./id-unico.js";
-import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
+import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, refreshConvenioConfigs, persistConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria, refreshTombamento, marcarTombamentoSubstituido, persistLotePublic } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
@@ -3470,10 +3470,12 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const id = c.req.param("id");
     if (!CONVENIOS_MOCK.find((cv) => cv.id === id)) throw Errors.notFound("convenio");
+    await refreshConvenioConfigs(c.env); // ve a config persistida (pos-deploy/cross-isolate)
     return c.json({ config: getConvenioConfig(id) ?? null });
   })
   .get("/v1/admin/convenios-configs", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
+    await refreshConvenioConfigs(c.env);
     return c.json({ configs: listConvenioConfigs() });
   })
   .post("/v1/admin/convenios/:id/config", async (c) => {
@@ -3497,6 +3499,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       })
       .parse(await c.req.json());
     const config = upsertConvenioConfig({ id, ...body });
+    await persistConvenioConfig(c.env, config); // sobrevive a deploy + visivel pra prefeitura
     appendAudit(auditCtx(c), { categoria: "convenio_config", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config do convenio ${id} atualizada (prazoTrava=${body.prazoTravaHoras}h, formato=${body.formatoImportacao}).` });
     pushEvent("info", "admin.convenios.config", `Config do convenio ${id} salva por user:${c.get("jwt").sub}`);
     return c.json({ config });
