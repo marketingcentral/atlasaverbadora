@@ -452,6 +452,20 @@ export interface AuditDbFilter {
   desde?: string;
   ate?: string;
 }
+/** Backfill de categorias de eventos ja gravados. Idempotente — so afeta rows
+ *  onde acao=acaoAlvo E categoria=categoriaAntiga. Retorna quantos updates. */
+export async function backfillAuditCategoria(env: Env, acaoAlvo: string, categoriaAntiga: string, categoriaNova: string): Promise<number> {
+  await ensureCollection(env, "admin_auditoria");
+  const rows = (await getDb(env).execute(sql`
+    UPDATE admin_auditoria
+       SET data = jsonb_set(data, '{categoria}', to_jsonb(${categoriaNova}::text))
+     WHERE data->>'acao' = ${acaoAlvo}
+       AND data->>'categoria' = ${categoriaAntiga}
+    RETURNING id
+  `)) as unknown as { id: string }[];
+  return rows.length;
+}
+
 export async function queryAuditFromDb<T = Record<string, unknown>>(env: Env, filter: AuditDbFilter, limit = 500): Promise<T[]> {
   await ensureCollection(env, "admin_auditoria");
   // Monta WHERE incrementalmente. Todos os campos vivem em data->> — indice

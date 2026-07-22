@@ -16,6 +16,7 @@ import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, li
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
 import { enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
 import { listExternalLoans, refreshTombamento } from "../admin/tombamento.js";
+import { appendAudit, auditCtx } from "../admin/auditoria.js";
 import type { ContratoFull } from "./store.js";
 
 /** Emprestimos externos (tombamento) do bucket EMPRESTIMO de um servidor.
@@ -638,6 +639,16 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const r = tratarFalhaContrato(adf, body.acao, body.motivo, `user:${j.sub}`);
       if (!r) throw Errors.notFound("contrato");
       await persistContrato(c.env, adf);
+      appendAudit(auditCtx(c), {
+        categoria: "margem",
+        acao: `banco_falha_${body.acao}`,
+        propostaId: adf,
+        matricula: r.matricula,
+        cpf: r.cpfMasked,
+        userId: `banco:${j.banco_id ?? "?"}`,
+        userRole: "banco",
+        detalhes: `Banco ${j.banco_id} tratou falha do contrato ${adf} com acao "${body.acao}" — motivo: ${body.motivo}.`,
+      });
       pushEvent(
         "info",
         "banco.tratou_falha",
@@ -687,6 +698,24 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
       if (!r) throw Errors.notFound("contrato");
       await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
+      // Auditoria: decisao contratual do banco (aprovar/recusar/quitar/etc)
+      // muda estado de dinheiro e obrigacao. Categoria pre_reserva enquanto
+      // esta em analise; margem quando ja e contrato ativo (quitar/suspender).
+      const bancoNomeAudit = bancos.find((b) => b.id === (j.banco_id ?? -1))?.nome ?? `Banco ${j.banco_id}`;
+      const categoriaAudit = (acao === "quitar" || acao === "suspender" || acao === "alongar" || acao === "alterar")
+        ? "margem" as const
+        : "pre_reserva" as const;
+      const brl = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+      appendAudit(auditCtx(c), {
+        categoria: categoriaAudit,
+        acao: `banco_${acao}`,
+        propostaId: adf,
+        matricula: r.matricula,
+        cpf: r.cpfMasked,
+        userId: `banco:${j.banco_id ?? "?"}`,
+        userRole: "banco",
+        detalhes: `${bancoNomeAudit} ${acao === "aprovar" ? "aprovou" : acao === "confirmar" ? "averbou" : acao === "quitar" ? "quitou" : acao === "cancelar" ? "cancelou" : acao === "suspender" ? "suspendeu" : acao === "alongar" ? "alongou" : "alterou"} a proposta ADF ${adf} (parcela ${brl(r.valorParcela)} x ${r.totalParcelas}, ${r.nome})${body.motivo ? ` — motivo: ${body.motivo}` : ""}.`,
+      });
       // Notifica a averbadora sempre que o banco APROVA ou CONFIRMA.
       if (acao === "aprovar" || acao === "confirmar") {
         const bancoNome = bancos.find((b) => b.id === r.bancoId)?.nome ?? `Banco ${r.bancoId}`;
@@ -868,6 +897,17 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       }
       setContratoCcb(adf, key, `user:${j.sub}`);
       await persistContrato(c.env, adf);
+      appendAudit(auditCtx(c), {
+        categoria: "termo_aceite",
+        acao: oldKey ? "ccb_substituida" : "ccb_anexada",
+        propostaId: adf,
+        matricula: owner.matricula,
+        cpf: owner.cpfMasked,
+        userId: `banco:${j.banco_id ?? "?"}`,
+        userRole: "banco",
+        termoAceito: `ccb:${key}`,
+        detalhes: `Banco ${j.banco_id} ${oldKey ? "SUBSTITUIU" : "anexou"} CCB do contrato ADF ${adf} (${file.name}, ${Math.round(file.size / 1024)} KiB, ${storedType})${oldKey ? " — versao anterior removida do R2" : ""}.`,
+      });
     }
     return c.json({ key, size: file.size, contentType: storedType });
   })

@@ -1215,6 +1215,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (body.telefone !== undefined) x.telefone = body.telefone;
     });
     await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
+    const brChanges: string[] = [];
+    if (body.email !== undefined) brChanges.push(`email -> ${maskEmailSrv(body.email)}`);
+    if (body.telefone !== undefined) brChanges.push(`telefone -> ${body.telefone.slice(-4).padStart(body.telefone.length, "•")}`);
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "servidor_editou_contato",
+      cpf: maskCPF(s.cpf),
+      matricula: s.matricula,
+      userId: `servidor:${j.sub}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${s.nome} atualizou contato: ${brChanges.join("; ")}. Vetor takeover — verificar se foi de fato o titular.`,
+    });
     return c.json({ ok: n > 0, email: body.email, telefone: body.telefone });
   })
   // Redefinicao direta de senha (fluxo simples, sem codigo por e-mail): valida a
@@ -1242,6 +1254,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const novoHash = await sha256Hex(body.nova_senha);
     await setServidorPassword(c.env, s.cpf, novoHash);
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = novoHash; });
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "servidor_trocou_senha_logado",
+      cpf: maskCPF(s.cpf),
+      matricula: s.matricula,
+      userId: `servidor:${j.sub}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${s.nome} redefiniu a propria senha (fluxo /me/senha/redefinir — exige senha atual, sem codigo).`,
+    });
     return c.json({ ok: true });
   })
   // Troca de senha: valida a senha atual + o código. Persiste o novo hash no Postgres.
@@ -1266,6 +1287,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await setServidorPassword(c.env, s.cpf, novoHash);
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = novoHash; });
     await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "servidor_trocou_senha_com_codigo",
+      cpf: maskCPF(s.cpf),
+      matricula: s.matricula,
+      userId: `servidor:${j.sub}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${s.nome} redefiniu a propria senha (fluxo /me/senha — exige senha atual + codigo por email).`,
+    });
     return c.json({ ok: true });
   })
   // Solicita a PORTABILIDADE de um emprestimo externo (do tombamento da prefeitura)

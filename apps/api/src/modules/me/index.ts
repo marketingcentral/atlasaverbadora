@@ -25,6 +25,7 @@ import {
 } from "../admin/index.js";
 import { SERVIDORES_BUSCA_MOCK } from "../portal-banco/fixtures.js";
 import { exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
+import { appendAudit, auditCtx } from "../admin/auditoria.js";
 
 /** Descreve UMA conta 2FA-capable — usada pelo setup pra mostrar account no QR
  *  e pelo confirm/disable pra ler/gravar as flags. Cada perfil resolve isso do
@@ -149,6 +150,13 @@ export const meRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims } 
     if (!ok) throw Errors.unauthorized("Codigo invalido. Tente novamente com o codigo atual do seu autenticador.");
     conta.set(setupSecret, true);
     await c.env.KV_SESSIONS.delete(`2fa_setup:${j.role}:${j.sub}`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "2fa_ativado",
+      userId: `${j.role}:${j.sub}`,
+      userRole: j.role,
+      detalhes: `2FA ATIVADO em self-service pelo ${j.role} ${conta.account}.`,
+    });
     return c.json({ ok: true, enabled: true });
   })
 
@@ -164,5 +172,15 @@ export const meRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims } 
     const ok = await verifyTotp(conta.currentSecret, code);
     if (!ok) throw Errors.unauthorized("Codigo invalido");
     conta.set(null, false);
+    // Disable de 2FA remove uma camada de protecao — evento CRITICO na trilha.
+    // Ataque comum: adversario que comprometeu senha desativa o 2FA pra sessao
+    // seguinte. Rastro obrigatorio pra deteccao pos-incidente.
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "2fa_desativado_self",
+      userId: `${j.role}:${j.sub}`,
+      userRole: j.role,
+      detalhes: `2FA DESATIVADO em self-service pelo ${j.role} ${conta.account}. Perda de camada de protecao — verificar se e' de fato o titular.`,
+    });
     return c.json({ ok: true, enabled: false });
   });

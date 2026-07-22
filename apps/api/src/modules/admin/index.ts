@@ -11,7 +11,7 @@ import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex,
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
 import { withIdempotency } from "../../_shared/idempotency.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, deleteCollectionRow, deleteTombamentoLote, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, deleteCollectionRow, deleteTombamentoLote, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato, backfillAuditCategoria } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
@@ -1556,11 +1556,21 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     pushEvent("error", "admin.db.reseed", `RESEED DESTRUTIVO confirmado por admin ${c.get("jwt")?.sub}: TRUNCATE + re-seed de servidores/bancos/prefeituras.`);
+    // Snapshot dos counts ANTES pra registrar quanto foi apagado (nao so o que
+    // sobrou depois do seed). Pushevent some em 24h; audit e permanente.
+    const beforeCounts = { bancos: bancos.length, prefeituras: prefeituras.length, servidores: SERVIDORES_BUSCA_MOCK.length };
     await reseedAll(c.env, BANCOS_SEED, PREFEITURAS_SEED, SERVIDORES_SEED);
     const [nb, np, ns] = [await loadBancos(c.env), await loadPrefeituras(c.env), await loadServidores(c.env)];
     bancos.length = 0; bancos.push(...nb);
     prefeituras.length = 0; prefeituras.push(...np);
     SERVIDORES_BUSCA_MOCK.length = 0; SERVIDORES_BUSCA_MOCK.push(...ns);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_reseed_destrutivo",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `TRUNCATE + reseed executado. Antes: bancos=${beforeCounts.bancos}, prefeituras=${beforeCounts.prefeituras}, servidores=${beforeCounts.servidores}. Depois (seed): bancos=${nb.length}, prefeituras=${np.length}, servidores=${ns.length}.`,
+    });
     return c.json({ ok: true, counts: { bancos: nb.length, prefeituras: np.length, servidores: ns.length } });
   })
 
@@ -1643,6 +1653,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (mats.includes(SERVIDORES_BUSCA_MOCK[i]!.matricula)) SERVIDORES_BUSCA_MOCK.splice(i, 1);
     }
     pushEvent("info", "admin.servidores.delete", `Delete cirurgico por admin ${j?.sub}: matriculas=${mats.join(",")} (${removidosServidores} servidores + ${removidosContratos} contratos).`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "servidores_delete_cirurgico",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `DELETE cirurgico de ${removidosServidores} servidor(es) + ${removidosContratos} contrato(s). Matriculas: ${mats.join(", ")}.`,
+    });
     return c.json({ ok: true, removidosServidores, removidosContratos });
   })
   .post("/v1/admin/db/purge-servidores", async (c) => {
@@ -1657,10 +1674,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     pushEvent("error", "admin.db.purge_servidores", `PURGE DE SERVIDORES confirmado por admin ${j?.sub}: TRUNCATE servidores + contratos + adfs + propostas.`);
+    const antesSrv = SERVIDORES_BUSCA_MOCK.length;
     // Seta flag ANTES do TRUNCATE pra evitar race com seed em isolate frio.
     if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:servidores", "1");
     await purgeServidores(c.env);
     SERVIDORES_BUSCA_MOCK.length = 0;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_servidores",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE TOTAL DE SERVIDORES executado (TRUNCATE servidores + contratos + adfs + propostas). ${antesSrv} servidor(es) em cache do isolate no momento da purge.`,
+    });
     return c.json({ ok: true, mensagem: "Base de servidores zerada. Bancos/prefeituras/convenios preservados." });
   })
 
@@ -1679,6 +1704,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     pushEvent("error", "admin.db.purge_contratos", `PURGE CIRURGICO de contratos confirmado por admin ${j?.sub}: TRUNCATE contratos + propostas + eventos + folhas. TOMBAMENTO PRESERVADO.`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_contratos",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE de contratos + propostas + ADFs + folhas executado. Tombamento e servidores/bancos/prefeituras preservados.`,
+    });
     await purgeContratosApenas(c.env);
     clearContratosMemoria();
     clearAdfsMemoria();
@@ -1718,6 +1750,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     bancos.length = 0;
     pushEvent("info", "admin.bancos.limpar", `Base de bancos zerada por admin ${j?.sub} (${antes} removidos).`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "bancos_limpar_base",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `Base de bancos zerada — ${antes} banco(s) deletado(s).`,
+    });
     return c.json({ ok: true, removidos: antes });
   })
   .post("/v1/admin/prefeituras/limpar-base", async (c) => {
@@ -1738,6 +1777,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     prefeituras.length = 0;
     pushEvent("info", "admin.prefeituras.limpar", `Base de prefeituras zerada por admin ${j?.sub} (${antes} removidas).`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "prefeituras_limpar_base",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `Base de prefeituras zerada — ${antes} prefeitura(s) deletada(s). Rows dependentes (convenios) ficam orfaos ate purge.`,
+    });
     return c.json({ ok: true, removidas: antes });
   })
   .post("/v1/admin/db/purge-prefeituras", async (c) => {
@@ -1759,10 +1805,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await c.env.KV_CACHE.put("purge:prefeituras", "1");
       await c.env.KV_CACHE.put("purge:servidores", "1");
     }
+    const antesP = prefeituras.length, antesC = CONVENIOS_MOCK.length, antesS = SERVIDORES_BUSCA_MOCK.length;
     await purgePrefeituras(c.env);
     prefeituras.length = 0;
     CONVENIOS_MOCK.length = 0;
     SERVIDORES_BUSCA_MOCK.length = 0;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_prefeituras",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE TOTAL DE PREFEITURAS executado (TRUNCATE prefeituras + convenios + folhas + ofertas + tabelas). Antes: prefeituras=${antesP}, convenios=${antesC}, servidores=${antesS}. Bancos preservados.`,
+    });
     return c.json({ ok: true, mensagem: "Prefeituras, convenios, folhas e ofertas zerados. Bancos preservados." });
   })
 
@@ -1789,6 +1843,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Limpa memoria in-isolate: users da averbadora.
     hydrateUsers([]);
     _perfisLoad = null;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_usuarios",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE DE USUARIOS executado (TRUNCATE users + banco_usuarios + admin_perfis). Dev-users (admin@atlas.test, banco@atlas.test) preservados.`,
+    });
     return c.json({ ok: true, mensagem: "Usuarios averbadora e banco zerados. Dev-users hardcoded preservados." });
   })
 
@@ -1807,8 +1868,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     pushEvent("error", "admin.db.purge_comunicados", `PURGE DE COMUNICADOS confirmado por admin ${j?.sub}: TRUNCATE admin_comunicados.`);
     if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:comunicados", "1");
+    const antesCom = COMUNICADOS_MOCK.length;
     await purgeComunicados(c.env);
     COMUNICADOS_MOCK.length = 0;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_comunicados",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE DE COMUNICADOS executado — ${antesCom} comunicado(s) em cache no momento.`,
+    });
     return c.json({ ok: true, mensagem: "Comunicados zerados." });
   })
 
@@ -3599,6 +3668,28 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Sem filtro, retorna o cache in-memory (rapido).
     const entries = await listAuditAsync(c.env, { categoria: categoria ?? undefined, cpf, matricula, propostaId, desde, ate }, limit);
     return c.json({ entries, categorias: auditCategorias() });
+  })
+
+  // Backfill idempotente: recategoriza eventos ja gravados quando a categoria
+  // atual esta errada. Usado apos correcao de bug (ex.: pre_reserva_cancelada
+  // era gravado como "margem" ate 22/07/2026). Restrito a admin com permissao
+  // "auditoria" — nao altera o payload alem do campo categoria.
+  .post("/v1/admin/auditoria/backfill-categoria", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "auditoria");
+    const body = z.object({
+      acao: z.string().min(1),
+      categoriaAntiga: z.string().min(1),
+      categoriaNova: z.string().min(1),
+    }).parse(await c.req.json());
+    const n = await backfillAuditCategoria(c.env, body.acao, body.categoriaAntiga, body.categoriaNova);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config", // fallback — nao existe categoria "meta" na trilha
+      acao: "audit_backfill_categoria",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Backfill: ${n} eventos ${body.acao} movidos de categoria "${body.categoriaAntiga}" -> "${body.categoriaNova}".`,
+    });
+    return c.json({ atualizados: n });
   })
 
   // Identidade do averbadora logado — usado no header do painel pra mostrar nome.
