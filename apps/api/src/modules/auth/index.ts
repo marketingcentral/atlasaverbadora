@@ -13,6 +13,20 @@ import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidore
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
 import { verifyTotp } from "../../_shared/totp.js";
 import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf, loadServidores, upsertPrefeitura, upsertBanco, upsertCollectionRow } from "../../db/repos.js";
+import { appendAudit } from "../admin/auditoria.js";
+
+/** Mascara CPF completo -> "000.***.***-00" (mesma forma que tombamento). */
+function maskCpfLocal(cpf: string): string {
+  const d = cpf.replace(/\D/g, "");
+  if (d.length < 11) return "";
+  return `${d.slice(0, 3)}.***.***-${d.slice(-2)}`;
+}
+/** Deriva CPF mascarado ou email mascarado do identifier de login. */
+function auditIdent(id: string): { cpf?: string; ident: string } {
+  const d = id.replace(/\D/g, "");
+  if (d.length === 11) return { cpf: maskCpfLocal(d), ident: maskCpfLocal(d) };
+  return { ident: maskEmail(id) };
+}
 
 /** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
 function maskEmail(email?: string): string {
@@ -287,7 +301,17 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       }
     }
 
-    if (!resolved) throw Errors.unauthorized("Credenciais invalidas");
+    if (!resolved) {
+      const ai = auditIdent(body.identifier);
+      appendAudit({
+        categoria: "acesso",
+        acao: "login_falhou",
+        cpf: ai.cpf,
+        userRole: "-",
+        detalhes: `Tentativa de login falhou para ${ai.ident} (credenciais invalidas).`,
+      });
+      throw Errors.unauthorized("Credenciais invalidas");
+    }
 
     // Validacao de referencia: se o usuario resolvido carrega banco_id ou
     // prefeitura_id, valida que a entidade referenciada EXISTE e esta ATIVA.
@@ -332,6 +356,16 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       needs2fa = !!(s?.twoFactorEnabled && s.twoFactorSecret);
     }
     if (needs2fa && c.env.KV_SESSIONS) {
+      const ai = auditIdent(body.identifier);
+      appendAudit({
+        categoria: "acesso",
+        acao: "login_2fa_pendente",
+        cpf: ai.cpf,
+        userId: `${resolved.role}:${resolved.id}`,
+        userRole: resolved.role,
+        deviceId: body.device_id,
+        detalhes: `Login OK, aguardando codigo 2FA de ${resolved.nome} (${ai.ident}).`,
+      });
       const mfaToken = generateRefreshToken();
       await c.env.KV_SESSIONS.put(
         `mfa:${mfaToken}`,
@@ -381,6 +415,16 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
         { expirationTtl: 60 * 60 * 24 * 30 },
       );
     }
+    const aiOk = auditIdent(body.identifier);
+    appendAudit({
+      categoria: "acesso",
+      acao: "login_sucesso",
+      cpf: aiOk.cpf,
+      userId: `${resolved.role}:${resolved.id}`,
+      userRole: resolved.role,
+      deviceId: body.device_id,
+      detalhes: `${resolved.nome} (${aiOk.ident}) autenticado como ${resolved.role}.`,
+    });
     return c.json({
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -431,7 +475,25 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     if (!secret) throw Errors.unauthorized("2FA nao configurado para este usuario");
 
     const ok = await verifyTotp(secret, code);
-    if (!ok) throw Errors.unauthorized("Codigo 2FA invalido ou expirado");
+    if (!ok) {
+      appendAudit({
+        categoria: "acesso",
+        acao: "login_2fa_falhou",
+        userId: `${parsed.role}:${parsed.user_id}`,
+        userRole: parsed.role,
+        deviceId: parsed.device_id,
+        detalhes: `Codigo 2FA invalido/expirado para ${parsed.nome}.`,
+      });
+      throw Errors.unauthorized("Codigo 2FA invalido ou expirado");
+    }
+    appendAudit({
+      categoria: "acesso",
+      acao: "login_sucesso_2fa",
+      userId: `${parsed.role}:${parsed.user_id}`,
+      userRole: parsed.role,
+      deviceId: parsed.device_id,
+      detalhes: `${parsed.nome} autenticado como ${parsed.role} (com 2FA).`,
+    });
 
     // Consome o mfa_token (single-use) e emite o par access+refresh normal.
     await c.env.KV_SESSIONS.delete(`mfa:${mfa_token}`);
@@ -590,6 +652,13 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       if (pending.telefone) x.telefone = pending.telefone;
     });
     await c.env.KV_SESSIONS.delete(`pa:${digits}`);
+    appendAudit({
+      categoria: "dados_pessoais",
+      acao: "primeiro_acesso_conclusao",
+      cpf: maskCpfLocal(digits),
+      userRole: "servidor",
+      detalhes: `Servidor concluiu primeiro-acesso: senha definida, email ${maskEmail(pending.email)}${pending.telefone ? `, telefone ${maskPhone(pending.telefone)}` : ""}.`,
+    });
     return c.json({ ok: true });
   })
   // ===== Recuperar senha do servidor (esqueci minha senha) =====
@@ -658,6 +727,13 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     // Atualiza cache em memoria do isolate — login funciona imediatamente.
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => { x.passwordHash = hash; });
     await c.env.KV_SESSIONS.delete(`rs:${digits}`);
+    appendAudit({
+      categoria: "dados_pessoais",
+      acao: "senha_redefinida",
+      cpf: maskCpfLocal(digits),
+      userRole: "servidor",
+      detalhes: `Servidor redefiniu senha via 'esqueci minha senha'.`,
+    });
     return c.json({ ok: true });
   })
   // ==========================================================================
