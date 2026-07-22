@@ -66,7 +66,6 @@ export function BancoMargemContratacaoBusca() {
         <form onSubmit={(e) => buscar("cpf", e)} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Input
             label="CPF"
-            type="password"
             value={cpf}
             onChange={(e) => setCpf(e.target.value)}
             placeholder="000.111.222-33"
