@@ -88,8 +88,42 @@ function maskCpf(cpf11: string): string {
   return `***.***.***-${cpf11.slice(-2)}`;
 }
 
-let _tblSeq = 100;
-let _userSeq = 999000;
+// Counters POR BANCO. Antes eram globais — banco A cria usuarios U-999001..
+// U-999040, banco B recem-criado ja saia U-999041 (mesma classe do bug de
+// prefeitura). Agora cada banco tem seus seqs isolados: TBL-{bancoId}-{seq} e
+// U-{bancoId}-{seq}. IDs legacy sao considerados na base do seq quando o max
+// bater. Cliente pediu 22/07/2026.
+const _tblSeqPorBanco: Map<number, number> = new Map();
+const _userSeqPorBanco: Map<number, number> = new Map();
+function nextTblId(bancoId: number): string {
+  const maxExistente = _tabelas.reduce((acc, t) => {
+    // Filtro por bancoId derivado do convenio (bancoId do t.convenioId no
+    // CONVENIOS_MOCK — nao acessivel aqui sem circular import; usamos so o
+    // sufixo numerico da propria pref). Alternativa: consultar o campo se
+    // o schema tiver bancoId direto (nao tem). Vamos com o max simples do
+    // banco atraves do prefixo TBL-{bancoId}-.
+    const m1 = new RegExp(`^TBL-${bancoId}-(\\d+)$`).exec(t.id);
+    if (m1) return Math.max(acc, Number(m1[1]));
+    return acc;
+  }, 100);
+  const cur = _tblSeqPorBanco.get(bancoId) ?? 100;
+  const seq = Math.max(cur, maxExistente) + 1;
+  _tblSeqPorBanco.set(bancoId, seq);
+  return `TBL-${bancoId}-${String(seq).padStart(3, "0")}`;
+}
+function nextUserId(bancoId: number): { id: string; codigo: string } {
+  const maxExistente = _usuarios.reduce((acc, u) => {
+    if (u.bancoId !== bancoId) return acc;
+    const m = new RegExp(`^U-${bancoId}-(\\d+)$`).exec(u.id);
+    if (m) return Math.max(acc, Number(m[1]));
+    return acc;
+  }, 0);
+  const cur = _userSeqPorBanco.get(bancoId) ?? 0;
+  const seq = Math.max(cur, maxExistente) + 1;
+  _userSeqPorBanco.set(bancoId, seq);
+  const seqStr = String(seq).padStart(3, "0");
+  return { id: `U-${bancoId}-${seqStr}`, codigo: `${bancoId}${seqStr}` };
+}
 
 // Sincronizacao com Postgres: no primeiro acesso apos boot do isolate,
 // carregamos as tabelas persistidas. Se o DB estiver vazio, seed inicial.
@@ -113,13 +147,8 @@ async function hydrateTabelas(env: Env): Promise<void> {
         if (rows.length > 0) {
           _tabelas.length = 0;
           _tabelas.push(...(rows as unknown as TabelaEmprestimo[]));
-          // Alinha o seq com o maior sufixo numerico existente pra evitar colisao.
-          const maxSeq = rows.reduce((acc, r) => {
-            const m = /TBL-(\d+)/.exec(r.id);
-            return m ? Math.max(acc, Number(m[1])) : acc;
-          }, 100);
-          _tblSeq = Math.max(_tblSeq, maxSeq + 1);
         }
+        // Seqs por-banco recalculam sob demanda em nextTblId — nada a fazer.
         _tabelasHydrated = true;
       } catch {
         // Sem DB configurado — segue in-memory (comportamento legado).
@@ -138,7 +167,7 @@ export async function getTabela(env: Env, id: string): Promise<TabelaEmprestimo 
   await hydrateTabelas(env);
   return _tabelas.find((t) => t.id === id);
 }
-export async function upsertTabela(env: Env, input: Omit<TabelaEmprestimo, "id" | "criadoEm"> & { id?: string }): Promise<TabelaEmprestimo> {
+export async function upsertTabela(env: Env, input: Omit<TabelaEmprestimo, "id" | "criadoEm"> & { id?: string }, bancoId: number): Promise<TabelaEmprestimo> {
   await hydrateTabelas(env);
   let saved: TabelaEmprestimo;
   if (input.id) {
@@ -151,7 +180,7 @@ export async function upsertTabela(env: Env, input: Omit<TabelaEmprestimo, "id" 
     }
   }
   saved = {
-    id: `TBL-${String(_tblSeq++).padStart(3, "0")}`,
+    id: nextTblId(bancoId),
     criadoEm: new Date().toISOString().slice(0, 10),
     ...input,
   };
@@ -219,9 +248,10 @@ export function upsertUsuario(input: UsuarioUpsert): BancoUsuario {
       return updated;
     }
   }
+  const gen = nextUserId(input.bancoId);
   const novo: BancoUsuario = {
-    id: `U-${++_userSeq}`,
-    codigo: String(_userSeq),
+    id: gen.id,
+    codigo: gen.codigo,
     criadoEm: new Date().toISOString().slice(0, 10),
     ...normalized,
   };

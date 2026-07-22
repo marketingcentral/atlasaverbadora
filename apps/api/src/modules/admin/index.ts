@@ -3346,7 +3346,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (!pref) { out.errors.push({ line, message: `prefeitura ${prefeituraId} nao encontrada` }); return; }
       const existing = CONVENIOS_MOCK.find((c) => c.nome.toLowerCase() === r.nome!.toLowerCase());
       const conv = {
-        id: existing?.id ?? nextConvenioId(),
+        id: existing?.id ?? nextConvenioId(prefeituraId),
         bancoId,
         prefeituraId,
         nome: r.nome!,
@@ -3406,7 +3406,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
       return c.json({ convenio: CONVENIOS_MOCK[idx] });
     }
-    const id = nextConvenioId();
+    const id = nextConvenioId(body.prefeituraId);
     const novo = { ...body, id, prefeitura: pref.nome, uf: pref.uf };
     CONVENIOS_MOCK.push(novo);
     await persistConvenio(c.env, novo); // write-through: convenio novo persiste no Postgres

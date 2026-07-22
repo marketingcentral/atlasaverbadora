@@ -832,7 +832,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         prazoMaxMeses: `Prazo maximo do convenio e' de ${cfg.maxParcelas} parcelas (teto definido pela prefeitura). Reduza o prazo desta tabela.`,
       });
     }
-    const saved = await upsertTabela(c.env, body);
+    const saved = await upsertTabela(c.env, body, j.banco_id!);
     appendAudit(auditCtx(c), {
       categoria: "convenio_config",
       acao: body.id ? "banco_tabela_editada" : "banco_tabela_criada",

@@ -31,7 +31,27 @@ export interface Movimentacao {
 }
 
 const _movimentacoes: Movimentacao[] = [];
-let _movSeq = 1;
+// Counter POR PREFEITURA. Antes _movSeq era global — Prefeitura A criava
+// MOV-000001..14 e a primeira mov da B ja saia MOV-000015 (bug 22/07/2026).
+// Agora cada prefeitura tem seus 000001+. Formato: MOV-{prefId}-{seq6}.
+const _movSeqPorPref: Map<number, number> = new Map();
+function nextMovId(prefeituraId: number): string {
+  // Sincroniza seq com o max ja existente em memoria (best-effort — se cold
+  // start carregar movs do PG antes de gerar novo, pega o topo daquela pref).
+  const cur = _movSeqPorPref.get(prefeituraId) ?? 0;
+  const maxExistente = _movimentacoes
+    .filter((m) => m.prefeituraId === prefeituraId)
+    .reduce((acc, m) => {
+      const match = new RegExp(`^MOV-${prefeituraId}-(\\d+)$`).exec(m.id);
+      if (match) return Math.max(acc, Number(match[1]));
+      const legacy = /^MOV-(\d+)$/.exec(m.id);
+      if (legacy) return Math.max(acc, Number(legacy[1]));
+      return acc;
+    }, 0);
+  const seq = Math.max(cur, maxExistente) + 1;
+  _movSeqPorPref.set(prefeituraId, seq);
+  return `MOV-${prefeituraId}-${String(seq).padStart(6, "0")}`;
+}
 
 export function listMovimentacoes(folhaId: string): Movimentacao[] {
   return _movimentacoes.filter((m) => m.folhaId === folhaId).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
@@ -50,7 +70,7 @@ export function applyMovimentacao(input: {
   // a movimentacao (pra folha sem mudanca de pessoal poder ser fechada).
   if (input.tipo === "desconto") {
     const mov: Movimentacao = {
-      id: `MOV-${String(_movSeq++).padStart(6, "0")}`,
+      id: nextMovId(input.prefeituraId),
       folhaId: input.folhaId, prefeituraId: input.prefeituraId, tipo: input.tipo,
       matricula: (input.matricula || "").trim() || "—", cpfMasked: "", nome: "Folha sem alteração de pessoal",
       detalhe: input.detalhe ?? defaultDetalhe(input.tipo), criadoEm: now,
@@ -122,7 +142,7 @@ export function applyMovimentacao(input: {
   }
 
   const mov: Movimentacao = {
-    id: `MOV-${String(_movSeq++).padStart(6, "0")}`,
+    id: nextMovId(input.prefeituraId),
     folhaId: input.folhaId, prefeituraId: input.prefeituraId, tipo: input.tipo,
     matricula: target.matricula, cpfMasked: target.cpfMasked, nome: target.nome,
     detalhe: input.detalhe ?? defaultDetalhe(input.tipo),
@@ -557,7 +577,22 @@ export interface PrefeituraPerfil {
 // Perfis novos entram exclusivamente via UI (POST /prefeitura/perfis) atrelados
 // ao prefeituraId do JWT — que corresponde ao CNPJ do login.
 const _perfis: PrefeituraPerfil[] = [];
-let _perfilSeq = 1;
+// Counter POR PREFEITURA. Antes _perfilSeq global — Capistrano criava perfis
+// id=1,2 e Guarulhos ja saia com id=3 (bug reportado pelo cliente 22/07/2026).
+// Agora cada prefeitura tem seus 1,2,3 independentes. Como o id perde
+// unicidade global, a chave da collection PG passou a ser composta
+// `${prefeituraId}:${id}` — refreshPerfisPref migra rows legadas (chave
+// numerica pura) pra nova chave, apagando a antiga.
+const _perfilSeqPorPref: Map<number, number> = new Map();
+function nextPerfilId(prefeituraId: number): number {
+  const maxExistente = _perfis
+    .filter((p) => p.prefeituraId === prefeituraId)
+    .reduce((acc, p) => Math.max(acc, p.id), 0);
+  const cur = _perfilSeqPorPref.get(prefeituraId) ?? 0;
+  const seq = Math.max(cur, maxExistente) + 1;
+  _perfilSeqPorPref.set(prefeituraId, seq);
+  return seq;
+}
 
 /** Migra perfis hidratados do PG sem permissoes[] — deriva da area. Idempotente. */
 export function ensurePerfilPermissoes(p: PrefeituraPerfil): void {
@@ -587,7 +622,7 @@ export function upsertPerfil(input: { id?: number; prefeituraId: number; nome: s
     return existing;
   }
   const novo: PrefeituraPerfil = {
-    id: _perfilSeq++, prefeituraId: input.prefeituraId, nome: input.nome, email: input.email,
+    id: nextPerfilId(input.prefeituraId), prefeituraId: input.prefeituraId, nome: input.nome, email: input.email,
     area: areaResolvida, permissoes, ativo: input.ativo ?? true, twofaEnabled: false, criadoEm: now,
   };
   _perfis.push(novo);
@@ -649,18 +684,37 @@ export function sanitizePerfil(p: PrefeituraPerfil) {
 const PG_PERFIS = "prefeitura_perfis";
 const PG_PRESETS = "prefeitura_perfil_presets";
 
-/** Recarrega os perfis do PG e restaura o seq pra nao colidir ids. */
+/** Chave composta pra collection PG. Como o perfil.id agora e' por-prefeitura,
+ *  dois perfis podem compartilhar id=1 em prefeituras diferentes — a chave
+ *  precisa incluir prefeituraId pra nao colidir no UPSERT. */
+function perfilPgKey(p: { prefeituraId: number; id: number }): string {
+  return `${p.prefeituraId}:${p.id}`;
+}
+
+/** Recarrega os perfis do PG. Reseta counters por-prefeitura (proximo
+ *  nextPerfilId recalcula sob demanda). Dedup por (prefeituraId, id) — chaves
+ *  legacy (id numerico puro) sao mescladas com a chave nova composta se
+ *  representam o mesmo perfil. */
 export async function refreshPerfisPref(env: Env): Promise<void> {
   try {
     const rows = await loadCollection<PrefeituraPerfil>(env, PG_PERFIS);
+    // Dedup: se por acaso houver 2 rows com mesma (prefeituraId, id) — legacy
+    // e novo — mantem o mais recente pela ordem do PG.
+    const seen = new Set<string>();
+    const dedupped: PrefeituraPerfil[] = [];
+    for (const r of rows.slice().reverse()) {
+      const k = perfilPgKey(r);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      dedupped.unshift(r);
+    }
     _perfis.length = 0;
-    for (const r of rows) { ensurePerfilPermissoes(r); _perfis.push(r); }
-    const maxId = _perfis.reduce((m, p) => Math.max(m, p.id), 0);
-    if (maxId >= _perfilSeq) _perfilSeq = maxId + 1;
+    for (const r of dedupped) { ensurePerfilPermissoes(r); _perfis.push(r); }
+    _perfilSeqPorPref.clear();
   } catch { /* fail-safe: usa in-memory */ }
 }
 export async function persistPerfil(env: Env, p: PrefeituraPerfil): Promise<void> {
-  try { await upsertCollectionRow(env, PG_PERFIS, String(p.id), p); } catch { /* fail-safe */ }
+  try { await upsertCollectionRow(env, PG_PERFIS, perfilPgKey(p), p); } catch { /* fail-safe */ }
 }
 /** Recupera o perfil (com secret) pra persistir apos mutacoes no callsite. */
 export function getPerfilRaw(prefeituraId: number, id: number): PrefeituraPerfil | undefined {
