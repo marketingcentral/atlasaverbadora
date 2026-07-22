@@ -306,12 +306,6 @@ function PerfilModal({
           </div>
         </div>
 
-        {presetSalvoAtivo ? (
-          <div style={{ fontSize: 12, color: "var(--gold-500)", marginBottom: 8 }}>
-            🔒 Preset salvo aplicado — as permissões estão travadas. Pra editar, escolha um preset em <b>Presets</b> (RH/Financeiro/Gestor/Personalizado).
-          </div>
-        ) : null}
-
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
           gap: 10, maxHeight: 340, overflowY: "auto",
