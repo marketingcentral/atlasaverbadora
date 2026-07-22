@@ -1067,8 +1067,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const id = requirePrefeitura(c.get("jwt"));
     // Recarrega do PG — sobrevive a redeploy da API.
     await refreshAnuencias(c.env);
-    const vigente = anuenciaVigente(id);
-    return c.json({ versaoAtual: TERMO_VERSAO_ATUAL, termo: TERMO_TEXTO, vigente: vigente ?? null, historico: listAnuencias(id) });
+    // ID exibido e' POR PREFEITURA (cliente 21/07/2026: nao pode ser global —
+    // a 1a anuencia de cada prefeitura e' ANU-0001, independente das outras).
+    // Renumera na leitura pela ordem cronologica desta prefeitura; o id gravado
+    // (unico global) fica so pra storage/dedupe. listAnuencias vem DESC.
+    const hist = listAnuencias(id);
+    const asc = [...hist].sort((a, b) => a.aceitoEm.localeCompare(b.aceitoEm));
+    const displayById = new Map<string, string>();
+    asc.forEach((a, i) => displayById.set(a.id, `ANU-${String(i + 1).padStart(4, "0")}`));
+    const historico = hist.map((a) => ({ ...a, id: displayById.get(a.id) ?? a.id }));
+    const vigenteRaw = anuenciaVigente(id);
+    const vigente = vigenteRaw ? { ...vigenteRaw, id: displayById.get(vigenteRaw.id) ?? vigenteRaw.id } : null;
+    return c.json({ versaoAtual: TERMO_VERSAO_ATUAL, termo: TERMO_TEXTO, vigente, historico });
   })
   .post("/v1/prefeitura/anuencia", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
@@ -1081,7 +1091,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // Persist no PG — sobrevive a redeploy.
     await persistAnuencia(c.env, anu);
     appendAudit(auditCtx(c), { categoria: "termo_aceite", acao: "anuencia_base", termoAceito: TERMO_VERSAO_ATUAL, ip, userId: `prefeitura:${j.sub}`, userRole: "prefeitura", detalhes: `Anuência de uso da base aceita por ${body.aceitoPor} (${TERMO_VERSAO_ATUAL}).` });
-    return c.json({ anuencia: anu }, 201);
+    // Numero exibido POR PREFEITURA (posicao cronologica desta prefeitura).
+    const seqPref = listAnuencias(id).length; // ja inclui a recem-criada
+    return c.json({ anuencia: { ...anu, id: `ANU-${String(seqPref).padStart(4, "0")}` } }, 201);
   })
 
   // ===== Passo 1 — Perfis por área + 2FA + presets customizados =====
