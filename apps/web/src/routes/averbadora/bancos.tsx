@@ -469,12 +469,12 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
                 ]}
               />
               <TextField
-                label="URL base (health check)"
+                label="URL de health check"
                 type="url"
                 value={form.baseUrl ?? ""}
                 onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
-                placeholder="https://api.banco.com.br"
-                hint="Se preenchida, /averbadora/health pinga /health desse endpoint (uptime/latência reais)."
+                placeholder="https://api.banco.com.br/health"
+                hint="URL COMPLETA que deve retornar 200. Se preenchida, /averbadora/health pinga esse endpoint (uptime e latência reais)."
               />
             </FormGrid>
           </div>

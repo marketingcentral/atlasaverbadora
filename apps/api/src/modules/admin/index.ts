@@ -2870,17 +2870,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       return { servico: `Bank Adapter (${adapter})`, ok: true, latenciaMs: 0 };
     };
 
-    // 5) Cada banco ATIVO com baseUrl cadastrada — pinga /health individual
-    //    em paralelo. Bancos sem baseUrl entram como "sem endpoint" (nao
-    //    afeta uptime, so informativo).
+    // 5) Cada banco ATIVO com baseUrl cadastrada — pinga a URL EXATA que o
+    //    operador cadastrou (nao concatena /health automaticamente). Assim
+    //    da pra apontar pra qualquer endpoint de status que o banco expuser
+    //    (ex: https://api.banco.com/health OU https://status.banco.com/ping).
+    //    Bancos sem baseUrl entram como "sem endpoint" (nao afeta uptime).
     const bankChecks = async (): Promise<CheckResult[]> => {
       await ensureBancosLoaded(c.env);
       const ativos = bancos.filter((b) => b.status === "ativo");
       return Promise.all(ativos.map(async (b): Promise<CheckResult> => {
         const url = (b.baseUrl ?? "").trim();
         if (!url) return { servico: `Banco: ${b.nome}`, ok: true, latenciaMs: 0 };
-        const alvo = url.replace(/\/+$/, "") + "/health";
-        const r = await withTimeout(fetch(alvo, { method: "GET", headers: { Accept: "application/json,text/plain,*/*" } }).then((res) => res.ok));
+        const r = await withTimeout(fetch(url, { method: "GET", headers: { Accept: "application/json,text/plain,*/*" } }).then((res) => res.ok));
         const okReal = r.ok && (r as { value?: boolean }).value === true;
         return { servico: `Banco: ${b.nome}`, ok: okReal, latenciaMs: r.ms };
       }));
