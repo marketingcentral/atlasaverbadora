@@ -132,6 +132,9 @@ function PerfilModal({
   useEffect(() => { setPresetEscolhido(areaDetectada); }, [areaDetectada]);
   // Exige nomear o preset so ao CRIAR com config personalizada.
   const exigePresetNome = !initial && areaDetectada === "personalizado";
+  // Preset SALVO ativo -> permissoes TRAVADAS (nao pode marcar/desmarcar). Pra
+  // editar, escolhe um preset normal no dropdown "Presets". Cliente 21/07/2026.
+  const presetSalvoAtivo = presetsCustom.some((p) => p.key === presetEscolhido);
 
   function aplicarPreset(v: string) {
     setPresetEscolhido(v);
@@ -250,16 +253,23 @@ function PerfilModal({
             </div>
 
             <div style={{ display: "flex", gap: 6, alignSelf: "flex-end" }}>
-              <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes(["*"])}>Marcar tudo</Button>
-              <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes([])}>Limpar</Button>
+              <Button size="sm" variant="ghost" type="button" disabled={presetSalvoAtivo} onClick={() => setPermissoes(["*"])}>Marcar tudo</Button>
+              <Button size="sm" variant="ghost" type="button" disabled={presetSalvoAtivo} onClick={() => setPermissoes([])}>Limpar</Button>
             </div>
           </div>
         </div>
+
+        {presetSalvoAtivo ? (
+          <div style={{ fontSize: 12, color: "var(--gold-500)", marginBottom: 8 }}>
+            🔒 Preset salvo aplicado — as permissões estão travadas. Pra editar, escolha um preset em <b>Presets</b> (RH/Financeiro/Gestor/Personalizado).
+          </div>
+        ) : null}
 
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
           gap: 10, maxHeight: 340, overflowY: "auto",
           padding: 12, background: "var(--bg-elev-2)", borderRadius: 10,
+          opacity: presetSalvoAtivo ? 0.6 : 1,
         }}>
           {PREFEITURA_RESOURCE_GROUPS.map((g) => (
             <div key={g.titulo} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -273,7 +283,7 @@ function PerfilModal({
                     key={r.key}
                     style={{
                       display: "flex", alignItems: "flex-start", gap: 8,
-                      padding: "6px 8px", borderRadius: 6, cursor: "pointer",
+                      padding: "6px 8px", borderRadius: 6, cursor: presetSalvoAtivo ? "not-allowed" : "pointer",
                       background: marcada ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "transparent",
                       border: marcada ? "1px solid var(--emerald-500)" : "1px solid var(--border)",
                     }}
@@ -281,6 +291,7 @@ function PerfilModal({
                     <input
                       type="checkbox"
                       checked={marcada}
+                      disabled={presetSalvoAtivo}
                       onChange={() => togglePermissao(r.key)}
                       style={{ marginTop: 3 }}
                     />
