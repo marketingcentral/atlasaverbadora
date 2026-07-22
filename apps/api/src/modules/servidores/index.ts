@@ -24,7 +24,7 @@ import { ensureTermosLoaded, getTermo, listTermos, renderTermo, type TermoTipo }
 import { getSuporteConfig } from "../admin/suporte.js";
 import { withIdempotency } from "../../_shared/idempotency.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
-import { appendAudit } from "../admin/auditoria.js";
+import { appendAudit, auditCtx } from "../admin/auditoria.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
 function maskEmailSrv(email?: string): string {
@@ -1038,7 +1038,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh
     // Auditoria: pre-reserva criada pelo servidor. body.tipo distingue
     // emprestimo novo x portabilidade x refin no detalhe.
-    appendAudit({
+    appendAudit(auditCtx(c), {
       categoria: "pre_reserva",
       acao: "pre_reserva_criada",
       propostaId: contrato.adf,
@@ -1049,7 +1049,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       detalhes: `Servidor ${entry.nome} criou pre-reserva ADF ${contrato.adf} (${body.tipo}) — R$ ${body.valor.toFixed(2)} em ${body.parcelas}x de R$ ${cet.parcela.toFixed(2)} com ${conv?.nome ?? "Banco Atlas"}.`,
     });
     // Aceite implicito dos termos vigentes ao confirmar a proposta.
-    appendAudit({
+    appendAudit(auditCtx(c), {
       categoria: "termo_aceite",
       acao: "termo_confirmado_na_proposta",
       propostaId: contrato.adf,

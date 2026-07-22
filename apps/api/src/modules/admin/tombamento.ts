@@ -2,6 +2,7 @@
 // Workflow: receive remessa (CSV) → reconcile → update margins → produce reconciliation report.
 
 import { parseCsv } from "../../_shared/csv.js";
+import { maskCpf as maskCpfShared } from "../../_shared/pii.js";
 import { previewIdUnico } from "./id-unico.js";
 import { SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
@@ -90,13 +91,14 @@ function parseBRL(s: string | undefined): number {
   if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
   return Number(t);
 }
-/** Mascara CPF completo -> "000.***.***-00" (mantém 3 primeiros + 2 últimos). */
+/** Wrapper para pad-left de CPF curto — helper compartilhado nao pad,
+ *  mas o CSV de tombamento pode chegar com CPF trimmed (sem zero a esquerda). */
 function maskCpf(cpf: string | undefined): string {
   const raw = (cpf ?? "").replace(/\D/g, "");
-  if (!raw) return "";
-  if (raw.includes("*")) return cpf!; // já mascarado
-  const d = raw.length < 11 ? raw.padStart(11, "0") : raw.slice(-11);
-  return `${d.slice(0, 3)}.***.***-${d.slice(-2)}`;
+  if (raw && raw.length > 0 && raw.length < 11) {
+    return maskCpfShared(raw.padStart(11, "0"));
+  }
+  return maskCpfShared(cpf);
 }
 /** Lê um campo por vários nomes de coluna possíveis (case-insensitive). */
 function pick(norm: Record<string, string>, ...names: string[]): string {

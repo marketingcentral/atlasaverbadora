@@ -21,7 +21,7 @@ import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type Form
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria, refreshTombamento, marcarTombamentoSubstituido, persistLotePublic } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
-import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
+import { appendAudit, auditCategorias, listAudit, listAuditAsync, auditCtx, type AuditCategoria } from "./auditoria.js";
 import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
@@ -1314,7 +1314,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ apiKey: z.string().min(20) }).parse(await c.req.json());
     try {
       const status = await setAiKey(c.env, body.apiKey);
-      appendAudit({
+      appendAudit(auditCtx(c), {
         trace_id: c.get("trace_id"),
         categoria: "convenio_config",
         acao: "ai.config.set",
@@ -1333,7 +1333,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(j);
     requirePermissao(j, "configuracoes");
     await clearAiKey(c.env);
-    appendAudit({
+    appendAudit(auditCtx(c), {
       trace_id: c.get("trace_id"),
       categoria: "convenio_config",
       acao: "ai.config.clear",
@@ -1372,7 +1372,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       })
       .parse(await c.req.json());
     const status = await setSmtpConfig(c.env, body);
-    appendAudit({
+    appendAudit(auditCtx(c), {
       trace_id: c.get("trace_id"),
       categoria: "convenio_config",
       acao: "smtp.config.set",
@@ -1388,7 +1388,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(j);
     requirePermissao(j, "configuracoes");
     await clearSmtpConfig(c.env);
-    appendAudit({
+    appendAudit(auditCtx(c), {
       trace_id: c.get("trace_id"),
       categoria: "convenio_config",
       acao: "smtp.config.clear",
@@ -1431,7 +1431,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       mensagem: z.string().max(200).optional(),
     }).parse(await c.req.json());
     const proximo = await setSuporteConfig(c.env, body);
-    appendAudit({
+    appendAudit(auditCtx(c), {
       categoria: "convenio_config", acao: "suporte.config.set",
       userId: c.get("jwt").sub, userRole: "averbadora",
       detalhes: `Config de suporte atualizada: email=${proximo.email} whatsapp=${proximo.whatsapp || "-"}`,
@@ -1529,7 +1529,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       reason: body.reason,
     });
     pushEvent("error", "admin.destructive_lock.unlock", `Endpoints destrutivos DESTRAVADOS por admin ${j?.sub} por ${duration}s. Motivo: ${body.reason ?? "-"}.`);
-    appendAudit({ categoria: "termo_aceite", acao: "destructive_unlock", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Destravou endpoints destrutivos por ${duration}s. Motivo: ${body.reason ?? "-"}.` });
+    appendAudit(auditCtx(c), { categoria: "termo_aceite", acao: "destructive_unlock", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Destravou endpoints destrutivos por ${duration}s. Motivo: ${body.reason ?? "-"}.` });
     return c.json(state);
   })
   .post("/v1/admin/destructive-lock/lock", async (c) => {
@@ -1595,7 +1595,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     // Limpa ADFs stale para que o proximo ensureAdfs recrie com status correto.
     removeAdfsByContratoAdf(revertidos);
-    appendAudit({ categoria: "margem", acao: "reverter_desligamento", userId: ator, userRole: "averbadora", detalhes: `Reversao de cascade F6 em ${revertidos.length} contrato(s): ${revertidos.join(", ")}.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "reverter_desligamento", userId: ator, userRole: "averbadora", detalhes: `Reversao de cascade F6 em ${revertidos.length} contrato(s): ${revertidos.join(", ")}.` });
     pushEvent("info", "admin.contratos.reverter_desligamento", `Reversao F6 por admin ${j?.sub}: ${revertidos.length} contratos.`);
     return c.json({ ok: true, revertidos });
   })
@@ -1618,7 +1618,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (removeAnuenciaMemoria(id)) removidos.push(id);
       else removidos.push(id); // considera removido mesmo se so estava no PG
     }
-    appendAudit({ categoria: "termo_aceite", acao: "anuencia_removida", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Anuencia(s) removida(s) por admin: ${removidos.join(", ")}` });
+    appendAudit(auditCtx(c), { categoria: "termo_aceite", acao: "anuencia_removida", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Anuencia(s) removida(s) por admin: ${removidos.join(", ")}` });
     return c.json({ ok: true, removidos });
   })
   // Delete cirurgico por matricula(s) — protegido por ADMIN_PURGE_PASSWORD.
@@ -1940,7 +1940,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.status = "inativo";
     await persistBanco(c.env, b);
     const casc = syncBancoAccess(b); // pausa webhooks do banco em cascata (tokens são derivados)
-    appendAudit({ categoria: "acesso", acao: "banco_desativado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${b.nome}" (id=${id}) desativado.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "banco_desativado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${b.nome}" (id=${id}) desativado.` });
     pushEvent("info", "admin.bancos.desativar", `Banco "${b.nome}" desativado por user:${j.sub} — ${casc.webhooks} webhook(s) pausados junto.`);
     return c.json({ banco: sanitizeBanco(b) });
   })
@@ -2261,13 +2261,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await deletePrefeituraRow(c.env, id);
       const idx = prefeituras.findIndex((x) => x.id === id);
       if (idx >= 0) prefeituras.splice(idx, 1);
-      appendAudit({ categoria: "acesso", acao: "prefeitura_hard_deleted", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) DELETADA permanentemente.` });
+      appendAudit(auditCtx(c), { categoria: "acesso", acao: "prefeitura_hard_deleted", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) DELETADA permanentemente.` });
       pushEvent("warn", "admin.prefeituras.hard_delete", `Prefeitura "${p.nome}" DELETADA por user:${j.sub}`);
       return c.json({ ok: true, deleted: id });
     }
     p.status = "inativo";
     await persistPrefeitura(c.env, p);
-    appendAudit({ categoria: "acesso", acao: "prefeitura_desativada", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) desativada.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "prefeitura_desativada", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) desativada.` });
     pushEvent("info", "admin.prefeituras.desativar", `Prefeitura "${p.nome}" desativada por user:${j.sub}`);
     return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
@@ -2602,7 +2602,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await persistContrato(c.env, a.adf);
     }
     if (adfsDaFolha.length > 0) {
-      appendAudit({
+      appendAudit(auditCtx(c), {
         categoria: "margem", acao: "folha_consolidada", userId: ator, userRole: "averbadora",
         detalhes: `Folha ${f.competencia}/${f.prefeitura} consolidada: ${incrementados} contratos avancaram 1 parcela, ${quitados} quitados.`,
       });
@@ -2704,7 +2704,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       }
       limpos.push({ adf, keyRemovida: key });
     }
-    appendAudit({ categoria: "margem", acao: "limpar_ccb", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Limpou CCB de ${limpos.length} contrato(s): ${limpos.map((x) => x.adf).join(", ")}.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "limpar_ccb", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Limpou CCB de ${limpos.length} contrato(s): ${limpos.map((x) => x.adf).join(", ")}.` });
     return c.json({ ok: true, limpos });
   })
 
@@ -2738,7 +2738,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await persistContrato(c.env, adf);
       marcados.push(adf);
     }
-    appendAudit({ categoria: "margem", acao: "marcar_portabilidade", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Reclassificou ${marcados.length} contrato(s) como portabilidade: ${marcados.join(", ")}` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "marcar_portabilidade", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Reclassificou ${marcados.length} contrato(s) como portabilidade: ${marcados.join(", ")}` });
     pushEvent("info", "admin.contratos.marcar_portabilidade", `Reclassificou como portabilidade por admin ${j?.sub}: ${marcados.join(", ")}`);
     return c.json({ ok: true, marcados });
   })
@@ -3342,7 +3342,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       })
       .parse(await c.req.json());
     const config = upsertConvenioConfig({ id, ...body });
-    appendAudit({ categoria: "convenio_config", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config do convenio ${id} atualizada (prazoTrava=${body.prazoTravaHoras}h, formato=${body.formatoImportacao}).` });
+    appendAudit(auditCtx(c), { categoria: "convenio_config", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config do convenio ${id} atualizada (prazoTrava=${body.prazoTravaHoras}h, formato=${body.formatoImportacao}).` });
     pushEvent("info", "admin.convenios.config", `Config do convenio ${id} salva por user:${c.get("jwt").sub}`);
     return c.json({ config });
   })
@@ -3383,7 +3383,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!prefeituras.find((p) => p.id === body.prefeituraId)) throw Errors.notFound("prefeitura");
     const cfg = upsertIdUnicoConfig(body);
     await persistIdUnicoConfig(c.env, cfg);
-    appendAudit({ categoria: "id_unico", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config ID Unico prefeitura=${body.prefeituraId} prefixo=${body.prefixo} formato=${body.formato}.` });
+    appendAudit(auditCtx(c), { categoria: "id_unico", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config ID Unico prefeitura=${body.prefeituraId} prefixo=${body.prefixo} formato=${body.formato}.` });
     pushEvent("info", "admin.id-unico", `Config ID-Unico prefeitura=${body.prefeituraId} salva`);
     return c.json({ config: cfg, exemplo: previewIdUnico(cfg.prefeituraId) });
   })
@@ -3392,7 +3392,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ prefeituraId: z.number().int() }).parse(await c.req.json());
     if (!getIdUnicoConfig(body.prefeituraId)) throw Errors.notFound("id_unico_config");
     const id = issueIdUnico(body.prefeituraId);
-    appendAudit({ categoria: "id_unico", acao: "id_emitido", idUnico: id, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `ID Unico ${id} emitido manualmente para prefeitura=${body.prefeituraId}.` });
+    appendAudit(auditCtx(c), { categoria: "id_unico", acao: "id_emitido", idUnico: id, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `ID Unico ${id} emitido manualmente para prefeitura=${body.prefeituraId}.` });
     return c.json({ idUnico: id });
   })
 
@@ -3439,7 +3439,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!ct) throw Errors.notFound("pre_reserva");
     await persistContrato(c.env, id);
     const r = contratoToPreReserva(ct);
-    appendAudit({ categoria: "margem", acao: "pre_reserva_cancelada", propostaId: id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Pre-reserva ${id} cancelada manualmente. Motivo: ${body.motivo}. Margem R$ ${r.valorMargem.toFixed(2)} liberada.` });
+    appendAudit(auditCtx(c), { categoria: "pre_reserva", acao: "pre_reserva_cancelada", propostaId: id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Pre-reserva ${id} cancelada manualmente. Motivo: ${body.motivo}. Margem R$ ${r.valorMargem.toFixed(2)} liberada.` });
     pushEvent("warn", "admin.pre-reservas", `Pre-reserva ${id} cancelada por user:${c.get("jwt").sub}`);
     return c.json({ preReserva: r });
   })
@@ -3471,7 +3471,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       removeLoteMemoria(id);
       if (ok) removidos.push(id);
     }
-    appendAudit({ categoria: "tombamento", acao: "lote_excluido", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `${removidos.length} lote(s) removido(s): ${removidos.join(", ")}.` });
+    appendAudit(auditCtx(c), { categoria: "tombamento", acao: "lote_excluido", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `${removidos.length} lote(s) removido(s): ${removidos.join(", ")}.` });
     return c.json({ ok: true, removidos });
   })
 
@@ -3514,7 +3514,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       csv: body.csv,
       env: c.env,
     });
-    appendAudit({ categoria: "tombamento", acao: "lote_processado", detalhes: `Lote ${result.lote.id} (${pref.nome}/${body.competencia}): ${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.divergencias} divergencias, ${result.erros.length} erros.` });
+    appendAudit(auditCtx(c), { categoria: "tombamento", acao: "lote_processado", detalhes: `Lote ${result.lote.id} (${pref.nome}/${body.competencia}): ${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.divergencias} divergencias, ${result.erros.length} erros.` });
     // Notifica a averbadora quando há divergência entre as 3 bases (prefeitura × banco × remessa).
     if (result.divergencias > 0) {
       pushEvent("warn", "admin.tombamento.divergencia", `⚠ Lote ${result.lote.id} (${pref.nome}/${body.competencia}) tem ${result.divergencias} divergência(s) entre as bases. Revise as linhas marcadas.`);
@@ -3546,7 +3546,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!banco) throw Errors.notFound("banco");
     const resolver = (id: number) => bancos.find((b) => b.id === id)?.nome ?? "?";
     const r = gerarBateCarteira({ bancoId: body.bancoId, competencia: body.competencia, prefeituraId: body.prefeituraId }, resolver);
-    appendAudit({ categoria: "tombamento", acao: "bate_carteira_gerado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Bate-de-carteira ${banco.nome}/${body.competencia}: ${r.totalLinhas} linhas, saldo R$ ${r.somaSaldoDevedor.toFixed(2)}.` });
+    appendAudit(auditCtx(c), { categoria: "tombamento", acao: "bate_carteira_gerado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Bate-de-carteira ${banco.nome}/${body.competencia}: ${r.totalLinhas} linhas, saldo R$ ${r.somaSaldoDevedor.toFixed(2)}.` });
     if (body.format === "csv") {
       return csvResponse(`bate-carteira-${banco.nome.replace(/\s+/g, "-")}-${body.competencia}.csv`, bateCarteiraCsv(r));
     }
@@ -3579,7 +3579,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }).parse(await c.req.json());
     const t = await upsertTermo(c.env, tipo, body);
     if (!t) throw Errors.notFound("termo");
-    appendAudit({ categoria: "convenio_config", acao: "termo_atualizado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Termo ${tipo} atualizado (versao ${t.versao}).` });
+    appendAudit(auditCtx(c), { categoria: "convenio_config", acao: "termo_atualizado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Termo ${tipo} atualizado (versao ${t.versao}).` });
     return c.json({ termo: t });
   })
 
@@ -3594,7 +3594,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const desde = url.searchParams.get("desde") ?? undefined;
     const ate = url.searchParams.get("ate") ?? undefined;
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
-    const entries = listAudit({ categoria: categoria ?? undefined, cpf, matricula, propostaId, desde, ate }, limit);
+    // Usa listAuditAsync: quando ha filtro (desde/ate/categoria/cpf/mat/prop),
+    // vai no PG pra alcancar janela historica alem do cache de 2000 do isolate.
+    // Sem filtro, retorna o cache in-memory (rapido).
+    const entries = await listAuditAsync(c.env, { categoria: categoria ?? undefined, cpf, matricula, propostaId, desde, ate }, limit);
     return c.json({ entries, categorias: auditCategorias() });
   })
 
@@ -3633,7 +3636,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }).parse(await c.req.json());
     const u = await upsertAverbadoraUser(body);
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: body.id ? "usuario_atualizado" : "usuario_criado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora ${u.email} (perfil=${u.perfil}, 2FA=${u.twoFactorEnabled}) ${body.id ? "atualizado" : "criado"}.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: body.id ? "usuario_atualizado" : "usuario_criado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora ${u.email} (perfil=${u.perfil}, 2FA=${u.twoFactorEnabled}) ${body.id ? "atualizado" : "criado"}.` });
     return c.json({ usuario: u });
   })
   .post("/v1/admin/perfis/:id/2fa/rotate", async (c) => {
@@ -3642,7 +3645,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const r = rotateTotpSecret(id);
     if (!r) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "2fa_rotacionado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} rotacionado. Novo secret deve ser entregue uma unica vez.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "2fa_rotacionado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} rotacionado. Novo secret deve ser entregue uma unica vez.` });
     return c.json(r);
   })
   .post("/v1/admin/perfis/:id/2fa/disable", async (c) => {
@@ -3650,7 +3653,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const id = Number(c.req.param("id"));
     if (!disable2FA(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "2fa_desativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} desativado.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "2fa_desativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} desativado.` });
     return c.json({ ok: true });
   })
   .delete("/v1/admin/perfis/:id", async (c) => {
@@ -3658,7 +3661,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const id = Number(c.req.param("id"));
     if (!deleteAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "usuario_removido", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} desativado.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "usuario_removido", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} desativado.` });
     return c.body(null, 204);
   })
   .post("/v1/admin/perfis/:id/reativar", async (c) => {
@@ -3666,7 +3669,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const id = Number(c.req.param("id"));
     if (!reactivateAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "usuario_reativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} reativado.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "usuario_reativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} reativado.` });
     return c.json({ ok: true });
   })
   // ============================================================
@@ -4074,7 +4077,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         // isolates continuariam vendo o tombamento como portavel.
         for (const loteId of affectedLotes) await persistLotePublic(c.env, loteId);
         if (affectedLotes.length > 0) {
-          appendAudit({
+          appendAudit(auditCtx(c), {
             categoria: "margem", acao: "portabilidade_substituiu_tombamento",
             userId: ator, userRole: "averbadora",
             detalhes: `Contrato ${adf} (REFIN) substituiu tombamento ${ct.contratoOrigem} da matricula ${ct.matricula}.`,
@@ -4082,7 +4085,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         }
       }
     }
-    appendAudit({ categoria: "margem", acao: "adf_aplicada_admin", userId: ator, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "adf_aplicada_admin", userId: ator, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
     // Notifica cada servidor por email (best-effort — nunca quebra a request).
     // Tenta template editavel /averbadora/emails/simulacao (averbada) primeiro;
     // fallback hardcoded se nao houver template ativo.
@@ -4151,7 +4154,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       setContratoFalhaEmFolha(adf, body.motivo);
       await persistContrato(c.env, adf);
     }
-    appendAudit({ categoria: "margem", acao: "adf_falha_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "adf_falha_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
     // Notifica servidor + banco por email (best-effort).
     for (const adf of adfs) {
       const ct = getContrato(adf);

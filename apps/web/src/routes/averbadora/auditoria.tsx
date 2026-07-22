@@ -17,29 +17,38 @@ const VAR_BY_CAT: Record<AuditCategoria, "averbado" | "emdia" | "pendente" | "re
 };
 
 /** Regras de aplicabilidade das colunas CPF/Matricula/ID unico por evento.
- *  Retorna false quando o campo NAO faz sentido pra aquele evento (vira
- *  "n/a" na UI, cinza dim); true quando faz sentido — se vier vazio, vira
- *  "—" pra sinalizar dado ausente. Regras derivadas dos appendAudit em
- *  apps/api/src/modules/{auth,servidores,admin,prefeitura}/*.ts. */
-function cpfAplicavel(e: AdminAuditEntry): boolean {
-  // Login/2FA de banco/prefeitura/averbadora e por email — sem CPF.
-  if (e.categoria === "acesso" && e.userRole && e.userRole !== "servidor" && e.userRole !== "-") return false;
-  // Tombamento e convenio_config sao acoes admin agregadas.
-  if (e.categoria === "tombamento" || e.categoria === "convenio_config") return false;
-  // Acoes admin agregadas dentro de margem/termo_aceite/acesso/id_unico.
-  const acoesAgregadas = new Set([
-    "reverter_desligamento", "marcar_portabilidade", "limpar_ccb",
-    "anuencia_removida", "destructive_unlock",
-    "banco_desativado", "prefeitura_desativada", "prefeitura_hard_deleted",
-    "config_atualizada", "id_emitido",
+ *  Retorna false quando o campo NAO faz sentido pra aquele evento (vira "n/a"
+ *  na UI, cinza dim); true quando faz sentido mas veio vazio → "—" (sinaliza
+ *  bug de instrumentacao). Heuristica corrigida em 22/07/2026:
+ *
+ *  Antes: lista de acoes/categorias hardcoded — deu falsos negativos com
+ *  acoes admin novas (folha_consolidada, adf_aplicada_admin, etc) que caem
+ *  em categoria=margem mas nao referenciam servidor. Resultado: "—" onde
+ *  devia ser "n/a".
+ *
+ *  Agora: PRESENCA de cpf/matricula no entry + relacao a um servidor
+ *  especifico. Se o entry veio SEM cpf, ele so seria "esperado" quando o
+ *  userRole indica que o ator e o proprio servidor OU quando a acao esta na
+ *  lista pequena de eventos que sabidamente carregam cpf mesmo do lado
+ *  admin (pre_reserva_cancelada). Fora disso, ausencia = n/a. */
+function isServidorCentric(e: AdminAuditEntry): boolean {
+  if (e.userRole === "servidor") return true;
+  const acoesServidorCentric = new Set([
+    "pre_reserva_criada", "pre_reserva_cancelada",
+    "termo_confirmado_na_proposta",
+    "primeiro_acesso_conclusao", "senha_redefinida",
+    "servidor_editado", "base_importada_matricula",
+    "adf_aprovada_prefeitura", "adf_negada_prefeitura",
   ]);
-  if (acoesAgregadas.has(e.acao)) return false;
-  return true;
+  return acoesServidorCentric.has(e.acao);
+}
+function cpfAplicavel(e: AdminAuditEntry): boolean {
+  if (e.cpf) return true;
+  return isServidorCentric(e);
 }
 function matriculaAplicavel(e: AdminAuditEntry): boolean {
-  // Mesma regra do CPF — matricula so faz sentido quando o evento e sobre um
-  // servidor especifico. login_falhou por email nao tem matricula tambem.
-  return cpfAplicavel(e);
+  if (e.matricula) return true;
+  return isServidorCentric(e);
 }
 function idUnicoAplicavel(e: AdminAuditEntry): boolean {
   // ID Unico so aparece em eventos da categoria id_unico ou pre_reserva
@@ -78,7 +87,7 @@ export function AdminAuditoria() {
 
   const columns: Column<AdminAuditEntry>[] = [
     { key: "ts", header: "Quando", render: (e) => new Date(e.ts).toLocaleString("pt-BR") },
-    { key: "categoria", header: "Categoria", render: (e) => <Pill variant={VAR_BY_CAT[e.categoria]}>{e.categoria}</Pill> },
+    { key: "categoria", header: "Categoria", render: (e) => <Pill variant={VAR_BY_CAT[e.categoria] ?? "emdia"}>{e.categoria}</Pill> },
     { key: "acao", header: "Ação", mono: true },
     { key: "cpf", header: "CPF", render: (e) => renderCampo(e.cpf, cpfAplicavel(e)) },
     { key: "matricula", header: "Matrícula", render: (e) => renderCampo(e.matricula, matriculaAplicavel(e)) },

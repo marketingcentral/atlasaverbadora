@@ -17,7 +17,7 @@ import { listContratos, refreshContratos, persistContrato, comprometeMargem, der
 import { enviarNotificacao } from "../admin/mailer.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
-import { appendAudit } from "../admin/auditoria.js";
+import { appendAudit, auditCtx } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "../admin/id-unico.js";
 import { importTombamento, listLotes, listLinhas, refreshTombamento, listExternalLoans, ensureTombamentoLoaded } from "../admin/tombamento.js";
@@ -239,7 +239,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (body.exigeCcb !== undefined) p.exigeCcb = body.exigeCcb;
     if (body.exigeBanco2FA !== undefined) p.exigeBanco2FA = body.exigeBanco2FA;
     try { await upsertPrefeitura(c.env, p); } catch { /* best-effort persist */ }
-    appendAudit({ categoria: "acesso", acao: "config_averbacao", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: exigeCcb=${p.exigeCcb} exigeBanco2FA=${p.exigeBanco2FA}` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "config_averbacao", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: exigeCcb=${p.exigeCcb} exigeBanco2FA=${p.exigeBanco2FA}` });
     return c.json({ exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false });
   })
 
@@ -452,7 +452,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const notaFalha = persistFailures.length > 0
       ? ` — ATENCAO: ${persistFailures.length} falha(s) de persistencia (1a: ${persistFailures[0]?.message})`
       : "";
-    appendAudit({ categoria: "dados_pessoais", acao: "base_importada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: base importada — ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros${notaFalha}.` });
+    appendAudit(auditCtx(c), { categoria: "dados_pessoais", acao: "base_importada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: base importada — ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros${notaFalha}.` });
     return c.json({ ...out, persistFailures });
   })
 
@@ -502,7 +502,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     }
     try { await persistServidorPref(c.env, s); }
     catch (e) { throw new HttpError(500, "persist_failed", `Servidor editado em memória, mas falhou ao salvar no banco: ${(e as Error).message}`); }
-    appendAudit({ categoria: "dados_pessoais", acao: "servidor_editado", matricula: s.matricula, cpf: s.cpfMasked, userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Servidor ${s.matricula} editado pela prefeitura (${changed.join(",")}).` });
+    appendAudit(auditCtx(c), { categoria: "dados_pessoais", acao: "servidor_editado", matricula: s.matricula, cpf: s.cpfMasked, userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Servidor ${s.matricula} editado pela prefeitura (${changed.join(",")}).` });
     return c.json({ servidor: { matricula: s.matricula, nome: s.nome, cpf: s.cpf, cpfMasked: s.cpfMasked, cargo: s.cargo ?? "", endereco: s.endereco ?? "", vinculo: s.vinculo, email: s.email ?? "", telefone: s.telefone ?? "", codigoIbge: s.codigoIbge ?? null } });
   })
 
@@ -563,7 +563,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     };
     folhas.push(folha);
     await persistFolha(c.env, folha); // write-through — sobrevive a redeploy
-    appendAudit({ categoria: "margem", acao: "folha_aberta", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Folha ${body.competencia} aberta (corte ${body.dataCorte}).` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_aberta", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Folha ${body.competencia} aberta (corte ${body.dataCorte}).` });
     return c.json({ folha }, 201);
   })
   .patch("/v1/prefeitura/folhas/:id", async (c) => {
@@ -589,7 +589,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (body.dataCorte) f.dataCorte = body.dataCorte;
     if (body.dataRepasse !== undefined) f.dataRepasse = body.dataRepasse;
     await persistFolha(c.env, f);
-    appendAudit({ categoria: "margem", acao: "folha_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} -> status=${f.status}.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} -> status=${f.status}.` });
     return c.json({ folha: f });
   })
   // Exclui folha aberta e SEM movimentacoes (rollback de "abri sem querer").
@@ -608,7 +608,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     }
     folhas.splice(idx, 1);
     try { await deleteCollectionRow(c.env, "admin_folhas", f.id); } catch { /* fail-safe */ }
-    appendAudit({ categoria: "margem", acao: "folha_excluida", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} excluida (estava aberta e sem movimentacoes).` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_excluida", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} excluida (estava aberta e sem movimentacoes).` });
     return c.json({ ok: true, competencia: f.competencia });
   })
   .get("/v1/prefeitura/folhas/:id/movimentacoes", (c) => {
@@ -700,7 +700,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         try { await persistContrato(c.env, adf); } catch { /* fail-safe */ }
       }
     }
-    appendAudit({ categoria: "margem", acao: "folha_movimentacao", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia}: ${out.inserted} movimentações, ${out.errors.length} erros. Margem recalculada.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_movimentacao", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia}: ${out.inserted} movimentações, ${out.errors.length} erros. Margem recalculada.` });
 
     // Notifica bancos por email quando houve desligamento/aposentadoria.
     // Agrupa contratos afetados por bancoId, envia 1 email por banco listando
@@ -845,7 +845,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     });
     // Persiste no PG pra que a tela /averbadora/id-unico veja o mesmo prefixo.
     await persistIdUnicoConfig(c.env, novoIdcfg);
-    appendAudit({ categoria: "convenio_config", acao: "config_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Convenio ${cv.id}: trava=${body.prazoTravaHoras}h, portabilidade=${body.prazoPortabilidadeDU}DU, maxComp=${Math.round(body.maxComprometimentoPct * 100)}%, tetoParcelas=${body.maxParcelas}, prefixo=${body.prefixo.toUpperCase()}.` });
+    appendAudit(auditCtx(c), { categoria: "convenio_config", acao: "config_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Convenio ${cv.id}: trava=${body.prazoTravaHoras}h, portabilidade=${body.prazoPortabilidadeDU}DU, maxComp=${Math.round(body.maxComprometimentoPct * 100)}%, tetoParcelas=${body.maxParcelas}, prefixo=${body.prefixo.toUpperCase()}.` });
     return c.json({ config: cfg, prefixo: body.prefixo.toUpperCase() });
   })
 
@@ -919,7 +919,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const competencia = c.req.query("competencia") || new Date().toISOString().slice(0, 7).replace("-", "");
     const csv = await readCsvBody(c);
     const res = await importTombamento({ prefeituraId: id, prefeituraNome: p.nome, competencia, recebidoPor: `prefeitura:${id}`, csv, env: c.env });
-    appendAudit({ categoria: "tombamento", acao: "lote_importado", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Lote ${res.lote.id} (${p.nome}/${competencia}): ${res.inseridos} inseridos, ${res.atualizados} atualizados, ${res.divergencias} divergências, ${res.erros.length} erros.` });
+    appendAudit(auditCtx(c), { categoria: "tombamento", acao: "lote_importado", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Lote ${res.lote.id} (${p.nome}/${competencia}): ${res.inseridos} inseridos, ${res.atualizados} atualizados, ${res.divergencias} divergências, ${res.erros.length} erros.` });
     return c.json(res);
   })
 
@@ -1052,7 +1052,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const anu = registrarAnuencia({ prefeituraId: id, aceitoPor: body.aceitoPor, ip }, new Date().toISOString());
     // Persist no PG — sobrevive a redeploy.
     await persistAnuencia(c.env, anu);
-    appendAudit({ categoria: "termo_aceite", acao: "anuencia_base", termoAceito: TERMO_VERSAO_ATUAL, ip, userId: `prefeitura:${j.sub}`, userRole: "prefeitura", detalhes: `Anuência de uso da base aceita por ${body.aceitoPor} (${TERMO_VERSAO_ATUAL}).` });
+    appendAudit(auditCtx(c), { categoria: "termo_aceite", acao: "anuencia_base", termoAceito: TERMO_VERSAO_ATUAL, ip, userId: `prefeitura:${j.sub}`, userRole: "prefeitura", detalhes: `Anuência de uso da base aceita por ${body.aceitoPor} (${TERMO_VERSAO_ATUAL}).` });
     return c.json({ anuencia: anu }, 201);
   })
 
@@ -1087,7 +1087,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const id = requirePrefeitura(c.get("jwt"));
     const r = rotateTotp(id, Number(c.req.param("id")));
     if (!r) throw Errors.notFound("perfil");
-    appendAudit({ categoria: "acesso", acao: "2fa_rotate", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `2FA (TOTP) rotacionado para perfil ${c.req.param("id")}.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "2fa_rotate", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `2FA (TOTP) rotacionado para perfil ${c.req.param("id")}.` });
     return c.json(r);
   })
   .post("/v1/prefeitura/perfis/:id/2fa/disable", (c) => {
