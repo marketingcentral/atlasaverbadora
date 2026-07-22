@@ -928,7 +928,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/dashboard", async (c) => {
     requireAdmin(c.get("jwt"));
     await refreshContratos(c.env);
-    await ensureServidoresLoaded(c.env); // pra contagem real de servidores por prefeitura
+    // refreshServidores (nao ensureServidoresLoaded): o ensure e' memoized por
+    // isolate — se rodou 1x com PG vazio, cacheia vazio pra sempre. Precisamos
+    // ler do PG A CADA request pra topPrefeituras refletir servidores importados
+    // recentemente. Mesmo padrao que /v1/admin/servidores usa.
+    await refreshServidores(c.env);
     const todosContratos = listContratos({});
     // Contagem REAL de servidores por prefeitura (mesmo pattern do
     // GET /v1/admin/prefeituras). Sem isso, top prefeituras mostra 0 pra
