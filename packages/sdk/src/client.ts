@@ -2089,7 +2089,11 @@ export class AtlasClient {
     movimentacaoCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/folhas/movimentacao/csv-template`,
 
     // Convênios + config (passo 5)
-    convenios: () => this.request<{ convenios: (PrefeituraConvenio & { prazoTravaHoras: number; prazoPortabilidadeDU: number; prefixo: string; formatoImportacao: string })[]; prefixo: string }>("/v1/prefeitura/convenios"),
+    convenios: () => this.request<{ convenios: (PrefeituraConvenio & {
+      prazoTravaHoras: number; prazoPortabilidadeDU: number; prefixo: string; formatoImportacao: string;
+      maxParcelas: number; taxaMaxAm: number; maxComprometimentoPct: number; idadeMin: number; idadeMax: number;
+      vigenciaInicio: string; vigenciaFim: string | null; vinculosAceitos: string[]; regrasEspeciais: string; ativo: boolean;
+    })[]; prefixo: string }>("/v1/prefeitura/convenios"),
     convenioConfig: (id: string) =>
       this.request<{ convenio: { id: string; nome: string; bancoNome: string }; config: { prazoTravaHoras: number; prazoPortabilidadeDU: number; maxComprometimentoPct: number; maxParcelas: number; vinculosAceitos: string[]; formatoImportacao: string; regrasEspeciais: string; prefixo: string } }>(`/v1/prefeitura/convenios/${id}/config`),
     salvarConvenioConfig: (id: string, body: { prazoTravaHoras: number; prazoPortabilidadeDU: number; maxComprometimentoPct: number; maxParcelas: number; vinculosAceitos: string[]; formatoImportacao: string; regrasEspeciais: string; prefixo: string }) =>

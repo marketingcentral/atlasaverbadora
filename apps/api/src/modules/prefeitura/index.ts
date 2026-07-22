@@ -808,6 +808,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         dataCorte: cv.dataCorte, diaRepasse: cv.diaRepasse,
         prazoTravaHoras: cfg?.prazoTravaHoras ?? 48, prazoPortabilidadeDU: cfg?.prazoPortabilidadeDU ?? 7,
         prefixo: idcfg?.prefixo ?? "", formatoImportacao: cfg?.formatoImportacao ?? "CSV",
+        // Config completa (read-only pra prefeitura) — mesmos campos que a
+        // averbadora edita. Cliente pediu 21/07/2026 pra exibir tudo aqui.
+        maxParcelas: cfg?.maxParcelas ?? 96,
+        taxaMaxAm: cfg?.taxaMaxAm ?? 1.8,
+        maxComprometimentoPct: cfg?.maxComprometimentoPct ?? 0.35,
+        idadeMin: cfg?.idadeMin ?? 18,
+        idadeMax: cfg?.idadeMax ?? 80,
+        vigenciaInicio: cfg?.vigenciaInicio ?? "",
+        vigenciaFim: cfg?.vigenciaFim ?? null,
+        vinculosAceitos: cfg?.vinculosAceitos ?? [],
+        regrasEspeciais: cfg?.regrasEspeciais ?? "",
+        ativo: cfg?.ativo !== false,
       };
     });
     return c.json({ convenios: detalhado, prefixo: idcfg?.prefixo ?? "" });
