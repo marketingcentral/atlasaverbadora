@@ -217,25 +217,42 @@ function PerfilModal({
               Perfil atual: <b>{areaDetectada}</b> · <b>{totalMarcadas}</b> {supervisor ? "(todas via *)" : "marcada(s)"}
             </div>
           </div>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <select
-              style={{ ...selStyle, minWidth: 140 }}
-              value={presetEscolhido}
-              onChange={(e) => aplicarPreset(e.target.value)}
-            >
-              {PREFEITURA_PRESET_LABELS.map((p) => (
-                <option key={p.value} value={p.value}>{p.label}</option>
-              ))}
-              {presetsCustom.length > 0 ? (
-                <optgroup label="Presets salvos">
-                  {presetsCustom.map((p) => (
-                    <option key={p.key} value={p.key}>{p.nome}</option>
-                  ))}
-                </optgroup>
-              ) : null}
-            </select>
-            <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes(["*"])}>Marcar tudo</Button>
-            <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes([])}>Limpar</Button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            {/* Lado 1 — presets normais (built-in). */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>Presets</span>
+              <select
+                style={{ ...selStyle, minWidth: 130 }}
+                value={PREFEITURA_PRESET_LABELS.some((p) => p.value === presetEscolhido) ? presetEscolhido : ""}
+                onChange={(e) => { if (e.target.value) aplicarPreset(e.target.value); }}
+              >
+                <option value="" disabled>— escolher —</option>
+                {PREFEITURA_PRESET_LABELS.map((p) => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Lado 2 — presets salvos (customizados). */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+              <span style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase" }}>Presets salvos</span>
+              <select
+                style={{ ...selStyle, minWidth: 130 }}
+                value={presetsCustom.some((p) => p.key === presetEscolhido) ? presetEscolhido : ""}
+                onChange={(e) => { if (e.target.value) aplicarPreset(e.target.value); }}
+                disabled={presetsCustom.length === 0}
+              >
+                <option value="" disabled>{presetsCustom.length === 0 ? "nenhum ainda" : "— escolher —"}</option>
+                {presetsCustom.map((p) => (
+                  <option key={p.key} value={p.key}>{p.nome}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", gap: 6, alignSelf: "flex-end" }}>
+              <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes(["*"])}>Marcar tudo</Button>
+              <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes([])}>Limpar</Button>
+            </div>
           </div>
         </div>
 
