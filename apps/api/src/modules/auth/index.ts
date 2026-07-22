@@ -27,6 +27,17 @@ function auditIdent(id: string): { cpf?: string; ident: string } {
   if (d.length === 11) return { cpf: maskCpfLocal(d), ident: maskCpfLocal(d) };
   return { ident: maskEmail(id) };
 }
+/** Lista matriculas de um CPF (pode haver N por acumulacao de cargos). Retorna
+ *  string curta pra coluna Matricula da auditoria — "9001", "9001, 9002" ou
+ *  "3 matriculas" quando muitas. Undefined se nenhuma encontrada. */
+function auditMatriculasDoCpf(cpfDigits: string): string | undefined {
+  const linhas = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === cpfDigits);
+  if (linhas.length === 0) return undefined;
+  const mats = Array.from(new Set(linhas.map((x) => x.matricula)));
+  if (mats.length === 1) return mats[0];
+  if (mats.length <= 3) return mats.join(", ");
+  return `${mats.length} matriculas`;
+}
 
 /** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
 function maskEmail(email?: string): string {
@@ -303,10 +314,13 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
 
     if (!resolved) {
       const ai = auditIdent(body.identifier);
+      const cpfDig = body.identifier.replace(/\D/g, "");
+      const matricula = cpfDig.length === 11 ? auditMatriculasDoCpf(cpfDig) : undefined;
       appendAudit({
         categoria: "acesso",
         acao: "login_falhou",
         cpf: ai.cpf,
+        matricula,
         userRole: "-",
         detalhes: `Tentativa de login falhou para ${ai.ident} (credenciais invalidas).`,
       });
@@ -357,10 +371,13 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     }
     if (needs2fa && c.env.KV_SESSIONS) {
       const ai = auditIdent(body.identifier);
+      const cpfDig2fa = body.identifier.replace(/\D/g, "");
+      const mat2fa = resolved.role === "servidor" && cpfDig2fa.length === 11 ? auditMatriculasDoCpf(cpfDig2fa) : undefined;
       appendAudit({
         categoria: "acesso",
         acao: "login_2fa_pendente",
         cpf: ai.cpf,
+        matricula: mat2fa,
         userId: `${resolved.role}:${resolved.id}`,
         userRole: resolved.role,
         deviceId: body.device_id,
@@ -416,10 +433,13 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       );
     }
     const aiOk = auditIdent(body.identifier);
+    const cpfDigOk = body.identifier.replace(/\D/g, "");
+    const matOk = resolved.role === "servidor" && cpfDigOk.length === 11 ? auditMatriculasDoCpf(cpfDigOk) : undefined;
     appendAudit({
       categoria: "acesso",
       acao: "login_sucesso",
       cpf: aiOk.cpf,
+      matricula: matOk,
       userId: `${resolved.role}:${resolved.id}`,
       userRole: resolved.role,
       deviceId: body.device_id,
@@ -474,11 +494,27 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     }
     if (!secret) throw Errors.unauthorized("2FA nao configurado para este usuario");
 
+    // Resolve CPF/matricula do servidor a partir do servidor_id (2FA nao carrega
+    // o identifier original — pra outros roles, cpf/matricula ficam undefined).
+    let cpf2faMask: string | undefined;
+    let mat2faDone: string | undefined;
+    if (parsed.role === "servidor" && parsed.servidor_id != null) {
+      const s = SERVIDORES_BUSCA_MOCK.find((x) => {
+        const idSint = Number(x.idMatricula.replace(/\D/g, "").slice(-5)) || -1;
+        return idSint === parsed.servidor_id;
+      });
+      if (s) {
+        cpf2faMask = maskCpfLocal(s.cpf);
+        mat2faDone = auditMatriculasDoCpf(s.cpf);
+      }
+    }
     const ok = await verifyTotp(secret, code);
     if (!ok) {
       appendAudit({
         categoria: "acesso",
         acao: "login_2fa_falhou",
+        cpf: cpf2faMask,
+        matricula: mat2faDone,
         userId: `${parsed.role}:${parsed.user_id}`,
         userRole: parsed.role,
         deviceId: parsed.device_id,
@@ -489,6 +525,8 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     appendAudit({
       categoria: "acesso",
       acao: "login_sucesso_2fa",
+      cpf: cpf2faMask,
+      matricula: mat2faDone,
       userId: `${parsed.role}:${parsed.user_id}`,
       userRole: parsed.role,
       deviceId: parsed.device_id,
@@ -656,6 +694,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       categoria: "dados_pessoais",
       acao: "primeiro_acesso_conclusao",
       cpf: maskCpfLocal(digits),
+      matricula: auditMatriculasDoCpf(digits),
       userRole: "servidor",
       detalhes: `Servidor concluiu primeiro-acesso: senha definida, email ${maskEmail(pending.email)}${pending.telefone ? `, telefone ${maskPhone(pending.telefone)}` : ""}.`,
     });
@@ -731,6 +770,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       categoria: "dados_pessoais",
       acao: "senha_redefinida",
       cpf: maskCpfLocal(digits),
+      matricula: auditMatriculasDoCpf(digits),
       userRole: "servidor",
       detalhes: `Servidor redefiniu senha via 'esqueci minha senha'.`,
     });
