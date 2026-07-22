@@ -64,16 +64,17 @@ export function PrefeituraConvenios() {
                 </div>
               </div>
 
-              {/* Quadrados de pontas redondas com toda a config. */}
+              {/* Quadrados de pontas redondas com toda a config (defensivo:
+                  campos podem faltar se o isolate da API ainda nao propagou). */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
                 <Stat label="Prefixo" value={c.prefixo || "—"} />
-                <Stat label="Importação" value={c.formatoImportacao} />
-                <Stat label="Trava regular" value={`${c.prazoTravaHoras}h`} />
-                <Stat label="Trava portabilidade" value={`${c.prazoPortabilidadeDU} DU`} />
-                <Stat label="Máx. parcelas" value={`${c.maxParcelas}`} />
-                <Stat label="Taxa máx. a.m." value={`${c.taxaMaxAm}%`} />
-                <Stat label="Máx. comprometimento" value={`${Math.round(c.maxComprometimentoPct * 100)}%`} />
-                <Stat label="Faixa etária" value={`${c.idadeMin}–${c.idadeMax}`} />
+                <Stat label="Importação" value={c.formatoImportacao || "—"} />
+                <Stat label="Trava regular" value={c.prazoTravaHoras != null ? `${c.prazoTravaHoras}h` : "—"} />
+                <Stat label="Trava portabilidade" value={c.prazoPortabilidadeDU != null ? `${c.prazoPortabilidadeDU} DU` : "—"} />
+                <Stat label="Máx. parcelas" value={c.maxParcelas != null ? String(c.maxParcelas) : "—"} />
+                <Stat label="Taxa máx. a.m." value={c.taxaMaxAm != null ? `${c.taxaMaxAm}%` : "—"} />
+                <Stat label="Máx. comprometimento" value={c.maxComprometimentoPct != null ? `${Math.round(c.maxComprometimentoPct * 100)}%` : "—"} />
+                <Stat label="Faixa etária" value={(c.idadeMin != null && c.idadeMax != null) ? `${c.idadeMin}–${c.idadeMax}` : "—"} />
                 <Stat label="Vigência" value={`${fmtDate(c.vigenciaInicio)} → ${fmtDate(c.vigenciaFim)}`} />
               </div>
 
@@ -81,8 +82,8 @@ export function PrefeituraConvenios() {
               <div style={{ marginTop: 14 }}>
                 <div style={{ ...eyebrow, fontSize: 11, marginBottom: 6 }}>Vínculos aceitos</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                  {c.vinculosAceitos.length > 0
-                    ? c.vinculosAceitos.map((v) => <Pill key={v} variant="aceita">{v}</Pill>)
+                  {(c.vinculosAceitos ?? []).length > 0
+                    ? (c.vinculosAceitos ?? []).map((v) => <Pill key={v} variant="aceita">{v}</Pill>)
                     : <span style={{ fontSize: 13, color: "var(--text-muted)" }}>—</span>}
                 </div>
               </div>
