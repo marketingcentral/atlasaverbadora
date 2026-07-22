@@ -233,16 +233,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!p) throw Errors.notFound("prefeitura");
     return c.json({ exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false });
   })
-  .post("/v1/prefeitura/config", async (c) => {
-    const id = requirePrefeitura(c.get("jwt"));
-    const p = prefeituras.find((x) => x.id === id);
-    if (!p) throw Errors.notFound("prefeitura");
-    const body = z.object({ exigeCcb: z.boolean().optional(), exigeBanco2FA: z.boolean().optional() }).parse(await c.req.json());
-    if (body.exigeCcb !== undefined) p.exigeCcb = body.exigeCcb;
-    if (body.exigeBanco2FA !== undefined) p.exigeBanco2FA = body.exigeBanco2FA;
-    try { await upsertPrefeitura(c.env, p); } catch { /* best-effort persist */ }
-    appendAudit(auditCtx(c), { categoria: "acesso", acao: "config_averbacao", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: exigeCcb=${p.exigeCcb} exigeBanco2FA=${p.exigeBanco2FA}` });
-    return c.json({ exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false });
+  // DESATIVADO (cliente 21/07/2026): a aba Convenios da prefeitura e' SOMENTE
+  // LEITURA — quem configura convenios e exigencias de averbacao e' a averbadora.
+  // A prefeitura apenas consulta o que foi definido.
+  .post("/v1/prefeitura/config", (c) => {
+    requirePrefeitura(c.get("jwt"));
+    throw Errors.forbidden("Convênios e exigências de averbação são configurados pela averbadora — a prefeitura apenas consulta.");
   })
 
   // ===== Passo 2 — Dashboard (com pendências de upload) =====
@@ -835,46 +831,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       },
     });
   })
-  .put("/v1/prefeitura/convenios/:id/config", async (c) => {
-    const pid = requirePrefeitura(c.get("jwt"));
-    const cv = conveniosDaPrefeitura(pid).find((x) => x.id === c.req.param("id"));
-    if (!cv) throw Errors.notFound("convenio");
-    const body = z.object({
-      prazoTravaHoras: z.number().int().min(1).max(720),
-      prazoPortabilidadeDU: z.number().int().min(1).max(30),
-      maxComprometimentoPct: z.number().min(0.05).max(0.7),
-      // Teto de parcelas aplicado ao banco quando ele cria tabelas de
-      // emprestimo. Fechado nas mesmas opcoes que o banco pode escolher.
-      maxParcelas: z.union([
-        z.literal(12), z.literal(24), z.literal(36), z.literal(48),
-        z.literal(60), z.literal(72), z.literal(84), z.literal(96), z.literal(120),
-      ]),
-      vinculosAceitos: z.array(z.enum(VINCULOS)).min(1),
-      formatoImportacao: z.enum(["CSV", "EXCEL", "API"]),
-      regrasEspeciais: z.string().default(""),
-      prefixo: z.string().min(2).max(5).regex(/^[A-Za-z]+$/, "prefixo só letras"),
-    }).parse(await c.req.json());
-    const prev = getConvenioConfig(cv.id);
-    const cfg = upsertConvenioConfig({
-      id: cv.id,
-      prazoTravaHoras: body.prazoTravaHoras, prazoPortabilidadeDU: body.prazoPortabilidadeDU,
-      maxComprometimentoPct: body.maxComprometimentoPct,
-      maxParcelas: body.maxParcelas, taxaMaxAm: prev?.taxaMaxAm ?? 1.8,
-      idadeMin: prev?.idadeMin ?? 18, idadeMax: prev?.idadeMax ?? 80,
-      vinculosAceitos: body.vinculosAceitos, formatoImportacao: body.formatoImportacao,
-      regrasEspeciais: body.regrasEspeciais, vigenciaInicio: prev?.vigenciaInicio ?? "2026-01-01",
-      vigenciaFim: prev?.vigenciaFim, ativo: prev?.ativo ?? true,
-    });
-    const idcfg = getIdUnicoConfig(pid);
-    const novoIdcfg = upsertIdUnicoConfig({
-      prefeituraId: pid, prefixo: body.prefixo.toUpperCase(),
-      formato: idcfg?.formato ?? "SEQ", larguraSeq: idcfg?.larguraSeq ?? 6,
-      proximoSeq: idcfg?.proximoSeq ?? 1, separador: idcfg?.separador ?? "-",
-    });
-    // Persiste no PG pra que a tela /averbadora/id-unico veja o mesmo prefixo.
-    await persistIdUnicoConfig(c.env, novoIdcfg);
-    appendAudit(auditCtx(c), { categoria: "convenio_config", acao: "config_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Convenio ${cv.id}: trava=${body.prazoTravaHoras}h, portabilidade=${body.prazoPortabilidadeDU}DU, maxComp=${Math.round(body.maxComprometimentoPct * 100)}%, tetoParcelas=${body.maxParcelas}, prefixo=${body.prefixo.toUpperCase()}.` });
-    return c.json({ config: cfg, prefixo: body.prefixo.toUpperCase() });
+  // DESATIVADO (cliente 21/07/2026): a prefeitura NAO edita convenios — quem
+  // configura (trava, portabilidade, prefixo, vinculos, etc.) e' a averbadora.
+  // A aba Convenios da prefeitura e' somente leitura.
+  .put("/v1/prefeitura/convenios/:id/config", (c) => {
+    requirePrefeitura(c.get("jwt"));
+    throw Errors.forbidden("Configuração de convênio é feita pela averbadora — a prefeitura apenas consulta.");
   })
 
   // ===== Passo 7 — Contratos / Tombamento =====
