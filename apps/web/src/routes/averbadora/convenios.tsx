@@ -182,9 +182,14 @@ function MatrizConvenios({
   // Mapa (bancoId:prefeituraId) -> convenio ativo desse par, se existir.
   const cell = useMemo(() => {
     const m = new Map<string, AdminConvenio>();
+    // Matriz precisa ver TODOS os convenios (ativos + inativos) pra decidir
+    // reativar vs criar. Antes: so ativos entravam no Map — reclicar celula
+    // inativa criava CONV-N+1 (duplicado). Se ha ativo E inativo pro mesmo
+    // par, prefere o ativo (nao deveria acontecer, mas guard).
     for (const c of convenios) {
-      if (!c.ativo) continue;
-      m.set(`${c.bancoId}:${c.prefeituraId}`, c);
+      const key = `${c.bancoId}:${c.prefeituraId}`;
+      const prev = m.get(key);
+      if (!prev || (!prev.ativo && c.ativo)) m.set(key, c);
     }
     return m;
   }, [convenios]);
@@ -208,15 +213,27 @@ function MatrizConvenios({
       setPending(null);
     },
   });
+  const reativar = useMutation({
+    mutationFn: (id: string) => atlas.admin.reativarConvenio(id),
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "convenios"] });
+      setPending(null);
+    },
+  });
 
   const toggle = (banco: AdminBanco, pref: AdminPrefeitura) => {
     const key = `${banco.id}:${pref.id}`;
     if (pending) return;
     setPending(key);
     const existing = cell.get(key);
-    if (existing) {
+    if (existing?.ativo) {
+      // Ativo -> desativa (soft delete, mantem historico)
       remove.mutate(existing.id);
+    } else if (existing) {
+      // Inativo -> reativa o mesmo convenio (sem duplicar)
+      reativar.mutate(existing.id);
     } else {
+      // Nao existe -> cria com padroes
       create.mutate({
         bancoId: banco.id, prefeituraId: pref.id,
         nome: `${pref.nome.toUpperCase()} / ${banco.nome.toUpperCase()}`,
@@ -278,7 +295,10 @@ function MatrizConvenios({
                 </td>
                 {bancos.map((b) => {
                   const key = `${b.id}:${p.id}`;
-                  const on = cell.has(key);
+                  // "on" = celula marcada = convenio ATIVO. Inativos ficam
+                  // desmarcados visualmente mas ainda existem no map — clicar
+                  // pra ativar reativa em vez de criar novo.
+                  const on = cell.get(key)?.ativo === true;
                   const busy = pending === key;
                   return (
                     <td key={b.id} style={{ padding: "6px", borderBottom: "1px solid var(--border)", textAlign: "center" }}>
