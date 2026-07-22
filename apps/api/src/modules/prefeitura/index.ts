@@ -27,7 +27,7 @@ import {
   TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia, refreshAnuencias, persistAnuencia,
   listPerfis, upsertPerfil, deletePerfil, reactivatePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
 } from "./store.js";
-import { upsertPrefeitura, upsertServidor, deleteCollectionRow, loadCollection } from "../../db/repos.js";
+import { upsertPrefeitura, upsertServidor, deleteCollectionRow, loadCollection, loadServidores } from "../../db/repos.js";
 import { MATRICULA_REGEX, normalizeMatricula } from "../../_shared/matricula.js";
 
 /**
@@ -162,12 +162,14 @@ export const prefeituraPublicRoutes = new Hono<{ Bindings: Env }>()
     }]);
     return csvResp("servidores-modelo.csv", csv);
   })
-  .get("/v1/prefeitura/folhas/movimentacao/csv-template", () => {
-    // Dinamico: pega matriculas reais da base pra promocao/demissao. Se vazio,
-    // usa placeholders e comentario avisando. Rota publica (sem JWT) — nao
-    // filtra por prefeitura; se precisar escopar por prefeitura, promover a
-    // rota autenticada.
-    const existentes = SERVIDORES_BUSCA_MOCK.slice(0, 2);
+  .get("/v1/prefeitura/folhas/movimentacao/csv-template", async (c) => {
+    // Dinamico: pega matriculas reais da base pra promocao/demissao. Le direto
+    // do PG (loadServidores) — rota publica sem JWT, entao o SERVIDORES_BUSCA_MOCK
+    // em memoria pode estar vazio num isolate frio que nunca hidratou. Cliente
+    // reportou 21/07/2026: modelo vinha "Base de servidores vazia" mesmo com 31
+    // servidores cadastrados. Nao filtra por prefeitura (rota publica).
+    const rows = await loadServidores(c.env).catch(() => [] as ServidorBuscaMock[]);
+    const existentes = rows.slice(0, 2);
     const headers = ["tipo", "matricula", "cpf", "nome", "cargoNovo", "salarioNovo", "detalhe"];
     if (existentes.length === 0) {
       const aviso = `# Base de servidores vazia. Importe servidores antes de rodar movimentacao.\n${headers.join(",")}\n`;
