@@ -951,11 +951,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const totalVitrineMes = vitrine.reduce((acc, v) => acc + v.receitaMes, 0);
     const preResumo = resumoPreReservas(todosContratos.map(contratoToPreReserva));
     const folhasAbertas = folhas.filter((f) => f.status === "aberta").length;
-    const volumePorConvenio = todosContratos.reduce<Record<string, number>>((acc, c) => {
+    // "Averbado" = margem efetivamente registrada em folha. Volume AVERBADO
+    // conta SO contratos nesse estado (Ativo/Averbado/Formalizado) — nao
+    // propostas em aberto, aprovadas nem canceladas. Cliente apontou 21/07/2026:
+    // o card somava TODOS os contratos (listContratos({})) sob o rotulo
+    // "averbado", contradizendo a conversao 0% (nada formalizado). Mesmo
+    // criterio de `formalizadas` (conversao) — as duas metricas agora batem.
+    const isAverbado = (ct: typeof todosContratos[number]): boolean => {
+      const s = ct.situacao.toLowerCase();
+      return s === "ativo" || s === "averbado" || s === "formalizado";
+    };
+    const contratosAverbados = todosContratos.filter(isAverbado);
+    const volumePorConvenio = contratosAverbados.reduce<Record<string, number>>((acc, c) => {
       acc[c.convenio] = (acc[c.convenio] ?? 0) + c.valorFinanciado;
       return acc;
     }, {});
-    const volumePorBanco = todosContratos.reduce<Record<string, number>>((acc, c) => {
+    const volumePorBanco = contratosAverbados.reduce<Record<string, number>>((acc, c) => {
       const banco = bancos.find((b) => b.id === c.bancoId)?.nome ?? "—";
       acc[banco] = (acc[banco] ?? 0) + c.valorFinanciado;
       return acc;
@@ -977,10 +988,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Conversao = formalizadas / total (bruto — nao considera propostas que nunca
     // viraram contrato porque nao temos historico delas na base atual). Ainda
     // assim, muito melhor que o 0.427 hardcoded que o cliente ja viu ha meses.
-    const formalizadas = todosContratos.filter((c) => {
-      const s = c.situacao.toLowerCase();
-      return s === "ativo" || s === "averbado" || s === "formalizado";
-    }).length;
+    const formalizadas = contratosAverbados.length;
     const conversao = todosContratos.length > 0 ? Math.round((formalizadas / todosContratos.length) * 1000) / 1000 : 0;
     return c.json({
       kpis: {
