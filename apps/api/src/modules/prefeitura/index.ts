@@ -985,27 +985,34 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 9 — Relatórios =====
-  .get("/v1/prefeitura/relatorios/servidores-por-vinculo", (c) => {
+  .get("/v1/prefeitura/relatorios/servidores-por-vinculo", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshServidores(c.env); // sem isso, isolate frio ve base vazia -> relatorio zerado
     const map = new Map<string, number>();
     for (const s of servidoresDaPrefeitura(id)) map.set(s.vinculo, (map.get(s.vinculo) ?? 0) + 1);
     return c.json({ dados: Array.from(map, ([vinculo, total]) => ({ vinculo, total })).sort((a, b) => b.total - a.total) });
   })
-  .get("/v1/prefeitura/relatorios/margem-media", (c) => {
+  .get("/v1/prefeitura/relatorios/margem-media", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    // Refresh completo — servidores/convenios/contratos/tombamento — senao o
+    // relatorio sai zerado/errado em isolate frio (mesmo bug dos outros menus).
+    await Promise.all([refreshServidores(c.env), refreshConvenios(c.env), refreshContratos(c.env), refreshTombamento(c.env)]);
     const servidores = servidoresDaPrefeitura(id);
     const contratos = contratosDaPrefeitura(id);
     let totalMargem = 0, totalDisponivel = 0;
     for (const s of servidores) {
       const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
       totalMargem += total;
-      totalDisponivel += Math.max(0, total - comprometidoDe(s.matricula, contratos));
+      // Margem de EMPRESTIMO desconta so o bucket EMPRESTIMO (cartao/beneficio
+      // externos tem margem propria) — casa com dashboard/servidor/banco.
+      totalDisponivel += Math.max(0, total - comprometidoEmprestimoDe(s.matricula, contratos));
     }
     const nn = servidores.length || 1;
     return c.json({ servidores: servidores.length, margemMediaTotal: r2(totalMargem / nn), margemMediaDisponivel: r2(totalDisponivel / nn), percentualUsoMedio: totalMargem > 0 ? r2((totalMargem - totalDisponivel) / totalMargem) : 0 });
   })
-  .get("/v1/prefeitura/relatorios/contratos-por-banco", (c) => {
+  .get("/v1/prefeitura/relatorios/contratos-por-banco", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await Promise.all([refreshConvenios(c.env), refreshContratos(c.env)]); // senao contratosDaPrefeitura=[] em isolate frio
     const map = new Map<number, { banco: string; contratos: number; valorParcela: number }>();
     for (const ct of contratosDaPrefeitura(id)) {
       const g = map.get(ct.bancoId) ?? { banco: bancoNome(ct.bancoId), contratos: 0, valorParcela: 0 };
@@ -1013,8 +1020,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     }
     return c.json({ dados: Array.from(map.values()).map((g) => ({ ...g, valorParcela: r2(g.valorParcela) })).sort((a, b) => b.contratos - a.contratos) });
   })
-  .get("/v1/prefeitura/relatorios/inconsistencias", (c) => {
+  .get("/v1/prefeitura/relatorios/inconsistencias", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshServidores(c.env); // base carregada pra checar inconsistencias reais
     const servidores = servidoresDaPrefeitura(id);
     const problemas: { matricula: string; nome: string; problema: string }[] = [];
     for (const s of servidores) {
