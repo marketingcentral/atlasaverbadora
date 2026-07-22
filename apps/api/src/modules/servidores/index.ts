@@ -7,7 +7,7 @@ import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
 import { ensureTombamentoLoaded, refreshTombamento, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
-import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato, monthAdd, MESES } from "../portal-banco/store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -176,12 +176,21 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   };
   const sortKeyCt = (ct: { criadoEmIso?: string; lancamento: string }): string =>
     ct.criadoEmIso ?? parseLanc(ct.lancamento);
+  // PROXIMA parcela = mes/ano da contratacao (lancamento) + parcelas ja pagas.
+  // Antes a tela mostrava `folhaUltimoDesconto` (a ULTIMA parcela) rotulada como
+  // "Proxima" — bug. Se ja quitou (pagas >= total), nao ha proxima.
+  const proximaParcelaDe = (ct: { lancamento: string; parcelasPagas: number; totalParcelas: number; folhaPrimeiroDesconto?: string }): string => {
+    if (ct.parcelasPagas >= ct.totalParcelas) return "—";
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(ct.lancamento);
+    const base = m ? `${MESES[Number(m[2]) - 1]}/${m[3]}` : ct.folhaPrimeiroDesconto;
+    return base ? monthAdd(base, ct.parcelasPagas) : "—";
+  };
   const contratosMock = contratos
     .filter((ct) => isContratoReal(ct))
     .sort((a, b) => sortKeyCt(b).localeCompare(sortKeyCt(a)))
     .map((ct) => ({
       id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
-      total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: ct.folhaUltimoDesconto || "—",
+      total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: proximaParcelaDe(ct),
       taxaAm: ct.taxaAm, valorFinanciado: round2(ct.valorFinanciado), pdfUrl: `/v1/portal/banco/contratos/${ct.adf}/comprovante.pdf`,
       // Rotula corretamente o card no /servidor/contratos: sem esses campos
       // o front nao distingue Cartao Consignado / Cartao Beneficio / Portabilidade
