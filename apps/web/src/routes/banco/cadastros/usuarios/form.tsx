@@ -43,11 +43,6 @@ export function BancoUsuariosForm() {
   const [ipsRaw, setIpsRaw] = useState("");
   const [ativo, setAtivo] = useState(true);
   const [permissoes, setPermissoes] = useState<string[]>([...BANCO_PRESETS.operador]);
-  const [presetNome, setPresetNome] = useState("");
-  // Etapa 2: quando clicar Salvar com config personalizada em criacao, abre
-  // overlay dedicado pra nomear o preset ANTES de salvar. UX alinhado ao
-  // padrao da prefeitura (colega refinou 22/07/2026).
-  const [etapaNomePreset, setEtapaNomePreset] = useState(false);
 
   // Presets customizados do banco (nomeados). Aparecem no dropdown junto com
   // os presets nativos. Carrega uma vez no mount — invalida no onSuccess.
@@ -75,9 +70,6 @@ export function BancoUsuariosForm() {
   const perfilDetectado = useMemo<BancoPerfilLabel>(() => detectarBancoPreset(permissoes), [permissoes]);
   const [presetEscolhido, setPresetEscolhido] = useState<string>(perfilDetectado);
   useEffect(() => { setPresetEscolhido(perfilDetectado); }, [perfilDetectado]);
-  // Nomear preset e' obrigatorio apenas ao CRIAR (isNovo) com config
-  // personalizada (nao bate com nenhum preset nativo nem salvo).
-  const exigePresetNome = isNovo && perfilDetectado === "personalizado";
 
   function aplicarPreset(v: string) {
     setPresetEscolhido(v);
@@ -107,8 +99,6 @@ export function BancoUsuariosForm() {
         permissoes,
         ipsPermitidos: ipsRaw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean),
         ativo,
-        // So manda o nome do preset quando for criar com config personalizada.
-        presetNome: exigePresetNome ? presetNome.trim() : undefined,
       };
       return atlas.banco.upsertUsuario(body);
     },
@@ -126,52 +116,10 @@ export function BancoUsuariosForm() {
     <form
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
-        if (exigePresetNome) { setEtapaNomePreset(true); } else { save.mutate(); }
+        save.mutate();
       }}
       style={{ display: "flex", flexDirection: "column", gap: 20, width: "100%" }}
     >
-      {etapaNomePreset ? (
-        <div
-          onClick={() => setEtapaNomePreset(false)}
-          style={{
-            position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)",
-            display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: "var(--bg-elev)", border: "1px solid var(--border-strong)",
-              borderRadius: 12, padding: 24, width: "min(480px, 92vw)",
-              display: "flex", flexDirection: "column", gap: 12,
-            }}
-          >
-            <h3 style={{ margin: 0 }}>Nome do preset</h3>
-            <p style={{ color: "var(--text-muted)", fontSize: 13, margin: 0 }}>
-              Você personalizou as permissões (<b>{totalMarcadas}</b> marcada(s)). Dê um nome pra essa
-              configuração — fica salva como preset e vira opção reutilizável pra outros usuários do banco.
-            </p>
-            <TextField
-              label="Nome do preset"
-              value={presetNome}
-              onChange={(e) => setPresetNome(e.target.value)}
-              placeholder="ex.: Analista de crédito"
-              autoFocus
-            />
-            {save.error ? (
-              <div style={{ color: "var(--danger-500)", fontSize: 13 }}>
-                {save.error instanceof Error ? save.error.message : "Erro ao salvar"}
-              </div>
-            ) : null}
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 8 }}>
-              <Button variant="ghost" type="button" onClick={() => setEtapaNomePreset(false)}>Voltar</Button>
-              <Button type="button" onClick={() => save.mutate()} disabled={save.isPending || presetNome.trim().length < 2}>
-                {save.isPending ? "Salvando..." : "Salvar"}
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
       <header>
         <span style={{ fontSize: 12, letterSpacing: "0.1em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
           Cadastros • Usuários

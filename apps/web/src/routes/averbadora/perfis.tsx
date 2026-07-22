@@ -12,6 +12,7 @@ export function AdminPerfis() {
   const data = useQuery({ queryKey: ["admin", "perfis"], queryFn: () => atlas.admin.listPerfisAdmin() });
   const [editing, setEditing] = useState<AdminAverbadoraUser | "new" | null>(null);
   const [twofa, setTwofa] = useState<{ user: AdminAverbadoraUser; secret: string; otpauthUrl: string } | null>(null);
+  const [novoPreset, setNovoPreset] = useState<boolean>(false);
 
   const remove = useMutation({
     mutationFn: (id: number) => atlas.admin.deletePerfilAdmin(id),
@@ -71,7 +72,10 @@ export function AdminPerfis() {
             depois de escolher um, você pode marcar/desmarcar caixa por caixa e o usuário vira "personalizado".
           </p>
         </div>
-        <Button onClick={() => setEditing("new")}>+ Novo usuário</Button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Button variant="ghost" onClick={() => setNovoPreset(true)}>+ Novo preset</Button>
+          <Button onClick={() => setEditing("new")}>+ Novo usuário</Button>
+        </div>
       </header>
 
       <DataTable
@@ -112,6 +116,98 @@ export function AdminPerfis() {
       ) : null}
 
       {twofa ? <TwoFactorModal data={twofa} onClose={() => setTwofa(null)} /> : null}
+      {novoPreset ? <PresetModal onClose={() => setNovoPreset(false)} /> : null}
+    </div>
+  );
+}
+
+/** Modal dedicado pra criar um preset novo (nome + permissoes). Independente
+ *  do fluxo de criacao de usuario — o preset criado aqui aparece no dropdown
+ *  "Preset" pra reutilizar em qualquer usuario futuro. */
+function PresetModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const [nome, setNome] = useState("");
+  const [permissoes, setPermissoes] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const supervisor = permissoes.includes("*");
+
+  function togglePermissao(key: string) {
+    if (supervisor) { setPermissoes(TODAS_PERMISSOES.filter((k) => k !== key)); return; }
+    setPermissoes((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
+  }
+  const save = useMutation({
+    mutationFn: () => atlas.admin.criarPerfilPresetAdmin({ nome: nome.trim(), permissoes }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin", "perfis"] });
+      onClose();
+    },
+    onError: (err) => setError(err instanceof Error ? err.message : "Erro ao salvar preset"),
+  });
+  const totalMarcadas = supervisor ? TODAS_PERMISSOES.length : permissoes.length;
+
+  return (
+    <div onClick={onClose} style={modalBackdrop}>
+      <div onClick={(e) => e.stopPropagation()} style={modalCard}>
+        <h3 style={{ margin: 0 }}>Novo preset</h3>
+        <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
+          Presets são atalhos de permissão. Nomeie a configuração aqui — depois de salva, ela aparece no dropdown "Preset" ao criar/editar qualquer usuário.
+        </p>
+
+        <TextField
+          label="Nome do preset"
+          value={nome}
+          onChange={(e) => setNome(e.target.value)}
+          placeholder="ex.: Auditor sênior"
+          required
+          autoFocus
+        />
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16, marginTop: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Permissões</div>
+              <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+                <b>{totalMarcadas}</b> {supervisor ? "(todas via *)" : "marcada(s)"}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes(["*"])}>Marcar tudo</Button>
+              <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes([])}>Limpar</Button>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10, maxHeight: 360, overflowY: "auto", padding: 10, background: "var(--bg-elev-2)", borderRadius: 8 }}>
+            {RESOURCE_GROUPS.map((g) => (
+              <div key={g.titulo} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase", marginBottom: 4 }}>
+                  {g.titulo}
+                </div>
+                {g.recursos.map((r) => {
+                  const marcada = supervisor || permissoes.includes(r.key);
+                  return (
+                    <label key={r.key} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 8px", borderRadius: 6, cursor: "pointer", background: marcada ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "transparent", border: marcada ? "1px solid var(--emerald-500)" : "1px solid var(--border)" }}>
+                      <input type="checkbox" checked={marcada} onChange={() => togglePermissao(r.key)} style={{ marginTop: 3 }} />
+                      <span style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</span>
+                        {r.descricao ? <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>{r.descricao}</span> : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {error ? <div style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 8 }}>{error}</div> : null}
+
+        <FormActions>
+          <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
+          <Button type="button" onClick={() => save.mutate()} disabled={save.isPending || nome.trim().length < 2 || (permissoes.length === 0 && !supervisor)}>
+            {save.isPending ? "Salvando..." : "Salvar preset"}
+          </Button>
+        </FormActions>
+      </div>
     </div>
   );
 }
@@ -139,14 +235,6 @@ function UserModal({
   const supervisor = permissoes.includes("*");
   const perfilDetectado = useMemo(() => detectarPreset(permissoes), [permissoes]);
   const [presetEscolhido, setPresetEscolhido] = useState<string>(perfilDetectado);
-  const [presetNome, setPresetNome] = useState("");
-  // Nomear preset e' obrigatorio apenas ao CRIAR novo usuario com config
-  // personalizada. Nao pede ao editar (usuario ja existe, config ja salva).
-  const exigePresetNome = !initial && perfilDetectado === "personalizado";
-  // Etapa 2: quando clicar Salvar com config personalizada, abre tela dedicada
-  // de "Nome do preset" ANTES de persistir. Alinha com padrao da prefeitura
-  // (colega refinou UX em 22/07/2026 pra 2 passos).
-  const [etapaNomePreset, setEtapaNomePreset] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -179,7 +267,6 @@ function UserModal({
       ativo,
       password: password || undefined,
       twoFactorEnabled,
-      presetNome: exigePresetNome ? presetNome.trim() : undefined,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin", "perfis"] });
@@ -189,35 +276,6 @@ function UserModal({
   });
 
   const totalMarcadas = supervisor ? TODAS_PERMISSOES.length : permissoes.length;
-
-  // Etapa 2 — tela dedicada de "Nome do preset" (só ao criar personalizado).
-  if (etapaNomePreset) {
-    return (
-      <div onClick={() => setEtapaNomePreset(false)} style={modalBackdrop}>
-        <div onClick={(e) => e.stopPropagation()} style={{ ...modalCard, maxWidth: 480 }}>
-          <h3 style={{ margin: 0 }}>Nome do preset</h3>
-          <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
-            Você personalizou as permissões (<b>{totalMarcadas}</b> marcada(s)). Dê um nome pra essa
-            configuração — ela fica salva como preset e vira opção reutilizável pra outros usuários da averbadora.
-          </p>
-          <TextField
-            label="Nome do preset"
-            value={presetNome}
-            onChange={(e) => setPresetNome(e.target.value)}
-            placeholder="ex.: Auditor sênior"
-            autoFocus
-          />
-          {error ? <div style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 8 }}>{error}</div> : null}
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
-            <Button variant="ghost" onClick={() => setEtapaNomePreset(false)}>Voltar</Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending || presetNome.trim().length < 2}>
-              {save.isPending ? "Salvando..." : "Salvar"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div onClick={onClose} style={modalBackdrop}>
@@ -334,7 +392,7 @@ function UserModal({
         {error ? <div style={{ color: "var(--danger-500)", fontSize: 13 }}>{error}</div> : null}
         <FormActions>
           <Button variant="ghost" type="button" onClick={onClose}>Cancelar</Button>
-          <Button type="button" disabled={save.isPending || !nome || !email} onClick={() => { if (exigePresetNome) { setEtapaNomePreset(true); } else { save.mutate(); } }}>{save.isPending ? "Salvando..." : "Salvar"}</Button>
+          <Button type="button" disabled={save.isPending || !nome || !email} onClick={() => save.mutate()}>{save.isPending ? "Salvando..." : "Salvar"}</Button>
         </FormActions>
       </div>
     </div>
