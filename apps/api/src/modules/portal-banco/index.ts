@@ -11,7 +11,7 @@ import { refreshComunicados } from "./comunicados-store.js";
 import { prefeituras, bancos, pushEvent } from "../admin/index.js";
 import { getConvenioConfig } from "../admin/convenios-config.js";
 import { ensurePortabilidadesLoaded, listIntencoesAbertasParaBanco, adicionarOferta } from "../admin/portabilidade-store.js";
-import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb, tratarFalhaContrato } from "./store.js";
+import { aplicarAcao, comprometeMargem, criarContratoOuReserva, deriveTipoMargem, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb, tratarFalhaContrato } from "./store.js";
 import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
 import { enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
@@ -400,18 +400,34 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       throw Errors.forbidden("Este servidor não entrou em contato com o banco.");
     }
     const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
-    // Comprometido real = parcelas de operações já aprovadas pelo banco.
+    // Comprometido real = parcelas de operações já aprovadas pelo banco,
+    // filtrado pelo bucket EMPRESTIMO (nao mistura com cartao consig/beneficio).
+    const contratosAtivos = listContratos({ matricula: s.matricula })
+      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO");
     const comprometido = Math.round(
-      listContratos({ matricula: s.matricula })
-        .filter((ct) => comprometeMargem(ct.situacao))
-        .reduce((a, ct) => a + ct.valorParcela, 0) * 100,
+      contratosAtivos.reduce((a, ct) => a + ct.valorParcela, 0) * 100,
     ) / 100;
     const disponivel = margemDisponivel(s.salarioLiquido, comprometido, "EMPRESTIMO");
-    const projecao = projecoesQuatroMeses(body.mes, body.ano).map((p, idx) => ({
-      competencia: p.yyyymm,
-      rotulo: `${monthLabel(p.mes)}/${p.ano}`,
-      valor: disponivel + idx * 12.5,
-    }));
+    // Projecao REAL dos proximos 4 meses: cada contrato ativo compromete a
+    // margem pelas parcelas restantes (totalParcelas - parcelasPagas). Se um
+    // contrato tem 3 parcelas a vencer, ele deixa de comprometer margem a
+    // partir do 4o mes projetado. Antes: 'disponivel + idx * 12.5' — fake
+    // linear sem sentido. Agora reflete o cronograma real de quitacao.
+    const projecao = projecoesQuatroMeses(body.mes, body.ano).map((p, idx) => {
+      // Mes 0 = mes solicitado (agora). Contrato deixa de contar quando
+      // parcelasRestantes <= idx (ja quitou ate esse ponto do horizonte).
+      const comprometidoNoMes = Math.round(
+        contratosAtivos
+          .filter((ct) => (ct.totalParcelas - ct.parcelasPagas) > idx)
+          .reduce((a, ct) => a + ct.valorParcela, 0) * 100,
+      ) / 100;
+      const disponivelNoMes = Math.max(0, Math.round((total - comprometidoNoMes) * 100) / 100);
+      return {
+        competencia: p.yyyymm,
+        rotulo: `${monthLabel(p.mes)}/${p.ano}`,
+        valor: disponivelNoMes,
+      };
+    });
     return c.json({
       competencia: `${body.ano}${String(body.mes).padStart(2, "0")}`,
       tipo: "EMPRESTIMO",
