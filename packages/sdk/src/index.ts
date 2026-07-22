@@ -30,7 +30,7 @@ export type {
   AdminWebhook, AdminWebhookInput, AdminWebhookDelivery,
   ApiEnvironment, ApiAudience, ApiPartnerType, ApiScope,
   CsvImportOutcome,
-  PrefeituraServidor, PrefeituraFolha, PrefeituraConvenio, PrefeituraContrato, PrefeituraAdf, PrefeituraPerfil, PrefeituraPerfilInput, PrefeituraArea,
+  PrefeituraServidor, PrefeituraFolha, PrefeituraConvenio, PrefeituraContrato, PrefeituraAdf, PrefeituraPerfil, PrefeituraPerfilInput, PrefeituraPerfilPreset, PrefeituraArea,
   PortabilidadeIntencao, PortabilidadeOferta,
   TermoTemplate, TermoTipo, TermoRenderizado,
 } from "./client.js";

@@ -640,3 +640,70 @@ export function sanitizePerfil(p: PrefeituraPerfil) {
   const { totpSecret, ...rest } = p;
   return { ...rest, hasTotp: !!totpSecret };
 }
+
+// ============================================================
+// Persistencia dos perfis + presets customizados (PG collections).
+// Cliente pediu 21/07/2026: os perfis nao podiam mais viver so em memoria
+// (sumiam no deploy). Presets customizados nomeados viram opcao reutilizavel.
+// ============================================================
+const PG_PERFIS = "prefeitura_perfis";
+const PG_PRESETS = "prefeitura_perfil_presets";
+
+/** Recarrega os perfis do PG e restaura o seq pra nao colidir ids. */
+export async function refreshPerfisPref(env: Env): Promise<void> {
+  try {
+    const rows = await loadCollection<PrefeituraPerfil>(env, PG_PERFIS);
+    _perfis.length = 0;
+    for (const r of rows) { ensurePerfilPermissoes(r); _perfis.push(r); }
+    const maxId = _perfis.reduce((m, p) => Math.max(m, p.id), 0);
+    if (maxId >= _perfilSeq) _perfilSeq = maxId + 1;
+  } catch { /* fail-safe: usa in-memory */ }
+}
+export async function persistPerfil(env: Env, p: PrefeituraPerfil): Promise<void> {
+  try { await upsertCollectionRow(env, PG_PERFIS, String(p.id), p); } catch { /* fail-safe */ }
+}
+/** Recupera o perfil (com secret) pra persistir apos mutacoes no callsite. */
+export function getPerfilRaw(prefeituraId: number, id: number): PrefeituraPerfil | undefined {
+  return _perfis.find((x) => x.id === id && x.prefeituraId === prefeituraId);
+}
+
+/** Preset de permissoes customizado, nomeado, reutilizavel por prefeitura. */
+export interface PrefeituraPerfilPreset {
+  prefeituraId: number;
+  key: string;          // slug do nome (unico por prefeitura)
+  nome: string;         // rotulo exibido no dropdown
+  permissoes: string[];
+  criadoEm: string;
+}
+const _presets: PrefeituraPerfilPreset[] = [];
+
+function slugPreset(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+export function listPerfilPresets(prefeituraId: number): PrefeituraPerfilPreset[] {
+  return _presets.filter((p) => p.prefeituraId === prefeituraId);
+}
+export function upsertPerfilPreset(input: { prefeituraId: number; nome: string; permissoes: string[] }, now: string): PrefeituraPerfilPreset {
+  const key = slugPreset(input.nome);
+  const existing = _presets.find((p) => p.prefeituraId === input.prefeituraId && p.key === key);
+  if (existing) {
+    existing.nome = input.nome.trim();
+    existing.permissoes = [...input.permissoes];
+    return existing;
+  }
+  const novo: PrefeituraPerfilPreset = {
+    prefeituraId: input.prefeituraId, key, nome: input.nome.trim(), permissoes: [...input.permissoes], criadoEm: now,
+  };
+  _presets.push(novo);
+  return novo;
+}
+export async function refreshPerfilPresets(env: Env): Promise<void> {
+  try {
+    const rows = await loadCollection<PrefeituraPerfilPreset>(env, PG_PRESETS);
+    _presets.length = 0;
+    _presets.push(...rows);
+  } catch { /* fail-safe */ }
+}
+export async function persistPerfilPreset(env: Env, p: PrefeituraPerfilPreset): Promise<void> {
+  try { await upsertCollectionRow(env, PG_PRESETS, `${p.prefeituraId}:${p.key}`, p); } catch { /* fail-safe */ }
+}

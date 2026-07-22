@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
-import type { PrefeituraPerfil } from "@atlas/sdk";
+import type { PrefeituraPerfil, PrefeituraPerfilPreset } from "@atlas/sdk";
 import { PageHeader, Modal, Field, inp, selStyle } from "./_ui";
 import {
   PREFEITURA_PRESETS,
@@ -88,6 +88,7 @@ export function PrefeituraPerfis() {
       {modalPerfil ? (
         <PerfilModal
           initial={modalPerfil === "new" ? null : modalPerfil}
+          presetsCustom={q.data?.presets ?? []}
           onClose={() => setModalPerfil(null)}
           onSaved={() => { setModalPerfil(null); qc.invalidateQueries({ queryKey: ["prefeitura", "perfis"] }); }}
         />
@@ -105,9 +106,10 @@ export function PrefeituraPerfis() {
 }
 
 function PerfilModal({
-  initial, onClose, onSaved,
+  initial, presetsCustom, onClose, onSaved,
 }: {
   initial: PrefeituraPerfil | null;
+  presetsCustom: PrefeituraPerfilPreset[];
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -118,14 +120,21 @@ function PerfilModal({
     if (initial?.permissoes && initial.permissoes.length > 0) return [...initial.permissoes];
     return [...PREFEITURA_PRESETS.rh];
   });
+  // Nome do preset customizado — obrigatorio quando a config e' "personalizado"
+  // e esta CRIANDO um usuario (nao editando). Salva a config como preset reusavel.
+  const [presetNome, setPresetNome] = useState("");
   const supervisor = permissoes.includes("*");
   const areaDetectada = useMemo<PrefeituraAreaLabel>(() => detectarPrefeituraPreset(permissoes), [permissoes]);
-  const [presetEscolhido, setPresetEscolhido] = useState<PrefeituraAreaLabel>(areaDetectada);
+  const [presetEscolhido, setPresetEscolhido] = useState<string>(areaDetectada);
   useEffect(() => { setPresetEscolhido(areaDetectada); }, [areaDetectada]);
+  // Exige nomear o preset so ao CRIAR com config personalizada.
+  const exigePresetNome = !initial && areaDetectada === "personalizado";
 
-  function aplicarPreset(v: PrefeituraAreaLabel) {
+  function aplicarPreset(v: string) {
     setPresetEscolhido(v);
-    setPermissoes([...(PREFEITURA_PRESETS[v] ?? [])]);
+    const custom = presetsCustom.find((p) => p.key === v);
+    if (custom) { setPermissoes([...custom.permissoes]); return; }
+    setPermissoes([...(PREFEITURA_PRESETS[v as PrefeituraAreaLabel] ?? [])]);
   }
   function togglePermissao(key: string) {
     if (supervisor) {
@@ -144,6 +153,9 @@ function PerfilModal({
       area: areaDetectada,
       permissoes,
       ativo,
+      // So manda o nome do preset quando for criar com config personalizada —
+      // ai o backend salva a config como preset reutilizavel.
+      presetNome: exigePresetNome ? presetNome.trim() : undefined,
     }),
     onSuccess: onSaved,
   });
@@ -175,11 +187,18 @@ function PerfilModal({
             <select
               style={{ ...selStyle, minWidth: 140 }}
               value={presetEscolhido}
-              onChange={(e) => aplicarPreset(e.target.value as PrefeituraAreaLabel)}
+              onChange={(e) => aplicarPreset(e.target.value)}
             >
               {PREFEITURA_PRESET_LABELS.map((p) => (
                 <option key={p.value} value={p.value}>{p.label}</option>
               ))}
+              {presetsCustom.length > 0 ? (
+                <optgroup label="Presets salvos">
+                  {presetsCustom.map((p) => (
+                    <option key={p.key} value={p.key}>{p.nome}</option>
+                  ))}
+                </optgroup>
+              ) : null}
             </select>
             <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes(["*"])}>Marcar tudo</Button>
             <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes([])}>Limpar</Button>
@@ -229,9 +248,24 @@ function PerfilModal({
         </div>
       </div>
 
+      {exigePresetNome ? (
+        <div style={{ marginTop: 16, padding: 12, borderRadius: 10, border: "1px solid var(--gold-500)", background: "color-mix(in srgb, var(--gold-500) 8%, transparent)" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 4 }}>Nomear preset personalizado</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 8 }}>
+            Você personalizou as permissões. Dê um nome pra essa configuração — ela fica salva como preset e vira opção reutilizável pra outros usuários.
+          </div>
+          <input
+            style={inp}
+            value={presetNome}
+            onChange={(e) => setPresetNome(e.target.value)}
+            placeholder="ex.: Fiscalização de folha"
+          />
+        </div>
+      ) : null}
+
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending || !nome || !email}>
+        <Button onClick={() => save.mutate()} disabled={save.isPending || !nome || !email || (exigePresetNome && presetNome.trim().length < 2)}>
           {save.isPending ? "Salvando…" : initial ? "Salvar" : "Criar"}
         </Button>
       </div>

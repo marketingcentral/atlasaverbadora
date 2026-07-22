@@ -26,6 +26,8 @@ import {
   ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus,
   TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia, refreshAnuencias, persistAnuencia,
   listPerfis, upsertPerfil, deletePerfil, reactivatePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
+  refreshPerfisPref, persistPerfil, getPerfilRaw,
+  listPerfilPresets, upsertPerfilPreset, refreshPerfilPresets, persistPerfilPreset,
 } from "./store.js";
 import { upsertPrefeitura, upsertServidor, deleteCollectionRow, loadCollection, loadServidores } from "../../db/repos.js";
 import { MATRICULA_REGEX, normalizeMatricula } from "../../_shared/matricula.js";
@@ -1056,44 +1058,87 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     return c.json({ anuencia: anu }, 201);
   })
 
-  // ===== Passo 1 — Perfis por área + 2FA =====
-  .get("/v1/prefeitura/perfis", (c) => {
+  // ===== Passo 1 — Perfis por área + 2FA + presets customizados =====
+  .get("/v1/prefeitura/perfis", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    return c.json({ perfis: listPerfis(id).map(sanitizePerfil), areas: Object.entries(AREA_LABEL).map(([value, label]) => ({ value, label })) });
+    // Recarrega do PG — perfis e presets sobrevivem a redeploy da API.
+    await Promise.all([refreshPerfisPref(c.env), refreshPerfilPresets(c.env)]);
+    return c.json({
+      perfis: listPerfis(id).map(sanitizePerfil),
+      areas: Object.entries(AREA_LABEL).map(([value, label]) => ({ value, label })),
+      // Presets customizados nomeados — viram opcao no dropdown de permissoes.
+      presets: listPerfilPresets(id).map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })),
+    });
   })
   .post("/v1/prefeitura/perfis", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfisPref(c.env); // seq/ids atualizados antes de criar
     const body = z.object({
       id: z.number().int().optional(),
       nome: z.string().min(2), email: z.string().email(),
       area: z.enum(["rh", "financeiro", "gestor", "personalizado"]).optional(),
       permissoes: z.array(z.string().min(1).max(64)).max(200).optional(),
       ativo: z.boolean().optional(),
+      // Nome do preset customizado — obrigatorio no front quando a config e'
+      // "personalizado" e esta CRIANDO. Se vier, salva a config como preset
+      // reutilizavel (aparece no dropdown pra outros usuarios).
+      presetNome: z.string().min(2).max(60).optional(),
     }).parse(await c.req.json());
     const perfil = upsertPerfil({ prefeituraId: id, ...body, area: body.area as PrefeituraArea | undefined }, new Date().toISOString());
+    await persistPerfil(c.env, perfil);
+    if (body.presetNome && Array.isArray(body.permissoes) && body.permissoes.length > 0) {
+      const preset = upsertPerfilPreset({ prefeituraId: id, nome: body.presetNome, permissoes: body.permissoes }, new Date().toISOString());
+      await persistPerfilPreset(c.env, preset);
+    }
     return c.json({ perfil: sanitizePerfil(perfil) }, body.id ? 200 : 201);
   })
-  .delete("/v1/prefeitura/perfis/:id", (c) => {
+  .delete("/v1/prefeitura/perfis/:id", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfisPref(c.env);
     if (!deletePerfil(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, Number(c.req.param("id")));
+    if (p) await persistPerfil(c.env, p);
     return c.body(null, 204);
   })
-  .post("/v1/prefeitura/perfis/:id/reativar", (c) => {
+  .post("/v1/prefeitura/perfis/:id/reativar", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfisPref(c.env);
     if (!reactivatePerfil(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, Number(c.req.param("id")));
+    if (p) await persistPerfil(c.env, p);
     return c.json({ ok: true });
   })
-  .post("/v1/prefeitura/perfis/:id/2fa/rotate", (c) => {
+  .post("/v1/prefeitura/perfis/:id/2fa/rotate", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfisPref(c.env);
     const r = rotateTotp(id, Number(c.req.param("id")));
     if (!r) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, Number(c.req.param("id")));
+    if (p) await persistPerfil(c.env, p);
     appendAudit(auditCtx(c), { categoria: "acesso", acao: "2fa_rotate", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `2FA (TOTP) rotacionado para perfil ${c.req.param("id")}.` });
     return c.json(r);
   })
-  .post("/v1/prefeitura/perfis/:id/2fa/disable", (c) => {
+  .post("/v1/prefeitura/perfis/:id/2fa/disable", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfisPref(c.env);
     if (!disable2FA(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, Number(c.req.param("id")));
+    if (p) await persistPerfil(c.env, p);
     return c.json({ ok: true });
+  })
+  // Presets customizados de permissao (nomeados, reutilizaveis por prefeitura).
+  .get("/v1/prefeitura/perfil-presets", async (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfilPresets(c.env);
+    return c.json({ presets: listPerfilPresets(id).map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })) });
+  })
+  .post("/v1/prefeitura/perfil-presets", async (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    const body = z.object({ nome: z.string().min(2).max(60), permissoes: z.array(z.string().min(1).max(64)).min(1).max(200) }).parse(await c.req.json());
+    await refreshPerfilPresets(c.env);
+    const preset = upsertPerfilPreset({ prefeituraId: id, nome: body.nome, permissoes: body.permissoes }, new Date().toISOString());
+    await persistPerfilPreset(c.env, preset);
+    return c.json({ preset: { key: preset.key, nome: preset.nome, permissoes: preset.permissoes } }, 201);
   })
 
   .get("/v1/prefeitura/comunicados", async (c) => {

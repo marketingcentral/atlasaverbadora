@@ -1042,6 +1042,15 @@ export interface PrefeituraPerfilInput {
   /** Fonte de verdade. Opcional — deriva do preset. */
   permissoes?: string[];
   ativo?: boolean;
+  /** Nome do preset customizado — quando informado (config personalizada ao
+   *  criar), salva a config como preset reutilizavel no dropdown. */
+  presetNome?: string;
+}
+/** Preset customizado de permissao (nomeado, reutilizavel por prefeitura). */
+export interface PrefeituraPerfilPreset {
+  key: string;
+  nome: string;
+  permissoes: string[];
 }
 export interface PrefeituraFolha {
   id: string;
@@ -2079,9 +2088,12 @@ export class AtlasClient {
     aceitarAnuencia: (aceitoPor: string) => this.request<{ anuencia: { id: string } }>("/v1/prefeitura/anuencia", { method: "POST", body: { aceito: true, aceitoPor } }),
 
     // Perfis + 2FA (passo 1)
-    perfis: () => this.request<{ perfis: PrefeituraPerfil[]; areas: { value: string; label: string }[] }>("/v1/prefeitura/perfis"),
+    perfis: () => this.request<{ perfis: PrefeituraPerfil[]; areas: { value: string; label: string }[]; presets: PrefeituraPerfilPreset[] }>("/v1/prefeitura/perfis"),
     salvarPerfil: (body: PrefeituraPerfilInput) =>
       this.request<{ perfil: PrefeituraPerfil }>("/v1/prefeitura/perfis", { method: "POST", body }),
+    perfilPresets: () => this.request<{ presets: PrefeituraPerfilPreset[] }>("/v1/prefeitura/perfil-presets"),
+    criarPerfilPreset: (body: { nome: string; permissoes: string[] }) =>
+      this.request<{ preset: PrefeituraPerfilPreset }>("/v1/prefeitura/perfil-presets", { method: "POST", body }),
     excluirPerfil: (id: number) => this.request<void>(`/v1/prefeitura/perfis/${id}`, { method: "DELETE" }),
     reativarPerfil: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/reativar`, { method: "POST" }),
     rotate2fa: (id: number) => this.request<{ secret: string; otpauthUrl: string }>(`/v1/prefeitura/perfis/${id}/2fa/rotate`, { method: "POST" }),
