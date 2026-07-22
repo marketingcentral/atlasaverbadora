@@ -11,6 +11,7 @@ import {
 } from "@atlas/ui/web";
 import { atlas } from "../../../../lib/sdk";
 import type { BancoTabelaInput } from "@atlas/sdk";
+import { ApiHttpError } from "@atlas/sdk";
 
 export function BancoTabelaEmprestimosForm() {
   const params = useParams<{ id?: string }>();
@@ -159,8 +160,24 @@ export function BancoTabelaEmprestimosForm() {
       </section>
 
       {save.error ? (
-        <div style={{ color: "var(--danger-500)", fontSize: 13 }}>
-          {save.error instanceof Error ? save.error.message : "Erro ao salvar"}
+        <div style={{ color: "var(--danger-500)", fontSize: 13, padding: 12, borderRadius: 8, background: "color-mix(in srgb, var(--danger-500) 8%, transparent)", border: "1px solid var(--danger-500)" }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            {save.error instanceof Error ? save.error.message : "Erro ao salvar"}
+          </div>
+          {(() => {
+            // Backend retorna motivos especificos em `details` (ex.: {prazoMaxMeses:
+            // "excede teto da prefeitura"}). Antes so aparecia "Dados invalidos"
+            // generico — usuario nao sabia o que corrigir.
+            if (!(save.error instanceof ApiHttpError) || !save.error.details) return null;
+            const d = save.error.details as Record<string, string>;
+            return (
+              <ul style={{ margin: "6px 0 0 18px", padding: 0, fontSize: 12 }}>
+                {Object.entries(d).map(([campo, motivo]) => (
+                  <li key={campo}><b>{campo}:</b> {String(motivo)}</li>
+                ))}
+              </ul>
+            );
+          })()}
         </div>
       ) : null}
 
