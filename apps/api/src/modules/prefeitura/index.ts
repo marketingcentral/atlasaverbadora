@@ -13,7 +13,8 @@ import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, getContrato } from "../portal-banco/store.js";
+import { enviarNotificacao } from "../admin/mailer.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit } from "../admin/auditoria.js";
@@ -618,6 +619,61 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       }
     }
     appendAudit({ categoria: "margem", acao: "folha_movimentacao", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia}: ${out.inserted} movimentações, ${out.errors.length} erros. Margem recalculada.` });
+
+    // Notifica bancos por email quando houve desligamento/aposentadoria.
+    // Agrupa contratos afetados por bancoId, envia 1 email por banco listando
+    // servidor + ADF de cada contrato que agora esta em cobranca direta.
+    // Best-effort via waitUntil — nao segura a response.
+    try {
+      const desligamentos = rows
+        .map((r, i) => ({ r, idx: i }))
+        .filter(({ r }) => {
+          const t = (r.tipo || "").toLowerCase();
+          return t === "demissao" || t === "aposentadoria";
+        });
+      if (desligamentos.length > 0) {
+        const porBanco = new Map<number, { bancoNome: string; email: string; contratos: { adf: string; nome: string; matricula: string; valorParcela: number; tipo: string }[] }>();
+        for (const { r } of desligamentos) {
+          if (!r.matricula) continue;
+          const ativos = listContratos({ matricula: r.matricula }).filter((ct) => {
+            const s = ct.situacao.toLowerCase();
+            return s.includes("cobran"); // agora em cobrança direta
+          });
+          for (const ct of ativos) {
+            const banco = bancos.find((b) => b.id === ct.bancoId);
+            if (!banco?.contatoEmail) continue;
+            const bucket = porBanco.get(ct.bancoId) ?? {
+              bancoNome: banco.nome,
+              email: banco.contatoEmail,
+              contratos: [],
+            };
+            bucket.contratos.push({
+              adf: ct.adf,
+              nome: ct.nome,
+              matricula: ct.matricula,
+              valorParcela: ct.valorParcela,
+              tipo: (r.tipo || "").toLowerCase() === "demissao" ? "Desligado" : "Aposentado",
+            });
+            porBanco.set(ct.bancoId, bucket);
+          }
+        }
+        for (const [, dados] of porBanco) {
+          const linhas = dados.contratos.map((x) => `${x.tipo}: ${x.nome} (mat ${x.matricula}) — ADF ${x.adf}, parcela R$ ${x.valorParcela.toFixed(2)}`).join("\n");
+          const p = enviarNotificacao(c.env, {
+            destinoPadrao: dados.email,
+            titulo: `${dados.contratos.length} contrato(s) fora da folha — servidor(es) desligado(s)`,
+            mensagem: `A prefeitura ${f.prefeitura} processou desligamento/aposentadoria de servidor(es) com contrato ativo no ${dados.bancoNome}. As ADFs foram interrompidas e os contratos abaixo agora estao "Em cobranca direta" — o banco assume a cobranca fora da folha.\n\n${linhas}`,
+            detalhes: [
+              { label: "Prefeitura", valor: f.prefeitura },
+              { label: "Competência", valor: f.competencia },
+              { label: "Contratos afetados", valor: String(dados.contratos.length) },
+            ],
+          });
+          try { c.executionCtx.waitUntil(p); } catch { void p; }
+        }
+      }
+    } catch { /* fail-safe — notificacao nao pode quebrar o processamento */ }
+
     return c.json(out);
   })
 

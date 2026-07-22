@@ -70,13 +70,21 @@ export function applyMovimentacao(input: {
     case "demissao":
     case "aposentadoria": {
       target.situacaoFuncional = input.tipo === "demissao" ? "DESLIGADO" : "APOSENTADO";
-      // Cascade F6: servidor desligado -> ADFs param na folha + contratos viram
-      // "Em cobranca direta". Banco assume cobranca fora da folha. Idempotente.
+      // Cascade F6 (completo): servidor desligado ->
+      //   1. Contrato: situacao "Em cobranca direta" + folhaStatus interrompida
+      //   2. ADF materializada: status "interrompida_desligamento" (mantida
+      //      pra rastreabilidade, banco/averbadora veem o motivo)
+      //   3. Callsite notifica banco por email (nao aqui pra evitar ciclo
+      //      de imports; handler /folhas/:id/movimentacao dispara).
       const motivo = input.tipo === "demissao" ? "Servidor desligado" : "Servidor aposentado";
       const ativos = listContratosAtivosDaMatricula(target.matricula);
       for (const ct of ativos) {
         setContratoDesligamento(ct.adf, motivo);
         contratosAtingidos.push(ct.adf);
+      }
+      // Interrompe ADFs em _adfs (marca, nao remove — rastreio).
+      if (contratosAtingidos.length > 0) {
+        interromperAdfsByContratoAdfs(contratosAtingidos, motivo, now);
       }
       break;
     }
@@ -325,6 +333,26 @@ export function setAdfStatusGlobal(adfIds: string[], status: AdfStatus, motivo: 
 /** Todas as ADFs de todas as prefeituras (visao averbadora). */
 export function listAdfsGlobal(competencia?: string): AdfEntry[] {
   return _adfs.filter((a) => !competencia || a.competencia === competencia);
+}
+
+/** Marca ADFs pré-materializadas como "interrompida_desligamento" quando o
+ *  servidor foi desligado. Usa `adf` do contrato (nao id interno) pra achar.
+ *  Diferente de removeAdfsByContratoAdf: aqui MANTEM a linha pra rastreio;
+ *  a averbadora ainda ve a ADF, so com badge "Interrompida (desligamento)".
+ *  Idempotente: se ja esta interrompida, nao mexe. Retorna quantas foram
+ *  afetadas. */
+export function interromperAdfsByContratoAdfs(contratoAdfs: string[], motivo: string, now: string): number {
+  const set = new Set(contratoAdfs);
+  let n = 0;
+  for (const a of _adfs) {
+    if (set.has(a.adf) && a.status !== "interrompida_desligamento") {
+      a.status = "interrompida_desligamento";
+      a.motivo = motivo;
+      a.atualizadoEm = now;
+      n++;
+    }
+  }
+  return n;
 }
 
 /** Remove entradas de _adfs por lista de ADF ids (a chave `adf` do contrato,
