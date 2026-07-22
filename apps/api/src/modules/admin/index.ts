@@ -2461,10 +2461,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/folhas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
     await ensureFolhasLoaded(c.env);
-    // Sincroniza contratos antes de contar ADFs (contratos "Aprovado"/"Ativo" viram
-    // ADFs materializadas no _adfs). Sem isso, folhas mostravam 0 ADF ate outro
-    // endpoint tocar refreshContratos.
+    // Reload folhas do PG a CADA request. ensureFolhasLoaded e' memoized por
+    // isolate (e so troca a lista quando rows>0) — a averbadora carregava vazio
+    // uma vez e ficava presa, entao a folha que a prefeitura abriu em OUTRO
+    // isolate nunca aparecia aqui. Cliente reportou 21/07/2026: abriu folha
+    // 202607 na prefeitura (ABERTA), averbadora/folhas continuou "0 de 0".
+    // Mesmo pattern do GET /v1/prefeitura/folhas.
+    try {
+      const rows = await loadCollection<FolhaAdmin>(c.env, "admin_folhas");
+      folhas.length = 0;
+      folhas.push(...rows);
+    } catch { /* fail-safe: usa in-memory */ }
+    // Sincroniza contratos + convenios antes de contar ADFs (contratos
+    // "Aprovado"/"Ativo" viram ADFs materializadas no _adfs; sem refreshConvenios
+    // o ensureAdfs nao mapeia convenioId->prefeitura no isolate frio).
     await refreshContratos(c.env);
+    await refreshConvenios(c.env);
     const now = new Date().toISOString();
     // Materializa ADFs pra todas as competencias que aparecem em folhas
     // (nao so a atual — a averbadora ve o historico completo).
@@ -2473,8 +2485,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const compsUnicas = Array.from(new Set(folhas.map((f) => f.competencia)));
     for (const comp of compsUnicas) ensureAdfsGlobal(comp, bancoNomeById, now, prefIds);
     // Enriquece cada folha com contagem/soma de ADFs (aplicadas + recebidas)
-    // por prefeitura+competencia. Assim a averbadora ve os descontos que ja
-    // caiam naquela folha sem sair da tela.
+    // por prefeitura+competencia. Mais recente no topo.
     const enriched = folhas.map((f) => {
       const adfsFolha = listAdfsGlobal(f.competencia).filter((a) => a.prefeituraId === f.prefeituraId);
       const aplicadas = adfsFolha.filter((a) => a.status === "aplicada");
@@ -2488,6 +2499,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         valorAplicado: Math.round(valorAplicado * 100) / 100,
       };
     });
+    enriched.sort((a, b) => b.competencia.localeCompare(a.competencia));
     return c.json({ folhas: enriched });
   })
   .post("/v1/admin/folhas", async (c) => {
