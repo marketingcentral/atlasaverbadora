@@ -11,7 +11,7 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
+import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, refreshServidores, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
 import { enviarNotificacao } from "../admin/mailer.js";
@@ -623,26 +623,70 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const f = folhas.find((x) => x.id === c.req.param("id") && x.prefeituraId === pid);
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "aberta") throw Errors.validation({ folha: "só é possível movimentar folha aberta" });
+    await refreshServidores(c.env); // base carregada pra validar existencia da matricula
     const { rows } = parseCsv(await readCsvBody(c));
     const now = new Date().toISOString();
     const out: ImportOutcome<{ matricula: string; tipo: string }> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
     const tipos: MovimentacaoTipo[] = ["admissao", "demissao", "aposentadoria", "promocao", "alteracao"];
-    // for...of pra permitir await do persist (rows.forEach ignoraria promise)
+    const parseSal = (v?: string): number | undefined => {
+      const s = (v ?? "").trim();
+      if (!s) return undefined;
+      const n = Number(s.replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const existe = (mat: string) =>
+      SERVIDORES_BUSCA_MOCK.some((x) => x.matricula === mat && prefeituraIdDe(x) === pid);
+    // VALIDACAO ALL-OR-NOTHING (cliente 21/07/2026: "nao importar se faltar algo
+    // ou estiver incorreto"). Checa TODAS as linhas ANTES de aplicar qualquer
+    // uma; se uma unica falhar, nada e' importado. Rejeita: tipo/matricula
+    // invalidos, linha de EXEMPLO do modelo, salario invalido, campos obrigatorios
+    // por tipo faltando, e matricula inexistente (menos admissao).
     for (let idx = 0; idx < rows.length; idx++) {
       const r = rows[idx]!;
       const line = idx + 2;
-      const tipo = (r.tipo || "").toLowerCase() as MovimentacaoTipo;
-      if (!tipos.includes(tipo)) { out.errors.push({ line, message: `tipo invalido (${tipos.join("/")})` }); continue; }
-      if (!r.matricula) { out.errors.push({ line, message: "matricula obrigatoria" }); continue; }
-      const salarioNovo = r.salarioNovo ? Number(r.salarioNovo) : undefined;
+      const tipo = (r.tipo || "").trim().toLowerCase() as MovimentacaoTipo;
+      const matricula = (r.matricula || "").trim();
+      if (!tipos.includes(tipo)) { out.errors.push({ line, message: `tipo invalido — use ${tipos.join("/")}` }); continue; }
+      if (!matricula) { out.errors.push({ line, message: "matricula obrigatoria" }); continue; }
+      if (/exemplo/i.test(matricula) || /exemplo/i.test(r.nome || "")) {
+        out.errors.push({ line, message: "linha de exemplo do modelo — substitua por dados reais antes de importar" }); continue;
+      }
+      const salInformado = !!(r.salarioNovo || "").trim();
+      const sal = parseSal(r.salarioNovo);
+      if (salInformado && !(sal != null && sal > 0)) {
+        out.errors.push({ line, message: "salarioNovo invalido — use numero maior que zero (ex.: 4200 ou 4200,50)" }); continue;
+      }
+      if (tipo === "admissao") {
+        const cpf = (r.cpf || "").replace(/\D/g, "");
+        if (cpf.length !== 11) { out.errors.push({ line, message: "admissao: cpf com 11 digitos obrigatorio" }); continue; }
+        if (!(r.nome || "").trim()) { out.errors.push({ line, message: "admissao: nome obrigatorio" }); continue; }
+        if (!(r.cargoNovo || "").trim()) { out.errors.push({ line, message: "admissao: cargoNovo obrigatorio" }); continue; }
+        if (!salInformado) { out.errors.push({ line, message: "admissao: salarioNovo obrigatorio" }); continue; }
+      } else {
+        if (!existe(matricula)) { out.errors.push({ line, message: `matricula ${matricula} nao existe na base desta prefeitura` }); continue; }
+        if ((tipo === "promocao" || tipo === "alteracao") && !(r.cargoNovo || "").trim() && !salInformado) {
+          out.errors.push({ line, message: `${tipo}: informe cargoNovo e/ou salarioNovo (nada a alterar)` }); continue;
+        }
+      }
+    }
+    // Se QUALQUER linha falhou, aborta o import inteiro — nada e' aplicado.
+    if (out.errors.length > 0) {
+      return c.json(out);
+    }
+    // Todas validas — aplica de fato.
+    for (let idx = 0; idx < rows.length; idx++) {
+      const r = rows[idx]!;
+      const line = idx + 2;
+      const tipo = (r.tipo || "").trim().toLowerCase() as MovimentacaoTipo;
+      const matricula = (r.matricula || "").trim();
       const res = applyMovimentacao({
-        folhaId: f.id, prefeituraId: pid, tipo, matricula: r.matricula,
-        cargoNovo: r.cargoNovo || undefined, salarioNovo: Number.isFinite(salarioNovo) ? salarioNovo : undefined,
+        folhaId: f.id, prefeituraId: pid, tipo, matricula,
+        cargoNovo: r.cargoNovo || undefined, salarioNovo: parseSal(r.salarioNovo),
         detalhe: r.detalhe || undefined, nomeNovo: r.nome || undefined, cpf: r.cpf || undefined,
       }, now);
       if (!res.ok) { out.errors.push({ line, message: res.error }); continue; }
       out.inserted++;
-      out.rows.push({ matricula: r.matricula, tipo });
+      out.rows.push({ matricula, tipo });
       // AWAIT — sem isso a proxima request de login lia PG antes do upsert
       // terminar e via situacaoFuncional antigo (F6 nao bloqueava).
       if (res.servidorAtualizado) {
