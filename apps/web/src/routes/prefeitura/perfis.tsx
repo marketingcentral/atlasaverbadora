@@ -24,7 +24,6 @@ export function PrefeituraPerfis() {
   const qc = useQueryClient();
   const [modalPerfil, setModalPerfil] = useState<PrefeituraPerfil | "new" | null>(null);
   const [secret, setSecret] = useState<{ secret: string; otpauthUrl: string } | null>(null);
-  const [novoPreset, setNovoPreset] = useState(false);
   const q = useQuery({ queryKey: ["prefeitura", "perfis"], queryFn: () => atlas.prefeitura.perfis() });
 
   const del = useMutation({ mutationFn: (id: number) => atlas.prefeitura.excluirPerfil(id), onSuccess: () => qc.invalidateQueries({ queryKey: ["prefeitura", "perfis"] }) });
@@ -81,12 +80,7 @@ export function PrefeituraPerfis() {
       <PageHeader
         title="Usuários e acessos"
         subtitle="Cada usuário tem suas próprias permissões (caixas marcadas). Presets são atalhos de partida — depois marque/desmarque caixa a caixa. Login: CPF/e-mail + senha + 2FA opcional."
-        actions={
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Button variant="ghost" onClick={() => setNovoPreset(true)}>+ Novo preset</Button>
-            <Button onClick={() => setModalPerfil("new")}>+ Novo usuário</Button>
-          </div>
-        }
+        actions={<Button onClick={() => setModalPerfil("new")}>+ Novo usuário</Button>}
       />
 
       <DataTable columns={columns} rows={q.data?.perfis ?? []} rowKey={(p) => String(p.id)} loading={q.isLoading} emptyState="Nenhum usuário." />
@@ -107,90 +101,7 @@ export function PrefeituraPerfis() {
           <div style={{ display: "flex", justifyContent: "flex-end" }}><Button variant="ghost" onClick={() => setSecret(null)}>Fechar</Button></div>
         </Modal>
       ) : null}
-      {novoPreset ? (
-        <NovoPresetModal onClose={() => setNovoPreset(false)} onSaved={() => { setNovoPreset(false); qc.invalidateQueries({ queryKey: ["prefeitura", "perfis"] }); }} />
-      ) : null}
     </div>
-  );
-}
-
-/** Modal dedicado pra criar preset novo da prefeitura (nome + permissoes).
- *  Standalone — nao passa pelo fluxo de criacao de usuario. */
-function NovoPresetModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [nome, setNome] = useState("");
-  const [permissoes, setPermissoes] = useState<string[]>([]);
-  const supervisor = permissoes.includes("*");
-
-  function togglePermissao(key: string) {
-    if (supervisor) { setPermissoes(PREFEITURA_TODAS_PERMISSOES.filter((k) => k !== key)); return; }
-    setPermissoes((prev) => prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]);
-  }
-  const save = useMutation({
-    mutationFn: () => atlas.prefeitura.criarPerfilPreset({ nome: nome.trim(), permissoes }),
-    onSuccess: onSaved,
-  });
-  const totalMarcadas = supervisor ? PREFEITURA_TODAS_PERMISSOES.length : permissoes.length;
-
-  return (
-    <Modal title="Novo preset" onClose={onClose}>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
-        Presets são atalhos de permissão. Nomeie a configuração aqui — depois de salva, ela aparece no dropdown "Preset" ao criar/editar qualquer usuário da prefeitura.
-      </p>
-
-      <Field lbl="Nome do preset">
-        <input
-          style={inp}
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-          placeholder="ex.: Fiscalização de folha"
-          autoFocus
-        />
-      </Field>
-
-      <div style={{ marginTop: 14, borderTop: "1px solid var(--border)", paddingTop: 14 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
-          <div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Permissões</div>
-            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
-              <b>{totalMarcadas}</b> {supervisor ? "(todas via *)" : "marcada(s)"}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-            <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes(["*"])}>Marcar tudo</Button>
-            <Button size="sm" variant="ghost" type="button" onClick={() => setPermissoes([])}>Limpar</Button>
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 10, maxHeight: 340, overflowY: "auto", padding: 12, background: "var(--bg-elev-2)", borderRadius: 10 }}>
-          {PREFEITURA_RESOURCE_GROUPS.map((g) => (
-            <div key={g.titulo} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase", marginBottom: 4 }}>
-                {g.titulo}
-              </div>
-              {g.recursos.map((r) => {
-                const marcada = supervisor || permissoes.includes(r.key);
-                return (
-                  <label key={r.key} style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 8px", borderRadius: 6, cursor: "pointer", background: marcada ? "color-mix(in srgb, var(--emerald-500) 12%, transparent)" : "transparent", border: marcada ? "1px solid var(--emerald-500)" : "1px solid var(--border)" }}>
-                    <input type="checkbox" checked={marcada} onChange={() => togglePermissao(r.key)} style={{ marginTop: 3 }} />
-                    <span style={{ flex: 1 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{r.label}</span>
-                      {r.descricao ? <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)" }}>{r.descricao}</span> : null}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending || nome.trim().length < 2 || (permissoes.length === 0 && !supervisor)}>
-          {save.isPending ? "Salvando…" : "Salvar preset"}
-        </Button>
-      </div>
-      {save.isError ? <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
-    </Modal>
   );
 }
 
