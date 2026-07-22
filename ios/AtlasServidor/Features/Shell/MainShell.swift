@@ -21,6 +21,11 @@ struct MainShell: View {
         VStack(spacing: 0) {
             conteudo
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // O ScrollView do iOS estende os limites por baixo da barra de
+                // status, então o conteúdo rolado colidia com o relógio (visível
+                // na aba Conta). O Android confina o conteúdo via Scaffold —
+                // clipar aqui reproduz esse comportamento.
+                .clipped()
             BottomBar(atual: tab) { novo in
                 tab = novo
             }

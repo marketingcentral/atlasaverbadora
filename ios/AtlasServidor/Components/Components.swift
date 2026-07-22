@@ -200,22 +200,59 @@ struct BackHeader: View {
     }
 }
 
-/// Logo do Atlas — marca em texto com o "360" em verde, como no app Android.
+/// Monograma "A" da marca com o swoosh — mesmos paths do `atlas_mark.xml` do
+/// Android (viewport 120x104), redesenhados como `Path` para escalar sem asset.
+struct AtlasMark: Shape {
+    func path(in rect: CGRect) -> Path {
+        // Escala o viewport original (120x104) para o frame recebido.
+        let sx = rect.width / 120, sy = rect.height / 104
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: rect.minX + x * sx, y: rect.minY + y * sy)
+        }
+        var path = Path()
+        // "A" com o entalhe inferior: M60,8 L99,98 L79,98 L60,54 L41,98 L21,98 Z
+        path.move(to: p(60, 8))
+        path.addLine(to: p(99, 98)); path.addLine(to: p(79, 98))
+        path.addLine(to: p(60, 54)); path.addLine(to: p(41, 98))
+        path.addLine(to: p(21, 98)); path.closeSubpath()
+        // Swoosh: M27,84 C58,64 82,46 113,13 C108,24 92,47 67,65 C52,76 40,81 27,84 Z
+        path.move(to: p(27, 84))
+        path.addCurve(to: p(113, 13), control1: p(58, 64), control2: p(82, 46))
+        path.addCurve(to: p(67, 65), control1: p(108, 24), control2: p(92, 47))
+        path.addCurve(to: p(27, 84), control1: p(52, 76), control2: p(40, 81))
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// Logo do Atlas — réplica do `AtlasLogo.kt`: monograma com "360" no canto,
+/// "ATLAS" espaçado e "AVERBADORA" entre duas linhas.
 struct AtlasLogo: View {
     var body: some View {
-        VStack(spacing: 2) {
-            HStack(spacing: 4) {
-                Text("ATLAS")
-                    .font(.system(size: 28, weight: .black))
-                    .foregroundStyle(Atlas.ink)
+        VStack(spacing: 6) {
+            ZStack(alignment: .topTrailing) {
+                AtlasMark()
+                    .fill(Atlas.ink)
+                    .frame(width: 96, height: 82)
                 Text("360")
-                    .font(.system(size: 28, weight: .black))
-                    .foregroundStyle(Atlas.verde)
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Atlas.ink)
+                    .padding(.top, 4)
+                    .offset(x: 14) // acompanha a inclinação do swoosh, como no Android
             }
-            Text("AVERBADORA")
-                .font(.system(size: 11, weight: .bold))
-                .kerning(3)
-                .foregroundStyle(Atlas.inkMuted)
+            Text("ATLAS")
+                .font(.system(size: 30, weight: .heavy))
+                .kerning(10)
+                .foregroundStyle(Atlas.ink)
+            HStack(spacing: 0) {
+                Rectangle().fill(Atlas.divider).frame(width: 20, height: 1.5)
+                Text("AVERBADORA")
+                    .font(.system(size: 12, weight: .medium))
+                    .kerning(5)
+                    .foregroundStyle(Atlas.ink)
+                    .padding(.horizontal, 8)
+                Rectangle().fill(Atlas.divider).frame(width: 20, height: 1.5)
+            }
         }
     }
 }
