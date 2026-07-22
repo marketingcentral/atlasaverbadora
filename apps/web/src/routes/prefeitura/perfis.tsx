@@ -173,15 +173,18 @@ function PerfilModal({
           Você personalizou as permissões (<b>{totalMarcadas}</b> marcada(s)). Dê um nome pra essa
           configuração — ela fica salva como preset e vira opção reutilizável pra outros usuários.
         </p>
-        <Field lbl="Nome do preset">
+        <Field lbl="Nome do preset (obrigatório)">
           <input
-            style={inp}
+            style={{ ...inp, borderColor: presetNome.trim().length < 2 ? "var(--gold-500)" : undefined }}
             value={presetNome}
             onChange={(e) => setPresetNome(e.target.value)}
             placeholder="ex.: Fiscalização de folha"
             autoFocus
           />
         </Field>
+        <div style={{ fontSize: 12, color: presetNome.trim().length < 2 ? "var(--gold-500)" : "var(--text-muted)", marginTop: 6 }}>
+          {presetNome.trim().length < 2 ? "Digite um nome (mínimo 2 letras) para poder salvar." : "Pronto — pode salvar."}
+        </div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
           <Button variant="ghost" onClick={() => setEtapaNomePreset(false)}>Voltar</Button>
           <Button onClick={() => save.mutate()} disabled={save.isPending || presetNome.trim().length < 2}>
