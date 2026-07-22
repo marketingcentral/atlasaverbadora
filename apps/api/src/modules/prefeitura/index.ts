@@ -233,9 +233,22 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
     await refreshAnuencias(c.env);  // pra anuenciaVigente(id) ver o PG (bug: dashboard mostrava "pendente" mesmo com anuencia real gravada)
     const servidores = servidoresDaPrefeitura(id);
-    const contratos = contratosDaPrefeitura(id); // usado so nos KPIs de contagem
     const todosContratos = listContratos();      // usado no comprometido (inclui telemedicina/outros)
     const convenios = conveniosDaPrefeitura(id);
+    // "Contratos averbados" = contratos EFETIVAMENTE averbados (Ativo/Averbado/
+    // Formalizado) dos SERVIDORES desta prefeitura, casado por matricula — NAO
+    // por convenio. Cliente reportou 21/07/2026: existia 1 ADF aplicada pra
+    // servidor de Capistrano (averbadora mostrava 1 averbado / volume R$1.200),
+    // mas este card mostrava 0, porque contratosDaPrefeitura filtra por convenio
+    // e Capistrano tem 0 convenio registrado. Agora casa com a averbadora.
+    const matriculasPref = new Set(servidores.map((s) => s.matricula));
+    const ehAverbado = (situacao: string): boolean => {
+      const s = situacao.toLowerCase();
+      return s === "ativo" || s === "averbado" || s === "formalizado";
+    };
+    const contratosAverbadosPref = todosContratos.filter(
+      (ct) => matriculasPref.has(ct.matricula) && ehAverbado(ct.situacao),
+    );
     const folhasPref = folhas.filter((f) => f.prefeituraId === id);
     const ativos = servidores.filter((s) => !["DESLIGADO", "APOSENTADO"].includes(s.situacaoFuncional.toUpperCase()));
 
@@ -260,9 +273,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       kpis: {
         servidores: servidores.length,
         servidoresAtivos: ativos.length,
-        contratosAverbados: contratos.length,
+        contratosAverbados: contratosAverbadosPref.length,
         convenios: convenios.length,
-        bancosAtuantes: new Set(contratos.map((ct) => ct.bancoId)).size,
+        bancosAtuantes: new Set(contratosAverbadosPref.map((ct) => ct.bancoId)).size,
         descontosMes: r2(descontosMes),
         margemTotal: r2(margemTotalAgg),
         margemComprometida: r2(margemComprometidaAgg),
