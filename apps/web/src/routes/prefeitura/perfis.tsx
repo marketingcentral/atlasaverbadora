@@ -127,6 +127,11 @@ function PerfilModal({
   // Preset SALVO ativo -> permissoes TRAVADAS (nao pode marcar/desmarcar). Pra
   // editar, escolhe um preset normal no dropdown "Presets". Cliente 21/07/2026.
   const presetSalvoAtivo = presetsCustom.some((p) => p.key === presetEscolhido);
+  // Nome do preset + etapa 2. Ao CRIAR com config personalizada, o botao Criar
+  // abre a tela de nomear o preset ANTES de salvar (cliente 21/07/2026).
+  const [presetNome, setPresetNome] = useState("");
+  const [etapaNomePreset, setEtapaNomePreset] = useState(false);
+  const exigePresetNome = !initial && areaDetectada === "personalizado";
 
   function aplicarPreset(v: string) {
     setPresetEscolhido(v);
@@ -151,11 +156,45 @@ function PerfilModal({
       area: areaDetectada,
       permissoes,
       ativo,
+      // So manda o nome do preset quando for criar com config personalizada —
+      // ai o backend salva a config como preset reutilizavel.
+      presetNome: exigePresetNome ? presetNome.trim() : undefined,
     }),
     onSuccess: onSaved,
   });
 
   const totalMarcadas = supervisor ? PREFEITURA_TODAS_PERMISSOES.length : permissoes.length;
+
+  // Etapa 2 — tela dedicada de "Nome do preset" (só ao criar personalizado).
+  if (etapaNomePreset) {
+    return (
+      <Modal title="Nome do preset" onClose={() => setEtapaNomePreset(false)}>
+        <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>
+          Você personalizou as permissões (<b>{totalMarcadas}</b> marcada(s)). Dê um nome pra essa
+          configuração — ela fica salva como preset e vira opção reutilizável pra outros usuários.
+        </p>
+        <Field lbl="Nome do preset (obrigatório)">
+          <input
+            style={{ ...inp, borderColor: presetNome.trim().length < 2 ? "var(--gold-500)" : undefined }}
+            value={presetNome}
+            onChange={(e) => setPresetNome(e.target.value)}
+            placeholder="ex.: Fiscalização de folha"
+            autoFocus
+          />
+        </Field>
+        <div style={{ fontSize: 12, color: presetNome.trim().length < 2 ? "var(--gold-500)" : "var(--text-muted)", marginTop: 6 }}>
+          {presetNome.trim().length < 2 ? "Digite um nome (mínimo 2 letras) para poder salvar." : "Pronto — pode salvar."}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+          <Button variant="ghost" onClick={() => setEtapaNomePreset(false)}>Voltar</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || presetNome.trim().length < 2}>
+            {save.isPending ? "Salvando…" : "Salvar"}
+          </Button>
+        </div>
+        {save.isError ? <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>{(save.error as Error).message}</p> : null}
+      </Modal>
+    );
+  }
 
   return (
     <Modal title={initial ? `Editar ${initial.nome}` : "Novo usuário da prefeitura"} onClose={onClose}>
@@ -265,7 +304,7 @@ function PerfilModal({
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
         <Button variant="ghost" onClick={onClose}>Cancelar</Button>
         <Button
-          onClick={() => save.mutate()}
+          onClick={() => { if (exigePresetNome) { setEtapaNomePreset(true); } else { save.mutate(); } }}
           disabled={save.isPending || !nome || !email}
         >
           {save.isPending ? "Salvando…" : initial ? "Salvar" : "Criar"}
