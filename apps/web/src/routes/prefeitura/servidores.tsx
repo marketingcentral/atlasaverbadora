@@ -1,12 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, CsvImportPanel, DataTable, FilterBar, Pill, type Column } from "@atlas/ui/web";
+import { Button, CpfField, CsvImportPanel, CurrencyField, DataTable, FilterBar, FormGrid, NumberField, Pill, SelectField, TelefoneField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraServidor, ServidorCampoConfig } from "@atlas/sdk";
-import { Modal, Field, inp, selStyle } from "./_ui";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
-const VINCULOS = ["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONISTA"];
+// VINCULOS constante removida — modal dinamico usa VINCULO_OPTS ({value,label}).
 const fmtCpf = (cpf: string) => {
   const d = (cpf ?? "").replace(/\D/g, "");
   return d.length === 11 ? `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}` : (cpf || "—");
@@ -196,6 +195,17 @@ const CAMPOS_FALLBACK: ServidorCampoConfig[] = [
  *  backend expor um caminho pra persistir. */
 const CAMPOS_EDITAVEIS = new Set(["nome", "cpf", "matricula", "cargo", "endereco", "vinculo", "email", "telefone"]);
 
+const backdrop: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "grid", placeItems: "center", zIndex: 100, padding: 24 };
+const modalStyle: React.CSSProperties = { background: "var(--surface-solid)", borderRadius: 12, padding: 24, maxWidth: 720, width: "100%", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-lg)", maxHeight: "90vh", overflowY: "auto" };
+
+const VINCULO_OPTS = [
+  { value: "ESTATUTARIO", label: "Estatutário" },
+  { value: "CLT", label: "CLT" },
+  { value: "COMISSIONADO", label: "Comissionado" },
+  { value: "APOSENTADO", label: "Aposentado" },
+  { value: "PENSIONISTA", label: "Pensionista" },
+];
+
 function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServidor; onClose: () => void; onSaved: () => void }) {
   const cfgQ = useQuery({
     queryKey: ["prefeitura", "servidor-campos-config"],
@@ -206,108 +216,181 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServido
     .filter((c) => c.visivel)
     .sort((a, b) => a.ordem - b.ordem);
 
-  // Um state por campo. Chaves sistema conhecidas carregam do PrefeituraServidor;
-  // resto (customs) comeca vazio ate o backend expor no shape.
-  const [valores, setValores] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
+  const [valores, setValores] = useState<Record<string, string | number>>(() => {
     const src = servidor as unknown as Record<string, unknown>;
-    for (const c of CAMPOS_FALLBACK) {
-      const v = src[c.key];
-      initial[c.key] = typeof v === "string" ? v : v == null ? "" : String(v);
+    const out: Record<string, string | number> = {};
+    const keys = ["nome","cpf","matricula","vinculo","situacaoFuncional","salarioLiquido","idConvenio","cargo","endereco","email","telefone","codigoIbge","dataAdmissao","dataNascimento"];
+    for (const k of keys) {
+      const v = src[k];
+      if (typeof v === "number" || typeof v === "string") out[k] = v;
+      else out[k] = "";
     }
-    initial.matricula = servidor.matricula;
-    return initial;
+    out.matricula = servidor.matricula;
+    return out;
   });
-  const setV = (k: string, v: string) => setValores((prev) => ({ ...prev, [k]: v }));
+  const setV = (k: string, v: string | number) => setValores((prev) => ({ ...prev, [k]: v }));
 
-  const [erroValidacao, setErroValidacao] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
   const save = useMutation({
     mutationFn: () => {
-      // Valida obrigatorios ANTES de bater no backend — feedback imediato.
       for (const c of campos) {
         if (!c.obrigatorio) continue;
         if (!CAMPOS_EDITAVEIS.has(c.key)) continue;
-        if (!(valores[c.key] ?? "").trim()) throw new Error(`Campo "${c.label}" é obrigatório.`);
+        const v = valores[c.key];
+        const vazio = v == null || (typeof v === "string" && !v.trim()) || (c.tipo === "moeda" && Number(v) === 0);
+        if (vazio) throw new Error(`Campo "${c.label}" é obrigatório.`);
       }
-      const cpfNovo = (valores.cpf ?? "").trim();
-      const matNova = (valores.matricula ?? "").trim();
+      const cpfNovo = String(valores.cpf ?? "").trim();
+      const matNova = String(valores.matricula ?? "").trim();
+      const cpfDigitos = cpfNovo.replace(/\D/g, "");
+      if (cpfNovo && cpfDigitos.length !== 11) throw new Error("CPF deve ter 11 dígitos.");
       return atlas.prefeitura.editarServidor(servidor.matricula, {
-        nome: valores.nome,
-        cargo: valores.cargo,
-        endereco: valores.endereco,
-        vinculo: valores.vinculo,
-        email: valores.email,
-        telefone: valores.telefone,
-        ...(cpfNovo.replace(/\D/g, "") !== (servidor.cpf ?? "").replace(/\D/g, "") ? { cpf: cpfNovo } : {}),
+        nome: String(valores.nome ?? ""),
+        cargo: String(valores.cargo ?? ""),
+        endereco: String(valores.endereco ?? ""),
+        vinculo: String(valores.vinculo ?? ""),
+        email: String(valores.email ?? ""),
+        telefone: String(valores.telefone ?? ""),
+        ...(cpfDigitos !== (servidor.cpf ?? "").replace(/\D/g, "") ? { cpf: cpfNovo } : {}),
         ...(matNova !== servidor.matricula ? { matriculaNova: matNova } : {}),
       });
     },
-    onSuccess: () => { setErroValidacao(null); onSaved(); },
-    onError: (e: Error) => setErroValidacao(e.message),
+    onSuccess: () => { setErro(null); onSaved(); },
+    onError: (e: Error) => setErro(e.message),
   });
 
-  const renderInput = (c: ServidorCampoConfig) => {
-    const val = valores[c.key] ?? "";
+  const renderCampo = (c: ServidorCampoConfig) => {
+    const val = valores[c.key];
     const readOnly = !CAMPOS_EDITAVEIS.has(c.key) || c.travado === true;
-    if (c.key === "vinculo") {
+    const hint = c.travado ? "Travado (identidade do servidor)"
+      : c.key === "matricula" ? "Alterar remapeia o servidor"
+      : !CAMPOS_EDITAVEIS.has(c.key) ? "Somente leitura"
+      : undefined;
+
+    if (c.key === "cpf") {
+      const cpfDigits = String(val ?? "").replace(/\D/g, "");
+      const cpfValido = cpfDigits.length === 11 || cpfDigits.length === 0;
       return (
-        <select style={selStyle} value={val} onChange={(e) => setV(c.key, e.target.value)} disabled={readOnly}>
-          {!VINCULOS.includes(val) && val ? <option value={val}>{val}</option> : null}
-          {VINCULOS.map((v) => <option key={v} value={v}>{v}</option>)}
-        </select>
+        <CpfField
+          label={c.label}
+          value={String(val ?? "")}
+          onChange={(e) => setV(c.key, e.target.value)}
+          required={c.obrigatorio}
+          hint={hint}
+          error={!cpfValido ? "CPF deve ter 11 dígitos" : undefined}
+          readOnly={readOnly}
+        />
       );
     }
-    const placeholder = c.key === "cpf" ? "000.000.000-00"
-      : c.key === "telefone" ? "(00) 00000-0000"
-      : c.tipo === "email" ? "email@dominio.com"
-      : c.tipo === "moeda" ? "0,00"
-      : c.tipo === "numero" ? "0"
-      : "";
-    const inputMode = c.tipo === "numero" || c.tipo === "moeda" || c.key === "cpf" || c.key === "telefone" ? "numeric" as const
-      : c.tipo === "email" ? "email" as const
-      : undefined;
-    const type = c.tipo === "data" ? "date" : "text";
+    if (c.key === "telefone" || c.tipo === "telefone") {
+      return (
+        <TelefoneField
+          label={c.label}
+          value={String(val ?? "")}
+          onChange={(e) => setV(c.key, e.target.value)}
+          required={c.obrigatorio}
+          hint={hint}
+          readOnly={readOnly}
+        />
+      );
+    }
+    if (c.key === "vinculo") {
+      const cur = String(val ?? "ESTATUTARIO");
+      const opts = VINCULO_OPTS.slice();
+      if (!opts.some((o) => o.value === cur) && cur) opts.unshift({ value: cur, label: cur });
+      return (
+        <SelectField
+          label={c.label}
+          value={cur}
+          onChange={(e) => setV(c.key, e.target.value)}
+          options={opts}
+          required={c.obrigatorio}
+          hint={hint}
+          disabled={readOnly}
+        />
+      );
+    }
+    if (c.tipo === "moeda") {
+      return (
+        <CurrencyField
+          label={c.label}
+          value={typeof val === "number" ? val : Number(val) || null}
+          onValueChange={(n) => setV(c.key, n ?? 0)}
+          required={c.obrigatorio}
+          hint={hint}
+          readOnly={readOnly}
+        />
+      );
+    }
+    if (c.tipo === "numero") {
+      return (
+        <NumberField
+          label={c.label}
+          value={val ?? ""}
+          onChange={(e) => setV(c.key, e.target.value)}
+          required={c.obrigatorio}
+          hint={hint}
+          readOnly={readOnly}
+        />
+      );
+    }
+    if (c.tipo === "data") {
+      return (
+        <TextField
+          label={c.label}
+          type="date"
+          value={String(val ?? "")}
+          onChange={(e) => setV(c.key, e.target.value)}
+          required={c.obrigatorio}
+          hint={hint}
+          readOnly={readOnly}
+        />
+      );
+    }
     return (
-      <input
-        style={{ ...inp, opacity: readOnly ? 0.7 : 1 }}
-        value={val}
+      <TextField
+        label={c.label}
+        type={c.tipo === "email" ? "email" : "text"}
+        value={String(val ?? "")}
         onChange={(e) => setV(c.key, e.target.value)}
-        placeholder={placeholder}
-        inputMode={inputMode}
-        type={type}
+        required={c.obrigatorio}
+        hint={hint}
         readOnly={readOnly}
-        aria-readonly={readOnly}
       />
     );
   };
 
   return (
-    <Modal title={`Editar servidor — ${servidor.matricula}`} onClose={onClose}>
-      {cfgQ.isPending ? (
-        <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Carregando campos configurados…</p>
-      ) : (
-        <div style={{ display: "grid", gap: 12 }}>
-          {campos.map((c) => (
-            <Field
-              key={c.key}
-              lbl={c.label}
-              required={c.obrigatorio}
-              hint={c.key === "matricula" ? "Alterar remapeia o servidor" : !CAMPOS_EDITAVEIS.has(c.key) ? "Somente leitura" : undefined}
-            >
-              {renderInput(c)}
-            </Field>
-          ))}
-        </div>
-      )}
-      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
-        <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button onClick={() => save.mutate()} disabled={save.isPending || cfgQ.isPending}>{save.isPending ? "Salvando…" : "Salvar"}</Button>
-      </div>
-      {erroValidacao || save.isError ? (
-        <p style={{ color: "var(--danger-500)", marginTop: 12, fontSize: 13 }}>
-          {erroValidacao ?? (save.error as Error | undefined)?.message}
+    <div style={backdrop} onClick={onClose}>
+      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
+        <h3 style={{ marginTop: 0 }}>Editar servidor</h3>
+        <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: -4 }}>
+          Matrícula <b style={{ fontFamily: "var(--font-mono)" }}>{servidor.matricula}</b>
         </p>
-      ) : null}
-    </Modal>
+
+        {cfgQ.isPending ? (
+          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Carregando configuração de campos…</p>
+        ) : (
+          <FormGrid>
+            {campos.map((c) => (
+              <span key={c.key}>{renderCampo(c)}</span>
+            ))}
+          </FormGrid>
+        )}
+
+        {erro || save.isError ? (
+          <p style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 12 }}>
+            {erro ?? (save.error as Error | undefined)?.message}
+          </p>
+        ) : null}
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || cfgQ.isPending}>
+            {save.isPending ? "Salvando…" : "Salvar alterações"}
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }
