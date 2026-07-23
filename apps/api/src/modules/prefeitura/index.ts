@@ -20,7 +20,7 @@ import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit, auditCtx } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs, refreshConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig, persistDirtyIdUnicoConfigs } from "../admin/id-unico.js";
-import { importTombamento, listLotes, listLinhas, refreshTombamento, listExternalLoans, ensureTombamentoLoaded } from "../admin/tombamento.js";
+import { importTombamento, listLotes, listLinhas, refreshTombamento, listExternalLoans, ensureTombamentoLoaded, externosEmprestimoDe } from "../admin/tombamento.js";
 import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
   ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus,
@@ -105,11 +105,10 @@ function comprometidoEmprestimoDe(matricula: string, todosContratos: ReturnType<
   const atlas = todosContratos
     .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
     .reduce((acc, ct) => acc + ct.valorParcela, 0);
-  const externos = listExternalLoans(matricula)
-    .filter((l) => {
-      const t = `${l.tipo ?? ""} ${l.motivo ?? ""}`.toLowerCase();
-      return !(t.includes("benef") || t.includes("cartao") || t.includes("cartão"));
-    })
+  // Externos do bucket EMPRESTIMO — filtro compartilhado com portal-banco em
+  // externosEmprestimoDe (admin/tombamento.ts). Antes esta funcao replicava
+  // a logica de exclusao cartao/beneficio inline.
+  const externos = externosEmprestimoDe(matricula)
     .reduce((acc, l) => acc + l.valorParcela, 0);
   return atlas + externos;
 }

@@ -16,27 +16,12 @@ import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, li
 import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
 import { enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
-import { listExternalLoans, refreshTombamento } from "../admin/tombamento.js";
+import { listExternalLoans, refreshTombamento, externosEmprestimoDe } from "../admin/tombamento.js";
 import { appendAudit, auditCtx } from "../admin/auditoria.js";
 import type { ContratoFull } from "./store.js";
 
-/** Emprestimos externos (tombamento) do bucket EMPRESTIMO de um servidor.
- *  Sao operacoes ja ativas em OUTROS bancos (Caixa/Bradesco/BMG, etc) que a
- *  prefeitura declarou — descontam a margem consignavel real do servidor. O
- *  banco tem que considera-los no calculo de margem, senao simula/averba acima
- *  do teto real (o servidor e a prefeitura ja descontam — o banco ficou pra
- *  tras). Cliente pediu 21/07/2026. Bucket derivado do tipo do tombamento:
- *  beneficio/cartao caem em outros buckets; o resto e EMPRESTIMO. */
-function externosEmprestimo(matricula: string): { valorParcela: number; parcelasRestantes: number }[] {
-  return listExternalLoans(matricula).filter((l) => {
-    // Combina tipo + motivo — no relatorio real o `tipo` costuma ser 'Novo'/
-    // 'Refinanciamento' e o `motivo` e' que carrega 'Cartao Consignado' vs
-    // 'Emprestimo'. Olhar so `tipo` fazia o cartao (ex.: BMG) cair no emprestimo.
-    // Mesma logica do bucketFromTombamento em servidores/index.ts.
-    const t = `${l.tipo ?? ""} ${l.motivo ?? ""}`.toLowerCase();
-    return !(t.includes("benef") || t.includes("cartao") || t.includes("cartão"));
-  });
-}
+// externosEmprestimoDe agora vive em admin/tombamento.ts — fonte unica
+// compartilhada com prefeitura pra evitar drift entre as duas.
 
 function requireBancoRole(j: JwtClaims): void {
   if (j.role !== "banco") throw Errors.forbidden("Requer perfil banco");
@@ -398,7 +383,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const atlasComprometido = listContratos({ matricula: found.matricula })
         .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
         .reduce((a, ct) => a + ct.valorParcela, 0);
-      const externoComprometido = externosEmprestimo(found.matricula).reduce((a, l) => a + l.valorParcela, 0);
+      const externoComprometido = externosEmprestimoDe(found.matricula).reduce((a, l) => a + l.valorParcela, 0);
       const comprometido = atlasComprometido + externoComprometido;
       const margemDisponivelValor = Math.round(margemDisponivel(salarioLiquido, comprometido, "EMPRESTIMO") * 100) / 100;
       // Margens por bucket — UI usa direto sem precisar de salario.
@@ -462,7 +447,7 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // prefeitura e o proprio servidor ja descontam). Cliente pediu 21/07/2026.
     const contratosAtivos = listContratos({ matricula: s.matricula })
       .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO");
-    const externos = externosEmprestimo(s.matricula);
+    const externos = externosEmprestimoDe(s.matricula);
     const comprometido = Math.round(
       (contratosAtivos.reduce((a, ct) => a + ct.valorParcela, 0)
         + externos.reduce((a, l) => a + l.valorParcela, 0)) * 100,

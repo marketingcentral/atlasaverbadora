@@ -270,6 +270,21 @@ export function getExternalLoan(matricula: string, id: string): ExternalLoan | u
   return listExternalLoans(matricula).find((l) => l.id === id);
 }
 
+/** Emprestimos externos do bucket EMPRESTIMO (35%) — filtra fora cartao/beneficio.
+ *  Fonte unica pra "externos que descontam da margem consignavel" — antes
+ *  a mesma logica estava duplicada em servidores/index.ts (bucketFromTombamento),
+ *  portal-banco/index.ts (externosEmprestimo) e implicito em prefeitura.
+ *  Combina `tipo` + `motivo` pq no relatorio real o tipo costuma ser
+ *  'Novo'/'Refinanciamento' e o `motivo` carrega 'Cartao Consignado' vs
+ *  'Emprestimo'. Cliente reportou 21/07/2026: BMG R$90 (cartao) descontando
+ *  da margem de emprestimo. */
+export function externosEmprestimoDe(matricula: string): ExternalLoan[] {
+  return listExternalLoans(matricula).filter((l) => {
+    const t = `${l.tipo ?? ""} ${l.motivo ?? ""}`.toLowerCase();
+    return !(t.includes("benef") || t.includes("cartao") || t.includes("cartão"));
+  });
+}
+
 export interface ImportTombamentoResult {
   lote: TombamentoLote;
   inseridos: number;
