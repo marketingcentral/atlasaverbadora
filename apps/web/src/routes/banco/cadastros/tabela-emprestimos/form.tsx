@@ -6,6 +6,7 @@ import {
   FormActions,
   FormGrid,
   NumberField,
+  Pill,
   SelectField,
   TextField,
 } from "@atlas/ui/web";
@@ -62,7 +63,7 @@ export function BancoTabelaEmprestimosForm() {
 
   const convenioSelecionado = useMemo(() => convenios.data?.convenios.find((c) => c.id === convenioId), [convenios.data, convenioId]);
   const convenioNome = convenioSelecionado?.nome ?? "";
-  /** Teto de parcelas definido pela prefeitura pro convenio selecionado.
+  /** Teto de parcelas definido pela averbadora/prefeitura pro convenio selecionado.
    *  Banco nao pode ultrapassar — dropdown esconde opcoes acima e backend
    *  bloqueia com 422 se alguem burlar o UI. */
   const tetoPrefeitura = convenioSelecionado?.maxParcelas ?? 120;
@@ -71,6 +72,14 @@ export function BancoTabelaEmprestimosForm() {
   useEffect(() => {
     if (prazoMaxMeses > tetoPrefeitura) setPrazoMaxMeses(tetoPrefeitura);
   }, [tetoPrefeitura, prazoMaxMeses]);
+  // Teto de taxa e intervalo de vigencia — mesmas regras validadas server-side.
+  const taxaTetoPct = convenioSelecionado?.taxaMaxAm ?? null;
+  const vigConvInicio = convenioSelecionado?.vigenciaInicio ?? null;
+  const vigConvFim = convenioSelecionado?.vigenciaFim ?? null;
+  const taxaAcimaTeto = taxaTetoPct != null && taxaPct > taxaTetoPct + 1e-6;
+  const vigenciaInicioAntes = !!(vigConvInicio && vigenciaInicio && vigenciaInicio < vigConvInicio);
+  const vigenciaFimDepois = !!(vigConvFim && vigenciaFim && vigenciaFim > vigConvFim);
+  const vigenciaFimObrigatoria = !!(vigConvFim && !vigenciaFim);
 
   const save = useMutation({
     mutationFn: () => {
@@ -142,7 +151,17 @@ export function BancoTabelaEmprestimosForm() {
               { value: "0", label: "Inativo" },
             ]}
           />
-          <NumberField label="Taxa (% a.m.)" step={0.01} value={taxaPct} onChange={(e) => setTaxaPct(Number(e.target.value))} required hint="Taxa mensal única praticada nesta tabela. Vira o valor que o servidor simula." />
+          <NumberField
+            label="Taxa (% a.m.)"
+            step={0.01}
+            value={taxaPct}
+            onChange={(e) => setTaxaPct(Number(e.target.value))}
+            required
+            hint={taxaTetoPct != null
+              ? `Teto do convenio: ${taxaTetoPct}% a.m. — a tabela nao pode ultrapassar.`
+              : "Taxa mensal unica praticada nesta tabela. Vira o valor que o servidor simula."}
+            error={taxaAcimaTeto ? `Acima do teto de ${taxaTetoPct}% a.m. definido pela averbadora.` : undefined}
+          />
           {/* Prazo max fechado em opcoes fixas — filtradas pelo TETO DA
               PREFEITURA (convenio.maxParcelas). Servidor simulando so ve
               prazos ate esse teto. */}
@@ -154,10 +173,122 @@ export function BancoTabelaEmprestimosForm() {
             hint={`Teto da prefeitura: ${tetoPrefeitura} meses. Nao e' possivel exceder esse limite.`}
             required
           />
-          <TextField label="Vigência início" type="date" value={vigenciaInicio} onChange={(e) => setVigenciaInicio(e.target.value)} required />
-          <TextField label="Vigência fim" type="date" value={vigenciaFim} onChange={(e) => setVigenciaFim(e.target.value)} hint="Opcional. Vazio = aberta" />
+          <TextField
+            label="Vigência início"
+            type="date"
+            value={vigenciaInicio}
+            onChange={(e) => setVigenciaInicio(e.target.value)}
+            required
+            min={vigConvInicio ?? undefined}
+            max={vigConvFim ?? undefined}
+            hint={vigConvInicio ? `Convenio inicia em ${vigConvInicio}. A tabela nao pode comecar antes.` : undefined}
+            error={vigenciaInicioAntes ? `Antes do inicio do convenio (${vigConvInicio}).` : undefined}
+          />
+          <TextField
+            label="Vigência fim"
+            type="date"
+            value={vigenciaFim}
+            onChange={(e) => setVigenciaFim(e.target.value)}
+            min={vigConvInicio ?? undefined}
+            max={vigConvFim ?? undefined}
+            hint={vigConvFim ? `Obrigatoria: convenio termina em ${vigConvFim}.` : "Opcional. Vazio = aberta"}
+            error={vigenciaFimDepois
+              ? `Depois do fim do convenio (${vigConvFim}).`
+              : vigenciaFimObrigatoria
+                ? `Convenio termina em ${vigConvFim} — defina uma data.`
+                : undefined}
+          />
         </FormGrid>
       </section>
+
+      {convenioSelecionado && (convenioSelecionado.taxaMaxAm != null || convenioSelecionado.vinculosAceitos.length > 0 || convenioSelecionado.regrasEspeciais) ? (
+        <section
+          style={{
+            background: "color-mix(in srgb, var(--gold-500) 6%, var(--bg-elev))",
+            border: "1px solid color-mix(in srgb, var(--gold-500) 40%, var(--border))",
+            borderRadius: 12,
+            padding: 20,
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: "0.1em", fontWeight: 700, color: "var(--gold-500)", textTransform: "uppercase" }}>
+                Regras do convênio
+              </div>
+              <div style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 2 }}>
+                Definidas pela averbadora + prefeitura. Somente leitura — sua tabela precisa respeitar esses limites.
+              </div>
+            </div>
+            {convenioSelecionado.configAtivo != null ? (
+              <Pill variant={convenioSelecionado.configAtivo ? "averbado" : "expirado"}>
+                {convenioSelecionado.configAtivo ? "Vigente" : "Suspenso"}
+              </Pill>
+            ) : null}
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+              gap: 10,
+              fontSize: 13,
+            }}
+          >
+            {convenioSelecionado.taxaMaxAm != null ? (
+              <RegraCard label="Taxa a.m. (teto)" value={`${convenioSelecionado.taxaMaxAm}%`} />
+            ) : null}
+            <RegraCard label="Máx. parcelas" value={String(convenioSelecionado.maxParcelas)} />
+            {convenioSelecionado.maxComprometimentoPct != null ? (
+              <RegraCard label="Máx. comprometimento" value={`${Math.round(convenioSelecionado.maxComprometimentoPct * 100)}%`} />
+            ) : null}
+            {convenioSelecionado.idadeMin != null && convenioSelecionado.idadeMax != null ? (
+              <RegraCard label="Faixa etária" value={`${convenioSelecionado.idadeMin}–${convenioSelecionado.idadeMax}`} />
+            ) : null}
+            {convenioSelecionado.prazoTravaHoras != null ? (
+              <RegraCard label="Trava regular" value={`${convenioSelecionado.prazoTravaHoras}h`} />
+            ) : null}
+            {convenioSelecionado.prazoPortabilidadeDU != null ? (
+              <RegraCard label="Trava portabilidade" value={`${convenioSelecionado.prazoPortabilidadeDU} DU`} />
+            ) : null}
+            {convenioSelecionado.formatoImportacao ? (
+              <RegraCard label="Importação" value={convenioSelecionado.formatoImportacao} />
+            ) : null}
+            {convenioSelecionado.vigenciaInicio ? (
+              <RegraCard
+                label="Vigência convênio"
+                value={`${convenioSelecionado.vigenciaInicio}${convenioSelecionado.vigenciaFim ? ` → ${convenioSelecionado.vigenciaFim}` : " → aberta"}`}
+              />
+            ) : null}
+          </div>
+          {convenioSelecionado.vinculosAceitos.length > 0 ? (
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
+                Vínculos aceitos
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {convenioSelecionado.vinculosAceitos.map((v) => (
+                  <Pill key={v} variant="averbado">{v}</Pill>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {convenioSelecionado.regrasEspeciais ? (
+            <div>
+              <div style={{ fontSize: 11, letterSpacing: "0.06em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 6 }}>
+                Regras especiais
+              </div>
+              <div style={{
+                background: "var(--bg-elev-2)", border: "1px solid var(--border)",
+                borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--text)",
+              }}>
+                {convenioSelecionado.regrasEspeciais}
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       {save.error ? (
         <div style={{ color: "var(--danger-500)", fontSize: 13, padding: 12, borderRadius: 8, background: "color-mix(in srgb, var(--danger-500) 8%, transparent)", border: "1px solid var(--danger-500)" }}>
@@ -183,8 +314,35 @@ export function BancoTabelaEmprestimosForm() {
 
       <FormActions>
         <Button variant="ghost" type="button" onClick={() => nav("/banco/cadastros/tabela-emprestimos")}>Cancelar</Button>
-        <Button type="submit" disabled={save.isPending}>{save.isPending ? "Salvando..." : "Salvar"}</Button>
+        <Button
+          type="submit"
+          disabled={save.isPending || taxaAcimaTeto || vigenciaInicioAntes || vigenciaFimDepois || vigenciaFimObrigatoria}
+        >
+          {save.isPending ? "Salvando..." : "Salvar"}
+        </Button>
       </FormActions>
     </form>
+  );
+}
+
+/** Card compacto readonly pro painel "Regras do convenio". */
+function RegraCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      style={{
+        background: "var(--bg-elev-2)",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        padding: "8px 10px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+      }}
+    >
+      <div style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)" }}>{value}</div>
+    </div>
   );
 }

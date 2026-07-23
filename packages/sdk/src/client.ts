@@ -1548,7 +1548,28 @@ export class AtlasClient {
   // ============ Portal Banco ============
   readonly banco = {
     me: () => this.request<{ id: number; nome: string }>("/v1/portal/banco/me"),
-    convenios: () => this.request<{ convenios: { id: string; nome: string; prefeitura: string; uf: string; exigeCcb: boolean; exigeBanco2FA: boolean; maxParcelas: number }[]; activeId: string }>("/v1/portal/banco/convenios"),
+    convenios: () => this.request<{
+      convenios: {
+        id: string; nome: string; prefeitura: string; uf: string;
+        exigeCcb: boolean; exigeBanco2FA: boolean;
+        // Regras do convenio (definidas pela averbadora no /averbadora/convenios).
+        // Banco enxerga como readonly no cadastro de tabela; backend re-valida.
+        maxParcelas: number;
+        taxaMaxAm: number | null;
+        idadeMin: number | null;
+        idadeMax: number | null;
+        maxComprometimentoPct: number | null;
+        vinculosAceitos: ("CLT" | "ESTATUTARIO" | "COMISSIONADO" | "APOSENTADO" | "PENSIONISTA")[];
+        formatoImportacao: "CSV" | "EXCEL" | "API" | null;
+        regrasEspeciais: string;
+        vigenciaInicio: string | null;
+        vigenciaFim: string | null;
+        prazoTravaHoras: number | null;
+        prazoPortabilidadeDU: number | null;
+        configAtivo: boolean | null;
+      }[];
+      activeId: string;
+    }>("/v1/portal/banco/convenios"),
     setConvenioAtivo: (convenioId: string) =>
       this.request<{ activeId: string }>("/v1/portal/banco/convenio-ativo", { method: "POST", body: { convenioId } }),
     visaoGeral: () =>

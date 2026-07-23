@@ -264,9 +264,21 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
           id: cv.id, nome: cv.nome, prefeitura: cv.prefeitura, uf: cv.uf,
           exigeCcb: pref?.exigeCcb ?? false,
           exigeBanco2FA: pref?.exigeBanco2FA ?? false,
-          // Teto de parcelas definido pela prefeitura. Banco nao pode
-          // criar tabela com prazoMaxMeses acima desse valor.
+          // Regras definidas pela averbadora/prefeitura no /averbadora/convenios.
+          // Banco enxerga como readonly e o backend valida ao salvar tabela.
           maxParcelas: cfg?.maxParcelas ?? 96,
+          taxaMaxAm: cfg?.taxaMaxAm ?? null,
+          idadeMin: cfg?.idadeMin ?? null,
+          idadeMax: cfg?.idadeMax ?? null,
+          maxComprometimentoPct: cfg?.maxComprometimentoPct ?? null,
+          vinculosAceitos: cfg?.vinculosAceitos ?? [],
+          formatoImportacao: cfg?.formatoImportacao ?? null,
+          regrasEspeciais: cfg?.regrasEspeciais ?? "",
+          vigenciaInicio: cfg?.vigenciaInicio ?? null,
+          vigenciaFim: cfg?.vigenciaFim ?? null,
+          prazoTravaHoras: cfg?.prazoTravaHoras ?? null,
+          prazoPortabilidadeDU: cfg?.prazoPortabilidadeDU ?? null,
+          configAtivo: cfg?.ativo ?? null,
         };
       }),
       activeId,
@@ -896,14 +908,35 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const existente = await getTabela(c.env, body.id);
       if (existente && !meusConvenios.has(existente.convenioId)) throw Errors.notFound("tabela");
     }
-    // TETO DA PREFEITURA: prazoMaxMeses da tabela do banco nao pode exceder
-    // convenio.maxParcelas definido pela prefeitura. Regra combinada com o
-    // cliente — cada prefeitura estabelece o limite maximo aplicado ao banco.
+    // REGRAS DO CONVENIO (definidas pela averbadora + prefeitura). Banco nao
+    // pode criar tabela que viole nenhum dos parametros combinados. Tudo que
+    // conseguir passar cliente-side ainda e' validado aqui.
     const cfg = getConvenioConfig(body.convenioId);
-    if (cfg && body.prazoMaxMeses > cfg.maxParcelas) {
-      throw Errors.validation({
-        prazoMaxMeses: `Prazo maximo do convenio e' de ${cfg.maxParcelas} parcelas (teto definido pela prefeitura). Reduza o prazo desta tabela.`,
-      });
+    if (cfg) {
+      const err: Record<string, string> = {};
+      if (body.prazoMaxMeses > cfg.maxParcelas) {
+        err.prazoMaxMeses = `Prazo maximo do convenio e' de ${cfg.maxParcelas} parcelas (teto definido pela prefeitura). Reduza o prazo desta tabela.`;
+      }
+      // Taxa a.m.: teto vem em % (ex. 1.87) — normaliza pra fracao (0.0187)
+      // porque bodyNorm.taxaAm ja esta em fracao (0..1).
+      const taxaTetoFrac = cfg.taxaMaxAm / 100;
+      if (taxaAmFinal > taxaTetoFrac + 1e-6) {
+        err.taxaAm = `Taxa acima do teto do convenio (${cfg.taxaMaxAm}% a.m.). Reduza a taxa desta tabela.`;
+      }
+      // Vigencia: interval da tabela deve estar CONTIDO no da averbadora.
+      // Comparacao lexicografica funciona pra ISO YYYY-MM-DD.
+      if (cfg.vigenciaInicio && body.vigenciaInicio < cfg.vigenciaInicio) {
+        err.vigenciaInicio = `Inicio da vigencia antes do convenio (${cfg.vigenciaInicio}). Ajuste a data.`;
+      }
+      if (cfg.vigenciaFim && body.vigenciaFim && body.vigenciaFim > cfg.vigenciaFim) {
+        err.vigenciaFim = `Fim da vigencia depois do convenio (${cfg.vigenciaFim}). Ajuste a data.`;
+      }
+      if (cfg.vigenciaFim && !body.vigenciaFim) {
+        // Convenio tem fim mas tabela ficaria aberta — obriga a fechar no
+        // maximo no fim do convenio pra evitar tabela "orfa" apos expiracao.
+        err.vigenciaFim = `Convenio tem fim em ${cfg.vigenciaFim}. Defina uma vigencia fim para a tabela (<= essa data).`;
+      }
+      if (Object.keys(err).length > 0) throw Errors.validation(err);
     }
     const saved = await upsertTabela(c.env, bodyNorm, j.banco_id!);
     appendAudit(auditCtx(c), {
