@@ -8,14 +8,21 @@ import { DEFAULT_CAMPOS_FALLBACK } from "./_defaults";
 const backdrop: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "grid", placeItems: "center", zIndex: 100, padding: 24 };
 const modal: React.CSSProperties = { background: "var(--surface-solid)", borderRadius: 12, padding: 24, maxWidth: 720, width: "100%", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-lg)", maxHeight: "90vh", overflowY: "auto" };
 
-/** Campos SISTEMA que o backend /admin/updateServidor aceita persistir. Campos
- *  fora desta lista (customs por enquanto) aparecem read-only ate o backend
- *  expor persistencia de custom fields no /editar. */
+/** Campos SISTEMA que o backend /admin/updateServidor aceita persistir.
+ *  Custom fields (nao-sistema) tambem sao editaveis — vao no payload
+ *  camposCustom. Trava fica so no c.travado (cpf/matricula). */
 const CAMPOS_EDITAVEIS = new Set([
   "nome", "cpf", "matricula", "vinculo", "situacaoFuncional", "salarioLiquido",
   "idConvenio", "cargo", "endereco", "email", "telefone", "codigoIbge",
   "dataAdmissao", "dataNascimento",
 ]);
+/** true se o campo e' editavel: sistema conhecido OU custom (nao-sistema),
+ *  desde que nao esteja travado por identidade (cpf/matricula). */
+function ehEditavel(c: ServidorCampoConfig): boolean {
+  if (c.travado === true) return false;
+  if (CAMPOS_EDITAVEIS.has(c.key)) return true;
+  return c.sistema === false; // custom field
+}
 
 const VINCULO_OPTS = [
   { value: "ESTATUTARIO", label: "Estatutário" },
@@ -95,6 +102,16 @@ export function EditModal({ servidor, prefeituraId, onClose, onSaved }: {
       if (visivel("dataNascimento")) body.dataNascimento = String(valores.dataNascimento ?? "");
       if (visivel("codigoIbge") && valores.codigoIbge != null && valores.codigoIbge !== "") body.codigoIbge = Number(valores.codigoIbge);
       if (cpfMudou && cpfDigits.length === 11) body.cpf = cpfDigits;
+      // Custom fields — qualquer key configurada como visivel e nao-sistema.
+      const custom: Record<string, string> = {};
+      for (const c of camposCfg) {
+        if (c.sistema) continue;
+        if (c.travado) continue;
+        const v = valores[c.key];
+        if (v == null) continue;
+        custom[c.key] = String(v);
+      }
+      if (Object.keys(custom).length > 0) body.camposCustom = custom;
       return atlas.admin.updateServidor(servidor.matricula, body);
     },
     onSuccess: () => { setErro(null); onSaved(); },
@@ -103,10 +120,10 @@ export function EditModal({ servidor, prefeituraId, onClose, onSaved }: {
 
   const renderCampo = (c: ServidorCampoConfig) => {
     const val = valores[c.key];
-    const readOnly = !CAMPOS_EDITAVEIS.has(c.key) || c.travado === true;
+    const readOnly = !ehEditavel(c);
     const hint = c.travado ? "Travado (identidade do servidor)"
       : c.key === "matricula" ? "Alterar remapeia o servidor"
-      : !CAMPOS_EDITAVEIS.has(c.key) ? "Somente leitura"
+      : !ehEditavel(c) ? "Somente leitura"
       : undefined;
 
     // CPF: componente com mascara.

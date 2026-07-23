@@ -2632,6 +2632,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         codigoIbge: z.number().int().optional(),
         dataAdmissao: z.string().optional(),
         dataNascimento: z.string().optional(),
+        // Custom fields (config em admin_servidor_campos_configs). Merge com
+        // os existentes — chave nao enviada mantem valor. Pra apagar, envie
+        // string vazia.
+        camposCustom: z.record(z.string(), z.string()).optional(),
       })
       .parse(await c.req.json());
     if (body.cpf !== undefined && body.cpf !== s.cpf) {
@@ -2654,6 +2658,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (body.codigoIbge !== undefined) s.codigoIbge = body.codigoIbge;
     if (body.dataAdmissao !== undefined) s.dataAdmissao = body.dataAdmissao;
     if (body.dataNascimento !== undefined) s.dataNascimento = body.dataNascimento;
+    if (body.camposCustom !== undefined) {
+      s.camposCustom = { ...(s.camposCustom ?? {}), ...body.camposCustom };
+    }
     const changed: string[] = [];
     if (body.cpf !== undefined) changed.push("cpf");
     if (body.nome !== undefined) changed.push("nome");

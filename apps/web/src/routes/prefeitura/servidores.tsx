@@ -190,14 +190,18 @@ const CAMPOS_FALLBACK: ServidorCampoConfig[] = [
   { key: "endereco", label: "Endereço", tipo: "texto", obrigatorio: false, visivel: true, ordem: 7, sistema: true },
 ];
 
-/** Sistema fields que o backend /editar-servidor aceita hoje. Campos fora
- *  desta lista (customs) sao exibidos read-only ate o backend expor um
- *  caminho pra persistir. */
+/** Sistema fields que o backend PATCH aceita persistir. Custom fields
+ *  (nao-sistema) tambem sao editaveis — vao no payload camposCustom. */
 const CAMPOS_EDITAVEIS = new Set([
   "nome", "cpf", "matricula", "cargo", "endereco", "vinculo", "email",
   "telefone", "codigoIbge", "salarioLiquido", "situacaoFuncional",
   "idConvenio", "dataAdmissao", "dataNascimento",
 ]);
+function ehEditavel(c: ServidorCampoConfig): boolean {
+  if (c.travado === true) return false;
+  if (CAMPOS_EDITAVEIS.has(c.key)) return true;
+  return c.sistema === false; // custom field
+}
 
 const backdrop: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "grid", placeItems: "center", zIndex: 100, padding: 24 };
 const modalStyle: React.CSSProperties = { background: "var(--surface-solid)", borderRadius: 12, padding: 24, maxWidth: 720, width: "100%", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-lg)", maxHeight: "90vh", overflowY: "auto" };
@@ -272,7 +276,17 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServido
       if (valores.codigoIbge != null && valores.codigoIbge !== "") put("codigoIbge", Number(valores.codigoIbge));
       if (cpfDigitos !== (servidor.cpf ?? "").replace(/\D/g, "")) patch.cpf = cpfNovo;
       if (matNova !== servidor.matricula) patch.matriculaNova = matNova;
-      return atlas.prefeitura.editarServidor(servidor.matricula, patch);
+      // Custom fields visiveis viram um objeto camposCustom no payload.
+      const custom: Record<string, string> = {};
+      for (const c of campos) {
+        if (c.sistema || c.travado) continue;
+        const v = valores[c.key];
+        if (v == null) continue;
+        custom[c.key] = String(v);
+      }
+      const patchFinal: Record<string, string | number | Record<string, string>> = { ...patch };
+      if (Object.keys(custom).length > 0) patchFinal.camposCustom = custom;
+      return atlas.prefeitura.editarServidor(servidor.matricula, patchFinal);
     },
     onSuccess: () => { setErro(null); onSaved(); },
     onError: (e: Error) => setErro(e.message),
@@ -280,10 +294,10 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServido
 
   const renderCampo = (c: ServidorCampoConfig) => {
     const val = valores[c.key];
-    const readOnly = !CAMPOS_EDITAVEIS.has(c.key) || c.travado === true;
+    const readOnly = !ehEditavel(c);
     const hint = c.travado ? "Travado (identidade do servidor)"
       : c.key === "matricula" ? "Alterar remapeia o servidor"
-      : !CAMPOS_EDITAVEIS.has(c.key) ? "Somente leitura"
+      : !ehEditavel(c) ? "Somente leitura"
       : undefined;
 
     if (c.key === "cpf") {

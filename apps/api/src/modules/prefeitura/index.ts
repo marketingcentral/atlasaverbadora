@@ -515,6 +515,8 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       idConvenio: z.string().optional(),
       dataAdmissao: z.string().optional(),
       dataNascimento: z.string().optional(),
+      // Custom fields (config em admin_servidor_campos_configs).
+      camposCustom: z.record(z.string(), z.string()).optional(),
     }).parse(await c.req.json());
     const changed: string[] = [];
     if (body.nome !== undefined) { s.nome = body.nome; changed.push("nome"); }
@@ -539,6 +541,10 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (body.idConvenio !== undefined) { s.idConvenio = body.idConvenio; changed.push("idConvenio"); }
     if (body.dataAdmissao !== undefined) { s.dataAdmissao = body.dataAdmissao; changed.push("dataAdmissao"); }
     if (body.dataNascimento !== undefined) { s.dataNascimento = body.dataNascimento; changed.push("dataNascimento"); }
+    if (body.camposCustom !== undefined) {
+      s.camposCustom = { ...(s.camposCustom ?? {}), ...body.camposCustom };
+      changed.push("camposCustom");
+    }
     if (body.matriculaNova !== undefined && body.matriculaNova !== s.matricula) {
       const nova = normalizeMatricula(body.matriculaNova);
       if (!MATRICULA_REGEX.test(nova)) {
