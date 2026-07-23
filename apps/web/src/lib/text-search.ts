@@ -51,7 +51,13 @@ export function matchAny(row: unknown, query: string): boolean {
 
   return termos.every((t) => {
     if (textoConcat.includes(t)) return true;
-    if (/^\d+$/.test(t) && digitos.includes(t)) return true;
+    // Termo numerico digitado COM ou SEM mascara — CPF "375.342.333-00",
+    // telefone "(11) 99999-0000", matricula "852-029". Tira a pontuacao e
+    // compara contra a versao so-digitos. Antes exigia /^\d+$/ (digitos
+    // puros), entao CPF/telefone formatado NAO casava. Cliente reportou
+    // 23/07/2026 (busca por CPF com pontos nao achava).
+    const tDigitos = t.replace(/\D/g, "");
+    if (tDigitos && /^[\d.\-/()]+$/.test(t) && digitos.includes(tDigitos)) return true;
     return false;
   });
 }
