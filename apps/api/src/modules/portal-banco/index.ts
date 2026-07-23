@@ -191,6 +191,32 @@ function projecoesQuatroMeses(mes: number, ano: number): { mes: number; ano: num
   return arr;
 }
 
+/** Indice absoluto de mes (ano*12 + mes-1). Permite subtrair competencias sem
+ *  lidar com virada de ano na mao. */
+const mesAbs = (mes: number, ano: number): number => ano * 12 + (mes - 1);
+
+/** Extrai {mes, ano} de um `lancamento` no formato pt-BR "DD/MM/YYYY"
+ *  (`criarContratoOuReserva` grava com `toLocaleDateString("pt-BR")`).
+ *  null quando o formato nao bate — o caller cai num fallback. */
+function mesDoLancamento(lancamento: string): { mes: number; ano: number } | null {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec((lancamento ?? "").trim());
+  if (!m) return null;
+  const mes = Number(m[2]);
+  const ano = Number(m[3]);
+  if (mes < 1 || mes > 12) return null;
+  return { mes, ano };
+}
+
+/** Janela de meses em que uma divida compromete margem, em offsets relativos
+ *  a HOJE (negativo = passado). Usada pra responder "qual era/sera a margem
+ *  na competencia X" em vez de devolver sempre a margem de hoje. */
+interface JanelaDivida { inicio: number; fim: number; valor: number }
+
+const comprometidoNaJanela = (janelas: JanelaDivida[], off: number): number =>
+  Math.round(
+    janelas.filter((j) => off >= j.inicio && off <= j.fim).reduce((a, j) => a + j.valor, 0) * 100,
+  ) / 100;
+
 const OperacaoTipoSchema = z.enum(["EMPRESTIMO", "REFIN", "COMPOSTA", "PORTABILIDADE"]);
 
 const NovoContratoBody = z.object({
@@ -448,29 +474,47 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const contratosAtivos = listContratos({ matricula: s.matricula })
       .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO");
     const externos = externosEmprestimoDe(s.matricula);
-    const comprometido = Math.round(
-      (contratosAtivos.reduce((a, ct) => a + ct.valorParcela, 0)
-        + externos.reduce((a, l) => a + l.valorParcela, 0)) * 100,
-    ) / 100;
-    const disponivel = margemDisponivel(s.salarioLiquido, comprometido, "EMPRESTIMO");
-    // Projecao REAL dos proximos 4 meses: cada contrato ativo compromete a
-    // margem pelas parcelas restantes (totalParcelas - parcelasPagas). Se um
-    // contrato tem 3 parcelas a vencer, ele deixa de comprometer margem a
-    // partir do 4o mes projetado. Antes: 'disponivel + idx * 12.5' — fake
-    // linear sem sentido. Agora reflete o cronograma real de quitacao.
-    const projecao = projecoesQuatroMeses(body.mes, body.ano).map((p, idx) => {
-      // Mes 0 = mes solicitado (agora). Contrato deixa de contar quando
-      // parcelasRestantes <= idx (ja quitou ate esse ponto do horizonte).
-      const comprometidoNoMes = Math.round(
-        (contratosAtivos
-          .filter((ct) => (ct.totalParcelas - ct.parcelasPagas) > idx)
-          .reduce((a, ct) => a + ct.valorParcela, 0)
-          // Externos tambem saem da margem enquanto tiverem parcelas a vencer.
-          + externos
-            .filter((l) => l.parcelasRestantes > idx)
-            .reduce((a, l) => a + l.valorParcela, 0)) * 100,
-      ) / 100;
-      const disponivelNoMes = Math.max(0, Math.round((total - comprometidoNoMes) * 100) / 100);
+    // Cliente reportou 23/07/2026: pedindo Agosto (mes futuro) a tela devolvia a
+    // margem de HOJE — `total`/`disponivel` ignoravam body.mes/body.ano por
+    // completo. Agora cada divida vira uma JANELA de meses (inicio..fim) em
+    // offsets relativos a hoje, e a margem e' recalculada para a competencia
+    // pedida — passado ou futuro.
+    const agora = new Date();
+    const absHoje = mesAbs(agora.getMonth() + 1, agora.getFullYear());
+
+    const janelas: JanelaDivida[] = [
+      // Contrato Atlas: parcela 1 cai no mes do `lancamento`; compromete margem
+      // por `totalParcelas` meses a partir dali. Sem lancamento parseavel, cai
+      // no fallback "comecou ha parcelasPagas meses".
+      ...contratosAtivos.map((ct) => {
+        const l = mesDoLancamento(ct.lancamento);
+        const inicio = l ? mesAbs(l.mes, l.ano) - absHoje : -ct.parcelasPagas;
+        return { inicio, fim: inicio + Math.max(1, ct.totalParcelas) - 1, valor: ct.valorParcela };
+      }),
+      // Externo (tombamento): nao traz data de inicio, so o par
+      // total/restantes — deriva quantas ja venceram pra achar o inicio.
+      ...externos.map((l) => {
+        const totalP = l.totalParcelas > 0 ? l.totalParcelas : l.parcelasRestantes;
+        const inicio = -Math.max(0, totalP - l.parcelasRestantes);
+        return { inicio, fim: inicio + Math.max(1, totalP) - 1, valor: l.valorParcela };
+      }),
+    ];
+
+    const offPedido = mesAbs(body.mes, body.ano) - absHoje;
+    const comprometidoNaCompetencia = comprometidoNaJanela(janelas, offPedido);
+    const disponivel = margemDisponivel(s.salarioLiquido, comprometidoNaCompetencia, "EMPRESTIMO");
+
+    // Projecao dos 4 meses SEGUINTES ao pedido. `projecoesQuatroMeses` ja
+    // devolve mes+1..mes+4, mas o map antigo usava `idx` (0..3) como se o
+    // indice 0 fosse o mes pedido — a projecao inteira saia deslocada um mes
+    // (o card "Set" mostrava o numero de Agosto). Agora cada mes e' calculado
+    // com o proprio offset.
+    const projecao = projecoesQuatroMeses(body.mes, body.ano).map((p) => {
+      const off = mesAbs(p.mes, p.ano) - absHoje;
+      const disponivelNoMes = Math.max(
+        0,
+        Math.round((total - comprometidoNaJanela(janelas, off)) * 100) / 100,
+      );
       return {
         competencia: p.yyyymm,
         rotulo: `${monthLabel(p.mes)}/${p.ano}`,
