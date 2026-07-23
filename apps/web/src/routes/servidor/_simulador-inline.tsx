@@ -274,7 +274,7 @@ export function SimuladorInline({
   // que o CET aparecia MENOR que a taxa nominal (0.59% < 1.00%), impossivel:
   // era formula caseira `(total/liquido)^(1/parcelas)-1` que so calcula taxa
   // media incorreta. CET real >= taxaNominal porque inclui IOF+tarifas.
-  const { parcela, iof, mensal: cetMensal, totalPago: total } = useMemo(() => {
+  const { parcela, iof, totalPago: total } = useMemo(() => {
     if (valor <= 0 || parcelas <= 0 || taxaAm <= 0) {
       return { parcela: 0, iof: 0, mensal: 0, totalPago: 0 };
     }
@@ -284,7 +284,6 @@ export function SimuladorInline({
       return { parcela: 0, iof: 0, mensal: 0, totalPago: 0 };
     }
   }, [valor, parcelas, taxaAm]);
-  const cet = cetMensal * 100;
 
   const excedeMargem = info ? parcela > margemEmprestimo : false;
   const locked = !!lockExpiresAt && lockExpiresAt > now;
@@ -428,10 +427,12 @@ export function SimuladorInline({
       </Card>
 
       <Card>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        {/* CET mensal removido 23/07/2026 a pedido do cliente — mostrar duas
+            porcentagens (Taxa 1.79% + CET 2.00%) confundia o servidor.
+            Fica so a Taxa mensal como referencia de juros. */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
           <Metric label="Sua parcela" valor={fmtBRL(parcela)} accent danger={excedeMargem} />
           <Metric label="Taxa mensal" valor={`${(taxaAm * 100).toFixed(2)}%`} />
-          <Metric label="CET mensal" valor={`${cet.toFixed(2)}%`} />
           <Metric label="Total a pagar" valor={fmtBRL(total)} />
         </div>
 
