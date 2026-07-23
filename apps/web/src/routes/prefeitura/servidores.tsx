@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, CpfField, CsvImportPanel, CurrencyField, DataTable, FilterBar, FormGrid, NumberField, Pill, SelectField, TelefoneField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraServidor, ServidorCampoConfig } from "@atlas/sdk";
-import { matchAny } from "../../lib/text-search";
+import { matchAnyKeys } from "../../lib/text-search";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 // VINCULOS constante removida — modal dinamico usa VINCULO_OPTS ({value,label}).
@@ -28,12 +28,12 @@ export function PrefeituraServidores() {
   const [editing, setEditing] = useState<PrefeituraServidor | null>(null);
   const q = useQuery({ queryKey: ["prefeitura", "servidores"], queryFn: () => atlas.prefeitura.servidores() });
 
-  // Ordem "mais recente no topo" agora vem do BACKEND (ordena por criadoEmIso
-  // DESC). O reverse antigo era frag il — invertia a ordem arbitraria do PG
-  // (sem ORDER BY), entao seeds antigos apareciam no topo. Aqui so filtra a
-  // busca, preservando a ordem que o servidor mandou.
+  // Busca RESTRITA a nome, matricula e CPF (cliente 23/07/2026). Antes usava
+  // matchAny (todos os campos), o que trazia os numeros de margem/IBGE/salario
+  // pra dentro da busca e gerava falso-positivo em pesquisa so-numerica. cpf +
+  // cpfMasked cobrem CPF com e sem pontuacao. Ordem da tabela vem do backend.
   const filtered = (q.data?.servidores ?? [])
-    .filter((s) => matchAny(s, search));
+    .filter((s) => matchAnyKeys(s, search, ["nome", "matricula", "cpf", "cpfMasked"]));
 
   const columns: Column<PrefeituraServidor>[] = [
     { key: "nome", header: "Nome" },

@@ -39,14 +39,19 @@ function extrairPrimitivos(obj: unknown): string[] {
 
 function matchTermos(valores: string[], termos: string[]): boolean {
   const textoConcat = stripAccents(valores.join(" ").toLowerCase());
-  const digitos = textoConcat.replace(/\D/g, "");
+  // Digitos POR CAMPO — nunca concatenados numa string so. Concatenar gerava
+  // falso-positivo de fronteira: um campo terminando em "...908" colado com
+  // outro comecando em "984..." casava a busca "908984" sem nenhum campo ser
+  // 908984. Sintoma (cliente 23/07/2026): busca so-numerica (matricula/CPF)
+  // trazia linhas erradas, enquanto busca com letras (JARBAS-900123) acertava.
+  const digitosPorCampo = valores.map((v) => String(v).replace(/\D/g, "")).filter(Boolean);
   return termos.every((t) => {
     if (textoConcat.includes(t)) return true;
     // Termo numerico digitado COM ou SEM mascara — CPF "375.342.333-00",
     // telefone "(11) 99999-0000", matricula "852-029". Tira a pontuacao e
-    // compara contra a versao so-digitos.
+    // compara contra os digitos de CADA campo (nao a concatenacao global).
     const tDigitos = t.replace(/\D/g, "");
-    if (tDigitos && /^[\d.\-/()\s]+$/.test(t) && digitos.includes(tDigitos)) return true;
+    if (tDigitos && /^[\d.\-/()\s]+$/.test(t) && digitosPorCampo.some((d) => d.includes(tDigitos))) return true;
     return false;
   });
 }
