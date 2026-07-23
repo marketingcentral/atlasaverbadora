@@ -767,7 +767,13 @@ function contratoToPreReserva(ct: ReturnType<typeof listContratos>[number]): Pre
   const banco = bancos.find((b) => b.id === ct.bancoId);
   const s = ct.situacao.toLowerCase();
   const criadoEm = brToIso(ct.lancamento);
-  const expiraEm = ct.expiracao ? brToIso(ct.expiracao) : criadoEm;
+  // Fallback para "sem TTL" quando ct.expiracao vazio: futuro distante
+  // (ano 3000) em vez de criadoEm. Antes caia em criadoEm, disparando
+  // "expirandoEm24h" pra qualquer contrato criado no passado — pos-C1 so
+  // afeta comprometeMargem() true (Aprovado sem TTL, Suspenso etc), mas
+  // ainda inflava o KPI expirando24h no dashboard.
+  const SEM_TTL = "3000-01-01T00:00:00.000Z";
+  const expiraEm = ct.expiracao ? brToIso(ct.expiracao) : SEM_TTL;
   const expirou = !!ct.expiracao && new Date(expiraEm).getTime() < Date.now();
   // Falha em folha / cobranca direta nao devem aparecer como pre-reserva
   // (margem ja nao esta travada, e nao houve reserva legitima).
