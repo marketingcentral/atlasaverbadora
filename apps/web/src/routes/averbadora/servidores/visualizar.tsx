@@ -197,7 +197,7 @@ export function AdminServidoresVisualizar() {
         </div>
       ) : (
         <>
-          <DataTable columns={columns} rows={pageRows} rowKey={(s) => String(s.id)} loading={dataQ.isLoading || configQ.isLoading} />
+          <DataTable columns={columns} rows={pageRows} rowKey={(s) => String(s.id)} loading={dataQ.isLoading || configQ.isLoading} topScrollbar />
 
           {total > 0 ? (
             <div

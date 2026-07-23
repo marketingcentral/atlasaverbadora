@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export interface Column<T> {
   key: string;
@@ -21,9 +21,59 @@ interface Props<T> {
   emptyState?: ReactNode;
   loading?: boolean;
   actions?: (row: T) => ReactNode;
+  /** Renderiza uma segunda barra de rolagem horizontal ACIMA da tabela,
+   *  sincronizada com a de baixo. Util em tabelas largas — evita ter
+   *  que descer ate o rodape pra rolar pro lado. */
+  topScrollbar?: boolean;
 }
 
-export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, loading, actions }: Props<T>) {
+export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, loading, actions, topScrollbar }: Props<T>) {
+  const topRef = useRef<HTMLDivElement | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const [innerWidth, setInnerWidth] = useState(0);
+  // Mede a largura real do <table> pra dimensionar o "fantasma" da barra de
+  // cima. Atualiza em resize do container OU do table (colunas custom podem
+  // mudar depois do mount).
+  useEffect(() => {
+    if (!topScrollbar) return;
+    const t = tableRef.current;
+    const b = bottomRef.current;
+    if (!t || !b) return;
+    const measure = () => setInnerWidth(t.scrollWidth);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(t);
+    ro.observe(b);
+    return () => ro.disconnect();
+  }, [topScrollbar, columns.length, rows.length]);
+  // Sincroniza scrollLeft entre top e bottom sem loop infinito (flag por-frame).
+  useEffect(() => {
+    if (!topScrollbar) return;
+    const top = topRef.current;
+    const bot = bottomRef.current;
+    if (!top || !bot) return;
+    let lock = false;
+    const onTop = () => {
+      if (lock) return;
+      lock = true;
+      bot.scrollLeft = top.scrollLeft;
+      requestAnimationFrame(() => { lock = false; });
+    };
+    const onBot = () => {
+      if (lock) return;
+      lock = true;
+      top.scrollLeft = bot.scrollLeft;
+      requestAnimationFrame(() => { lock = false; });
+    };
+    top.addEventListener("scroll", onTop, { passive: true });
+    bot.addEventListener("scroll", onBot, { passive: true });
+    return () => {
+      top.removeEventListener("scroll", onTop);
+      bot.removeEventListener("scroll", onBot);
+    };
+  }, [topScrollbar]);
+
   if (loading) {
     return (
       <div style={{ padding: 36, textAlign: "center", color: "var(--text-muted)", border: "1px solid var(--border)", borderRadius: 12 }}>
@@ -39,11 +89,35 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
     );
   }
   return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      {topScrollbar ? (
+        <div
+          ref={topRef}
+          className="atlas-datatable-topscroll"
+          style={{
+            overflowX: "auto",
+            overflowY: "hidden",
+            border: "1px solid var(--border)",
+            borderBottom: "none",
+            borderRadius: "12px 12px 0 0",
+            // Altura enxuta pra so mostrar a barra do SO.
+            height: 14,
+          }}
+        >
+          <div style={{ width: innerWidth || "100%", height: 1 }} />
+        </div>
+      ) : null}
     <div
+      ref={bottomRef}
       className="atlas-datatable-scroll"
-      style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 12 }}
+      style={{
+        overflowX: "auto",
+        border: "1px solid var(--border)",
+        borderRadius: topScrollbar ? "0 0 12px 12px" : 12,
+        borderTop: topScrollbar ? "none" : undefined,
+      }}
     >
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+      <table ref={tableRef} style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
           <tr style={{ background: "var(--bg-elev-2)" }}>
             {columns.map((c) => (
@@ -111,6 +185,7 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
           ))}
         </tbody>
       </table>
+    </div>
     </div>
   );
 }
