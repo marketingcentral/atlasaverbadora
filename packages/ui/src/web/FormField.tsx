@@ -11,9 +11,15 @@ interface BaseProps {
 function FieldShell({ label, hint, error, required, children }: BaseProps & { children: ReactNode }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-muted)", textTransform: "uppercase" }}>
-        {label}
-        {required ? <span style={{ color: "var(--danger-500)", marginLeft: 4 }}>*</span> : null}
+      {/* minHeight reserva 2 linhas: em FormGrid, label curto (1 linha) e longo
+          (2 linhas) passam a ocupar a mesma altura, entao os inputs da mesma
+          linha alinham. Sem isso o campo de label maior descia e o grid ficava
+          torto (cliente 21/07/2026). */}
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--text-muted)", textTransform: "uppercase", lineHeight: 1.15, minHeight: "2.3em", display: "flex", alignItems: "flex-start" }}>
+        <span>
+          {label}
+          {required ? <span style={{ color: "var(--danger-500)", marginLeft: 4 }}>*</span> : null}
+        </span>
       </span>
       {children}
       {hint && !error ? <span style={{ fontSize: 11, color: "var(--text-dim)" }}>{hint}</span> : null}
