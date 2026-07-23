@@ -20,10 +20,13 @@
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:8787";
 const CRED = {
-  servidor: { identifier: "00011122233", senha: "teste123" },
-  banco: { identifier: "banco@atlas.test", senha: "teste123" },
-  averbadora: { identifier: "admin@atlas.test", senha: "teste123" },
-  prefeitura: { identifier: "capistrano@teste.com", senha: "teste123" },
+  // Absalao (Capistrano) tem senha real no PG de prod — Ana (00011122233)
+  // e' dev-user que so existe local. Se sua base tiver outro servidor de
+  // teste, ajuste aqui.
+  servidor: { identifier: "58088636353", password: "teste123" },
+  banco: { identifier: "delta@teste.com", password: "teste123" },
+  averbadora: { identifier: "admin@atlas.test", password: "teste123" },
+  prefeitura: { identifier: "capistrano@teste.com", password: "teste123" },
 };
 
 let passos = 0;
@@ -63,8 +66,9 @@ async function req(method, path, { token, body, contentType = "application/json"
 async function login(role) {
   const c = CRED[role];
   const r = await req("POST", "/v1/auth/login", { body: c });
-  if (!r.token) throw new Error(`login ${role} sem token`);
-  return r.token;
+  const t = r.access_token ?? r.token;
+  if (!t) throw new Error(`login ${role} sem access_token`);
+  return t;
 }
 
 async function run() {
@@ -87,6 +91,23 @@ async function run() {
   } catch (e) { fail("Login servidor + matriculas", e.message); return finish(); }
 
   // ------------------------------------------------------------
+  // 1.5) Cleanup — cancela propostas pendentes deste servidor (smokes
+  //      anteriores podem ter deixado ADFs presas em "Aguardando").
+  // ------------------------------------------------------------
+  try {
+    const tokenAdminCleanup = await login("averbadora");
+    const propostasq = await req("GET", "/v1/servidores/me/propostas", { token: tokenServidor });
+    const pendentes = (propostasq.propostas ?? []).filter((p) => /aguard|aprov/i.test(p.situacao ?? ""));
+    for (const p of pendentes) {
+      try {
+        await req("POST", `/v1/admin/pre-reservas/${p.id}/cancelar`, { token: tokenAdminCleanup, body: { motivo: "smoke cleanup" } });
+        info(`Cancelada proposta pendente ${p.id} (${p.situacao})`);
+      } catch (e) { info(`Falha ao cancelar ${p.id}: ${e.message}`); }
+    }
+    if (pendentes.length === 0) info("Nenhuma proposta pendente pra limpar");
+  } catch (e) { info(`Cleanup opcional falhou (nao critico): ${e.message}`); }
+
+  // ------------------------------------------------------------
   // 2) Criar proposta pequena (R$ 500, 12x, 1.79% a.m.)
   // ------------------------------------------------------------
   try {
@@ -95,12 +116,14 @@ async function run() {
       token: tokenServidor,
       body: { valor: 500, parcelas: 12, taxaAm: 0.0179, matricula: globalThis._matricula, tipo: "novo" },
     });
-    if (!r.contrato?.adf) throw new Error("resposta sem contrato.adf");
-    adfCriada = r.contrato.adf;
+    // Backend retorna { id, situacao, banco, valor, parcelas, parcela, expira_em }
+    // direto (nao { contrato: { adf } }).
+    if (!r.id) throw new Error("resposta sem id");
+    adfCriada = r.id;
     globalThis._propostaValor = 500;
     globalThis._propostaParcelas = 12;
     globalThis._propostaTaxaAm = 0.0179;
-    pass(`Proposta criada: ADF=${adfCriada}, situacao=${r.contrato.situacao}`);
+    pass(`Proposta criada: ADF=${adfCriada}, situacao=${r.situacao}`);
   } catch (e) { fail("Criar proposta", e.message); return finish(); }
 
   // ------------------------------------------------------------
