@@ -72,13 +72,16 @@ export function matchAny(row: unknown, query: string): boolean {
 /** Versao restrita: casa apenas nos campos informados. Usar quando o objeto
  *  tem campos textuais grandes (endereco, observacoes) que geram falso-positivo
  *  por substring. */
-export function matchAnyKeys<T extends Record<string, unknown>>(row: T, query: string, keys: (keyof T)[]): boolean {
+// T extends object (nao Record<string,unknown>) pra aceitar interfaces
+// nominais como PrefeituraServidor sem index signature. Acesso via
+// Record cast interno — keys ja e' restrito a keyof T pelo caller.
+export function matchAnyKeys<T extends object>(row: T, query: string, keys: (keyof T)[]): boolean {
   const q = stripAccents(String(query ?? "").trim().toLowerCase());
   if (!q) return true;
   const termos = termosUnicos(q);
   const valores: string[] = [];
   for (const k of keys) {
-    const v = row[k];
+    const v = (row as Record<keyof T, unknown>)[k];
     if (typeof v === "string") valores.push(v);
     else if (typeof v === "number" || typeof v === "bigint") valores.push(String(v));
   }
