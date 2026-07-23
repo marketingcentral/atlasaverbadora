@@ -18,6 +18,29 @@ const fmtTel = (tel?: string) => {
   return d || "—";
 };
 
+// Busca "LIKE PHP" — case-insensitive, sem acento, multi-termo (AND entre
+// termos), matcha em TODOS os campos textuais (nome/matricula/cpf/telefone/
+// cargo/vinculo/situacao/endereco/email/idConvenio). Se o termo e so digito,
+// tambem casa contra a versao so-digitos dos campos (CPF/telefone/matricula
+// pra usuario poder digitar "58088" e achar "580.886.363-53").
+function stripAccents(s: string): string {
+  // Remove diacriticos (combining marks U+0300-U+036F). Usado pra busca
+  // funcionar com ou sem acento: "joao" acha "João", "MARIA" acha "Maria".
+  return (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+function matchServidor(s: PrefeituraServidor, query: string): boolean {
+  const q = stripAccents(query.trim().toLowerCase());
+  if (!q) return true;
+  const termos = q.split(/\s+/).filter(Boolean);
+  const camposTxt = stripAccents(`${s.nome} ${s.matricula} ${s.cpf} ${s.cpfMasked} ${s.telefone ?? ""} ${s.cargo ?? ""} ${s.vinculo} ${s.situacaoFuncional} ${s.endereco ?? ""} ${s.email ?? ""} ${s.idConvenio}`.toLowerCase());
+  const camposDigits = `${s.matricula} ${s.cpf} ${s.telefone ?? ""}`.replace(/\D/g, "");
+  return termos.every((t) => {
+    if (camposTxt.includes(t)) return true;
+    if (/^\d+$/.test(t) && camposDigits.includes(t)) return true;
+    return false;
+  });
+}
+
 export function PrefeituraServidores() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -25,9 +48,13 @@ export function PrefeituraServidores() {
   const [editing, setEditing] = useState<PrefeituraServidor | null>(null);
   const q = useQuery({ queryKey: ["prefeitura", "servidores"], queryFn: () => atlas.prefeitura.servidores() });
 
-  const filtered = (q.data?.servidores ?? []).filter((s) =>
-    search ? `${s.nome} ${s.matricula} ${s.cpf} ${s.telefone ?? ""} ${s.cargo ?? ""}`.toLowerCase().includes(search.toLowerCase()) : true,
-  );
+  // Mais recentes primeiro (reverse do array retornado pelo backend, que vem
+  // em ordem de insercao/import). Cliente pediu 23/07/2026: "ultima cadastro
+  // se torna primeiro na lista mostrando os mais recentes".
+  const filtered = (q.data?.servidores ?? [])
+    .slice()
+    .reverse()
+    .filter((s) => matchServidor(s, search));
 
   const columns: Column<PrefeituraServidor>[] = [
     { key: "nome", header: "Nome" },
@@ -46,7 +73,13 @@ export function PrefeituraServidores() {
       return <Pill variant={variant}>{situ}</Pill>;
     } },
     { key: "idConvenio", header: "Convênio", render: (s) => s.idConvenio || <span style={{ color: "var(--danger-500)" }}>sem convênio</span> },
-    { key: "margemDisponivel", header: "Margem disp.", align: "right", render: (s) => fmtBRL(s.margemDisponivel ?? 0) },
+    { key: "margemDisponivel", header: "Margem disp.", align: "right", render: (s) => (
+      <MargemCell
+        salario={s.salarioLiquido}
+        margemTotal={s.margemTotal ?? 0}
+        margemDisponivel={s.margemDisponivel ?? 0}
+      />
+    ) },
     {
       key: "acoes",
       header: "",
@@ -85,6 +118,64 @@ export function PrefeituraServidores() {
 
       {editing ? <EditModal servidor={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); qc.invalidateQueries({ queryKey: ["prefeitura"] }); }} /> : null}
     </div>
+  );
+}
+
+/**
+ * Celula da coluna "Margem disp." com popover explicando a regra.
+ * Hover mostra: base salario liquido, teto 35% (BACEN), quanto ja esta
+ * comprometido em contratos ativos e quanto sobra. Cliente pediu 23/07/2026
+ * um "recurso de Popovers para informar que esta sendo descontado do
+ * salario liquido 35% da margem".
+ */
+function MargemCell({ salario, margemTotal, margemDisponivel }: { salario: number; margemTotal: number; margemDisponivel: number }) {
+  const [aberto, setAberto] = useState(false);
+  const comprometido = Math.max(0, margemTotal - margemDisponivel);
+  const pctUso = margemTotal > 0 ? Math.round((comprometido / margemTotal) * 100) : 0;
+  return (
+    <span
+      style={{ position: "relative", cursor: "help", display: "inline-flex", alignItems: "center", gap: 4 }}
+      onMouseEnter={() => setAberto(true)}
+      onMouseLeave={() => setAberto(false)}
+      onFocus={() => setAberto(true)}
+      onBlur={() => setAberto(false)}
+      tabIndex={0}
+    >
+      <span>{fmtBRL(margemDisponivel)}</span>
+      <span aria-label="Como esta margem é calculada" style={{
+        fontSize: 10, color: "var(--text-dim)", border: "1px solid var(--border-strong)", borderRadius: "50%",
+        width: 14, height: 14, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+      }}>i</span>
+      {aberto ? (
+        <span
+          role="tooltip"
+          style={{
+            position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 50,
+            background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 8,
+            padding: "10px 12px", boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+            minWidth: 260, fontSize: 12, color: "var(--text)", textAlign: "left",
+            fontWeight: 400,
+          }}
+        >
+          <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "var(--text-dim)", fontWeight: 700, marginBottom: 6 }}>
+            Como calcula
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "4px 12px" }}>
+            <span style={{ color: "var(--text-muted)" }}>Salário líquido</span>
+            <b style={{ fontFamily: "var(--font-mono)" }}>{fmtBRL(salario)}</b>
+            <span style={{ color: "var(--text-muted)" }}>× 35% (teto BACEN empréstimo)</span>
+            <b style={{ fontFamily: "var(--font-mono)" }}>{fmtBRL(margemTotal)}</b>
+            <span style={{ color: "var(--text-muted)" }}>− contratos ativos</span>
+            <b style={{ fontFamily: "var(--font-mono)", color: "var(--danger-500)" }}>−{fmtBRL(comprometido)}</b>
+            <span style={{ fontWeight: 700, borderTop: "1px solid var(--border-strong)", paddingTop: 4 }}>Disponível</span>
+            <b style={{ fontFamily: "var(--font-mono)", color: "var(--emerald-500)", borderTop: "1px solid var(--border-strong)", paddingTop: 4 }}>{fmtBRL(margemDisponivel)}</b>
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-dim)" }}>
+            Uso atual: <b style={{ color: pctUso >= 90 ? "var(--danger-500)" : pctUso >= 70 ? "var(--gold-500)" : "var(--text)" }}>{pctUso}%</b>. Cartão consignado e cartão benefício têm buckets próprios (5%+5%), não descontam desta.
+          </div>
+        </span>
+      ) : null}
+    </span>
   );
 }
 
