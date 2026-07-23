@@ -31,6 +31,7 @@ import {
 } from "./store.js";
 import { upsertPrefeitura, upsertServidor, deleteCollectionRow, loadCollection, loadServidores } from "../../db/repos.js";
 import { MATRICULA_REGEX, normalizeMatricula } from "../../_shared/matricula.js";
+import { ensureServidorCamposConfig, refreshServidorCamposConfigs, sanitizeCampos } from "../admin/servidor-campos.js";
 
 /**
  * Write-through do servidor no Postgres. NÃO engole erro (antes fazia
@@ -231,6 +232,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const p = prefeituras.find((x) => x.id === id);
     if (!p) throw Errors.notFound("prefeitura");
     return c.json({ exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false });
+  })
+
+  // Config dos campos do servidor — read-only pra prefeitura. Mesma fonte que
+  // a averbadora edita em /averbadora/servidores/importar. Prefeitura usa
+  // pra renderizar o formulario de edicao de servidor com os campos e as
+  // marcacoes de obrigatorio corretos.
+  .get("/v1/prefeitura/servidor-campos-config", async (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    await refreshServidorCamposConfigs(c.env);
+    const config = ensureServidorCamposConfig(id);
+    const camposLimpos = sanitizeCampos(config.campos);
+    return c.json({ config: { ...config, campos: camposLimpos } });
   })
   // DESATIVADO (cliente 21/07/2026): a aba Convenios da prefeitura e' SOMENTE
   // LEITURA — quem configura convenios e exigencias de averbacao e' a averbadora.

@@ -81,10 +81,13 @@ export function Modal({ title, onClose, children, maxWidth = 560 }: { title: str
   );
 }
 
-export function Field({ lbl, children, hint }: { lbl: string; children: ReactNode; hint?: string }) {
+export function Field({ lbl, children, hint, required }: { lbl: string; children: ReactNode; hint?: string; required?: boolean }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>{lbl}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", color: "var(--text-dim)", textTransform: "uppercase" }}>
+        {lbl}
+        {required ? <span aria-label="obrigatório" style={{ color: "var(--danger-500)", marginLeft: 4 }}>*</span> : null}
+      </span>
       {children}
       {hint ? <span style={{ fontSize: 11, color: "var(--text-muted)" }}>{hint}</span> : null}
     </label>

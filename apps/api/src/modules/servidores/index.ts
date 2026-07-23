@@ -23,6 +23,7 @@ import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, can
 import { ensureTermosLoaded, getTermo, listTermos, renderTermo, type TermoTipo } from "../admin/termos-store.js";
 import { getSuporteConfig } from "../admin/suporte.js";
 import { withIdempotency } from "../../_shared/idempotency.js";
+import { actorFromJwt } from "../../_shared/actor.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 import { appendAudit, auditCtx } from "../admin/auditoria.js";
 
@@ -518,7 +519,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       observacoes: `Solicitacao de ${nomeProduto} via app do servidor (${body.bancoNome})`,
       isReserva: true,
       tipoMargem, // bucket explicito — cartao consig / cartao benef
-      ator: `servidor:${s.id}`,
+      ator: actorFromJwt(j),
     });
     await persistContrato(c.env, contrato.adf);
     pushEvent(
@@ -682,7 +683,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       acao: "beneficio_clique",
       cpf: entryAtivo.cpfMasked,
       matricula: entryAtivo.matricula,
-      userId: `servidor:${s.id}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       detalhes: `Servidor ${entryAtivo.nome} clicou em "Acessar" do beneficio ${beneficioId}${origemTela ? ` (origem: ${origemTela})` : ""}.`,
     });
@@ -747,7 +748,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       propostaId: intencao.id,
       cpf: entryAtivo.cpfMasked,
       matricula: entryAtivo.matricula,
-      userId: `servidor:${s.id}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       detalhes: `Servidor ${entryAtivo.nome} solicitou contratacao do beneficio "${beneficio.nome}" — R$ ${valorMensal.toFixed(2)}/mes. Aguardando averbadora aprovar (viraria ADF).`,
     });
@@ -816,7 +817,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       isReserva: true,
       reservaDias: 30, // averbadora tem 30 dias pra ativar
       tipoMargem: "EMPRESTIMO",
-      ator: `servidor:${s.id}`,
+      ator: actorFromJwt(j),
     });
     await persistContrato(c.env, reserva.adf);
     const cot: TelemedicinaCotacao = {
@@ -843,7 +844,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       propostaId: reserva.adf,
       cpf: entryAtivo.cpfMasked,
       matricula: entryAtivo.matricula,
-      userId: `servidor:${s.id}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       detalhes: `Servidor ${entryAtivo.nome} solicitou cotacao de telemedicina (reserva ADF ${reserva.adf}, R$ 50,00 x 12). Averbadora tem 30 dias pra ativar.`,
     });
@@ -1071,7 +1072,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
           : `Solicitacao via app do servidor (${body.bancoNome ?? "Banco Atlas"})`,
       isReserva: true,
       tipoMargem: "EMPRESTIMO", // explicit bucket — nao confunde com margem de cartao
-      ator: `servidor:${s.id}`,
+      ator: actorFromJwt(j),
     });
     await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh
     // Auditoria: pre-reserva criada pelo servidor. body.tipo distingue
@@ -1082,7 +1083,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       propostaId: contrato.adf,
       matricula: entry.matricula,
       cpf: entry.cpfMasked,
-      userId: `servidor:${s.id}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       detalhes: `Servidor ${entry.nome} criou pre-reserva ADF ${contrato.adf} (${body.tipo}) — R$ ${body.valor.toFixed(2)} em ${body.parcelas}x de R$ ${cet.parcela.toFixed(2)} com ${conv?.nome ?? "Banco Atlas"}.`,
     });
@@ -1103,7 +1104,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       propostaId: contrato.adf,
       matricula: entry.matricula,
       cpf: entry.cpfMasked,
-      userId: `servidor:${s.id}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       termoAceito: `${termoTipoAceite}@${termoVersao}`,
       detalhes: `Servidor ${entry.nome} confirmou termos ao criar proposta ADF ${contrato.adf} — termo "${termoTipoAceite}" versao ${termoVersao}.`,
@@ -1277,7 +1278,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       acao: "servidor_editou_contato",
       cpf: maskCPF(s.cpf),
       matricula: s.matricula,
-      userId: `servidor:${j.sub}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       detalhes: `Servidor ${s.nome} atualizou contato: ${brChanges.join("; ")}. Vetor takeover — verificar se foi de fato o titular.`,
     });
@@ -1313,7 +1314,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       acao: "servidor_trocou_senha_logado",
       cpf: maskCPF(s.cpf),
       matricula: s.matricula,
-      userId: `servidor:${j.sub}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       detalhes: `Servidor ${s.nome} redefiniu a propria senha (fluxo /me/senha/redefinir — exige senha atual, sem codigo).`,
     });
@@ -1346,7 +1347,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       acao: "servidor_trocou_senha_com_codigo",
       cpf: maskCPF(s.cpf),
       matricula: s.matricula,
-      userId: `servidor:${j.sub}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       detalhes: `Servidor ${s.nome} redefiniu a propria senha (fluxo /me/senha — exige senha atual + codigo por email).`,
     });
@@ -1414,7 +1415,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       bancoOrigem: loan?.bancoNome,
       contratoOrigem: loan?.contratoOrigem,
       saldoDevedorOrigem: loan ? round2(loan.saldoDevedor) : undefined,
-      ator: `servidor:${s.id}`,
+      ator: actorFromJwt(j),
     });
     await persistContrato(c.env, contrato.adf);
     notifyServidor(c, entry.email, {
@@ -1558,7 +1559,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       propostaId: i.id,
       matricula: i.servidorMatricula,
       cpf: i.servidorCpfMasked,
-      userId: `servidor:${j.sub}`,
+      userId: actorFromJwt(j),
       userRole: "servidor",
       detalhes: `Servidor ${i.servidorNome} aceitou oferta ${body.ofertaId} pra portar contrato ${i.contratoAdfOrigem} do ${i.bancoOrigemNome} (saldo R$ ${i.saldoDevedor.toFixed(2)}, ${i.parcelasRestantes} parcelas restantes).`,
     });

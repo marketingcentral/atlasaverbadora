@@ -2507,6 +2507,39 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     return c.json({ config });
   })
 
+  // Impersonate — averbadora entra no perfil do servidor pra testar fluxos
+  // (simular, aceitar termo, contratar). Emite JWT servidor de 15min com
+  // claim impersonated_by preenchida — o audit de mutacoes carrega "via
+  // averbadora:X" no ator (ver _shared/actor.ts).
+  .post("/v1/admin/impersonate/servidor/:matricula", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
+    await ensureServidoresLoaded(c.env);
+    const matricula = c.req.param("matricula");
+    const alvo = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === matricula);
+    if (!alvo) throw Errors.notFound("servidor");
+    // Id numerico do servidor pra popular servidor_id no JWT — usa mesmo padrao
+    // do resolveServidorByCredentials no auth/index.ts.
+    const servidorId = Number(String(alvo.idMatricula ?? alvo.matricula).replace(/\D/g, "").slice(-5)) || 1;
+    const { signAccessToken, generateRefreshToken } = await import("../auth/jwt.js");
+    const accessToken = await signAccessToken(c.env, {
+      sub: String(servidorId),
+      role: "servidor",
+      servidor_id: servidorId,
+      impersonated_by: { sub: j.sub, role: "averbadora", nome: alvo.nome },
+    });
+    const refreshToken = generateRefreshToken();
+    return c.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      user: {
+        id: servidorId,
+        nome: alvo.nome,
+        role: "servidor" as const,
+        matricula: alvo.matricula,
+        cpfMasked: alvo.cpfMasked,
+      },
+    });
+  })
   .get("/v1/admin/servidores", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "servidores");
     // Sincroniza SERVIDORES_BUSCA_MOCK com o PG a CADA request — sem isso,

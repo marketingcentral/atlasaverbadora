@@ -15,6 +15,11 @@ export interface JwtClaims {
    *  "*" = wildcard (supervisor). Se ausente (dev-user ou JWT antigo), cai como supervisor. */
   averbadora_permissoes?: string[];
   device_id?: string;
+  /** Presente quando um admin da averbadora esta impersonando este perfil.
+   *  Usado pra enriquecer o "ator" na auditoria de mutacoes: alem de logar
+   *  "servidor:X" mostra "via averbadora:Y". Emitido por
+   *  POST /v1/admin/impersonate/servidor/:matricula. */
+  impersonated_by?: { sub: string; role: "averbadora"; nome?: string };
   iat: number;
   exp: number;
 }

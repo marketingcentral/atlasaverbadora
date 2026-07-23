@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, FilterBar, IconButton, Pill, SelectField, type Column } from "@atlas/ui/web";
-import { atlas } from "../../../lib/sdk";
+import { atlas, enterImpersonate } from "../../../lib/sdk";
 import { downloadCsv } from "../../../lib/csv";
 import type { AdminServidor, ServidorCampoConfig } from "@atlas/sdk";
 import { EditModal } from "./_editModal";
@@ -22,9 +22,39 @@ function getValor(s: AdminServidor, key: string): string | number | null | undef
 }
 
 /** Converte um campo da config em Column<AdminServidor> com render por tipo. */
+/** Renderiza os 2 botoes (impersonate + editar) da coluna de acoes. Extraido
+ *  pra ficar identico entre a tela dinamica e o fallback. */
+function AcoesCell({ servidor, onEdit }: { servidor: AdminServidor; onEdit: (s: AdminServidor) => void }) {
+  const [impersonando, setImpersonando] = useState(false);
+  const entrar = async () => {
+    setImpersonando(true);
+    try {
+      const r = await atlas.admin.impersonateServidor(servidor.matricula);
+      enterImpersonate({
+        parentRole: "averbadora",
+        novoAccessToken: r.access_token,
+        novoRefreshToken: r.refresh_token,
+        servidor: { nome: r.user.nome, matricula: r.user.matricula, cpfMasked: r.user.cpfMasked },
+      });
+      window.location.assign("/servidor");
+    } catch (e) {
+      setImpersonando(false);
+      alert(`Erro ao entrar como servidor: ${(e as Error).message}`);
+    }
+  };
+  return (
+    <div style={{ display: "inline-flex", gap: 4 }}>
+      <IconButton title={`Entrar como ${servidor.nome}`} onClick={() => { if (!impersonando) void entrar(); }}>
+        {impersonando ? "…" : "🎭"}
+      </IconButton>
+      <IconButton title="Editar" onClick={() => onEdit(servidor)}>✎</IconButton>
+    </div>
+  );
+}
+
 function campoParaColuna(campo: ServidorCampoConfig, onEdit: (s: AdminServidor) => void): Column<AdminServidor> {
   if (campo.key === "acoes") {
-    return { key: "acoes", header: "", render: (s) => <IconButton title="Editar" onClick={() => onEdit(s)}>✎</IconButton> };
+    return { key: "acoes", header: "", render: (s) => <AcoesCell servidor={s} onEdit={onEdit} /> };
   }
   const base: Column<AdminServidor> = {
     key: campo.key,
@@ -104,11 +134,11 @@ export function AdminServidoresVisualizar() {
     if (!config) {
       return DEFAULT_CAMPOS_FALLBACK
         .map((c) => campoParaColuna(c, setEditing))
-        .concat([{ key: "acoes", header: "", render: (s) => <IconButton title="Editar" onClick={() => setEditing(s)}>✎</IconButton> }]);
+        .concat([{ key: "acoes", header: "", render: (s) => <AcoesCell servidor={s} onEdit={setEditing} /> }]);
     }
     const visiveis = config.campos.filter((c) => c.visivel).sort((a, b) => a.ordem - b.ordem);
     const cols = visiveis.map((c) => campoParaColuna(c, setEditing));
-    cols.push({ key: "acoes", header: "", render: (s) => <IconButton title="Editar" onClick={() => setEditing(s)}>✎</IconButton> });
+    cols.push({ key: "acoes", header: "", render: (s) => <AcoesCell servidor={s} onEdit={setEditing} /> });
     return cols;
   }, [configQ.data?.config]);
 

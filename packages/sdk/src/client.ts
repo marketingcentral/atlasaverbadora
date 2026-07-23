@@ -2010,6 +2010,12 @@ export class AtlasClient {
       this.request<{ ok: boolean }>(`/v1/admin/comunicados/${id}`, { method: "DELETE" }),
     health: () =>
       this.request<{ checks: { servico: string; uptime: number; p95: number; ok: boolean }[] }>("/v1/admin/health"),
+    impersonateServidor: (matricula: string) =>
+      this.request<{
+        access_token: string;
+        refresh_token: string;
+        user: { id: number; nome: string; role: "servidor"; matricula: string; cpfMasked: string };
+      }>(`/v1/admin/impersonate/servidor/${encodeURIComponent(matricula)}`, { method: "POST", body: {} }),
     verify: (opts?: { fresh?: boolean }) =>
       this.request<{
         ok: boolean;
@@ -2058,6 +2064,7 @@ export class AtlasClient {
   readonly prefeitura = {
     me: () => this.request<{ prefeitura: { id: number; nome: string; uf: string; municipioIbge: number; status: string } }>("/v1/prefeitura/me"),
     getConfig: () => this.request<{ exigeCcb: boolean; exigeBanco2FA: boolean }>("/v1/prefeitura/config"),
+    getServidorCamposConfig: () => this.request<{ config: ServidorCamposConfig }>("/v1/prefeitura/servidor-campos-config"),
     setConfig: (body: { exigeCcb?: boolean; exigeBanco2FA?: boolean }) =>
       this.request<{ exigeCcb: boolean; exigeBanco2FA: boolean }>("/v1/prefeitura/config", { method: "POST", body }),
     dashboard: () =>
