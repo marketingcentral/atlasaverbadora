@@ -51,12 +51,17 @@ function matchTermos(valores: string[], termos: string[]): boolean {
   });
 }
 
+/** Split + dedup de termos: "diego diego diego" -> ["diego"]. Sem dedup o
+ *  every() so multiplica trabalho e nao muda resultado. */
+function termosUnicos(q: string): string[] {
+  return Array.from(new Set(q.split(/\s+/).filter(Boolean)));
+}
+
 /** Retorna true se o objeto casa com a query (LIKE PHP). Query vazia -> true. */
 export function matchAny(row: unknown, query: string): boolean {
   const q = stripAccents(String(query ?? "").trim().toLowerCase());
   if (!q) return true;
-  const termos = q.split(/\s+/).filter(Boolean);
-  return matchTermos(extrairPrimitivos(row), termos);
+  return matchTermos(extrairPrimitivos(row), termosUnicos(q));
 }
 
 /** Versao restrita: casa apenas nos campos informados. Usar quando o objeto
@@ -65,7 +70,7 @@ export function matchAny(row: unknown, query: string): boolean {
 export function matchAnyKeys<T extends Record<string, unknown>>(row: T, query: string, keys: (keyof T)[]): boolean {
   const q = stripAccents(String(query ?? "").trim().toLowerCase());
   if (!q) return true;
-  const termos = q.split(/\s+/).filter(Boolean);
+  const termos = termosUnicos(q);
   const valores: string[] = [];
   for (const k of keys) {
     const v = row[k];
