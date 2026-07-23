@@ -8,7 +8,7 @@ import type { Env } from "../../env.js";
 import { COMUNICADOS_MOCK, CONVENIOS_MOCK, SERVIDORES_BUSCA_MOCK } from "./fixtures.js";
 import { refreshConvenios } from "./convenios-store.js";
 import { refreshComunicados } from "./comunicados-store.js";
-import { prefeituras, bancos, pushEvent } from "../admin/index.js";
+import { prefeituras, bancos, pushEvent, type FolhaAdmin } from "../admin/index.js";
 import { getConvenioConfig } from "../admin/convenios-config.js";
 import { ensurePortabilidadesLoaded, listIntencoesAbertasParaBanco, adicionarOferta } from "../admin/portabilidade-store.js";
 import { aplicarAcao, comprometeMargem, criarContratoOuReserva, deriveTipoMargem, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb, tratarFalhaContrato } from "./store.js";
@@ -321,6 +321,17 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     await refreshContratos(c.env);
     const activeId = await getActiveConvenioId(c.env, j);
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === activeId);
+    // Folhas REAIS da prefeitura do convenio: o corte/repasse verdadeiros de
+    // cada competencia sao os que a prefeitura definiu ao abrir a folha (datas
+    // completas), NAO o "dia" generico do convenio. Cliente pediu 23/07/2026
+    // que o card do banco siga a folha. Ausencia de folha -> UI cai no dia do
+    // convenio como "prevista".
+    const folhasPref = conv
+      ? (await loadCollection<FolhaAdmin>(c.env, "admin_folhas"))
+          .filter((f) => f.prefeituraId === conv.prefeituraId)
+          .sort((a, b) => a.competencia.localeCompare(b.competencia))
+          .map((f) => ({ competencia: f.competencia, dataCorte: f.dataCorte, dataRepasse: f.dataRepasse, status: f.status }))
+      : [];
     // Banco sem convênio próprio: sem contratos e sem dados de outro banco.
     const contratos = conv ? listContratos({ convenioId: activeId }) : [];
     const ativos = contratos.filter((ct) => ct.situacao === "Ativo").length;
@@ -368,6 +379,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
             operacoes: "EMPRESTIMO",
           }
         : { dia: 0, mes: "—", origem: "—", operacoes: "—" },
+      // Folhas reais (corte/repasse por competencia) — a UI usa isto como fonte
+      // primaria e cai no dia do convenio so quando nao ha folha aberta.
+      folhas: folhasPref,
     });
   })
 

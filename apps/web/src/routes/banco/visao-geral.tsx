@@ -12,33 +12,63 @@ const MESES_PT = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set",
  *  Cada corte inclui a competencia (Mmm/AAAA) e um marcador de posicao temporal
  *  (Encerrada / Em andamento / Prevista) — assim o card muda de estado ao
  *  navegar, nao so o dia/mes. */
-function buildCortes(diaCorte: number, origem: string, operacoes: string) {
+interface FolhaReal { competencia: string; dataCorte: string; dataRepasse: string | null; status: string }
+
+/** DD/MM/AAAA a partir de "AAAA-MM-DD" (ou "" se invalida). */
+function fmtIsoDate(iso: string | null): string {
+  if (!iso) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : iso;
+}
+
+function buildCortes(diaCorte: number, origem: string, operacoes: string, folhas: FolhaReal[]) {
   const hoje = new Date();
+  // Indexa folhas por competencia "AAAAMM" pra achar o corte/repasse REAL.
+  const porComp = new Map(folhas.map((f) => [f.competencia, f]));
   const lista: {
     dia: number;
     mes: string;
     competencia: string;
     origem: string;
     operacoes: string;
+    repasse?: string;
   }[] = [];
   for (let offset = -6; offset <= 3; offset++) {
     const ref = new Date(hoje.getFullYear(), hoje.getMonth() + offset, 1);
-    const ultimoDia = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate();
-    const dia = Math.min(diaCorte, ultimoDia);
+    const compKey = `${ref.getFullYear()}${String(ref.getMonth() + 1).padStart(2, "0")}`;
     const competencia = `${MESES_PT[ref.getMonth()]}/${ref.getFullYear()}`;
-    // Rotulo do estado do periodo — inclui dia especifico pra deixar claro
-    // que a data e daquele mes, nao um valor generico repetido.
-    const dataFmt = `${String(dia).padStart(2, "0")}/${String(ref.getMonth() + 1).padStart(2, "0")}/${ref.getFullYear()}`;
-    const estado = offset < 0 ? "Encerrada em" : offset === 0 ? "Em andamento — corte" : "Prevista para";
-    lista.push({
-      dia,
-      mes: MESES_PT[ref.getMonth()]!,
-      competencia,
-      origem: `${origem} · ${estado} ${dataFmt}`,
-      operacoes,
-    });
+    const folha = porComp.get(compKey);
+    if (folha) {
+      // FONTE PRIMARIA: a folha real da prefeitura — datas completas de corte e
+      // repasse que ela definiu ao abrir a competencia. Cliente pediu 23/07/2026
+      // que o banco siga a folha, nao o dia generico do convenio.
+      const cm = /^(\d{4})-(\d{2})-(\d{2})/.exec(folha.dataCorte);
+      const diaFolha = cm ? Number(cm[3]) : Math.min(diaCorte, 28);
+      const rotuloStatus = folha.status === "consolidada" ? "Consolidada" : folha.status === "fechada" ? "Fechada" : "Aberta";
+      lista.push({
+        dia: diaFolha,
+        mes: MESES_PT[ref.getMonth()]!,
+        competencia,
+        origem: `${origem} · ${rotuloStatus} — corte ${fmtIsoDate(folha.dataCorte)}`,
+        operacoes,
+        repasse: fmtIsoDate(folha.dataRepasse),
+      });
+    } else {
+      // Sem folha aberta pra essa competencia: cai no dia generico do convenio,
+      // marcado como PREVISTA (nao e' data confirmada).
+      const ultimoDia = new Date(ref.getFullYear(), ref.getMonth() + 1, 0).getDate();
+      const dia = Math.min(diaCorte, ultimoDia);
+      const dataFmt = `${String(dia).padStart(2, "0")}/${String(ref.getMonth() + 1).padStart(2, "0")}/${ref.getFullYear()}`;
+      lista.push({
+        dia,
+        mes: MESES_PT[ref.getMonth()]!,
+        competencia,
+        origem: `${origem} · Prevista para ${dataFmt} (sem folha aberta)`,
+        operacoes,
+      });
+    }
   }
-  return lista; // index 6 = corte atual
+  return lista; // index 6 = competencia atual
 }
 
 export function BancoVisaoGeral() {
@@ -109,7 +139,7 @@ export function BancoVisaoGeral() {
   // ciclo de folha pra derivar cortes/mural: zeramos aqui e mostramos um
   // estado "Sem convênio ativo" em vez de fabricar competencias fantasmas.
   const semConvenio = v.dataCorte.dia === 0;
-  const cortes = semConvenio ? [] : buildCortes(v.dataCorte.dia, v.dataCorte.origem, v.dataCorte.operacoes);
+  const cortes = semConvenio ? [] : buildCortes(v.dataCorte.dia, v.dataCorte.origem, v.dataCorte.operacoes, v.folhas);
   // Mural: mesmo modelo dos exemplos — item em processamento tem "recebido ha X min",
   // itens concluidos mostram a data de conclusao (dia seguinte ao corte da competencia)
   // e o texto expandido "ATENCAO: ...".
@@ -199,6 +229,7 @@ export function BancoVisaoGeral() {
                 competencia={c.competencia}
                 origem={c.origem}
                 operacoes={c.operacoes}
+                repasse={c.repasse}
                 canPrev={idx > 0}
                 canNext={idx < cortes.length - 1}
                 onPrev={() => setCorteIdx((i) => Math.max(0, i - 1))}

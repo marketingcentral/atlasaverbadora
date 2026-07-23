@@ -6,13 +6,17 @@ interface Props {
   /** Rotulo da competencia (ex.: "Ago/2026") — mostrado no cabecalho do card,
    *  ao lado de "Data de Corte", pra deixar claro qual periodo esta ativo. */
   competencia?: string;
+  /** Data de repasse REAL da folha (DD/MM/AAAA ja formatado). Quando presente,
+   *  o card mostra a linha "Repasse" — cliente pediu 23/07/2026 pra o banco
+   *  seguir corte/repasse reais da folha, nao o dia generico do convenio. */
+  repasse?: string;
   canPrev?: boolean;
   canNext?: boolean;
   onPrev?: () => void;
   onNext?: () => void;
 }
 
-export function DataCorteCard({ dia, mes, origem, operacoes, competencia, canPrev, canNext, onPrev, onNext }: Props) {
+export function DataCorteCard({ dia, mes, origem, operacoes, competencia, repasse, canPrev, canNext, onPrev, onNext }: Props) {
   return (
     <article
       style={{
@@ -45,6 +49,12 @@ export function DataCorteCard({ dia, mes, origem, operacoes, competencia, canPre
           <div>Origem</div>
           <div style={{ color: "var(--text)", fontWeight: 600 }}>{origem}</div>
         </div>
+        {repasse ? (
+          <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-muted)" }}>
+            <div>Repasse</div>
+            <div style={{ color: "var(--text)", fontWeight: 600 }}>{repasse}</div>
+          </div>
+        ) : null}
         <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-muted)" }}>
           <div>Operações</div>
           <div style={{ color: "var(--text)", fontWeight: 600 }}>{operacoes}</div>

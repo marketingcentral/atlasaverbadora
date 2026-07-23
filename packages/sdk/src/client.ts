@@ -1562,6 +1562,7 @@ export class AtlasClient {
           volumePorConvenio: { nome: string; valor: number }[];
         };
         dataCorte: { dia: number; mes: string; origem: string; operacoes: string };
+        folhas: { competencia: string; dataCorte: string; dataRepasse: string | null; status: "aberta" | "fechada" | "consolidada" }[];
       }>("/v1/portal/banco/visao-geral"),
     comunicados: () => this.request<{ comunicados: Comunicado[] }>("/v1/portal/banco/comunicados"),
     margemBuscar: (input: { cpf?: string; matricula?: string }) =>
