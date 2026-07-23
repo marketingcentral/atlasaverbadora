@@ -128,15 +128,18 @@ export const externalBancoRoutes = new Hono<{ Bindings: Env }>()
     const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === body.matricula);
     if (!s) throw Errors.notFound("colaborador");
 
-    const iof = body.valor_financiado * 0.0038 + body.valor_financiado * 0.000082 * Math.min(body.parcelas * 30, 365);
-    const cet = calcCET({ valor: body.valor_financiado, parcelas: body.parcelas, taxaMensal: body.taxa_am, iof });
+    // calcCET ja usa calcIOF internamente (packages/domain/src/cet.ts) — remove
+    // o calculo manual duplicado (mesma formula: 0.0038 + 0.000082 * min(prazo*30,
+    // 365)*valor). Antes divergia sutilmente se algum lugar mudasse a formula so
+    // no domain e esquecesse este arquivo.
+    const cet = calcCET({ valor: body.valor_financiado, parcelas: body.parcelas, taxaMensal: body.taxa_am });
     const contrato = criarContratoOuReserva({
       bancoId: t.partnerId,
       servidorId: Number(s.idMatricula.replace(/\D/g, "").slice(-5)) || 1,
       idMatricula: s.idMatricula, matricula: s.matricula, nome: s.nome, cpfMasked: s.cpfMasked,
       convenioId: conv.id, convenio: conv.nome, tipoContrato: body.tipo_contrato,
       valorFinanciado: body.valor_financiado, parcelas: body.parcelas, taxaAm: body.taxa_am,
-      cetAm: cet.mensal, iof: Math.round(iof * 100) / 100, diasCarencia: body.dias_carencia,
+      cetAm: cet.mensal, iof: Math.round(cet.iof * 100) / 100, diasCarencia: body.dias_carencia,
       valorParcela: cet.parcela, codigoVerba: conv.codigoVerba, observacoes: body.observacoes,
       isReserva: body.reserva, ator: `token:${t.id}`,
     });
