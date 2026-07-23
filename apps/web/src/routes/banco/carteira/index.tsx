@@ -37,16 +37,14 @@ function mapSituacaoBackend(situacao: string): ContratoStatus | null {
 
 const MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-/** Descricao ESPECIFICA da proxima parcela (cliente pediu 23/07/2026 mais
- *  detalhe que o generico "2026-08"): numero da parcela / total + mes/ano da
- *  proxima competencia. Ex.: "4/48 · Ago/2026". `parcelasPagas` vem do backend;
- *  contrato quitado (pagas >= total) mostra "Quitado". */
+/** Data (mes/ano) da proxima parcela. Cliente pediu 23/07/2026 pra mostrar SO
+ *  a competencia (ex.: "Ago/2026"), sem o "N/total". Contrato quitado (pagas
+ *  >= total) mostra "Quitado" — nao ha proxima. */
 function proximaParcelaDetalhe(parcelasPagas: number, totalParcelas: number): string {
   if (totalParcelas > 0 && parcelasPagas >= totalParcelas) return "Quitado";
-  const prox = Math.max(1, (parcelasPagas ?? 0) + 1);
   const d = new Date();
   d.setMonth(d.getMonth() + 1); // proxima competencia = proximo mes de folha
-  return `${prox}/${totalParcelas} · ${MESES_ABREV[d.getMonth()]}/${d.getFullYear()}`;
+  return `${MESES_ABREV[d.getMonth()]}/${d.getFullYear()}`;
 }
 
 /** Parseia data em ISO 8601 ou DD/MM/YYYY (formato BR das fixtures do backend).
