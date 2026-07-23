@@ -13,7 +13,7 @@ import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, refreshServidores, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, deriveTipoMargem, getContrato, getContratoEventos } from "../portal-banco/store.js";
 import { enviarNotificacao } from "../admin/mailer.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
@@ -870,13 +870,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s ?? "");
       return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : "";
     };
+    // Cascade "atualizadoEm" IGUAL a averbadora/admin/contratos e portal-banco:
+    // evento_ultimo -> ccbAnexadoEm -> criadoEmIso -> lancamento. Antes usava
+    // so criadoEmIso+lancamento, entao um contrato averbado hoje aparecia no
+    // meio da tabela da prefeitura enquanto averbadora/banco mostravam no topo.
+    const atualizadoEmDe = (ct: ReturnType<typeof listContratos>[number]): string => {
+      const eventos = getContratoEventos(ct.adf);
+      const ultimoEvento = eventos.length > 0 ? eventos[eventos.length - 1]?.criadoEm : undefined;
+      return ultimoEvento ?? ct.ccbAnexadoEm ?? ct.criadoEmIso ?? parseLancIso(ct.lancamento);
+    };
     const rows = contratosDaPrefeitura(id)
       .slice()
-      .sort((a, b) => {
-        const da = a.criadoEmIso ?? parseLancIso(a.lancamento);
-        const db = b.criadoEmIso ?? parseLancIso(b.lancamento);
-        return db.localeCompare(da); // DESC
-      })
+      .sort((a, b) => atualizadoEmDe(b).localeCompare(atualizadoEmDe(a)))
       .map((ct) => {
       // deriveProdutoLabel usa TODOS os sinais (observacoes/bancoOrigem/
       // tipoMargem/tipoContrato) pra decidir o produto real que foi proposto,

@@ -1025,14 +1025,24 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       acc[banco] = (acc[banco] ?? 0) + c.valorFinanciado;
       return acc;
     }, {});
-    // Contagem REAL de propostas por banco — antes vinha do Math.random(), que
-    // fazia os numeros dancarem a cada request/refetch e nao batia com nada.
-    // Conta so contratos vivos (nao terminal) — canceladas nao entram no
-    // ranking (banco com 15 canceladas + 0 ativas nao deve aparecer como top).
-    const propostasPorBanco = contratosVivos.reduce<Record<number, number>>((acc, c) => {
-      acc[c.bancoId] = (acc[c.bancoId] ?? 0) + 1;
-      return acc;
-    }, {});
+    // topBancos: propostas dos ultimos 30 dias (nao "todas as propostas
+    // desde o inicio dos tempos"). Antes contava historico total, entao
+    // um banco que teve 12 propostas no ano passado dominava o ranking
+    // mesmo sem atividade recente. Janela alinhada com "conversao / ticket
+    // do mes" — leitura consistente. Fallback pra lancamento DD/MM/YYYY
+    // quando criadoEmIso vazio.
+    const cortre30d = Date.now() - 30 * 86400_000;
+    const parseCriacao = (c: typeof contratosVivos[number]): number => {
+      if (c.criadoEmIso) return Date.parse(c.criadoEmIso);
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(c.lancamento);
+      return m ? Date.UTC(Number(m[3]), Number(m[2]) - 1, Number(m[1])) : 0;
+    };
+    const propostasPorBanco = contratosVivos
+      .filter((c) => parseCriacao(c) >= cortre30d)
+      .reduce<Record<number, number>>((acc, c) => {
+        acc[c.bancoId] = (acc[c.bancoId] ?? 0) + 1;
+        return acc;
+      }, {});
     // topBancos ancorado nos bancos ATIVOS — bate com o KPI "Bancos ativos".
     const topBancos = bancos
       .filter((b) => b.status === "ativo")
