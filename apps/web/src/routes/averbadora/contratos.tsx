@@ -77,8 +77,19 @@ export function AdminContratos() {
     }).sort((a, b) => (b.atualizadoEm ?? "").localeCompare(a.atualizadoEm ?? ""));
   }, [rows, busca, bancoFiltro, situacaoFiltro]);
 
-  const totalFinanciado = filtradas.reduce((s, r) => s + (r.valorFinanciado ?? 0), 0);
-  const totalParcelas = filtradas.reduce((s, r) => s + r.valorParcela, 0);
+  // Totalizadores excluem contratos terminais negativos (cancelado, recusado,
+  // rejeitado, expirado, quitado) — antes um cancelado de R$100k inflava
+  // "Valor financiado" contradizendo o KPI de conversao/margem.
+  const eTerminal = (s: string) => {
+    const t = (s || "").toLowerCase();
+    if (t === "expirado" || t === "cancelado" || t === "quitado") return true;
+    if (t.includes("recus") || t.includes("reprov") || t.includes("rejeit") || t.includes("negad") || t.includes("estorn")) return true;
+    return false;
+  };
+  const filtradasSomaveis = filtradas.filter((r) => !eTerminal(r.situacao));
+  const totalFinanciado = filtradasSomaveis.reduce((s, r) => s + (r.valorFinanciado ?? 0), 0);
+  const totalParcelas = filtradasSomaveis.reduce((s, r) => s + r.valorParcela, 0);
+  const totalTerminaisIgnoradas = filtradas.length - filtradasSomaveis.length;
 
   const columns: Column<ContratoRow>[] = [
     { key: "adf", header: "ADF", mono: true },
@@ -120,9 +131,13 @@ export function AdminContratos() {
       </header>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-        <SummaryCard label="Total de contratos" value={String(filtradas.length)} />
-        <SummaryCard label="Valor financiado" value={BRL.format(totalFinanciado)} accent />
-        <SummaryCard label="Soma das parcelas" value={BRL.format(totalParcelas)} />
+        <SummaryCard
+          label="Total de contratos"
+          value={String(filtradas.length)}
+          hint={totalTerminaisIgnoradas > 0 ? `${totalTerminaisIgnoradas} cancelado(s)/expirado(s)/quitado(s) — nao somados` : undefined}
+        />
+        <SummaryCard label="Valor financiado" value={BRL.format(totalFinanciado)} accent hint={totalTerminaisIgnoradas > 0 ? "so operacoes vivas" : undefined} />
+        <SummaryCard label="Soma das parcelas" value={BRL.format(totalParcelas)} hint={totalTerminaisIgnoradas > 0 ? "so operacoes vivas" : undefined} />
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 220px 220px", gap: 12, alignItems: "end" }}>
@@ -161,7 +176,7 @@ export function AdminContratos() {
   );
 }
 
-function SummaryCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function SummaryCard({ label, value, accent, hint }: { label: string; value: string; accent?: boolean; hint?: string }) {
   return (
     <div style={{
       background: "var(--bg-elev)", border: "1px solid var(--border-strong)",
@@ -169,6 +184,7 @@ function SummaryCard({ label, value, accent }: { label: string; value: string; a
     }}>
       <div style={{ fontSize: 11, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 700, marginTop: 6, color: accent ? "var(--gold-500)" : "var(--text)" }}>{value}</div>
+      {hint ? <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 4 }}>{hint}</div> : null}
     </div>
   );
 }

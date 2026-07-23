@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb, setContratoFalhaEmFolha, revertContratoDesligamento, clearContratosMemoria } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb, setContratoFalhaEmFolha, revertContratoDesligamento, clearContratosMemoria, comprometeMargem, situacaoContaComoAverbado, situacaoTerminal } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -751,7 +751,16 @@ function brToIso(s: string): string {
   if (!m) return new Date().toISOString();
   return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).toISOString();
 }
-function contratoToPreReserva(ct: ReturnType<typeof listContratos>[number]): PreReserva {
+// Converte contrato -> pre-reserva. Retorna null quando o contrato NAO deve
+// aparecer no fluxo de pre-reservas (nao existiu como reserva de margem):
+//   - "Falha em folha", "Em cobranca direta": estado pos-desligamento/pos-erro,
+//     margem ja foi liberada pelo comprometeMargem — nao e pre-reserva.
+//   - "Expirado" sem historico de "Aguardando" (raro): idem.
+// Cancelada/Recusada/Rejeitada/Reprovada retornam com status="cancelada" pra
+// manter historico visivel no filtro Todos/Canceladas da tela.
+// Ja averbadas (Ativo/Averbado/Quitado) retornam com status="confirmada".
+// So conta como "ativa" pra KPI quando comprometeMargem(situacao)===true.
+function contratoToPreReserva(ct: ReturnType<typeof listContratos>[number]): PreReserva | null {
   const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
   const prefId = conv?.prefeituraId ?? 1;
   const pref = prefeituras.find((p) => p.id === prefId);
@@ -760,13 +769,23 @@ function contratoToPreReserva(ct: ReturnType<typeof listContratos>[number]): Pre
   const criadoEm = brToIso(ct.lancamento);
   const expiraEm = ct.expiracao ? brToIso(ct.expiracao) : criadoEm;
   const expirou = !!ct.expiracao && new Date(expiraEm).getTime() < Date.now();
-  const status: PreReservaStatus = s.includes("cancel")
-    ? "cancelada"
-    : s.includes("ativo") || s.includes("averb") || s.includes("quitad")
-      ? "confirmada"
-      : s.includes("aguard") && expirou
-        ? "expirada"
-        : "ativa";
+  // Falha em folha / cobranca direta nao devem aparecer como pre-reserva
+  // (margem ja nao esta travada, e nao houve reserva legitima).
+  if (s.includes("falha em folha") || s.includes("cobran")) return null;
+  let status: PreReservaStatus;
+  if (s.includes("cancel") || s.includes("recus") || s.includes("rejeit") || s.includes("reprov") || s.includes("negad") || s.includes("estorn")) {
+    status = "cancelada";
+  } else if (situacaoContaComoAverbado(ct.situacao)) {
+    status = "confirmada";
+  } else if (s === "expirado" || (s.includes("aguard") && expirou)) {
+    status = "expirada";
+  } else if (comprometeMargem(ct.situacao)) {
+    // Aguardando / Aprovado / Suspenso / Formalizado — reserva ativa (margem travada)
+    status = "ativa";
+  } else {
+    // Estado fora do fluxo de pre-reserva
+    return null;
+  }
   return {
     id: ct.adf,
     idUnico: ct.adf,
@@ -970,19 +989,19 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       servidoresPorPref.set(explicito, (servidoresPorPref.get(explicito) ?? 0) + 1);
     }
     const totalVitrineMes = vitrine.reduce((acc, v) => acc + v.receitaMes, 0);
-    const preResumo = resumoPreReservas(todosContratos.map(contratoToPreReserva));
+    const preResumo = resumoPreReservas(
+      todosContratos.map(contratoToPreReserva).filter((r): r is PreReserva => r !== null),
+    );
     const folhasAbertas = folhas.filter((f) => f.status === "aberta").length;
-    // "Averbado" = margem efetivamente registrada em folha. Volume AVERBADO
-    // conta SO contratos nesse estado (Ativo/Averbado/Formalizado) — nao
-    // propostas em aberto, aprovadas nem canceladas. Cliente apontou 21/07/2026:
-    // o card somava TODOS os contratos (listContratos({})) sob o rotulo
-    // "averbado", contradizendo a conversao 0% (nada formalizado). Mesmo
-    // criterio de `formalizadas` (conversao) — as duas metricas agora batem.
-    const isAverbado = (ct: typeof todosContratos[number]): boolean => {
-      const s = ct.situacao.toLowerCase();
-      return s === "ativo" || s === "averbado" || s === "formalizado";
-    };
-    const contratosAverbados = todosContratos.filter(isAverbado);
+    // Volume AVERBADO usa helper compartilhado (situacaoContaComoAverbado):
+    // Ativo/Averbado/Quitado — nao inclui Aprovado sem ADF, Falha em folha,
+    // Em cobranca direta, nem cancelados. Alinhado com KPI de conversao.
+    const contratosAverbados = todosContratos.filter((ct) => situacaoContaComoAverbado(ct.situacao));
+    // Universo "vivo" pra ticket medio e conversao: exclui terminais negativos
+    // (cancelado, recusado, rejeitado, reprovado, negado, estornado, expirado).
+    // Antes, cancelados infludiam a media (R$100k cancelado puxava ticket pra
+    // cima igual ativo de R$5k).
+    const contratosVivos = todosContratos.filter((ct) => !situacaoTerminal(ct.situacao));
     const volumePorConvenio = contratosAverbados.reduce<Record<string, number>>((acc, c) => {
       acc[c.convenio] = (acc[c.convenio] ?? 0) + c.valorFinanciado;
       return acc;
@@ -994,28 +1013,41 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }, {});
     // Contagem REAL de propostas por banco — antes vinha do Math.random(), que
     // fazia os numeros dancarem a cada request/refetch e nao batia com nada.
-    const propostasPorBanco = todosContratos.reduce<Record<number, number>>((acc, c) => {
+    // Conta so contratos vivos (nao terminal) — canceladas nao entram no
+    // ranking (banco com 15 canceladas + 0 ativas nao deve aparecer como top).
+    const propostasPorBanco = contratosVivos.reduce<Record<number, number>>((acc, c) => {
       acc[c.bancoId] = (acc[c.bancoId] ?? 0) + 1;
       return acc;
     }, {});
+    // topBancos ancorado nos bancos ATIVOS — bate com o KPI "Bancos ativos".
     const topBancos = bancos
+      .filter((b) => b.status === "ativo")
       .map((b) => ({ nome: b.nome, propostas: propostasPorBanco[b.id] ?? 0 }))
       .sort((a, b) => b.propostas - a.propostas)
       .slice(0, 3);
-    // "Propostas hoje" = contratos criados hoje (criadoEmIso). Antes contava TUDO
-    // desde o inicio dos tempos e chamava de "hoje".
+    // "Propostas hoje" = contratos criados hoje. Fallback pra lancamento
+    // (DD/MM/YYYY) quando criadoEmIso vazio — cobre contratos de seed antigo
+    // e imports CSV que nao setam o ISO. Antes so olhava criadoEmIso e
+    // ignorava contratos legados criados no mesmo dia.
     const hojeIso = new Date().toISOString().slice(0, 10);
-    const propostasHoje = todosContratos.filter((c) => (c.criadoEmIso ?? "").slice(0, 10) === hojeIso).length;
-    // Conversao = formalizadas / total (bruto — nao considera propostas que nunca
-    // viraram contrato porque nao temos historico delas na base atual). Ainda
-    // assim, muito melhor que o 0.427 hardcoded que o cliente ja viu ha meses.
+    const propostasHoje = todosContratos.filter((c) => {
+      if (c.criadoEmIso && c.criadoEmIso.slice(0, 10) === hojeIso) return true;
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(c.lancamento);
+      return m ? `${m[3]}-${m[2]}-${m[1]}` === hojeIso : false;
+    }).length;
+    // Conversao = formalizadas / (formalizadas + em pipeline vivo). Nao inclui
+    // terminais negativos (cancelado/recusado/expirado) no denominador — se
+    // um dia zerarmos 30 canceladas historicas, a conversao muda drasticamente
+    // sem que a operacao real tenha mudado.
     const formalizadas = contratosAverbados.length;
-    const conversao = todosContratos.length > 0 ? Math.round((formalizadas / todosContratos.length) * 1000) / 1000 : 0;
+    const conversao = contratosVivos.length > 0 ? Math.round((formalizadas / contratosVivos.length) * 1000) / 1000 : 0;
     return c.json({
       kpis: {
         propostasHoje,
         conversao,
-        ticketMedio: todosContratos.length > 0 ? Math.round((todosContratos.reduce((a, c) => a + c.valorFinanciado, 0) / todosContratos.length) * 100) / 100 : 0,
+        // Ticket medio SO sobre averbados — antes misturava cancelados que
+        // nunca viraram receita, distorcendo o valor por contrato.
+        ticketMedio: contratosAverbados.length > 0 ? Math.round((contratosAverbados.reduce((a, c) => a + c.valorFinanciado, 0) / contratosAverbados.length) * 100) / 100 : 0,
         bancosAtivos: bancos.filter((b) => b.status === "ativo").length,
         prefeiturasAtivas: prefeituras.filter((p) => p.status === "ativo").length,
         servidoresCadastrados: SERVIDORES_BUSCA_MOCK.length,
@@ -3575,7 +3607,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         const tb = b.criadoEmIso ?? parseLanc(b.lancamento) ?? "";
         return tb.localeCompare(ta);
       })
-      .map(contratoToPreReserva);
+      .map(contratoToPreReserva)
+      .filter((r): r is PreReserva => r !== null);
     const url = new URL(c.req.url);
     const status = url.searchParams.get("status") as PreReservaStatus | null;
     const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
@@ -3597,6 +3630,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!ct) throw Errors.notFound("pre_reserva");
     await persistContrato(c.env, id);
     const r = contratoToPreReserva(ct);
+    // Nunca null aqui — cancelar sempre gera status="cancelada" (nao cai nos
+    // early-returns falha_em_folha/cobranca).
+    if (!r) throw Errors.notFound("pre_reserva");
     appendAudit(auditCtx(c), { categoria: "pre_reserva", acao: "pre_reserva_cancelada", propostaId: id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Pre-reserva ${id} cancelada manualmente. Motivo: ${body.motivo}. Margem R$ ${r.valorMargem.toFixed(2)} liberada.` });
     pushEvent("warn", "admin.pre-reservas", `Pre-reserva ${id} cancelada por user:${c.get("jwt").sub}`);
     return c.json({ preReserva: r });
@@ -3605,7 +3641,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "pre-reservas");
     await refreshContratos(c.env);
     // Expiração é derivada (reserva "Aguardando" com data de expiração vencida).
-    const expiradas = listContratos({}).map(contratoToPreReserva).filter((r) => r.status === "expirada").length;
+    const expiradas = listContratos({})
+      .map(contratoToPreReserva)
+      .filter((r): r is PreReserva => r !== null && r.status === "expirada")
+      .length;
     return c.json({ expiradas });
   })
 

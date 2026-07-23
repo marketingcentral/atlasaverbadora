@@ -315,6 +315,29 @@ export function normalizeContrato(c: ContratoFull): ContratoFull {
  *   - "Expirado", "Cancelado", "Recusado", "Reprovado", "Rejeitado", "Negado", "Estornado"
  *   - "Quitado" (contrato ja fechado)
  */
+/**
+ * Contrato "conta como averbado" — usado em KPIs de volume/ticket medio/conversao.
+ * Estados: Ativo, Averbado, Quitado (foi averbado um dia).
+ * Nao inclui: Aprovado (banco aprovou mas nao virou ADF), Falha em folha,
+ * Em cobranca direta (ja saiu da folha).
+ */
+export function situacaoContaComoAverbado(situacao: string): boolean {
+  const s = situacao.toLowerCase();
+  return s.includes("ativo") || s.includes("averb") || s.includes("quitad");
+}
+
+/**
+ * Contrato terminal (nao vai mais mudar de estado por fluxo natural).
+ * Usado pra excluir do denominador de "conversao" e do somatorio de "valor
+ * financiado" nos KPIs — evita cancelado inflar total.
+ */
+export function situacaoTerminal(situacao: string): boolean {
+  const s = situacao.toLowerCase();
+  if (s === "expirado" || s === "cancelado" || s === "quitado") return true;
+  if (s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) return true;
+  return false;
+}
+
 export function comprometeMargem(situacao: string): boolean {
   const s = situacao.toLowerCase();
   if (s === "expirado" || s === "cancelado" || s === "quitado") return false;
