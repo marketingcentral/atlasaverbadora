@@ -17,9 +17,20 @@ import {
   type BancoPropostaStatus,
 } from "../../../lib/banco-propostas";
 
+// SO os status que o backend realmente emite. `contratoToProposta`
+// (lib/banco-propostas.ts:371) traduz a `situacao` da API em apenas 4:
+//   "aguard"                        -> recebida (tambem e' o fallback)
+//   "aprov"                         -> aprovada
+//   "ativo" | "averb" | "quitad"    -> averbada
+//   "cancel" | "suspens" | "recus"  -> recusada
+// Os outros 5 (em_analise, aguardando_formalizacao, formalizada, mais_info,
+// expirada) existem no type mas nenhuma origem os produz — o unico caminho
+// seria o overlay de localStorage, e `patchProposta` nao e' chamada em lugar
+// nenhum. Deixa-los no dropdown so gerava filtro que nunca acha nada
+// (cliente reportou 23/07/2026 selecionando "Formalizada" e vendo vazio).
+// Ordem = fluxo real da proposta.
 const STATUS_OPTS: BancoPropostaStatus[] = [
-  "recebida", "em_analise", "aprovada", "aguardando_formalizacao",
-  "formalizada", "averbada", "recusada", "mais_info", "expirada",
+  "recebida", "aprovada", "averbada", "recusada",
 ];
 
 type TabKey = "todas" | "aguardando" | "aprovadas" | "recusadas";
