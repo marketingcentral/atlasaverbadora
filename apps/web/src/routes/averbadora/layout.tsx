@@ -55,6 +55,7 @@ const NAV = [
   },
   { key: "termos", label: "Termos de aceite", href: "/averbadora/termos", icon: "📜" },
   { key: "health", label: "Health", href: "/averbadora/health", icon: "♥" },
+  { key: "verify", label: "Verificação", href: "/averbadora/verify", icon: "✓" },
   { key: "logs", label: "Logs", href: "/averbadora/logs", icon: "≡" },
   { key: "vitrine", label: "Vitrine", href: "/averbadora/vitrine", icon: "▢" },
   { key: "beneficios", label: "Benefícios", href: "/averbadora/beneficios", icon: "◇" },

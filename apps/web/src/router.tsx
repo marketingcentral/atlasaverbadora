@@ -30,6 +30,7 @@ import { AdminServidoresImportar } from "./routes/averbadora/servidores/importar
 import { AdminFolhas } from "./routes/averbadora/folhas";
 import { AdminComunicados } from "./routes/averbadora/comunicados";
 import { AdminHealth } from "./routes/averbadora/health";
+import { AverbadoraVerify } from "./routes/averbadora/verify";
 import { AverbadoraConfiguracoes } from "./routes/averbadora/configuracoes";
 import { AdminLogs } from "./routes/averbadora/logs";
 import { AdminVitrine } from "./routes/averbadora/vitrine";
@@ -215,6 +216,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
           { path: "comunicados/servidor", element: <AdminComunicados publico="servidor" /> },
           { path: "comunicados/prefeitura", element: <AdminComunicados publico="prefeitura" /> },
           { path: "health", element: <AdminHealth /> },
+          { path: "verify", element: <AverbadoraVerify /> },
           { path: "configuracoes", element: <AverbadoraConfiguracoes /> },
           { path: "suporte", element: <AverbadoraSuporte /> },
           { path: "ia", element: <AverbadoraConfiguracoes /> },

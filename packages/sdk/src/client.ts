@@ -2010,6 +2010,12 @@ export class AtlasClient {
       this.request<{ ok: boolean }>(`/v1/admin/comunicados/${id}`, { method: "DELETE" }),
     health: () =>
       this.request<{ checks: { servico: string; uptime: number; p95: number; ok: boolean }[] }>("/v1/admin/health"),
+    verify: (opts?: { fresh?: boolean }) =>
+      this.request<{
+        ok: boolean;
+        geradoEm: string;
+        grupos: Record<"A" | "B" | "C" | "D" | "E" | "F", { nome: string; ok: boolean; detalhes?: string; exemplos?: unknown[] }[]>;
+      }>("/v1/admin/verify", { query: opts?.fresh ? { fresh: "1" } : {} }),
     logs: (q?: { level?: "info" | "warn" | "error"; source?: string; perfil?: "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema" }) =>
       this.request<{ logs: { ts: string; level: "info" | "warn" | "error"; trace_id: string; message: string; source: string; perfil: "averbadora" | "banco" | "prefeitura" | "servidor" | "sistema" }[] }>("/v1/admin/logs", { query: q ?? {} }),
     listVitrine: () => this.request<{ banners: AdminBanner[] }>("/v1/admin/vitrine"),

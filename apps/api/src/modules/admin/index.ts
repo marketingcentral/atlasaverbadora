@@ -32,6 +32,9 @@ import { clearAiKey, getAiStatus, normalizeCsvWithAi, setAiKey, testAiKey } from
 import { clearSmtpConfig, getSmtpStatus, setSmtpConfig } from "./smtp.js";
 import { sendMail, enviarNotificacao, movimentacaoEmail, dispatchTemplateEmail } from "./mailer.js";
 import { ensurePortabilidadesLoaded, listIntencoes } from "./portabilidade-store.js";
+import { runVerify } from "./verify.js";
+import { refreshOfertas, loadOfertas } from "../portal-banco/ofertas-store.js";
+import { listTabelas } from "../portal-banco/cadastros.js";
 import { ensureTermosLoaded, listTermos, getTermo, upsertTermo, type TermoTipo } from "./termos-store.js";
 import { getSuporteConfig, setSuporteConfig } from "./suporte.js";
 import { requireUnlocked, getLockState, unlock as unlockDestructive, lock as lockDestructive, MAX_UNLOCK_SEC } from "./destructive-lock.js";
@@ -3119,6 +3122,64 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       try { c.executionCtx.waitUntil(c.env.KV_CACHE.put(CACHE_KEY, JSON.stringify(payload), { expirationTtl: 20 })); } catch { /* fail-safe */ }
     }
     return c.json(payload);
+  })
+
+  // ============================================================
+  // /v1/admin/verify — camada 2 da estrategia de teste intensivo.
+  // Roda 6 grupos de invariantes cross-profile (banco fantasma, taxa
+  // divergente, estados incoerentes, etc). Ver apps/api/src/modules/admin/
+  // verify.ts pra logica de cada check. Cache 20s KV, mesmo padrao do health.
+  // ============================================================
+  .get("/v1/admin/verify", async (c) => {
+    requireAdmin(c.get("jwt"));
+    const CACHE_KEY = "verify:snapshot";
+    // Cache-bust opcional: ?fresh=1 pula o cache pra rodar checks agora.
+    const fresh = c.req.query("fresh") === "1";
+    if (!fresh && c.env.KV_CACHE) {
+      const cached = await c.env.KV_CACHE.get(CACHE_KEY, "json").catch(() => null);
+      if (cached) return c.json(cached);
+    }
+
+    // Hidrata TUDO em paralelo — verify le estado fresco pra nao gerar
+    // falso-positivo por cache stale (padrao do dashboard C6).
+    await Promise.all([
+      refreshContratos(c.env),
+      refreshServidores(c.env),
+      refreshConvenios(c.env),
+      refreshOfertas(c.env),
+      refreshTombamento(c.env),
+      ensureBancosLoaded(c.env),
+      ensurePrefeiturasLoaded(c.env),
+      ensurePortabilidadesLoaded(c.env),
+    ]);
+
+    // Coleta inputs. ADFs sao _adfs global (do prefeitura/store) — precisa
+    // materializar pra competencia atual antes de listar.
+    const compAtual = folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia
+      ?? new Date().toISOString().slice(0, 7).replace("-", "");
+    const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
+    ensureAdfsGlobal(compAtual, bancoNomeById, new Date().toISOString(), prefeituras.map((p) => p.id));
+    await persistDirtyIdUnicoConfigs(c.env);
+
+    const ofertas = await loadOfertas(c.env);
+    const tabelasEmprestimo = await listTabelas(c.env);
+
+    const report = runVerify({
+      contratos: listContratos({}),
+      bancos: bancos.slice(),
+      prefeituras: prefeituras.slice(),
+      convenios: CONVENIOS_MOCK.slice(),
+      adfs: listAdfsGlobal(),
+      servidores: SERVIDORES_BUSCA_MOCK.slice(),
+      ofertas,
+      tabelasEmprestimo,
+      portabilidades: listIntencoes().map((i) => ({ id: i.id, status: i.status, ofertas: i.ofertas.map((o) => ({ novaTaxaAm: o.taxaAmProposta })) })),
+    });
+
+    if (c.env.KV_CACHE) {
+      try { c.executionCtx.waitUntil(c.env.KV_CACHE.put(CACHE_KEY, JSON.stringify(report), { expirationTtl: 20 })); } catch { /* fail-safe */ }
+    }
+    return c.json(report);
   })
 
   .get("/v1/admin/logs", async (c) => {
