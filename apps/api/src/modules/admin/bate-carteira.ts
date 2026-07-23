@@ -3,8 +3,10 @@
 // Exports as CSV/JSON for the bank to ingest.
 
 import { buildCsv } from "../../_shared/csv.js";
-import { listLotes, listLinhas, type TombamentoLinha } from "./tombamento.js";
-import { listPreReservas, type PreReserva } from "./pre-reservas.js";
+import { listLotes, listLinhas } from "./tombamento.js";
+import { listContratos, situacaoContaComoAverbado } from "../portal-banco/store.js";
+import { listAdfsGlobal } from "../prefeitura/store.js";
+import { CONVENIOS_MOCK } from "../portal-banco/fixtures.js";
 
 export interface BateCarteiraLinha {
   competencia: string;
@@ -77,27 +79,48 @@ export function gerarBateCarteira(input: BateCarteiraRequest, bancoNomeResolver:
     }
   }
 
-  // 2) Pre-reservas confirmadas no mês.
-  const preReservas = listPreReservas({ status: "confirmada", bancoId: input.bancoId });
-  for (const r of preReservas) {
-    if (!r.finalizadoEm) continue;
-    const compConfirmacao = r.finalizadoEm.slice(0, 7).replace("-", "");
-    if (compConfirmacao !== competencia) continue;
-    if (input.prefeituraId && r.prefeituraId !== input.prefeituraId) continue;
+  // 2) Contratos averbados no mes (antes lia listPreReservas do store morto
+  // _preReservas — sempre vazio, entao bate-carteira nunca reportava confirmadas).
+  // Fonte real: _contratos com situacao Ativo/Averbado/Quitado, criados na
+  // competencia solicitada. idUnico vem da ADF materializada (join por ct.adf).
+  // Filtra por bancoId (do banco logado ou passado no request).
+  const adfsCompetencia = listAdfsGlobal(competencia);
+  const idUnicoPorAdf = new Map<string, string>(adfsCompetencia.map((a) => [a.adf, a.idUnico]));
+  const contratos = listContratos({}).filter((ct) => ct.bancoId === input.bancoId && situacaoContaComoAverbado(ct.situacao));
+  for (const ct of contratos) {
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === ct.convenioId);
+    const prefId = conv?.prefeituraId;
+    if (input.prefeituraId && prefId !== input.prefeituraId) continue;
+    // Competencia do contrato = criadoEmIso (YYYY-MM) ou fallback pra lancamento.
+    const isoComp = ct.criadoEmIso
+      ? ct.criadoEmIso.slice(0, 7).replace("-", "")
+      : (() => {
+        const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(ct.lancamento);
+        return m ? `${m[3]}${m[2]}` : undefined;
+      })();
+    if (isoComp !== competencia) continue;
+    const dataISO = ct.criadoEmIso
+      ? ct.criadoEmIso.slice(0, 10)
+      : (() => {
+        const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(ct.lancamento);
+        return m ? `${m[3]}-${m[2]}-${m[1]}` : new Date().toISOString().slice(0, 10);
+      })();
     linhas.push({
       competencia,
       bancoId: input.bancoId,
       bancoNome,
-      prefeituraId: r.prefeituraId,
-      prefeituraNome: r.prefeituraNome,
-      cpfMasked: r.servidorCpfMasked,
-      matricula: r.matricula,
-      idUnico: r.idUnico,
-      valorParcela: r.valorParcela,
-      saldoDevedor: r.valorMargem,
+      prefeituraId: prefId ?? 0,
+      prefeituraNome: conv?.prefeitura ?? "",
+      cpfMasked: ct.cpfMasked,
+      matricula: ct.matricula,
+      idUnico: idUnicoPorAdf.get(ct.adf) ?? ct.adf,
+      adfBanco: ct.adf,
+      valorParcela: ct.valorParcela,
+      saldoDevedor: ct.saldoDevedor ?? ct.valorFinanciado,
+      parcelasRestantes: Math.max(0, ct.totalParcelas - ct.parcelasPagas),
       origem: "pre_reserva_confirmada",
-      status: "confirmada",
-      data: r.finalizadoEm.slice(0, 10),
+      status: ct.situacao,
+      data: dataISO,
     });
   }
 
