@@ -161,7 +161,14 @@ export function MargemCalculadorBox({ mes, ano, onMesChange, onAnoChange, total,
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const ANOS = (() => {
   const now = new Date().getFullYear();
-  return [now - 1, now, now + 1];
+  // Cliente pediu 23/07/2026 pra o seletor ir ate 2030: contrato de 96
+  // parcelas (8 anos) so mostra o alivio da margem se der pra simular tao
+  // longe. Mantem o ano anterior pra consultar competencia passada.
+  // Math.max evita a lista esvaziar quando o relogio passar de 2030.
+  const fim = Math.max(2030, now + 1);
+  const anos: number[] = [];
+  for (let y = now - 1; y <= fim; y++) anos.push(y);
+  return anos;
 })();
 
 function SelectArrow({ value, options, onChange }: { value: string; options: string[]; onChange: (v: string) => void }) {
