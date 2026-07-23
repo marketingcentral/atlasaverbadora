@@ -4,6 +4,7 @@ import { DataTable, Pill, SelectField, TextField, type Column } from "@atlas/ui/
 import { atlas } from "../../lib/sdk";
 import { contratoStatusInfo } from "../../lib/contrato-status";
 import { produtoLabelDeContrato } from "../../lib/produto-label";
+import { matchAny } from "../../lib/text-search";
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const DT_BR = new Intl.DateTimeFormat("pt-BR", {
@@ -54,16 +55,9 @@ export function AdminContratos() {
     return rows.filter((r) => {
       if (bancoFiltro && r.bancoNome !== bancoFiltro) return false;
       if (situacaoFiltro && r.situacao !== situacaoFiltro) return false;
-      if (busca.trim()) {
-        const qd = busca.replace(/\D/g, "");
-        const ql = busca.toLowerCase();
-        const matDigits = r.matricula.replace(/\D/g, "");
-        const cpfDigits = r.cpfMasked.replace(/\D/g, "");
-        if (qd && (matDigits.includes(qd) || cpfDigits.includes(qd) || r.adf.includes(qd))) return true;
-        if (r.nome.toLowerCase().includes(ql)) return true;
-        return false;
-      }
-      return true;
+      // Busca via matchAny (LIKE PHP): cobre TODOS os campos e trata CPF/
+      // matricula/telefone/ADF com ou sem pontuacao.
+      return matchAny(r, busca);
     }).sort((a, b) => (b.atualizadoEm ?? "").localeCompare(a.atualizadoEm ?? ""));
   }, [rows, busca, bancoFiltro, situacaoFiltro]);
 

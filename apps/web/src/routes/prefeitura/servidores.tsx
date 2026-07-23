@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, CpfField, CsvImportPanel, CurrencyField, DataTable, FilterBar, FormGrid, NumberField, Pill, SelectField, TelefoneField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraServidor, ServidorCampoConfig } from "@atlas/sdk";
+import { matchAny } from "../../lib/text-search";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 // VINCULOS constante removida — modal dinamico usa VINCULO_OPTS ({value,label}).
@@ -17,28 +18,8 @@ const fmtTel = (tel?: string) => {
   return d || "—";
 };
 
-// Busca "LIKE PHP" — case-insensitive, sem acento, multi-termo (AND entre
-// termos), matcha em TODOS os campos textuais (nome/matricula/cpf/telefone/
-// cargo/vinculo/situacao/endereco/email/idConvenio). Se o termo e so digito,
-// tambem casa contra a versao so-digitos dos campos (CPF/telefone/matricula
-// pra usuario poder digitar "58088" e achar "580.886.363-53").
-function stripAccents(s: string): string {
-  // Remove diacriticos (combining marks U+0300-U+036F). Usado pra busca
-  // funcionar com ou sem acento: "joao" acha "João", "MARIA" acha "Maria".
-  return (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "");
-}
-function matchServidor(s: PrefeituraServidor, query: string): boolean {
-  const q = stripAccents(query.trim().toLowerCase());
-  if (!q) return true;
-  const termos = q.split(/\s+/).filter(Boolean);
-  const camposTxt = stripAccents(`${s.nome} ${s.matricula} ${s.cpf} ${s.cpfMasked} ${s.telefone ?? ""} ${s.cargo ?? ""} ${s.vinculo} ${s.situacaoFuncional} ${s.endereco ?? ""} ${s.email ?? ""} ${s.idConvenio}`.toLowerCase());
-  const camposDigits = `${s.matricula} ${s.cpf} ${s.telefone ?? ""}`.replace(/\D/g, "");
-  return termos.every((t) => {
-    if (camposTxt.includes(t)) return true;
-    if (/^\d+$/.test(t) && camposDigits.includes(t)) return true;
-    return false;
-  });
-}
+// Busca via matchAny (lib/text-search) — fonte unica compartilhada com todas
+// as outras telas do sistema.
 
 export function PrefeituraServidores() {
   const qc = useQueryClient();
@@ -52,7 +33,7 @@ export function PrefeituraServidores() {
   // (sem ORDER BY), entao seeds antigos apareciam no topo. Aqui so filtra a
   // busca, preservando a ordem que o servidor mandou.
   const filtered = (q.data?.servidores ?? [])
-    .filter((s) => matchServidor(s, search));
+    .filter((s) => matchAny(s, search));
 
   const columns: Column<PrefeituraServidor>[] = [
     { key: "nome", header: "Nome" },

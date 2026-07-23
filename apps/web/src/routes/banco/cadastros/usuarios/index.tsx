@@ -12,6 +12,7 @@ import {
 } from "@atlas/ui/web";
 import { atlas } from "../../../../lib/sdk";
 import type { BancoPerfil, BancoUsuario } from "@atlas/sdk";
+import { matchAny } from "../../../../lib/text-search";
 
 function formatCpf(cpf: string): string {
   const d = cpf.replace(/\D/g, "");
@@ -79,9 +80,9 @@ export function BancoUsuariosLista() {
     },
   });
 
-  // Mais recentes no topo (usuarios recem-cadastrados aparecem primeiro).
+  // Busca via matchAny (LIKE PHP) + mais recentes no topo.
   const filtered = (data.data?.usuarios ?? [])
-    .filter((u) => search ? `${u.nome} ${u.email}`.toLowerCase().includes(search.toLowerCase()) : true)
+    .filter((u) => matchAny(u, search))
     .slice()
     .sort((a, b) => (b.criadoEm ?? "").localeCompare(a.criadoEm ?? ""));
 

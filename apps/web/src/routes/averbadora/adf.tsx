@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { produtoLabelDeContrato } from "../../lib/produto-label";
+import { matchAny } from "../../lib/text-search";
 
 // ADF pela averbadora — a averbadora aplica/reporta falha em folha; prefeitura
 // so recebe/consulta. Cliente disse: "a averbadora que faz a adf, a prefeitura
@@ -56,23 +57,8 @@ export function AdminAdf() {
   );
   const filtradas = useMemo(() => {
     let base = prefeituraFiltro ? rows.filter((r) => r.prefeituraNome === prefeituraFiltro) : rows;
-    const q = busca.trim();
-    if (q) {
-      const qDigits = q.replace(/\D/g, "");
-      const qLower = q.toLowerCase();
-      base = base.filter((r) => {
-        // Digitos da busca casam com matricula OU com os digitos do CPF
-        // mascarado (permite achar por final "33" mesmo mascarado ***.***.***-33).
-        if (qDigits) {
-          const matDigits = r.matricula.replace(/\D/g, "");
-          const cpfDigits = r.cpfMasked.replace(/\D/g, "");
-          if (matDigits.includes(qDigits) || cpfDigits.includes(qDigits)) return true;
-        }
-        // Fallback: substring no nome (case-insensitive) pra buscar por texto.
-        if (r.nome.toLowerCase().includes(qLower)) return true;
-        return false;
-      });
-    }
+    // Busca via matchAny (LIKE PHP) — cobre TODOS os campos automaticamente.
+    if (busca.trim()) base = base.filter((r) => matchAny(r, busca));
     // Recentes no topo — a API preenche `atualizadoEm` na criação e em toda troca de status.
     // Fallback pelo `id` (ADF-YYYYMM-<num>) mantém ordem estavel se o campo faltar.
     return [...base].sort((a, b) => {

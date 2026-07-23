@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DataTable, FilterBar, IconButton, Pill, SelectField, type Column } from "@atlas/ui/web";
 import { atlas, enterImpersonate } from "../../../lib/sdk";
 import { downloadCsv } from "../../../lib/csv";
+import { matchAny } from "../../../lib/text-search";
 import type { AdminServidor, ServidorCampoConfig } from "@atlas/sdk";
 import { EditModal } from "./_editModal";
 import { DEFAULT_CAMPOS_FALLBACK } from "./_defaults";
@@ -110,10 +111,16 @@ export function AdminServidoresVisualizar() {
     enabled: !!prefId,
   });
 
+  // Busca "LIKE PHP" via matchAny — case/acento-insensitive, multi-termo AND,
+  // varre TODOS os campos do objeto (nome, matricula, cpf, cpfMasked, email,
+  // telefone, cargo, vinculo, situacao, salario, convenio, IBGE, datas etc)
+  // e trata CPF/telefone/matricula com ou sem pontuacao ("580.886.363-53"
+  // acha com "58088" tambem). Mais recentes no topo (id DESC).
   const filtered = useMemo(
-    () => (dataQ.data?.servidores ?? []).filter((s) =>
-      search ? `${s.nome} ${s.matricula} ${s.cpf} ${s.cpfMasked} ${s.email}`.toLowerCase().includes(search.toLowerCase()) : true,
-    ),
+    () => (dataQ.data?.servidores ?? [])
+      .filter((s) => matchAny(s, search))
+      .slice()
+      .sort((a, b) => b.id - a.id),
     [dataQ.data?.servidores, search],
   );
 
