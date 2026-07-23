@@ -18,7 +18,6 @@ import {
   ContratosTable,
   MargemCalculadorBox,
   MargemProjecaoLinha,
-  OperacoesGrid,
 } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import { fmtBRL } from "../../../lib/banco-propostas";
@@ -62,17 +61,6 @@ export function BancoMargemContratacaoFicha() {
   const calcular = useMutation({
     mutationFn: () => atlas.banco.margemCalcular(idMatricula, { mes: monthIndex(mes), ano }),
   });
-
-  // Estado da seção "Reservar Margem" (versão compacta).
-  const [modalidade, setModalidade] = useState<TipoMargem>("EMPRESTIMO");
-  const [valorParcela, setValorParcela] = useState("");
-  const [numParcelas, setNumParcelas] = useState("");
-  const totalEstimado = useMemo(() => {
-    const p = Number(valorParcela.replace(",", "."));
-    const n = Number(numParcelas);
-    if (!Number.isFinite(p) || !Number.isFinite(n) || p <= 0 || n <= 0) return null;
-    return p * n;
-  }, [valorParcela, numParcelas]);
 
   // Comprometido por tipo de margem, com base nos contratos vivos do servidor.
   const comprometidoPorTipo = useMemo(() => {
@@ -161,72 +149,11 @@ export function BancoMargemContratacaoFicha() {
         ))}
       </section>
 
-      {/* Reservar Margem — versão compacta do modelo */}
-      <section
-        style={{
-          background: "var(--surface)",
-          border: "1px solid var(--border)",
-          borderRadius: 16,
-          padding: 20,
-        }}
-      >
-        <div style={{ fontSize: 11, letterSpacing: "0.08em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 12 }}>
-          Reservar margem
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr auto", gap: 12, alignItems: "end" }}>
-          <FieldWrap label="Modalidade">
-            <select
-              value={modalidade}
-              onChange={(e) => setModalidade(e.target.value as TipoMargem)}
-              style={selectStyle}
-            >
-              <option value="EMPRESTIMO">Empréstimo Consignado</option>
-              <option value="CARTAO_CONSIGNADO">Cartão de Crédito Consignado</option>
-              <option value="CARTAO_BENEFICIOS">Cartão Benefício Consignado</option>
-            </select>
-          </FieldWrap>
-          <FieldWrap label="Valor da parcela">
-            <input
-              type="text"
-              inputMode="decimal"
-              value={valorParcela}
-              onChange={(e) => setValorParcela(e.target.value)}
-              placeholder="R$ 0,00"
-              style={inputStyle}
-            />
-          </FieldWrap>
-          <FieldWrap label="Nº parcelas">
-            <input
-              type="number"
-              value={numParcelas}
-              onChange={(e) => setNumParcelas(e.target.value)}
-              placeholder="Ex: 48"
-              style={inputStyle}
-            />
-          </FieldWrap>
-          <FieldWrap label="Total estimado">
-            <div style={{ ...inputStyle, background: "transparent", color: totalEstimado != null ? "var(--text)" : "var(--text-dim)", cursor: "default" }}>
-              {totalEstimado != null ? fmtBRL(totalEstimado) : "—"}
-            </div>
-          </FieldWrap>
-          <button
-            type="button"
-            onClick={() => nav(`reservar/${modalidade === "CARTAO_CONSIGNADO" || modalidade === "CARTAO_BENEFICIOS" ? "EMPRESTIMO" : modalidade}`)}
-            style={{
-              padding: "11px 20px",
-              borderRadius: 10,
-              background: "linear-gradient(135deg, var(--gold-500), var(--gold-600))",
-              color: "var(--navy-900)",
-              fontWeight: 700,
-              border: "none",
-              cursor: "pointer",
-              fontSize: 14,
-            }}
-          >
-            Reservar →
-          </button>
-        </div>
-      </section>
+      {/* Cliente pediu 23/07/2026 pra DESABILITAR "Reservar margem" e "Novas
+          contratacoes" nesta ficha: o banco nao origina operacao por aqui — a
+          ficha e' so consulta de margem/contratos. As rotas
+          `reservar/*` e `averbar/*` continuam existindo (fluxo por proposta do
+          servidor / API de parceiro), so nao ha mais ponto de entrada na ficha. */}
 
       {/* Contratos ativos do servidor — tabela do modelo */}
       <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -246,29 +173,6 @@ export function BancoMargemContratacaoFicha() {
             convenio: c.convenio,
           }))}
           emptyState="Este servidor não possui contratos ativos."
-        />
-      </section>
-
-      {/* Novas contratações (Averbações + Reservas) — mantido do fluxo existente */}
-      <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <h2 style={{ margin: 0, fontSize: 16, color: "var(--text-muted)" }}>Novas contratações</h2>
-        <OperacoesGrid
-          titulo="Averbações"
-          cols={2}
-          itens={[
-            { key: "av-emp", label: "Empréstimo", disponivel: true, icon: "✱", onClick: () => nav("averbar/EMPRESTIMO") },
-            { key: "av-ref", label: "Refinanciamento", disponivel: true, icon: "↻", onClick: () => nav("averbar/REFIN") },
-          ]}
-        />
-        <OperacoesGrid
-          titulo="Reservas"
-          cols={4}
-          itens={[
-            { key: "rs-emp", label: "Empréstimo", disponivel: true, icon: "✱", onClick: () => nav("reservar/EMPRESTIMO") },
-            { key: "rs-ref", label: "Refinanciamento", disponivel: true, icon: "↻", onClick: () => nav("reservar/REFIN") },
-            { key: "rs-comp", label: "Composta", disponivel: true, icon: "⊞", onClick: () => nav("reservar/COMPOSTA") },
-            { key: "rs-port", label: "Portabilidade", disponivel: true, icon: "⇄", onClick: () => nav("reservar/PORTABILIDADE") },
-          ]}
         />
       </section>
 
@@ -380,30 +284,6 @@ function StatusPill({ on, neutro, children }: { on?: boolean; neutro?: boolean; 
     </span>
   );
 }
-
-function FieldWrap({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <span style={{ fontSize: 10, letterSpacing: "0.06em", fontWeight: 700, color: "var(--text-dim)", textTransform: "uppercase" }}>
-        {label}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  padding: "10px 12px",
-  borderRadius: 10,
-  border: "1px solid var(--border-strong)",
-  background: "var(--bg)",
-  color: "var(--text)",
-  fontSize: 14,
-  fontFamily: "inherit",
-  width: "100%",
-  boxSizing: "border-box",
-};
-const selectStyle: React.CSSProperties = { ...inputStyle, cursor: "pointer" };
 
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 function monthLabel(m: number): string { return MESES[m - 1] ?? "Janeiro"; }
