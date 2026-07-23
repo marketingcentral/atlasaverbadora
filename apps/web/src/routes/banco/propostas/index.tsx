@@ -33,14 +33,18 @@ const STATUS_OPTS: BancoPropostaStatus[] = [
   "recebida", "aprovada", "averbada", "recusada",
 ];
 
-type TabKey = "todas" | "aguardando" | "aprovadas" | "recusadas";
+type TabKey = "todas" | "aguardando" | "aprovadas" | "averbadas" | "recusadas";
 // Produto virou submenu do sidebar (padrao Cadastros) — nao aparece mais como
 // tab/dropdown na pagina. Vem do query param ?produto=emprestimo|cartao|portabilidade.
 
 function statusPertenceTab(s: BancoPropostaStatus, tab: TabKey): boolean {
   if (tab === "todas") return true;
   if (tab === "aguardando") return s === "recebida" || s === "em_analise" || s === "mais_info";
-  if (tab === "aprovadas") return s === "aprovada" || s === "aguardando_formalizacao" || s === "formalizada" || s === "averbada";
+  // Averbada saiu de "Aprovadas" (cliente 23/07/2026): averbacao confirmada e'
+  // operacao FECHADA, nao proposta aprovada esperando desfecho. Ganhou aba
+  // propria — sem isso, uma proposta averbada nao apareceria em aba nenhuma.
+  if (tab === "aprovadas") return s === "aprovada" || s === "aguardando_formalizacao" || s === "formalizada";
+  if (tab === "averbadas") return s === "averbada";
   return s === "recusada" || s === "expirada";
 }
 
@@ -95,7 +99,7 @@ export function BancoPropostas() {
 
   // Contadores por status dentro do produto ativo — header + tabs de status.
   const contadores = useMemo(() => {
-    let aguardando = 0, aprovadas = 0, recusadas = 0, aprovadasNoMes = 0;
+    let aguardando = 0, aprovadas = 0, averbadas = 0, recusadas = 0, aprovadasNoMes = 0;
     const agora = new Date();
     const mesAtual = agora.getMonth();
     const anoAtual = agora.getFullYear();
@@ -105,9 +109,10 @@ export function BancoPropostas() {
         aprovadas++;
         const d = new Date(p.criadaEm);
         if (d.getMonth() === mesAtual && d.getFullYear() === anoAtual) aprovadasNoMes++;
-      } else if (statusPertenceTab(p.status, "recusadas")) recusadas++;
+      } else if (statusPertenceTab(p.status, "averbadas")) averbadas++;
+      else if (statusPertenceTab(p.status, "recusadas")) recusadas++;
     }
-    return { total: doProduto.length, aguardando, aprovadas, aprovadasNoMes, recusadas };
+    return { total: doProduto.length, aguardando, aprovadas, averbadas, aprovadasNoMes, recusadas };
   }, [doProduto]);
 
   const filtradas = useMemo(() => {
@@ -144,6 +149,11 @@ export function BancoPropostas() {
             <span style={{ color: "var(--border-strong)" }}>·</span>
             <span><b style={{ color: "var(--emerald-500)" }}>{contadores.aprovadasNoMes}</b> aprovadas este mês</span>
             <span style={{ color: "var(--border-strong)" }}>·</span>
+            {/* Averbadas ganhou linha propria no header junto com a aba: sem
+                isso o contador "aprovadas este mes" caia pra 0 (elas saem do
+                grupo) e a operacao fechada sumia da leitura de topo. */}
+            <span><b style={{ color: "var(--accent)" }}>{contadores.averbadas}</b> averbadas</span>
+            <span style={{ color: "var(--border-strong)" }}>·</span>
             <span><b style={{ color: "var(--danger-500)" }}>{contadores.recusadas}</b> recusadas</span>
           </div>
         </div>
@@ -162,6 +172,7 @@ export function BancoPropostas() {
         <Tab active={tab === "todas"} onClick={() => setTab("todas")} label={`Todas (${contadores.total})`} tone="neutro" />
         <Tab active={tab === "aguardando"} onClick={() => setTab("aguardando")} label={`Aguardando (${contadores.aguardando})`} tone="gold" />
         <Tab active={tab === "aprovadas"} onClick={() => setTab("aprovadas")} label={`Aprovadas (${contadores.aprovadas})`} tone="emerald" />
+        <Tab active={tab === "averbadas"} onClick={() => setTab("averbadas")} label={`Averbadas (${contadores.averbadas})`} tone="neutro" />
         <Tab active={tab === "recusadas"} onClick={() => setTab("recusadas")} label={`Recusadas (${contadores.recusadas})`} tone="danger" />
       </div>
 
