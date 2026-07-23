@@ -4,7 +4,7 @@ import { authRequired, type JwtClaims } from "../../middleware/auth.js";
 import { Errors } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb, setContratoFalhaEmFolha, revertContratoDesligamento, clearContratosMemoria, comprometeMargem, situacaoContaComoAverbado, situacaoTerminal } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, aplicarAcao, persistContrato, getContrato, getContratoEventos, removeContratosByMatricula, setContratoSituacaoAtivo, criarContratoOuReserva, setContratoCcb, setContratoFalhaEmFolha, revertContratoDesligamento, clearContratosMemoria, comprometeMargem, situacaoContaComoAverbado, situacaoTerminal, nomeExibicaoBanco } from "../portal-banco/store.js";
 import { refreshConvenios, persistConvenio, nextConvenioId } from "../portal-banco/convenios-store.js";
 import { refreshComunicados, persistComunicados, removerComunicadoPersistido } from "../portal-banco/comunicados-store.js";
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
@@ -2803,7 +2803,6 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         ?? ct.ccbAnexadoEm
         ?? ct.criadoEmIso
         ?? parseLanc(ct.lancamento);
-      const banco = bancos.find((b) => b.id === ct.bancoId);
       return {
         adf: ct.adf,
         situacao: ct.situacao,
@@ -2829,7 +2828,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         folhaStatus: ct.folhaStatus,
         atualizadoEm,
         bancoId: ct.bancoId,
-        bancoNome: banco?.nome ?? `Banco ${ct.bancoId}`,
+        // Relabel "Telemedicina Atlas" quando produto e telemedicina — bate
+        // com prefeitura/ADF. Antes mostrava so o banco parceiro (ATLAS TECH).
+        bancoNome: nomeExibicaoBanco(ct, (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`),
         ccbKey: ct.ccbKey,
         ccbAnexadoEm: ct.ccbAnexadoEm,
       };

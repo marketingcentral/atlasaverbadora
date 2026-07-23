@@ -7,7 +7,7 @@ import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
 import { ensureTombamentoLoaded, refreshTombamento, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
-import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato, monthAdd, MESES } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato, monthAdd, MESES, nomeExibicaoBanco } from "../portal-banco/store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
@@ -193,7 +193,11 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
     .filter((ct) => isContratoReal(ct))
     .sort((a, b) => sortKeyCt(b).localeCompare(sortKeyCt(a)))
     .map((ct) => ({
-      id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
+      // Relabel "Telemedicina Atlas" pra contratos de telemedicina — bate com
+      // averbadora/prefeitura/ADF. Antes servidor via nome do banco parceiro
+      // ("ATLAS TECH") pra contrato Telemedicina — diferente do que a prefeitura
+      // exibia pro mesmo contrato.
+      id: ct.adf, banco: nomeExibicaoBanco(ct, bancoNome), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
       total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: proximaParcelaDe(ct),
       taxaAm: ct.taxaAm, valorFinanciado: round2(ct.valorFinanciado), pdfUrl: `/v1/portal/banco/contratos/${ct.adf}/comprovante.pdf`,
       // Rotula corretamente o card no /servidor/contratos: sem esses campos
@@ -1159,7 +1163,8 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       .filter((ct) => mats.has(ct.matricula))
       .map((ct) => ({
         id: ct.adf,
-        banco: bancoNome(ct.bancoId),
+        // Relabel Telemedicina (mesmo raciocinio de /me/matriculas L196).
+        banco: nomeExibicaoBanco(ct, bancoNome),
         valor: round2(ct.valorFinanciado),
         parcelas: ct.totalParcelas,
         parcela: round2(ct.valorParcela),

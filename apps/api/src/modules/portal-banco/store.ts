@@ -316,6 +316,29 @@ export function normalizeContrato(c: ContratoFull): ContratoFull {
  *   - "Quitado" (contrato ja fechado)
  */
 /**
+ * Detecta se o contrato e de telemedicina (produto do Atlas, nao do banco
+ * parceiro). Marca via tipoContrato="TELEMEDICINA" ou observacoes contendo
+ * "telemedicina". Todos os perfis devem exibir "Telemedicina Atlas" no lugar
+ * do nome do banco parceiro pra bater com o relabel da prefeitura/ADF.
+ */
+export function isContratoTelemedicina(ct: { tipoContrato?: string; observacoes?: string }): boolean {
+  if ((ct.tipoContrato ?? "").toUpperCase() === "TELEMEDICINA") return true;
+  return /telemedicina/i.test(ct.observacoes ?? "");
+}
+
+/** Nome de exibicao do banco: "Telemedicina Atlas" quando telemedicina,
+ *  senao delega ao resolver do banco parceiro. Usar em TODOS os endpoints
+ *  que retornam bancoNome pra manter consistencia entre averbadora/banco/
+ *  servidor/prefeitura. */
+export function nomeExibicaoBanco(
+  ct: { bancoId: number; tipoContrato?: string; observacoes?: string },
+  bancoNomeResolver: (id: number) => string,
+): string {
+  if (isContratoTelemedicina(ct)) return "Telemedicina Atlas";
+  return bancoNomeResolver(ct.bancoId);
+}
+
+/**
  * Contrato "conta como averbado" — usado em KPIs de volume/ticket medio/conversao.
  * Estados: Ativo, Averbado, Quitado (foi averbado um dia).
  * Nao inclui: Aprovado (banco aprovou mas nao virou ADF), Falha em folha,
