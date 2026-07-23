@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { DataTable, Pill, SelectField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { contratoStatusInfo } from "../../lib/contrato-status";
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const DT_BR = new Intl.DateTimeFormat("pt-BR", {
@@ -26,15 +27,8 @@ function produtoLabel(tipo: string): string {
   return "Empréstimo";
 }
 
-function situacaoVariant(s: string): "aceita" | "pendente" | "expirado" | "rejeitada" | "averbado" {
-  const t = s.toLowerCase();
-  if (t.includes("cancel") || t.includes("recus") || t.includes("reprov")) return "rejeitada";
-  if (t.includes("quitad")) return "averbado";
-  if (t.includes("ativo") || t.includes("averb") || t.includes("aprov")) return "aceita";
-  if (t.includes("cobran")) return "expirado";
-  if (t.includes("expir")) return "expirado";
-  return "pendente";
-}
+// Substituido pelo helper unificado contratoStatusInfo (lib/contrato-status)
+// pra manter rotulo/variant coerente com banco/servidor/prefeitura.
 
 function folhaVariant(s?: string): "aceita" | "pendente" | "expirado" | "rejeitada" {
   if (!s) return "pendente";
@@ -105,9 +99,10 @@ export function AdminContratos() {
     { key: "valorFinanciado", header: "Valor", align: "right", render: (r) => BRL.format(r.valorFinanciado) },
     { key: "parcelas", header: "Parcelas", align: "right", render: (r) => `${r.totalParcelas}× ${BRL.format(r.valorParcela)}` },
     { key: "taxa", header: "Taxa a.m.", align: "right", render: (r) => `${(r.taxaAm * 100).toFixed(2)}%` },
-    { key: "situacao", header: "Situação", render: (r) => (
-      <Pill variant={situacaoVariant(r.situacao)}>{r.situacao}</Pill>
-    ) },
+    { key: "situacao", header: "Situação", render: (r) => {
+      const info = contratoStatusInfo(r.situacao);
+      return <Pill variant={info.variant}>{info.label}</Pill>;
+    } },
     { key: "folha", header: "Folha", render: (r) => (
       <Pill variant={folhaVariant(r.folhaStatus)}>{r.folhaStatus ?? "—"}</Pill>
     ) },

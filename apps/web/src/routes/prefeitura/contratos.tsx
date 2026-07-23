@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { PrefeituraContrato } from "@atlas/sdk";
+import { contratoStatusInfo } from "../../lib/contrato-status";
 
 const fmtBRL = (n: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
@@ -16,7 +17,11 @@ export function PrefeituraContratos() {
     { key: "tipoContrato", header: "Tipo" },
     { key: "valorParcela", header: "Parcela", align: "right", render: (c) => fmtBRL(c.valorParcela) },
     { key: "totalParcelas", header: "Parcelas", align: "right" },
-    { key: "situacao", header: "Situação", render: (c) => <Pill variant={/ativo|averbado/i.test(c.situacao) ? "averbado" : /cancel/i.test(c.situacao) ? "expirado" : "pendente"}>{c.situacao}</Pill> },
+    { key: "situacao", header: "Situação", render: (c) => {
+      // Rotulo unificado com averbadora/banco/servidor (lib/contrato-status).
+      const info = contratoStatusInfo(c.situacao);
+      return <Pill variant={info.variant}>{info.label}</Pill>;
+    } },
   ];
 
   return (
