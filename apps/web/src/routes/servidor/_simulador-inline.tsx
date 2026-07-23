@@ -135,7 +135,14 @@ export function SimuladorInline({
       return best;
     }, null);
   }, [ofertasQ.data]);
-  const taxaAm = ofertaVencedora?.taxaAm ?? taxaAmDefault;
+  // Taxa REAL vem SEMPRE da oferta vencedora. Nao ha fallback pra taxaAmDefault:
+  // se nao tem oferta ativa carregada, taxa fica null e o simulador mostra "—"
+  // + bloqueia o botao Solicitar (via podeSolicitar/bancoVigente). Isso evita
+  // o "fantasma" de 1.79% aparecendo por 1 frame antes das ofertas carregarem,
+  // ou pior, ficar travado exibindo 1.79% falso quando o banco nao publicou
+  // tabela pra este convenio.
+  void taxaAmDefault;
+  const taxaAm: number | null = ofertaVencedora?.taxaAm ?? null;
   const bancoVigente = ofertaVencedora?.bancoNome ?? "";
   const PARCELAS = useMemo(() => {
     // Enquanto a query nao trouxe dado (loading), fallback pra opcoes basicas
@@ -259,7 +266,7 @@ export function SimuladorInline({
 
   const maxValor = useMemo(() => {
     if (margemEmprestimo <= 0 || parcelas <= 0) return 500;
-    const bruto = taxaAm <= 0
+    const bruto = !taxaAm || taxaAm <= 0
       ? margemEmprestimo * parcelas
       : (margemEmprestimo * (1 - Math.pow(1 + taxaAm, -parcelas))) / taxaAm;
     return Math.max(500, Math.floor(bruto / 100) * 100);
@@ -274,8 +281,10 @@ export function SimuladorInline({
   // que o CET aparecia MENOR que a taxa nominal (0.59% < 1.00%), impossivel:
   // era formula caseira `(total/liquido)^(1/parcelas)-1` que so calcula taxa
   // media incorreta. CET real >= taxaNominal porque inclui IOF+tarifas.
-  const { parcela, iof, totalPago: total } = useMemo(() => {
-    if (valor <= 0 || parcelas <= 0 || taxaAm <= 0) {
+  //
+  // Se taxaAm e null (nao ha oferta), zera tudo — a UI mostra "—" nas metricas.
+  const { parcela, iof, mensal: cetMensal, totalPago: total } = useMemo(() => {
+    if (!taxaAm || valor <= 0 || parcelas <= 0 || taxaAm <= 0) {
       return { parcela: 0, iof: 0, mensal: 0, totalPago: 0 };
     }
     try {
@@ -284,6 +293,7 @@ export function SimuladorInline({
       return { parcela: 0, iof: 0, mensal: 0, totalPago: 0 };
     }
   }, [valor, parcelas, taxaAm]);
+  const cet = cetMensal * 100;
 
   const excedeMargem = info ? parcela > margemEmprestimo : false;
   const locked = !!lockExpiresAt && lockExpiresAt > now;
@@ -300,7 +310,7 @@ export function SimuladorInline({
       valor: String(Math.round(valor)),
       parcelas: String(parcelas),
       parcela: parcela.toFixed(2),
-      taxaAm: (taxaAm * 100).toFixed(2),
+      taxaAm: ((taxaAm ?? 0) * 100).toFixed(2),
     });
     nav(`/servidor/termo?${params.toString()}`);
   }
@@ -427,14 +437,21 @@ export function SimuladorInline({
       </Card>
 
       <Card>
-        {/* CET mensal removido 23/07/2026 a pedido do cliente — mostrar duas
-            porcentagens (Taxa 1.79% + CET 2.00%) confundia o servidor.
-            Fica so a Taxa mensal como referencia de juros. */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16 }}>
-          <Metric label="Sua parcela" valor={fmtBRL(parcela)} accent danger={excedeMargem} />
-          <Metric label="Taxa mensal" valor={`${(taxaAm * 100).toFixed(2)}%`} />
-          <Metric label="Total a pagar" valor={fmtBRL(total)} />
+        {/* Taxa mensal: nunca mais mostra fallback 1.79% fake. Se nao ha
+            oferta ativa carregada (ofertasQ ainda em loading ou banco nao
+            publicou tabela pra este convenio), exibe "—". Mesma coisa pra
+            parcela / CET / total — o simulador so calcula com taxa real. */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <Metric label="Sua parcela" valor={taxaAm ? fmtBRL(parcela) : "—"} accent danger={excedeMargem} />
+          <Metric label="Taxa mensal" valor={taxaAm ? `${(taxaAm * 100).toFixed(2)}%` : "—"} />
+          <Metric label="CET mensal" valor={taxaAm ? `${cet.toFixed(2)}%` : "—"} />
+          <Metric label="Total a pagar" valor={taxaAm ? fmtBRL(total) : "—"} />
         </div>
+        {!taxaAm && !ofertasQ.isPending ? (
+          <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 8, background: "color-mix(in srgb, var(--gold-500) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--gold-500) 40%, transparent)", fontSize: 13, color: "var(--text-muted)" }}>
+            Nenhum banco publicou tabela de crédito pra este convênio ainda. Assim que uma tabela for cadastrada, a taxa aparece aqui.
+          </div>
+        ) : null}
 
         {excedeMargem ? (
           <div
