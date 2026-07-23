@@ -79,9 +79,11 @@ export function BancoUsuariosLista() {
     },
   });
 
-  const filtered = (data.data?.usuarios ?? []).filter((u) =>
-    search ? `${u.nome} ${u.email}`.toLowerCase().includes(search.toLowerCase()) : true,
-  );
+  // Mais recentes no topo (usuarios recem-cadastrados aparecem primeiro).
+  const filtered = (data.data?.usuarios ?? [])
+    .filter((u) => search ? `${u.nome} ${u.email}`.toLowerCase().includes(search.toLowerCase()) : true)
+    .slice()
+    .sort((a, b) => (b.criadoEm ?? "").localeCompare(a.criadoEm ?? ""));
 
   const columns: Column<BancoUsuario>[] = [
     { key: "ativo", header: "Situação", render: (u) => <Pill variant={u.ativo ? "averbado" : "expirado"}>{u.ativo ? "Ativo" : "Inativo"}</Pill> },

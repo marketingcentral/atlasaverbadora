@@ -76,7 +76,7 @@ export function AdminPerfis() {
 
       <DataTable
         columns={columns}
-        rows={data.data?.usuarios ?? []}
+        rows={(data.data?.usuarios ?? []).slice().sort((a, b) => (b.criadoEm ?? "").localeCompare(a.criadoEm ?? ""))}
         rowKey={(u) => String(u.id)}
         loading={data.isLoading}
         actions={(u) => (

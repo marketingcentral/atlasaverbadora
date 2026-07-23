@@ -83,7 +83,9 @@ export function PrefeituraPerfis() {
         actions={<Button onClick={() => setModalPerfil("new")}>+ Novo usuário</Button>}
       />
 
-      <DataTable columns={columns} rows={q.data?.perfis ?? []} rowKey={(p) => String(p.id)} loading={q.isLoading} emptyState="Nenhum usuário." />
+      {/* Mais recentes no topo — PrefeituraPerfil nao tem criadoEm, usa id DESC
+          (id auto-increment: id maior = cadastrado depois). */}
+      <DataTable columns={columns} rows={(q.data?.perfis ?? []).slice().sort((a, b) => b.id - a.id)} rowKey={(p) => String(p.id)} loading={q.isLoading} emptyState="Nenhum usuário." />
 
       {modalPerfil ? (
         <PerfilModal
