@@ -65,42 +65,18 @@ export interface ContratoFull extends ContratoMock {
   expiracaoIso?: string | null;
 }
 
-/** Deriva o bucket de margem que um contrato ocupa. Explicito no campo
- *  tipoMargem (fluxo novo) tem prioridade; senao infere pelo tipoContrato
- *  pra dados antigos. */
-export function deriveTipoMargem(ct: Pick<ContratoFull, "tipoMargem" | "tipoContrato">): "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS" {
-  if (ct.tipoMargem) return ct.tipoMargem;
-  return ct.tipoContrato === "ECONSIGNADO" ? "CARTAO_CONSIGNADO" : "EMPRESTIMO";
-}
-
-/** Deriva o rotulo do PRODUTO originalmente proposto, usando TODOS os sinais.
- *  Alinhado com a regra da /servidor/contratos:produtoContratoLabel: por default,
- *  `tipoContrato === "REFIN"` vira PORTABILIDADE (a UI do servidor sempre trata
- *  REFIN como portabilidade). REFIN "puro" (renegociacao no mesmo banco) so
- *  aparece se observacoes disser explicitamente "refinancia".
- *
- *  Ordem de precedencia:
- *    1. observacoes contem "telemedicina"                    -> TELEMEDICINA.
- *    2. observacoes contem "refinancia"                      -> REFIN (explicito).
- *    3. bancoOrigem OU observacoes com "portabilid"          -> PORTABILIDADE.
- *    4. tipoContrato === "REFIN"                             -> PORTABILIDADE.
- *       (fallback: contratos historicos que caiam em REFIN eram na verdade
- *       portabilidade — bug: /me/propostas com tipo="portabilidade" nao
- *       setava bancoOrigem, entao muitos contratos ficam so como REFIN puro.)
- *    5. tipoMargem === CARTAO_BENEFICIOS                     -> CARTAO_BENEFICIO.
- *    6. tipoContrato === ECONSIGNADO OU
- *       tipoMargem === CARTAO_CONSIGNADO                     -> CARTAO_CONSIGNADO.
- *    7. default                                              -> EMPRESTIMO. */
-export function deriveProdutoLabel(ct: Pick<ContratoFull, "tipoContrato" | "tipoMargem" | "observacoes" | "bancoOrigem">): string {
-  const obs = (ct.observacoes ?? "").toLowerCase();
-  if (/telemedic/.test(obs)) return "TELEMEDICINA";
-  if (/refinancia/.test(obs)) return "REFIN";
-  if (ct.bancoOrigem || /portabilid/.test(obs)) return "PORTABILIDADE";
-  if (ct.tipoContrato === "REFIN") return "PORTABILIDADE";
-  if (ct.tipoMargem === "CARTAO_BENEFICIOS") return "CARTAO_BENEFICIO";
-  if (ct.tipoContrato === "ECONSIGNADO" || ct.tipoMargem === "CARTAO_CONSIGNADO") return "CARTAO_CONSIGNADO";
-  return "EMPRESTIMO";
-}
+// Helpers puros de contrato movidos pra @atlas/domain (2026-07-23) pra ficarem
+// cobertos por unit test e reutilizaveis pela UI. Re-exportamos aqui pra nao
+// quebrar os imports internos (servidores/prefeitura/admin importam daqui).
+export {
+  deriveTipoMargem,
+  deriveProdutoLabel,
+  isContratoTelemedicina,
+  nomeExibicaoBanco,
+  situacaoContaComoAverbado,
+  situacaoTerminal,
+  comprometeMargem,
+} from "@atlas/domain";
 
 export interface ContratoEvento {
   id: number;
@@ -294,86 +270,6 @@ export function normalizeContrato(c: ContratoFull): ContratoFull {
     }
   }
   return c;
-}
-
-/**
- * ATENCAO — regra que ja foi ida-e-volta varias vezes com o cliente.
- * Estado atual (15/07/2026): margem COMPROMETE JA NA PROPOSTA (Aguardando).
- * Cliente pediu de novo: "quando faco os Simular ele nao esta dando baixa
- * no valor" — quer ver a margem descontar no dashboard imediatamente ao
- * clicar Simular. Se voltar a pedir "so quando o banco aceita", tirar
- * "aguard" da lista de estados que retornam true.
- *
- * Estados que COMPROMETEM (bloqueiam margem):
- *   - "Aguardando…" (proposta em analise — desconta ja pra o servidor ver)
- *   - "Aprovado" (banco aprovou, averbadora ainda nao fez ADF)
- *   - "Ativo" / "Averbado" (operacao vigente ja averbada)
- *   - "Suspenso" (contrato vigente que foi suspenso — margem segue reservada)
- *   - "Formalizado"
- *
- * Estados que NAO COMPROMETEM:
- *   - "Expirado", "Cancelado", "Recusado", "Reprovado", "Rejeitado", "Negado", "Estornado"
- *   - "Quitado" (contrato ja fechado)
- */
-/**
- * Detecta se o contrato e de telemedicina (produto do Atlas, nao do banco
- * parceiro). Marca via tipoContrato="TELEMEDICINA" ou observacoes contendo
- * "telemedicina". Todos os perfis devem exibir "Telemedicina Atlas" no lugar
- * do nome do banco parceiro pra bater com o relabel da prefeitura/ADF.
- */
-export function isContratoTelemedicina(ct: { tipoContrato?: string; observacoes?: string }): boolean {
-  if ((ct.tipoContrato ?? "").toUpperCase() === "TELEMEDICINA") return true;
-  return /telemedicina/i.test(ct.observacoes ?? "");
-}
-
-/** Nome de exibicao do banco: "Telemedicina Atlas" quando telemedicina,
- *  senao delega ao resolver do banco parceiro. Usar em TODOS os endpoints
- *  que retornam bancoNome pra manter consistencia entre averbadora/banco/
- *  servidor/prefeitura. */
-export function nomeExibicaoBanco(
-  ct: { bancoId: number; tipoContrato?: string; observacoes?: string },
-  bancoNomeResolver: (id: number) => string,
-): string {
-  if (isContratoTelemedicina(ct)) return "Telemedicina Atlas";
-  return bancoNomeResolver(ct.bancoId);
-}
-
-/**
- * Contrato "conta como averbado" — usado em KPIs de volume/ticket medio/conversao.
- * Estados: Ativo, Averbado, Quitado (foi averbado um dia).
- * Nao inclui: Aprovado (banco aprovou mas nao virou ADF), Falha em folha,
- * Em cobranca direta (ja saiu da folha).
- */
-export function situacaoContaComoAverbado(situacao: string): boolean {
-  const s = situacao.toLowerCase();
-  return s.includes("ativo") || s.includes("averb") || s.includes("quitad");
-}
-
-/**
- * Contrato terminal (nao vai mais mudar de estado por fluxo natural).
- * Usado pra excluir do denominador de "conversao" e do somatorio de "valor
- * financiado" nos KPIs — evita cancelado inflar total.
- */
-export function situacaoTerminal(situacao: string): boolean {
-  const s = situacao.toLowerCase();
-  if (s === "expirado" || s === "cancelado" || s === "quitado") return true;
-  if (s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) return true;
-  return false;
-}
-
-export function comprometeMargem(situacao: string): boolean {
-  const s = situacao.toLowerCase();
-  if (s === "expirado" || s === "cancelado" || s === "quitado") return false;
-  if (s.includes("recus") || s.includes("reprov") || s.includes("rejeit") || s.includes("negad") || s.includes("estorn")) return false;
-  // Falha em folha (averbadora reportou falha) libera margem imediatamente —
-  // cliente pediu (17/07/2026): servidor nao fica preso enquanto banco decide
-  // como tratar a falha. Se banco reenviar e der certo, situacao volta a
-  // comprometer margem automaticamente.
-  if (s.includes("falha em folha")) return false;
-  // "Em cobranca direta" (pos-desligamento F6): banco cobra fora da folha,
-  // margem tambem nao mais comprometida na prefeitura.
-  if (s.includes("cobran")) return false;
-  return true; // aguard / aprov / ativo / averb / suspens / formaliz -> bloqueia
 }
 
 export function listContratos(filters: { convenioId?: string; matricula?: string; situacao?: string[] } = {}): ContratoFull[] {

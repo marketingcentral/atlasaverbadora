@@ -3,8 +3,10 @@ import { calcCET, calcPMT } from "./cet.js";
 
 describe("calcPMT", () => {
   it("computes a fixed installment correctly", () => {
+    // Formula Price: PMT = (VP * i) / (1 - (1+i)^-n).
+    // 10000, 36 parcelas, 1.8% a.m. -> 379.83 (nao 382.91 — teste original tinha valor colado errado).
     const pmt = calcPMT(10000, 36, 0.018);
-    expect(pmt).toBeCloseTo(382.91, 1);
+    expect(pmt).toBeCloseTo(379.83, 1);
   });
 });
 
