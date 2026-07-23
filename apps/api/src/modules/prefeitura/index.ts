@@ -342,6 +342,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       .filter((s) => !q || s.nome.toLowerCase().includes(q) || s.cpfMasked.includes(q) || s.matricula.includes(q))
       .filter((s) => !vinculo || s.vinculo === vinculo)
       .filter((s) => !situacao || s.situacaoFuncional === situacao)
+      // Ordem de CHEGADA (mais recente no topo). Ordena no backend por
+      // criadoEmIso — a ordem do PG e' arbitraria (sem ORDER BY), entao o
+      // reverse antigo do frontend invertia lixo. Rows sem carimbo (base
+      // antiga) usam "" e caem pro fim. Cliente pediu 23/07/2026.
+      .sort((a, b) => (b.criadoEmIso ?? "").localeCompare(a.criadoEmIso ?? ""))
       .map((s) => {
         const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
         // Margem de EMPRESTIMO desconta so o bucket EMPRESTIMO (cartao/beneficio
@@ -446,7 +451,15 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (r.email) rec.email = r.email;
       if (r.telefone) rec.telefone = r.telefone;
       if (r.endereco) rec.endereco = r.endereco;
-      if (existing) { Object.assign(existing, rec); out.updated++; toPersist.push(existing); } else { SERVIDORES_BUSCA_MOCK.push(rec); out.inserted++; toPersist.push(rec); }
+      if (existing) {
+        // Update: NAO mexe no criadoEmIso — re-importar um servidor existente
+        // nao pode jogar ele pro topo da lista (a ordem e' por CHEGADA).
+        Object.assign(existing, rec); out.updated++; toPersist.push(existing);
+      } else {
+        // Insert: carimba a chegada pra ordenacao DESC na tabela da prefeitura.
+        rec.criadoEmIso = new Date().toISOString();
+        SERVIDORES_BUSCA_MOCK.push(rec); out.inserted++; toPersist.push(rec);
+      }
       out.rows.push({ matricula: rec.matricula, nome: rec.nome, cpfMasked: rec.cpfMasked });
     });
     // Write-through NÃO-silencioso: persiste no Postgres e COLETA as falhas por

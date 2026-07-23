@@ -48,12 +48,11 @@ export function PrefeituraServidores() {
   const [editing, setEditing] = useState<PrefeituraServidor | null>(null);
   const q = useQuery({ queryKey: ["prefeitura", "servidores"], queryFn: () => atlas.prefeitura.servidores() });
 
-  // Mais recentes primeiro (reverse do array retornado pelo backend, que vem
-  // em ordem de insercao/import). Cliente pediu 23/07/2026: "ultima cadastro
-  // se torna primeiro na lista mostrando os mais recentes".
+  // Ordem "mais recente no topo" agora vem do BACKEND (ordena por criadoEmIso
+  // DESC). O reverse antigo era frag il — invertia a ordem arbitraria do PG
+  // (sem ORDER BY), entao seeds antigos apareciam no topo. Aqui so filtra a
+  // busca, preservando a ordem que o servidor mandou.
   const filtered = (q.data?.servidores ?? [])
-    .slice()
-    .reverse()
     .filter((s) => matchServidor(s, search));
 
   const columns: Column<PrefeituraServidor>[] = [

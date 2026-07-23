@@ -81,6 +81,11 @@ export interface ServidorBuscaMock {
    *  Chave = key do campo custom (`custom_<slug>`), valor = string bruta do CSV.
    *  Ver `apps/api/src/modules/admin/servidor-campos.ts`. */
   camposCustom?: Record<string, string>;
+  /** ISO 8601 — quando este vinculo foi cadastrado na base (setado no INSERT do
+   *  import, nunca no update). Usado pra ordenar a tabela da prefeitura por
+   *  chegada (mais recente no topo). Ausente em rows antigas -> vao pro fim.
+   *  Nao confundir com dataAdmissao (data de contratacao no orgao). */
+  criadoEmIso?: string;
 }
 
 /**
