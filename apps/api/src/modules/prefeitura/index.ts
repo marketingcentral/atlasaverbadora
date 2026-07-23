@@ -333,7 +333,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // CONVENIOS_MOCK/contratos/tombamento vazios e a "margem disp." sai errada
     // (comprometido nao considera contratos Atlas do convenio nem os externos).
     // Bug 21/07/2026: margem aparecia R$0,00 (ou o teto cheio) por falta de sync.
-    await Promise.all([refreshContratos(c.env), refreshConvenios(c.env), refreshTombamento(c.env)]);
+    // refreshServidores tambem: recarrega a base do PG e (re)anexa _dbId em
+    // cada servidor — necessario pro fallback de ordenacao por id serial.
+    await Promise.all([refreshServidores(c.env), refreshContratos(c.env), refreshConvenios(c.env), refreshTombamento(c.env)]);
     const q = c.req.query("q")?.toLowerCase();
     const vinculo = c.req.query("vinculo");
     const situacao = c.req.query("situacao");
@@ -342,11 +344,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       .filter((s) => !q || s.nome.toLowerCase().includes(q) || s.cpfMasked.includes(q) || s.matricula.includes(q))
       .filter((s) => !vinculo || s.vinculo === vinculo)
       .filter((s) => !situacao || s.situacaoFuncional === situacao)
-      // Ordem de CHEGADA (mais recente no topo). Ordena no backend por
-      // criadoEmIso — a ordem do PG e' arbitraria (sem ORDER BY), entao o
-      // reverse antigo do frontend invertia lixo. Rows sem carimbo (base
-      // antiga) usam "" e caem pro fim. Cliente pediu 23/07/2026.
-      .sort((a, b) => (b.criadoEmIso ?? "").localeCompare(a.criadoEmIso ?? ""))
+      // Ordem de CHEGADA, mais recente no topo. Dois criterios:
+      //  1) criadoEmIso (carimbo do import) — precisao pros imports novos.
+      //  2) _dbId (id serial do PG) — fallback pras rows da base antiga sem
+      //     carimbo, refletindo a ordem REAL de insercao sem reimport.
+      // Rows carimbadas sempre acima das nao-carimbadas (import recente >
+      // base historica). Cliente pediu 23/07/2026.
+      .sort((a, b) => {
+        const ka = a.criadoEmIso ?? "";
+        const kb = b.criadoEmIso ?? "";
+        if (ka !== kb) return kb.localeCompare(ka);
+        return (b._dbId ?? 0) - (a._dbId ?? 0);
+      })
       .map((s) => {
         const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
         // Margem de EMPRESTIMO desconta so o bucket EMPRESTIMO (cartao/beneficio

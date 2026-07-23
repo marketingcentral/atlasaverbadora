@@ -81,11 +81,16 @@ export interface ServidorBuscaMock {
    *  Chave = key do campo custom (`custom_<slug>`), valor = string bruta do CSV.
    *  Ver `apps/api/src/modules/admin/servidor-campos.ts`. */
   camposCustom?: Record<string, string>;
-  /** ISO 8601 — quando este vinculo foi cadastrado na base (setado no INSERT do
-   *  import, nunca no update). Usado pra ordenar a tabela da prefeitura por
-   *  chegada (mais recente no topo). Ausente em rows antigas -> vao pro fim.
+  /** ISO 8601 — quando este vinculo entrou/foi atualizado por um import da
+   *  prefeitura. Usado como criterio PRIMARIO de ordenacao (mais recente no
+   *  topo). Ausente em rows anteriores ao recurso -> caem no fallback _dbId.
    *  Nao confundir com dataAdmissao (data de contratacao no orgao). */
   criadoEmIso?: string;
+  /** Runtime-only: id serial do Postgres, anexado por loadServidores. Reflete a
+   *  ordem REAL de insercao — usado como fallback de ordenacao pras rows sem
+   *  criadoEmIso (base antiga), pra elas seguirem a ordem em que foram
+   *  cadastradas sem precisar reimportar. Nao e' fonte de verdade persistida. */
+  _dbId?: number;
 }
 
 /**

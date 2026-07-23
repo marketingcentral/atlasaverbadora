@@ -245,8 +245,18 @@ function mapSituacao(s: string): string {
 const prefeituraIdOf = (s: ServidorBuscaMock) => prefeituraIdDe(s);
 
 export async function loadServidores(env: Env): Promise<ServidorBuscaMock[]> {
-  const rows = await getDb(env).select({ data: servidoresTable.data }).from(servidoresTable);
-  return rows.map((r) => r.data as unknown as ServidorBuscaMock).filter((s) => s && s.cpf);
+  // Traz tambem o id serial e anexa como _dbId: reflete a ordem REAL de
+  // insercao, usada como fallback de ordenacao pras rows sem criadoEmIso
+  // (base antiga) — assim elas seguem a ordem em que foram cadastradas sem
+  // precisar reimportar. Cliente pediu 23/07/2026.
+  const rows = await getDb(env).select({ id: servidoresTable.id, data: servidoresTable.data }).from(servidoresTable);
+  return rows
+    .map((r) => {
+      const s = r.data as unknown as ServidorBuscaMock;
+      if (s) s._dbId = r.id;
+      return s;
+    })
+    .filter((s) => s && s.cpf);
 }
 
 /** Normaliza data pra ISO YYYY-MM-DD ou null. Aceita:
@@ -269,9 +279,12 @@ export async function upsertServidor(env: Env, s: ServidorBuscaMock): Promise<vo
   // definidos no primeiro-acesso não são apagados por re-import de CSV
   // que venha sem essas colunas.
   const nascimento = toIsoDateOrNull(s.dataNascimento);
+  // _dbId e' runtime-only (id serial anexado no load) — nunca vai pro jsonb,
+  // senao gravariamos um id defasado que confunde a ordenacao no proximo load.
+  const { _dbId: _omit, ...persistivel } = s;
   await getDb(env).execute(sql`
     INSERT INTO servidores (prefeitura_id, nome, cpf, matricula, vinculo, situacao_funcional, status, data_nascimento, salario_base, data)
-    VALUES (${prefeituraIdOf(s)}, ${s.nome}, ${s.cpf}, ${s.matricula}, ${mapVinculo(s.vinculo)}::vinculo, ${mapSituacao(s.situacaoFuncional)}::situacao_funcional, 'ativo'::servidor_status, ${nascimento}, ${String(s.salarioLiquido)}, ${s as unknown as Record<string, unknown>}::jsonb)
+    VALUES (${prefeituraIdOf(s)}, ${s.nome}, ${s.cpf}, ${s.matricula}, ${mapVinculo(s.vinculo)}::vinculo, ${mapSituacao(s.situacaoFuncional)}::situacao_funcional, 'ativo'::servidor_status, ${nascimento}, ${String(s.salarioLiquido)}, ${persistivel as unknown as Record<string, unknown>}::jsonb)
     ON CONFLICT (cpf, matricula) DO UPDATE SET prefeitura_id = EXCLUDED.prefeitura_id, nome = EXCLUDED.nome, vinculo = EXCLUDED.vinculo, situacao_funcional = EXCLUDED.situacao_funcional, status = EXCLUDED.status, data_nascimento = EXCLUDED.data_nascimento, salario_base = EXCLUDED.salario_base, data = COALESCE(servidores.data, '{}'::jsonb) || EXCLUDED.data`);
 }
 
