@@ -70,6 +70,25 @@ export async function persistIdUnicoConfig(env: Env, cfg: IdUnicoConfig): Promis
   } catch { /* fail-safe: mantem in-memory */ }
 }
 
+// Set de prefeituraIds cujas configs foram mutadas por issueIdUnico e ainda
+// nao foram persistidas em PG. issueIdUnico e sync (chamado profundo em
+// ensureAdfs), entao nao pode fazer await; marca dirty aqui e o caller do
+// batch persiste depois via persistDirtyIdUnicoConfigs(env).
+const _dirtyConfigs = new Set<number>();
+
+/** Persiste todas as configs modificadas desde a ultima chamada. Chamar apos
+ *  qualquer batch que use issueIdUnico — sem isso, proximoSeq fica so em
+ *  memoria e proximo isolate materializa ADF com ID que ja foi usado. */
+export async function persistDirtyIdUnicoConfigs(env: Env): Promise<void> {
+  if (_dirtyConfigs.size === 0) return;
+  const ids = Array.from(_dirtyConfigs);
+  _dirtyConfigs.clear();
+  await Promise.all(ids.map((pid) => {
+    const cfg = getIdUnicoConfig(pid);
+    return cfg ? persistIdUnicoConfig(env, cfg) : Promise.resolve();
+  }));
+}
+
 /**
  * Deriva um prefixo padrao a partir do nome da prefeitura + UF. Ex: "MUNICIPIO
  * DE CAPISTRANO" / CE -> "CAP". Se sobrar <3 chars, completa com a UF. So
@@ -147,6 +166,11 @@ export function issueIdUnico(prefeituraId: number, now: Date = new Date()): stri
   const id = renderId(c, c.proximoSeq, now);
   c.proximoSeq += 1;
   c.atualizadoEm = now.toISOString();
+  // Marca dirty pro caller do batch persistir em PG (persistDirtyIdUnicoConfigs).
+  // Antes, proximoSeq so incrementava em memoria — o proximo isolate lia do PG
+  // o valor stale e emitia ID ja usado (colisao). Cliente reportou 22/07/2026:
+  // ADFs CAP-000001 e CAP-000002 em uso mas preview mostrava proximo=CAP-000001.
+  _dirtyConfigs.add(prefeituraId);
   return id;
 }
 

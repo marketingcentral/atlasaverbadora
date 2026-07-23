@@ -16,7 +16,7 @@ import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
 import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
-import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "./id-unico.js";
+import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig, persistDirtyIdUnicoConfigs } from "./id-unico.js";
 import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, refreshConvenioConfigs, persistConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria, refreshTombamento, marcarTombamentoSubstituido, persistLotePublic } from "./tombamento.js";
@@ -2639,6 +2639,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const prefIds = prefeituras.map((p) => p.id);
     const compsUnicas = Array.from(new Set(folhas.map((f) => f.competencia)));
     for (const comp of compsUnicas) ensureAdfsGlobal(comp, bancoNomeById, now, prefIds);
+    // Persiste sequenciais de ID unico mutados pelo ensureAdfsGlobal — sem
+    // isso, outros isolates leem proximoSeq stale e colidem ADFs.
+    await persistDirtyIdUnicoConfigs(c.env);
     // Enriquece cada folha com contagem/soma de ADFs (aplicadas + recebidas)
     // por prefeitura+competencia. Mais recente no topo.
     const enriched = folhas.map((f) => {
@@ -2718,6 +2721,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // achava 0 ADFs pra incrementar (parcelasIncrementadas ficava 0).
     const bancoNomeById = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
     ensureAdfsGlobal(f.competencia, bancoNomeById, new Date().toISOString(), [f.prefeituraId]);
+    await persistDirtyIdUnicoConfigs(c.env);
     f.status = "consolidada";
     await persistFolha(c.env, f);
 
@@ -3582,6 +3586,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ prefeituraId: z.number().int() }).parse(await c.req.json());
     if (!getIdUnicoConfig(body.prefeituraId)) throw Errors.notFound("id_unico_config");
     const id = issueIdUnico(body.prefeituraId);
+    await persistDirtyIdUnicoConfigs(c.env);
     appendAudit(auditCtx(c), { categoria: "id_unico", acao: "id_emitido", idUnico: id, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `ID Unico ${id} emitido manualmente para prefeitura=${body.prefeituraId}.` });
     return c.json({ idUnico: id });
   })
@@ -4239,6 +4244,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const compAtual = folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", "");
     // Materializa para TODAS as prefeituras da competencia atual.
     ensureAdfsGlobal(compAtual, (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, now, prefeituras.map((p) => p.id));
+    await persistDirtyIdUnicoConfigs(c.env);
     return c.json({ competencias: listAdfCompetenciasGlobal(), competenciaAtual: compAtual });
   })
   .get("/v1/admin/adf", async (c) => {
@@ -4255,6 +4261,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const prefFiltro = url.searchParams.get("prefeitura_id");
     const compAtual = competencia ?? (folhas.sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", ""));
     ensureAdfsGlobal(compAtual, (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, now, prefeituras.map((p) => p.id));
+    await persistDirtyIdUnicoConfigs(c.env);
     // Reconcilia contratos historicos: ADFs marcadas 'falha' pelo fluxo antigo
     // (antes do F1-falha) nao mexiam no contrato — ficavam presos em 'Aprovado'.
     await reconcileContratosFalhaHistorica(c.env);
@@ -4300,6 +4307,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       ensureAdfsGlobal(new Date().toISOString().slice(0, 7).replace("-", ""),
         (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, nowIso, [pref.id]);
     }
+    await persistDirtyIdUnicoConfigs(c.env);
     const adfs = setAdfStatusGlobal(body.ids, "aplicada", undefined, new Date().toISOString());
     // Promove pra "Ativo" contratos que estavam em "Aprovado" — o banco so
     // aprovou; e' a averbadora que efetiva a averbacao ao aplicar em folha.
@@ -4392,6 +4400,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       ensureAdfsGlobal(new Date().toISOString().slice(0, 7).replace("-", ""),
         (id) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`, nowIso, [pref.id]);
     }
+    await persistDirtyIdUnicoConfigs(c.env);
     const adfs = setAdfStatusGlobal(body.ids, "falha", body.motivo, new Date().toISOString());
     // Muda situacao do contrato pra 'Falha em folha' (libera margem + gera pendencia
     // pro banco tratar via /portal/banco/contratos/:adf/tratar-falha).

@@ -19,7 +19,7 @@ import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { appendAudit, auditCtx } from "../admin/auditoria.js";
 import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs, refreshConvenioConfigs } from "../admin/convenios-config.js";
-import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "../admin/id-unico.js";
+import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig, persistDirtyIdUnicoConfigs } from "../admin/id-unico.js";
 import { importTombamento, listLotes, listLinhas, refreshTombamento, listExternalLoans, ensureTombamentoLoaded } from "../admin/tombamento.js";
 import {
   applyMovimentacao, listMovimentacoes, countMovimentacoes, type MovimentacaoTipo,
@@ -541,6 +541,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         valorAplicado: Math.round(valorAplicado * 100) / 100,
       };
     });
+    await persistDirtyIdUnicoConfigs(c.env);
     return c.json({ folhas: rows });
   })
   .post("/v1/prefeitura/folhas", async (c) => {
@@ -934,6 +935,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
     const competenciaAtual = folhas.filter((f) => f.prefeituraId === id).sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", "");
     ensureAdfs(id, competenciaAtual, bancoNome, new Date().toISOString());
+    await persistDirtyIdUnicoConfigs(c.env);
     return c.json({ competencias: listAdfCompetencias(id), competenciaAtual });
   })
   .get("/v1/prefeitura/adf", async (c) => {
@@ -944,6 +946,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // mesmo se a tela pedir /adf direto, sem passar por /adf/competencias antes.
     const comp = competencia ?? (folhas.filter((f) => f.prefeituraId === id).sort((a, b) => b.competencia.localeCompare(a.competencia))[0]?.competencia ?? new Date().toISOString().slice(0, 7).replace("-", ""));
     ensureAdfs(id, comp, bancoNome, new Date().toISOString());
+    await persistDirtyIdUnicoConfigs(c.env);
     return c.json({ adfs: listAdfs(id, competencia) });
   })
   .get("/v1/prefeitura/adf/:competencia/download.csv", async (c) => {
@@ -951,6 +954,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const competencia = c.req.param("competencia");
     await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
     ensureAdfs(id, competencia, bancoNome, new Date().toISOString());
+    await persistDirtyIdUnicoConfigs(c.env);
     const adfs = listAdfs(id, competencia);
     const csv = buildCsv(
       ["adf", "idUnico", "cpf", "matricula", "nome", "banco", "valorParcela", "totalParcelas", "status"],
@@ -963,6 +967,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const competencia = c.req.param("competencia");
     await Promise.all([refreshContratos(c.env), refreshConvenios(c.env)]);
     ensureAdfs(id, competencia, bancoNome, new Date().toISOString());
+    await persistDirtyIdUnicoConfigs(c.env);
     const adfs = listAdfs(id, competencia);
     const total = adfs.reduce((s, a) => s + a.valorParcela, 0);
     const lines = [
