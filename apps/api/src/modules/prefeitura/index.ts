@@ -509,6 +509,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       email: z.string().email().optional().or(z.literal("")),
       telefone: z.string().optional(),
       codigoIbge: z.number().int().optional(),
+      // Campos novos (24/07/2026): prefeitura tambem edita dados funcionais.
+      salarioLiquido: z.number().nonnegative().optional(),
+      situacaoFuncional: z.string().optional(),
+      idConvenio: z.string().optional(),
+      dataAdmissao: z.string().optional(),
+      dataNascimento: z.string().optional(),
     }).parse(await c.req.json());
     const changed: string[] = [];
     if (body.nome !== undefined) { s.nome = body.nome; changed.push("nome"); }
@@ -528,6 +534,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (body.email !== undefined) { s.email = body.email || undefined; changed.push("email"); }
     if (body.telefone !== undefined) { s.telefone = body.telefone || undefined; changed.push("telefone"); }
     if (body.codigoIbge !== undefined) { s.codigoIbge = body.codigoIbge; changed.push("codigoIbge"); }
+    if (body.salarioLiquido !== undefined) { s.salarioLiquido = body.salarioLiquido; changed.push("salarioLiquido"); }
+    if (body.situacaoFuncional !== undefined) { s.situacaoFuncional = body.situacaoFuncional; changed.push("situacaoFuncional"); }
+    if (body.idConvenio !== undefined) { s.idConvenio = body.idConvenio; changed.push("idConvenio"); }
+    if (body.dataAdmissao !== undefined) { s.dataAdmissao = body.dataAdmissao; changed.push("dataAdmissao"); }
+    if (body.dataNascimento !== undefined) { s.dataNascimento = body.dataNascimento; changed.push("dataNascimento"); }
     if (body.matriculaNova !== undefined && body.matriculaNova !== s.matricula) {
       const nova = normalizeMatricula(body.matriculaNova);
       if (!MATRICULA_REGEX.test(nova)) {

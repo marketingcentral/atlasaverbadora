@@ -887,6 +887,11 @@ export interface AdminServidorUpdate {
   status?: "ativo" | "bloqueado" | "arquivado";
   email?: string;
   telefone?: string;
+  cargo?: string;
+  endereco?: string;
+  codigoIbge?: number;
+  dataAdmissao?: string;
+  dataNascimento?: string;
   // A averbadora NAO pode editar a senha do servidor. A senha e' alterada
   // exclusivamente pelo proprio servidor via /v1/servidores/me/senha
   // (com verificacao por email). Campo removido do tipo — se algum caller
@@ -2083,7 +2088,7 @@ export class AtlasClient {
     servidores: (query?: { q?: string; vinculo?: string; situacao?: string }) =>
       this.request<{ servidores: PrefeituraServidor[]; total: number }>("/v1/prefeitura/servidores", { query: query ?? {} }),
     importarServidores: (csv: string) => this.request<CsvImportOutcome>("/v1/prefeitura/servidores/importar", { method: "POST", body: { csv } }),
-    editarServidor: (matricula: string, patch: Partial<{ nome: string; cpf: string; cargo: string; endereco: string; matriculaNova: string; vinculo: string; email: string; telefone: string; codigoIbge: number }>) =>
+    editarServidor: (matricula: string, patch: Partial<{ nome: string; cpf: string; cargo: string; endereco: string; matriculaNova: string; vinculo: string; email: string; telefone: string; codigoIbge: number; salarioLiquido: number; situacaoFuncional: string; idConvenio: string; dataAdmissao: string; dataNascimento: string }>) =>
       this.request<{ servidor: PrefeituraServidor }>(`/v1/prefeitura/servidores/${matricula}`, { method: "PATCH", body: patch }),
     servidoresCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/servidores/csv-template`,
 

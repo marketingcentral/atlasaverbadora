@@ -14,6 +14,7 @@ const modal: React.CSSProperties = { background: "var(--surface-solid)", borderR
 const CAMPOS_EDITAVEIS = new Set([
   "nome", "cpf", "matricula", "vinculo", "situacaoFuncional", "salarioLiquido",
   "idConvenio", "cargo", "endereco", "email", "telefone", "codigoIbge",
+  "dataAdmissao", "dataNascimento",
 ]);
 
 const VINCULO_OPTS = [
@@ -76,16 +77,23 @@ export function EditModal({ servidor, prefeituraId, onClose, onSaved }: {
       if (String(valores.cpf ?? "") && cpfDigits.length !== 11) {
         throw new Error("CPF deve ter 11 dígitos.");
       }
-      const body: AdminServidorUpdate = {
-        nome: String(valores.nome ?? ""),
-        vinculo: (VINCULO_OPTS.some((v) => v.value === valores.vinculo) ? valores.vinculo : "ESTATUTARIO") as AdminServidorUpdate["vinculo"],
-        situacaoFuncional: String(valores.situacaoFuncional ?? ""),
-        salarioLiquido: Number(valores.salarioLiquido ?? 0),
-        idConvenio: String(valores.idConvenio ?? ""),
-        status: servidor.status,
-        email: String(valores.email ?? ""),
-        telefone: String(valores.telefone ?? ""),
-      };
+      // So envia campos que estao visiveis na config atual — evita sobrescrever
+      // com vazio um campo que a prefeitura escondeu propositalmente. Mesmo
+      // padrao do modal da prefeitura.
+      const visivel = (k: string) => camposCfg.some((c) => c.key === k);
+      const body: AdminServidorUpdate = { status: servidor.status };
+      if (visivel("nome")) body.nome = String(valores.nome ?? "");
+      if (visivel("vinculo")) body.vinculo = (VINCULO_OPTS.some((v) => v.value === valores.vinculo) ? valores.vinculo : "ESTATUTARIO") as AdminServidorUpdate["vinculo"];
+      if (visivel("situacaoFuncional")) body.situacaoFuncional = String(valores.situacaoFuncional ?? "");
+      if (visivel("salarioLiquido")) body.salarioLiquido = Number(valores.salarioLiquido ?? 0);
+      if (visivel("idConvenio")) body.idConvenio = String(valores.idConvenio ?? "");
+      if (visivel("email")) body.email = String(valores.email ?? "");
+      if (visivel("telefone")) body.telefone = String(valores.telefone ?? "");
+      if (visivel("cargo")) body.cargo = String(valores.cargo ?? "");
+      if (visivel("endereco")) body.endereco = String(valores.endereco ?? "");
+      if (visivel("dataAdmissao")) body.dataAdmissao = String(valores.dataAdmissao ?? "");
+      if (visivel("dataNascimento")) body.dataNascimento = String(valores.dataNascimento ?? "");
+      if (visivel("codigoIbge") && valores.codigoIbge != null && valores.codigoIbge !== "") body.codigoIbge = Number(valores.codigoIbge);
       if (cpfMudou && cpfDigits.length === 11) body.cpf = cpfDigits;
       return atlas.admin.updateServidor(servidor.matricula, body);
     },

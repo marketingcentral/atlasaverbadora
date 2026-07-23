@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, CpfField, CsvImportPanel, CurrencyField, DataTable, FilterBar, FormGrid, NumberField, Pill, SelectField, TelefoneField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -109,14 +109,30 @@ export function PrefeituraServidores() {
  */
 function MargemCell({ salario, margemTotal, margemDisponivel }: { salario: number; margemTotal: number; margemDisponivel: number }) {
   const [aberto, setAberto] = useState(false);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const [placeAcima, setPlaceAcima] = useState(false);
   const comprometido = Math.max(0, margemTotal - margemDisponivel);
   const pctUso = margemTotal > 0 ? Math.round((comprometido / margemTotal) * 100) : 0;
+  // Se estamos na parte de baixo do viewport (ultimas linhas), abre o popover
+  // PRA CIMA — evita ficar cortado pela borda inferior/scrollbar. Cliente
+  // reportou 24/07/2026 que o "i" da ultima linha nao aparecia — era o
+  // scrollbar horizontal cobrindo o popover; agora popover sobe.
+  const abrir = () => {
+    const el = wrapRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      const espacoBaixo = window.innerHeight - rect.bottom;
+      setPlaceAcima(espacoBaixo < 220); // popover ~200px de altura
+    }
+    setAberto(true);
+  };
   return (
     <span
-      style={{ position: "relative", cursor: "help", display: "inline-flex", alignItems: "center", gap: 4 }}
-      onMouseEnter={() => setAberto(true)}
+      ref={wrapRef}
+      style={{ position: "relative", cursor: "help", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0, whiteSpace: "nowrap" }}
+      onMouseEnter={abrir}
       onMouseLeave={() => setAberto(false)}
-      onFocus={() => setAberto(true)}
+      onFocus={abrir}
       onBlur={() => setAberto(false)}
       tabIndex={0}
     >
@@ -124,12 +140,15 @@ function MargemCell({ salario, margemTotal, margemDisponivel }: { salario: numbe
       <span aria-label="Como esta margem é calculada" style={{
         fontSize: 10, color: "var(--text-dim)", border: "1px solid var(--border-strong)", borderRadius: "50%",
         width: 14, height: 14, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
+        flexShrink: 0,
       }}>i</span>
       {aberto ? (
         <span
           role="tooltip"
           style={{
-            position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 50,
+            position: "absolute", right: 0,
+            ...(placeAcima ? { bottom: "calc(100% + 6px)" } : { top: "calc(100% + 6px)" }),
+            zIndex: 50,
             background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 8,
             padding: "10px 12px", boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
             minWidth: 260, fontSize: 12, color: "var(--text)", textAlign: "left",
@@ -172,9 +191,13 @@ const CAMPOS_FALLBACK: ServidorCampoConfig[] = [
 ];
 
 /** Sistema fields que o backend /editar-servidor aceita hoje. Campos fora
- *  desta lista (customs, dataAdmissao etc) sao exibidos read-only ate o
- *  backend expor um caminho pra persistir. */
-const CAMPOS_EDITAVEIS = new Set(["nome", "cpf", "matricula", "cargo", "endereco", "vinculo", "email", "telefone"]);
+ *  desta lista (customs) sao exibidos read-only ate o backend expor um
+ *  caminho pra persistir. */
+const CAMPOS_EDITAVEIS = new Set([
+  "nome", "cpf", "matricula", "cargo", "endereco", "vinculo", "email",
+  "telefone", "codigoIbge", "salarioLiquido", "situacaoFuncional",
+  "idConvenio", "dataAdmissao", "dataNascimento",
+]);
 
 const backdrop: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "grid", placeItems: "center", zIndex: 100, padding: 24 };
 const modalStyle: React.CSSProperties = { background: "var(--surface-solid)", borderRadius: 12, padding: 24, maxWidth: 720, width: "100%", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-lg)", maxHeight: "90vh", overflowY: "auto" };
@@ -225,16 +248,31 @@ function EditModal({ servidor, onClose, onSaved }: { servidor: PrefeituraServido
       const matNova = String(valores.matricula ?? "").trim();
       const cpfDigitos = cpfNovo.replace(/\D/g, "");
       if (cpfNovo && cpfDigitos.length !== 11) throw new Error("CPF deve ter 11 dígitos.");
-      return atlas.prefeitura.editarServidor(servidor.matricula, {
-        nome: String(valores.nome ?? ""),
-        cargo: String(valores.cargo ?? ""),
-        endereco: String(valores.endereco ?? ""),
-        vinculo: String(valores.vinculo ?? ""),
-        email: String(valores.email ?? ""),
-        telefone: String(valores.telefone ?? ""),
-        ...(cpfDigitos !== (servidor.cpf ?? "").replace(/\D/g, "") ? { cpf: cpfNovo } : {}),
-        ...(matNova !== servidor.matricula ? { matriculaNova: matNova } : {}),
-      });
+      // Monta o body so com campos que a config marca como visiveis E que
+      // o backend aceita persistir. Reduz risco de sobrescrever com vazio
+      // um campo que a prefeitura escondeu do formulario dela.
+      const patch: Record<string, string | number> = {};
+      const put = (k: string, v: string | number | undefined) => {
+        if (v === undefined) return;
+        if (!campos.some((c) => c.key === k && c.visivel)) return;
+        if (!CAMPOS_EDITAVEIS.has(k)) return;
+        patch[k] = v;
+      };
+      put("nome", String(valores.nome ?? ""));
+      put("cargo", String(valores.cargo ?? ""));
+      put("endereco", String(valores.endereco ?? ""));
+      put("vinculo", String(valores.vinculo ?? ""));
+      put("email", String(valores.email ?? ""));
+      put("telefone", String(valores.telefone ?? ""));
+      put("situacaoFuncional", String(valores.situacaoFuncional ?? ""));
+      put("idConvenio", String(valores.idConvenio ?? ""));
+      put("dataAdmissao", String(valores.dataAdmissao ?? ""));
+      put("dataNascimento", String(valores.dataNascimento ?? ""));
+      if (valores.salarioLiquido != null && valores.salarioLiquido !== "") put("salarioLiquido", Number(valores.salarioLiquido));
+      if (valores.codigoIbge != null && valores.codigoIbge !== "") put("codigoIbge", Number(valores.codigoIbge));
+      if (cpfDigitos !== (servidor.cpf ?? "").replace(/\D/g, "")) patch.cpf = cpfNovo;
+      if (matNova !== servidor.matricula) patch.matriculaNova = matNova;
+      return atlas.prefeitura.editarServidor(servidor.matricula, patch);
     },
     onSuccess: () => { setErro(null); onSaved(); },
     onError: (e: Error) => setErro(e.message),

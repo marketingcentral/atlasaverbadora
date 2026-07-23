@@ -2624,6 +2624,14 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         status: z.enum(["ativo", "bloqueado", "arquivado"]).optional(),
         email: z.string().email().optional().or(z.literal("")),
         telefone: z.string().optional(),
+        // Campos novos (24/07/2026): averbadora tambem edita cargo, endereco
+        // e datas (antes so via re-import CSV). Alinha com o /prefeitura
+        // /servidores PATCH que aceita os mesmos campos.
+        cargo: z.string().min(1).optional(),
+        endereco: z.string().optional(),
+        codigoIbge: z.number().int().optional(),
+        dataAdmissao: z.string().optional(),
+        dataNascimento: z.string().optional(),
       })
       .parse(await c.req.json());
     if (body.cpf !== undefined && body.cpf !== s.cpf) {
@@ -2641,6 +2649,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (body.status !== undefined) { servidorStatusOverride.set(matricula, body.status); await persistServidorStatus(c.env, matricula, body.status); }
     if (body.email !== undefined) s.email = body.email || undefined;
     if (body.telefone !== undefined) s.telefone = body.telefone || undefined;
+    if (body.cargo !== undefined) s.cargo = body.cargo;
+    if (body.endereco !== undefined) s.endereco = body.endereco || undefined;
+    if (body.codigoIbge !== undefined) s.codigoIbge = body.codigoIbge;
+    if (body.dataAdmissao !== undefined) s.dataAdmissao = body.dataAdmissao;
+    if (body.dataNascimento !== undefined) s.dataNascimento = body.dataNascimento;
     const changed: string[] = [];
     if (body.cpf !== undefined) changed.push("cpf");
     if (body.nome !== undefined) changed.push("nome");
