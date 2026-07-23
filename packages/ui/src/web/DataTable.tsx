@@ -109,8 +109,8 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
             border: "1px solid var(--border)",
             borderBottom: "none",
             borderRadius: "12px 12px 0 0",
-            // Altura enxuta pra so mostrar a barra do SO.
-            height: 14,
+            // Altura enxuta pra so mostrar a barra estilizada (12px em webkit).
+            height: 16,
           }}
         >
           <div style={{ width: innerWidth || "100%", height: 1 }} />

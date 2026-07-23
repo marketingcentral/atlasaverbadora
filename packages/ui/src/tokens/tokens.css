@@ -122,8 +122,13 @@ body::-webkit-scrollbar,
    Tabelas com muitas colunas (ex: servidores) precisam do indicador visual
    pra usuario saber que ha conteudo cortado. Usa !important pra vencer o
    `*::-webkit-scrollbar { display: none }` universal acima. */
-.atlas-datatable-scroll { scrollbar-width: thin !important; scrollbar-color: var(--border-strong) transparent !important; -ms-overflow-style: auto !important; }
-.atlas-datatable-scroll::-webkit-scrollbar { display: block !important; height: 12px !important; width: 12px !important; }
-.atlas-datatable-scroll::-webkit-scrollbar-thumb { background: var(--border-strong) !important; border-radius: 6px !important; }
-.atlas-datatable-scroll::-webkit-scrollbar-thumb:hover { background: var(--gold-500) !important; }
-.atlas-datatable-scroll::-webkit-scrollbar-track { background: color-mix(in srgb, var(--border) 40%, transparent) !important; border-radius: 6px !important; }
+.atlas-datatable-scroll,
+.atlas-datatable-topscroll { scrollbar-width: thin !important; scrollbar-color: var(--border-strong) transparent !important; -ms-overflow-style: auto !important; }
+.atlas-datatable-scroll::-webkit-scrollbar,
+.atlas-datatable-topscroll::-webkit-scrollbar { display: block !important; height: 12px !important; width: 12px !important; }
+.atlas-datatable-scroll::-webkit-scrollbar-thumb,
+.atlas-datatable-topscroll::-webkit-scrollbar-thumb { background: var(--border-strong) !important; border-radius: 6px !important; }
+.atlas-datatable-scroll::-webkit-scrollbar-thumb:hover,
+.atlas-datatable-topscroll::-webkit-scrollbar-thumb:hover { background: var(--gold-500) !important; }
+.atlas-datatable-scroll::-webkit-scrollbar-track,
+.atlas-datatable-topscroll::-webkit-scrollbar-track { background: color-mix(in srgb, var(--border) 40%, transparent) !important; border-radius: 6px !important; }
