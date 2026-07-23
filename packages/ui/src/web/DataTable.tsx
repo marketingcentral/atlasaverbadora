@@ -22,25 +22,33 @@ interface Props<T> {
   loading?: boolean;
   actions?: (row: T) => ReactNode;
   /** Renderiza uma segunda barra de rolagem horizontal ACIMA da tabela,
-   *  sincronizada com a de baixo. Util em tabelas largas — evita ter
-   *  que descer ate o rodape pra rolar pro lado. */
+   *  sincronizada com a de baixo. Ligado por padrao — so aparece de fato
+   *  quando a tabela transborda pra direita (auto-hide). Passe false pra
+   *  desligar em tabelas onde a barra extra atrapalha o layout. */
   topScrollbar?: boolean;
 }
 
-export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, loading, actions, topScrollbar }: Props<T>) {
+export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, loading, actions, topScrollbar = true }: Props<T>) {
   const topRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
   const [innerWidth, setInnerWidth] = useState(0);
-  // Mede a largura real do <table> pra dimensionar o "fantasma" da barra de
-  // cima. Atualiza em resize do container OU do table (colunas custom podem
-  // mudar depois do mount).
+  const [hasOverflow, setHasOverflow] = useState(false);
+  // Mede a largura real do <table> vs o container. So renderiza a barra
+  // top quando ha overflow horizontal — tabelas que cabem no viewport
+  // continuam identicas ao layout antigo. Reage a resize dos dois lados
+  // (viewport shrink OU coluna nova depois do mount).
   useEffect(() => {
     if (!topScrollbar) return;
     const t = tableRef.current;
     const b = bottomRef.current;
     if (!t || !b) return;
-    const measure = () => setInnerWidth(t.scrollWidth);
+    const measure = () => {
+      const sw = t.scrollWidth;
+      const cw = b.clientWidth;
+      setInnerWidth(sw);
+      setHasOverflow(sw > cw + 1);
+    };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(t);
@@ -49,7 +57,7 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
   }, [topScrollbar, columns.length, rows.length]);
   // Sincroniza scrollLeft entre top e bottom sem loop infinito (flag por-frame).
   useEffect(() => {
-    if (!topScrollbar) return;
+    if (!topScrollbar || !hasOverflow) return;
     const top = topRef.current;
     const bot = bottomRef.current;
     if (!top || !bot) return;
@@ -72,7 +80,8 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
       top.removeEventListener("scroll", onTop);
       bot.removeEventListener("scroll", onBot);
     };
-  }, [topScrollbar]);
+  }, [topScrollbar, hasOverflow]);
+  const showTop = topScrollbar && hasOverflow;
 
   if (loading) {
     return (
@@ -90,7 +99,7 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
   }
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      {topScrollbar ? (
+      {showTop ? (
         <div
           ref={topRef}
           className="atlas-datatable-topscroll"
@@ -113,8 +122,8 @@ export function DataTable<T>({ columns, rows, rowKey, onRowClick, emptyState, lo
       style={{
         overflowX: "auto",
         border: "1px solid var(--border)",
-        borderRadius: topScrollbar ? "0 0 12px 12px" : 12,
-        borderTop: topScrollbar ? "none" : undefined,
+        borderRadius: showTop ? "0 0 12px 12px" : 12,
+        borderTop: showTop ? "none" : undefined,
       }}
     >
       <table ref={tableRef} style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
