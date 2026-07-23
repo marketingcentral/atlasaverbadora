@@ -451,13 +451,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (r.email) rec.email = r.email;
       if (r.telefone) rec.telefone = r.telefone;
       if (r.endereco) rec.endereco = r.endereco;
+      // Carimbo de ordenacao: TODO servidor que entra num import sobe pro topo
+      // — seja insercao nova ou atualizacao de um existente. Cliente reportou
+      // 23/07/2026 que ao reimportar servidores que ja estavam na base (mesma
+      // matricula) eles nao subiam. O "importado agora" e' o mais recente,
+      // independente de ja existir. A edicao manual (PATCH da tela) NAO carimba
+      // — so o import. Um so timestamp por linha da planilha mantem a ordem da
+      // planilha dentro do mesmo import.
+      const agora = new Date().toISOString();
       if (existing) {
-        // Update: NAO mexe no criadoEmIso — re-importar um servidor existente
-        // nao pode jogar ele pro topo da lista (a ordem e' por CHEGADA).
-        Object.assign(existing, rec); out.updated++; toPersist.push(existing);
+        Object.assign(existing, rec); existing.criadoEmIso = agora; out.updated++; toPersist.push(existing);
       } else {
-        // Insert: carimba a chegada pra ordenacao DESC na tabela da prefeitura.
-        rec.criadoEmIso = new Date().toISOString();
+        rec.criadoEmIso = agora;
         SERVIDORES_BUSCA_MOCK.push(rec); out.inserted++; toPersist.push(rec);
       }
       out.rows.push({ matricula: rec.matricula, nome: rec.nome, cpfMasked: rec.cpfMasked });
