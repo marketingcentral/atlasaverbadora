@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { DataTable, Pill, SelectField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { contratoStatusInfo } from "../../lib/contrato-status";
+import { produtoLabelDeContrato } from "../../lib/produto-label";
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const DT_BR = new Intl.DateTimeFormat("pt-BR", {
@@ -20,15 +21,10 @@ type ContratoRow = {
   bancoId: number; bancoNome: string;
 };
 
-function produtoLabel(tipo: string): string {
-  const t = tipo.toUpperCase();
-  if (t === "REFIN") return "Portabilidade";
-  if (t === "ECONSIGNADO") return "Cartão";
-  return "Empréstimo";
-}
-
-// Substituido pelo helper unificado contratoStatusInfo (lib/contrato-status)
-// pra manter rotulo/variant coerente com banco/servidor/prefeitura.
+// Rotulo do produto via helper unificado (lib/produto-label) — cobre
+// Telemedicina/Portabilidade/Cartao Beneficio/Cartao Consignado etc.
+// Antes: versao local so distinguia REFIN/ECONSIGNADO/Emprestimo.
+// Pill de situacao via contratoStatusInfo (lib/contrato-status).
 
 function folhaVariant(s?: string): "aceita" | "pendente" | "expirado" | "rejeitada" {
   if (!s) return "pendente";
@@ -95,7 +91,7 @@ export function AdminContratos() {
       </>
     ) },
     { key: "convenio", header: "Convênio", render: (r) => r.convenio },
-    { key: "produto", header: "Produto", render: (r) => produtoLabel(r.tipoContrato) },
+    { key: "produto", header: "Produto", render: (r) => produtoLabelDeContrato(r) },
     { key: "valorFinanciado", header: "Valor", align: "right", render: (r) => BRL.format(r.valorFinanciado) },
     { key: "parcelas", header: "Parcelas", align: "right", render: (r) => `${r.totalParcelas}× ${BRL.format(r.valorParcela)}` },
     { key: "taxa", header: "Taxa a.m.", align: "right", render: (r) => `${(r.taxaAm * 100).toFixed(2)}%` },

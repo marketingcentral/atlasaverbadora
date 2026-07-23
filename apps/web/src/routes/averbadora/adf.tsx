@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, DataTable, Pill, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
+import { produtoLabelDeContrato } from "../../lib/produto-label";
 
 // ADF pela averbadora — a averbadora aplica/reporta falha em folha; prefeitura
 // so recebe/consulta. Cliente disse: "a averbadora que faz a adf, a prefeitura
@@ -23,20 +24,9 @@ type AdfRow = {
   atualizadoEm?: string;
 };
 
-/** Rotulo do produto — usa tipoContrato + tipoMargem pra distinguir os 4
- *  produtos (Emprestimo/Portabilidade/Cartao Consignado/Cartao Beneficio).
- *  ECONSIGNADO sem tipoMargem cai em "Cartao" (dado antigo). */
-function produtoLabel(tipoContrato: string | undefined, tipoMargem?: string): string {
-  const t = (tipoContrato ?? "").toUpperCase();
-  if (t === "TELEMEDICINA") return "Telemedicina";
-  if (t === "REFIN") return "Portabilidade";
-  if (t === "ECONSIGNADO") {
-    if (tipoMargem === "CARTAO_BENEFICIOS") return "Cartão Benefício";
-    if (tipoMargem === "CARTAO_CONSIGNADO") return "Cartão Consignado";
-    return "Cartão";
-  }
-  return "Empréstimo";
-}
+// Rotulo do produto via helper unificado (lib/produto-label). Antes:
+// versao local com fallback "Cartao" pra ECONSIGNADO sem tipoMargem —
+// nao cobria observacoes com "telemedicina"/"portabilid" nem bancoOrigem.
 
 export function AdminAdf() {
   const qc = useQueryClient();
@@ -171,7 +161,7 @@ export function AdminAdf() {
           border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)",
           background: "color-mix(in srgb, var(--accent) 10%, transparent)",
         }}>
-          {produtoLabel(a.tipoContrato, a.tipoMargem)}
+          {produtoLabelDeContrato(a)}
         </span>
       ),
     },

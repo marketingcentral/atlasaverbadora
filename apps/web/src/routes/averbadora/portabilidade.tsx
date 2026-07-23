@@ -43,14 +43,22 @@ export function AverbadoraPortabilidade() {
         </span>
       </span>
     ) },
-    { key: "bancoOrigem", header: "Banco origem", render: (i) => (
-      <span>
-        {i.bancoOrigemNome}
-        <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-          ADF {i.contratoAdfOrigem}
+    { key: "bancoOrigem", header: "Banco origem", render: (i) => {
+      // contratoAdfOrigem vem como "EXT-{matricula}-{numContrato}" (id
+      // sintetico do tombamento). Mostra so o numContrato pra bater com o
+      // que aparece na aba /averbadora/tombamento (col "Nº Contrato"),
+      // evitando o operador ter que parsear manualmente pra reconciliar.
+      const m = /^EXT-\d+-(.+)$/.exec(i.contratoAdfOrigem ?? "");
+      const numContrato = m?.[1] ?? i.contratoAdfOrigem;
+      return (
+        <span>
+          {i.bancoOrigemNome}
+          <span style={{ display: "block", fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+            Contrato {numContrato}
+          </span>
         </span>
-      </span>
-    ) },
+      );
+    } },
     { key: "saldoDevedor", header: "Saldo devedor", align: "right", render: (i) => fmtBRL(i.saldoDevedor) },
     { key: "valorParcela", header: "Parcela", align: "right", render: (i) => (
       <span>
@@ -146,7 +154,7 @@ function DetalheModal({ intencao, onClose }: { intencao: PortabilidadeIntencao; 
       <div onClick={(e) => e.stopPropagation()} style={{ background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 14, padding: 24, maxWidth: 780, width: "100%", maxHeight: "calc(100vh - 48px)", overflowY: "auto", boxShadow: "var(--shadow-lg)" }}>
         <h3 style={{ margin: 0 }}>Intenção {intencao.id}</h3>
         <p style={{ color: "var(--text-muted)", fontSize: 13, margin: "6px 0 16px" }}>
-          <b>{intencao.servidorNome}</b> ({intencao.servidorMatricula}) · <b>{intencao.bancoOrigemNome}</b> — ADF {intencao.contratoAdfOrigem}
+          <b>{intencao.servidorNome}</b> ({intencao.servidorMatricula}) · <b>{intencao.bancoOrigemNome}</b> — Contrato {(/^EXT-\d+-(.+)$/.exec(intencao.contratoAdfOrigem ?? "")?.[1]) ?? intencao.contratoAdfOrigem}
         </p>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, marginBottom: 16, padding: 12, background: "var(--bg-elev-2)", borderRadius: 8 }}>
