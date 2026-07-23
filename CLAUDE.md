@@ -40,10 +40,12 @@ pnpm --filter @atlas/ui --filter @atlas/sdk --filter @atlas/types build   # buil
 pnpm --filter @atlas/web build               # tsc --noEmit && vite build
 wrangler pages deploy apps/web/dist --project-name=atlas-web --branch=main --commit-dirty=true
 
-# Tests
+# Tests — ver TESTING.md pra estrategia completa (4 camadas)
+pnpm --filter @atlas/domain test             # unit tests puros (camada 1, ~500ms — GATE antes de commit)
 pnpm --filter @atlas/api test                # vitest run (API)
-pnpm --filter @atlas/domain test             # vitest run (domain)
 pnpm --filter @atlas/api test -- <pattern>   # single test (pass-through to vitest)
+BASE_URL=http://localhost:8787 pnpm --filter @atlas/api test:e2e   # smoke E2E proposta->folha (camada 3)
+# Camada 2 (invariantes) = tela /averbadora/verify em prod. Camada 4 = playbook manual em TESTING.md.
 
 # MCP servers (custom, registered in .mcp.json)
 pnpm mcp:build                               # build all three before they can be invoked
