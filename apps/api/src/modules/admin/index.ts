@@ -868,15 +868,15 @@ export const csvTemplateRoutes = new Hono<{ Bindings: Env }>()
       const aviso = `# Cadastre pelo menos 1 banco e 1 prefeitura antes de importar convenios.\n# Ainda ${!banco ? "sem banco" : ""}${!banco && prefs.length === 0 ? " e " : ""}${prefs.length === 0 ? "sem prefeitura" : ""} cadastrado.\nbancoId,prefeituraId,nome,codigoVerba,dataCorte,diaRepasse\n`;
       return csvResponse("convenios-exemplo.csv", aviso);
     }
-    const linhas = prefs.map((p, i) => ({
-      bancoId: banco.id, prefeituraId: p.id,
-      nome: `${p.nome.toUpperCase()} / ${banco.nome.toUpperCase()}`,
-      codigoVerba: `${1500 + i * 700} - VERBA CONSIGNACAO ${i + 1}`,
-      dataCorte: 15 + i * 3, diaRepasse: 5 + i * 3,
-    }));
+    // SO cabecalho — sem linha de exemplo (cliente 21/07/2026: "o exemplo
+    // baixado nao e o mesmo, nao segue a mesma tabela"). Antes o template
+    // inventava codigoVerba ("1500 - VERBA CONSIGNACAO 1") e datas por formula
+    // (15+i*3 / 5+i*3), que nao batiam com os convenios reais — e ainda
+    // duplicaria convenio existente se importado como veio.
+    void banco; void prefs;
     return csvResponse("convenios-exemplo.csv", buildCsv(
       ["bancoId", "prefeituraId", "nome", "codigoVerba", "dataCorte", "diaRepasse"],
-      linhas,
+      [],
     ));
   })
   // Servidores: template DINAMICO por prefeitura. Requer ?prefeituraId=N. Le
