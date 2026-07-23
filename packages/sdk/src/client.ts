@@ -1599,6 +1599,9 @@ export class AtlasClient {
           cpfMasked: string; matricula: string; nome: string; tipoContrato: string;
           totalParcelas: number; valorParcela: number; convenio: string;
           convenioId: string; valorFinanciado: number; taxaAm: number;
+          /** Parcelas ja descontadas — usado pra montar a "proxima parcela"
+           *  especifica na carteira (ex.: 4/48). Vem do backend (...ct). */
+          parcelasPagas: number;
           /** Dados da portabilidade — presentes quando o contrato vem substituir outro. */
           bancoOrigem?: string;
           contratoOrigem?: string;
