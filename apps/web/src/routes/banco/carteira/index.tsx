@@ -37,14 +37,19 @@ function mapSituacaoBackend(situacao: string): ContratoStatus | null {
 
 const MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
 
-/** Data (mes/ano) da proxima parcela. Cliente pediu 23/07/2026 pra mostrar SO
- *  a competencia (ex.: "Ago/2026"), sem o "N/total". Contrato quitado (pagas
- *  >= total) mostra "Quitado" — nao ha proxima. */
-function proximaParcelaDetalhe(parcelasPagas: number, totalParcelas: number): string {
+/** Data da proxima parcela — DD/Mmm/AAAA. Cliente pediu 23/07/2026 a data com
+ *  dia. O dia e' o dia do mes do lancamento (as parcelas caem no aniversario do
+ *  contrato), clampado ao ultimo dia do mes. Contrato quitado (pagas >= total)
+ *  mostra "Quitado" — nao ha proxima. */
+function proximaParcelaDetalhe(parcelasPagas: number, totalParcelas: number, lancamento: string): string {
   if (totalParcelas > 0 && parcelasPagas >= totalParcelas) return "Quitado";
   const d = new Date();
   d.setMonth(d.getMonth() + 1); // proxima competencia = proximo mes de folha
-  return `${MESES_ABREV[d.getMonth()]}/${d.getFullYear()}`;
+  const t = parseLancamento(lancamento);
+  const diaLanc = t > 0 ? new Date(t).getDate() : 1;
+  const ultimoDia = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const dia = Math.min(diaLanc, ultimoDia);
+  return `${String(dia).padStart(2, "0")}/${MESES_ABREV[d.getMonth()]}/${d.getFullYear()}`;
 }
 
 /** Parseia data em ISO 8601 ou DD/MM/YYYY (formato BR das fixtures do backend).
@@ -113,7 +118,7 @@ export function BancoCarteira() {
           parcelas: ct.totalParcelas,
           valorParcela: ct.valorParcela,
           status: s,
-          proximaParcela: proximaParcelaDetalhe(ct.parcelasPagas, ct.totalParcelas),
+          proximaParcela: proximaParcelaDetalhe(ct.parcelasPagas, ct.totalParcelas, ct.lancamento),
           // Prioridade: atualizadoEm (evento mais recente, ex.: acabou de
           // ser aprovada) > lancamento (data do contrato) > NOW. Assim
           // contratos recem-aprovados sobem pro topo em vez de ficarem
