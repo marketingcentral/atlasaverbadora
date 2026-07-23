@@ -1,40 +1,207 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
-import { Button, TextField, SelectField, CurrencyField, FormGrid, CpfField, TelefoneField } from "@atlas/ui/web";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Button, TextField, SelectField, CurrencyField, NumberField, FormGrid, CpfField, TelefoneField } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
-import type { AdminServidor, AdminServidorUpdate } from "@atlas/sdk";
+import type { AdminServidor, AdminServidorUpdate, ServidorCampoConfig } from "@atlas/sdk";
+import { DEFAULT_CAMPOS_FALLBACK } from "./_defaults";
 
 const backdrop: React.CSSProperties = { position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "grid", placeItems: "center", zIndex: 100, padding: 24 };
-const modal: React.CSSProperties = { background: "var(--surface-solid)", borderRadius: 12, padding: 24, maxWidth: 600, width: "100%", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-lg)" };
+const modal: React.CSSProperties = { background: "var(--surface-solid)", borderRadius: 12, padding: 24, maxWidth: 720, width: "100%", border: "1px solid var(--border-strong)", boxShadow: "var(--shadow-lg)", maxHeight: "90vh", overflowY: "auto" };
 
-export function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServidor; onClose: () => void; onSaved: () => void }) {
-  const [nome, setNome] = useState(servidor.nome);
-  const [vinculo, setVinculo] = useState<AdminServidorUpdate["vinculo"]>(
-    (["CLT", "ESTATUTARIO", "COMISSIONADO"].includes(servidor.vinculo) ? servidor.vinculo : "ESTATUTARIO") as AdminServidorUpdate["vinculo"],
-  );
-  const [situacao, setSituacao] = useState(servidor.situacaoFuncional);
-  const [salario, setSalario] = useState<number>(servidor.salarioLiquido);
-  const [idConvenio, setIdConvenio] = useState(servidor.idConvenio);
-  const [status, setStatus] = useState<AdminServidor["status"]>(servidor.status);
-  const [email, setEmail] = useState(servidor.email);
-  const [telefone, setTelefone] = useState(servidor.telefone);
-  const [cpf, setCpf] = useState(servidor.cpf);
+/** Campos SISTEMA que o backend /admin/updateServidor aceita persistir. Campos
+ *  fora desta lista (customs por enquanto) aparecem read-only ate o backend
+ *  expor persistencia de custom fields no /editar. */
+const CAMPOS_EDITAVEIS = new Set([
+  "nome", "cpf", "matricula", "vinculo", "situacaoFuncional", "salarioLiquido",
+  "idConvenio", "cargo", "endereco", "email", "telefone", "codigoIbge",
+]);
 
-  const cpfDigits = cpf.replace(/\D/g, "");
-  const cpfValido = cpfDigits.length === 11;
-  const cpfMudou = cpfDigits !== servidor.cpf;
+const VINCULO_OPTS = [
+  { value: "ESTATUTARIO", label: "Estatutário" },
+  { value: "CLT", label: "CLT" },
+  { value: "COMISSIONADO", label: "Comissionado" },
+];
+
+export function EditModal({ servidor, prefeituraId, onClose, onSaved }: {
+  servidor: AdminServidor;
+  prefeituraId: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const cfgQ = useQuery({
+    queryKey: ["admin", "servidor-campos-config", prefeituraId],
+    queryFn: () => atlas.admin.getServidorCamposConfig(prefeituraId),
+    enabled: !!prefeituraId,
+    staleTime: 60_000,
+  });
+  const camposCfg: ServidorCampoConfig[] = useMemo(() => {
+    const raw = cfgQ.data?.config?.campos ?? DEFAULT_CAMPOS_FALLBACK;
+    return raw.filter((c) => c.visivel).sort((a, b) => a.ordem - b.ordem);
+  }, [cfgQ.data?.config?.campos]);
+
+  // State central por key. Inicializa das colunas conhecidas do AdminServidor
+  // + camposCustom. Numero/moeda ficam como number; resto string.
+  const [valores, setValores] = useState<Record<string, string | number>>(() => {
+    const src = servidor as unknown as Record<string, unknown>;
+    const out: Record<string, string | number> = {};
+    // Chaves sistema com nomes que casam com o shape do AdminServidor.
+    const keys = ["nome","cpf","matricula","vinculo","situacaoFuncional","salarioLiquido","idConvenio","cargo","endereco","email","telefone","codigoIbge","dataAdmissao","dataNascimento"];
+    for (const k of keys) {
+      const v = src[k];
+      if (typeof v === "number" || typeof v === "string") out[k] = v;
+      else out[k] = "";
+    }
+    // Customs (camposCustom no shape do servidor).
+    const custom = (src.camposCustom ?? {}) as Record<string, string | number | null>;
+    for (const [k, v] of Object.entries(custom)) {
+      out[k] = v == null ? "" : v;
+    }
+    return out;
+  });
+  const setV = (k: string, v: string | number) => setValores((prev) => ({ ...prev, [k]: v }));
+  const [erro, setErro] = useState<string | null>(null);
 
   const save = useMutation({
     mutationFn: () => {
+      // Valida obrigatorios ANTES do POST — feedback imediato.
+      for (const c of camposCfg) {
+        if (!c.obrigatorio) continue;
+        if (!CAMPOS_EDITAVEIS.has(c.key)) continue;
+        const v = valores[c.key];
+        const vazio = v == null || (typeof v === "string" && !v.trim()) || (c.tipo === "moeda" && Number(v) === 0);
+        if (vazio) throw new Error(`Campo "${c.label}" é obrigatório.`);
+      }
+      const cpfDigits = String(valores.cpf ?? "").replace(/\D/g, "");
+      const cpfMudou = cpfDigits !== servidor.cpf;
+      if (String(valores.cpf ?? "") && cpfDigits.length !== 11) {
+        throw new Error("CPF deve ter 11 dígitos.");
+      }
       const body: AdminServidorUpdate = {
-        nome, vinculo, situacaoFuncional: situacao, salarioLiquido: salario,
-        idConvenio, status, email, telefone,
+        nome: String(valores.nome ?? ""),
+        vinculo: (VINCULO_OPTS.some((v) => v.value === valores.vinculo) ? valores.vinculo : "ESTATUTARIO") as AdminServidorUpdate["vinculo"],
+        situacaoFuncional: String(valores.situacaoFuncional ?? ""),
+        salarioLiquido: Number(valores.salarioLiquido ?? 0),
+        idConvenio: String(valores.idConvenio ?? ""),
+        status: servidor.status,
+        email: String(valores.email ?? ""),
+        telefone: String(valores.telefone ?? ""),
       };
-      if (cpfMudou && cpfValido) body.cpf = cpfDigits;
+      if (cpfMudou && cpfDigits.length === 11) body.cpf = cpfDigits;
       return atlas.admin.updateServidor(servidor.matricula, body);
     },
-    onSuccess: () => { onSaved(); },
+    onSuccess: () => { setErro(null); onSaved(); },
+    onError: (e: Error) => setErro(e.message),
   });
+
+  const renderCampo = (c: ServidorCampoConfig) => {
+    const val = valores[c.key];
+    const readOnly = !CAMPOS_EDITAVEIS.has(c.key) || c.travado === true;
+    const hint = c.travado ? "Travado (identidade do servidor)"
+      : c.key === "matricula" ? "Alterar remapeia o servidor"
+      : !CAMPOS_EDITAVEIS.has(c.key) ? "Somente leitura"
+      : undefined;
+
+    // CPF: componente com mascara.
+    if (c.key === "cpf") {
+      const cpfDigits = String(val ?? "").replace(/\D/g, "");
+      const cpfValido = cpfDigits.length === 11 || cpfDigits.length === 0;
+      return (
+        <CpfField
+          label={c.label}
+          value={String(val ?? "")}
+          onChange={(e) => setV(c.key, e.target.value)}
+          required={c.obrigatorio}
+          hint={hint}
+          error={!cpfValido ? "CPF deve ter 11 dígitos" : undefined}
+          readOnly={readOnly}
+        />
+      );
+    }
+    // Telefone: componente com mascara.
+    if (c.key === "telefone" || c.tipo === "telefone") {
+      return (
+        <TelefoneField
+          label={c.label}
+          value={String(val ?? "")}
+          onChange={(e) => setV(c.key, e.target.value)}
+          required={c.obrigatorio}
+          hint={hint}
+          readOnly={readOnly}
+        />
+      );
+    }
+    // Vinculo: select de opcoes fixas do backend.
+    if (c.key === "vinculo") {
+      const cur = String(val ?? "ESTATUTARIO");
+      const opts = VINCULO_OPTS.slice();
+      if (!opts.some((o) => o.value === cur) && cur) opts.unshift({ value: cur, label: cur });
+      return (
+        <SelectField
+          label={c.label}
+          value={cur}
+          onChange={(e) => setV(c.key, e.target.value)}
+          options={opts}
+          required={c.obrigatorio}
+          hint={hint}
+          disabled={readOnly}
+        />
+      );
+    }
+    // Status: hoje nao esta na config, ignora aqui (o admin edita via outro caminho).
+
+    // Moeda.
+    if (c.tipo === "moeda") {
+      return (
+        <CurrencyField
+          label={c.label}
+          value={typeof val === "number" ? val : Number(val) || null}
+          onValueChange={(n) => setV(c.key, n ?? 0)}
+          required={c.obrigatorio}
+          hint={hint}
+          readOnly={readOnly}
+        />
+      );
+    }
+    // Numero.
+    if (c.tipo === "numero") {
+      return (
+        <NumberField
+          label={c.label}
+          value={val ?? ""}
+          onChange={(e) => setV(c.key, e.target.value)}
+          required={c.obrigatorio}
+          hint={hint}
+          readOnly={readOnly}
+        />
+      );
+    }
+    // Data.
+    if (c.tipo === "data") {
+      return (
+        <TextField
+          label={c.label}
+          type="date"
+          value={String(val ?? "")}
+          onChange={(e) => setV(c.key, e.target.value)}
+          required={c.obrigatorio}
+          hint={hint}
+          readOnly={readOnly}
+        />
+      );
+    }
+    // Email + Texto default.
+    return (
+      <TextField
+        label={c.label}
+        type={c.tipo === "email" ? "email" : "text"}
+        value={String(val ?? "")}
+        onChange={(e) => setV(c.key, e.target.value)}
+        required={c.obrigatorio}
+        hint={hint}
+        readOnly={readOnly}
+      />
+    );
+  };
 
   return (
     <div style={backdrop} onClick={onClose}>
@@ -44,50 +211,25 @@ export function EditModal({ servidor, onClose, onSaved }: { servidor: AdminServi
           Matrícula <b style={{ fontFamily: "var(--font-mono)" }}>{servidor.matricula}</b> · {servidor.origem}
         </p>
 
-        <FormGrid>
-          <TextField label="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />
-          <CpfField
-            label="CPF (login do servidor)"
-            value={cpf}
-            onChange={(e) => setCpf(e.target.value)}
-            hint={cpf && !cpfValido ? undefined : "11 dígitos · usado como login"}
-            error={cpf && !cpfValido ? "CPF deve ter 11 dígitos" : undefined}
-          />
-          <SelectField
-            label="Vínculo"
-            value={vinculo}
-            onChange={(e) => setVinculo(e.target.value as AdminServidorUpdate["vinculo"])}
-            options={[{ value: "ESTATUTARIO", label: "Estatutário" }, { value: "CLT", label: "CLT" }, { value: "COMISSIONADO", label: "Comissionado" }]}
-          />
-          <TextField label="Situação funcional" value={situacao} onChange={(e) => setSituacao(e.target.value)} />
-          <CurrencyField label="Salário líquido" value={salario} onValueChange={(n) => setSalario(n ?? 0)} />
-          <TextField label="Convênio (id)" value={idConvenio} onChange={(e) => setIdConvenio(e.target.value)} />
-          <SelectField
-            label="Status"
-            value={status}
-            onChange={(e) => setStatus(e.target.value as AdminServidor["status"])}
-            options={[{ value: "ativo", label: "Ativo" }, { value: "bloqueado", label: "Bloqueado" }, { value: "arquivado", label: "Arquivado" }]}
-          />
-        </FormGrid>
-
-        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
-          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 12 }}>
-            Contato e acesso
-          </div>
+        {cfgQ.isPending ? (
+          <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Carregando configuração de campos…</p>
+        ) : (
           <FormGrid>
-            <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="servidor@exemplo.com" />
-            <TelefoneField label="Telefone" value={telefone} onChange={(e) => setTelefone(e.target.value)} />
+            {camposCfg.map((c) => (
+              <span key={c.key}>{renderCampo(c)}</span>
+            ))}
           </FormGrid>
-          <div style={{ marginTop: 8, fontSize: 12, color: "var(--text-dim)" }}>
-            A senha do servidor não é editável por aqui — apenas o próprio servidor pode alterar, em <b>Conta → Redefinir senha</b>, com verificação por e-mail.
-          </div>
-        </div>
+        )}
 
-        {save.isError ? <p style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 12 }}>{(save.error as Error).message}</p> : null}
+        {erro || save.isError ? (
+          <p style={{ color: "var(--danger-500)", fontSize: 13, marginTop: 12 }}>
+            {erro ?? (save.error as Error | undefined)?.message}
+          </p>
+        ) : null}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
           <Button variant="ghost" onClick={onClose}>Cancelar</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending || !nome.trim() || !cpfValido}>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || cfgQ.isPending}>
             {save.isPending ? "Salvando…" : "Salvar alterações"}
           </Button>
         </div>

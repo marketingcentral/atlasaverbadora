@@ -237,6 +237,7 @@ export function AdminServidoresVisualizar() {
       {editing ? (
         <EditModal
           servidor={editing}
+          prefeituraId={prefIdNum}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); qc.invalidateQueries({ queryKey: ["admin", "servidores"] }); }}
         />
