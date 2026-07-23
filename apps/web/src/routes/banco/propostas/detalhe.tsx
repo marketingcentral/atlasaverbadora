@@ -143,7 +143,7 @@ export function BancoPropostaDetalhe() {
           <Row label="Produto" value={PRODUTO_LABEL[proposta.produto]} />
           <Row label="Valor" value={fmtBRL(proposta.valor)} />
           <Row label="Parcelas" value={`${proposta.parcelas}x de ${fmtBRL(proposta.parcela)}`} />
-          <Row label="Taxa a.m." value={`${(proposta.taxaAm * 100).toFixed(2)}%`} />
+          <Row label="Taxa a.m." value={`${proposta.taxaAm.toFixed(2)}%`} />
           <Row label="Recebida em" value={fmtDateTime(proposta.criadaEm)} />
         </InfoCard>
 
@@ -465,7 +465,7 @@ function baixarContratoModelo(proposta: BancoProposta): void {
     `Produto: ${PRODUTO_LABEL[proposta.produto]}`,
     `Valor financiado: ${fmtBRL(proposta.valor)}`,
     `Parcelas: ${proposta.parcelas}x de ${fmtBRL(proposta.parcela)}`,
-    `Taxa: ${(proposta.taxaAm * 100).toFixed(2)}% a.m.`,
+    `Taxa: ${proposta.taxaAm.toFixed(2)}% a.m.`,
     "",
     { text: "3. CLAUSULAS GERAIS", bold: true },
     "3.1. O EMITENTE declara ter recebido copia integral desta CCB e das",

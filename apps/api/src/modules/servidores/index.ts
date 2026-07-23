@@ -1163,7 +1163,12 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         valor: round2(ct.valorFinanciado),
         parcelas: ct.totalParcelas,
         parcela: round2(ct.valorParcela),
-        taxaAm: round2(ct.taxaAm * 100),
+        // Wire format: taxaAm sempre em decimal cru (0.0179 = 1.79% a.m.).
+        // UI decide como formatar (multiplica *100 no display). Antes esse
+        // endpoint devolvia *100 ja aplicado e /me/matriculas devolvia cru,
+        // resultando em card do contrato averbado mostrar "0.02%" pra taxa
+        // que na proposta aparecia "1.79%" (mesmo ADF, format divergente).
+        taxaAm: ct.taxaAm,
         situacao: ct.situacao,
         tipoContrato: ct.tipoContrato,
         // Marca o plano de Telemedicina (contrato criado quando a averbadora aprova) —

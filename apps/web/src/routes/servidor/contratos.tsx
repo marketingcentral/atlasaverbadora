@@ -314,7 +314,7 @@ export function ServidorContratos() {
               }}>
                 <KV label="Valor liberado" v={fmtBRL(p.valor)} accent />
                 <KV label="Parcelas" v={`${p.parcelas}x de ${fmtBRL(p.parcela)}`} />
-                <KV label="Taxa a.m." v={`${p.taxaAm.toFixed(2)}%`} />
+                <KV label="Taxa a.m." v={`${(p.taxaAm * 100).toFixed(2)}%`} />
               </div>
 
               {/* Linha de progresso — em que etapa a proposta esta agora. */}
@@ -369,7 +369,7 @@ export function ServidorContratos() {
                 }}>
                   <KV label="Valor solicitado" v={fmtBRL(p.valor)} />
                   <KV label="Parcelas" v={`${p.parcelas}x de ${fmtBRL(p.parcela)}`} />
-                  <KV label="Taxa a.m." v={`${p.taxaAm.toFixed(2)}%`} />
+                  <KV label="Taxa a.m." v={`${(p.taxaAm * 100).toFixed(2)}%`} />
                 </div>
                 {/* Motivo da falha em folha — mostrado destacado no Historico
                     quando averbadora reportou falha na ADF. */}
@@ -441,7 +441,7 @@ export function ServidorContratos() {
                     <KV label="Parcela" v={fmtBRL(c.parcela)} accent />
                     <KV label="Progresso" v={`${c.parcelasPagas}/${c.total}`} />
                     <KV label="Próxima" v={c.proximaParcela} />
-                    <KV label="Taxa a.m." v={`${c.taxaAm.toFixed(2)}%`} />
+                    <KV label="Taxa a.m." v={`${(c.taxaAm * 100).toFixed(2)}%`} />
                     <KV label="Valor financiado" v={fmtBRL(c.valorFinanciado)} />
                   </div>
 
