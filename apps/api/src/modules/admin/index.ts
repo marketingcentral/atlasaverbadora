@@ -967,12 +967,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
 
   .get("/v1/admin/dashboard", async (c) => {
     requireAdmin(c.get("jwt"));
-    await refreshContratos(c.env);
-    // refreshServidores (nao ensureServidoresLoaded): o ensure e' memoized por
-    // isolate — se rodou 1x com PG vazio, cacheia vazio pra sempre. Precisamos
-    // ler do PG A CADA request pra topPrefeituras refletir servidores importados
-    // recentemente. Mesmo padrao que /v1/admin/servidores usa.
-    await refreshServidores(c.env);
+    // Isolate frio nao hidratava vitrine/folhas/bancos/prefeituras aqui — KPIs
+    // "Receita vitrine", "Folhas em aberto", "Bancos ativos", "Prefeituras
+    // ativas", topBancos e topPrefeituras vinham vazios ate o operador abrir
+    // as telas correspondentes. refreshContratos + refreshServidores JA ficam
+    // fora do memoize (leem PG a cada request pra pegar mudancas); os demais
+    // sao ensures memoized que so precisam do primeiro load.
+    await Promise.all([
+      refreshContratos(c.env),
+      refreshServidores(c.env),
+      ensureVitrineLoaded(c.env),
+      ensureFolhasLoaded(c.env),
+      ensureBancosLoaded(c.env),
+      ensurePrefeiturasLoaded(c.env),
+    ]);
     const todosContratos = listContratos({});
     // Contagem REAL de servidores por prefeitura — usa EXCLUSIVAMENTE o
     // vinculo explicito (prefeituraId do servidor ou prefeituraId do
