@@ -3653,11 +3653,43 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .post("/v1/admin/pre-reservas/sweep", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "pre-reservas");
     await refreshContratos(c.env);
-    // Expiração é derivada (reserva "Aguardando" com data de expiração vencida).
-    const expiradas = listContratos({})
-      .map(contratoToPreReserva)
-      .filter((r): r is PreReserva => r !== null && r.status === "expirada")
-      .length;
+    // Antes: derivava a contagem de expiradas do contratoToPreReserva (que ja
+    // classifica "aguard+expirou" como "expirada") mas NAO escrevia. Toast
+    // dizia "N expiraram" e margem ficava travada. Agora: transiciona cada
+    // contrato "Aguardando" cuja expiracao venceu pra situacao="Expirado"
+    // via aplicarAcao("expirar") — comprometeMargem detecta e libera.
+    const now = Date.now();
+    const brToTs = (s: string): number | null => {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s || "");
+      return m ? new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime() : null;
+    };
+    const candidatos = listContratos({}).filter((ct) => {
+      const s = ct.situacao.toLowerCase();
+      if (!s.includes("aguard")) return false;
+      if (!ct.expiracao) return false;
+      const ts = brToTs(ct.expiracao);
+      return ts != null && ts < now;
+    });
+    const ator = `averbadora:${c.get("jwt").sub}`;
+    let expiradas = 0;
+    for (const ct of candidatos) {
+      const upd = aplicarAcao(ct.adf, "expirar", ator, "TTL atingido - margem liberada automaticamente");
+      if (upd) {
+        await persistContrato(c.env, ct.adf);
+        expiradas++;
+        appendAudit(auditCtx(c), {
+          categoria: "pre_reserva",
+          acao: "pre_reserva_expirada",
+          propostaId: ct.adf,
+          matricula: ct.matricula,
+          cpf: ct.cpfMasked,
+          userId: ator,
+          userRole: "averbadora",
+          detalhes: `Pre-reserva ${ct.adf} expirada por TTL. Margem R$ ${ct.valorFinanciado.toFixed(2)} liberada.`,
+        });
+      }
+    }
+    if (expiradas > 0) pushEvent("info", "admin.pre-reservas.sweep", `${expiradas} pre-reservas expiradas por TTL`);
     return c.json({ expiradas });
   })
 

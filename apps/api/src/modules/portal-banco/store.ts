@@ -681,7 +681,7 @@ export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
 
 export function aplicarAcao(
   adf: string,
-  acao: "quitar" | "suspender" | "cancelar" | "alongar" | "alterar" | "confirmar" | "aprovar",
+  acao: "quitar" | "suspender" | "cancelar" | "alongar" | "alterar" | "confirmar" | "aprovar" | "expirar",
   ator: string,
   motivo?: string,
   extra?: Record<string, unknown>,
@@ -731,6 +731,14 @@ export function aplicarAcao(
     case "confirmar":
       para = "Ativo";
       c.expiracao = null;
+      break;
+    case "expirar":
+      // TTL vencido — margem retorna pra disponivel (comprometeMargem detecta
+      // "Expirado" como false). Diferente de "cancelar" (acao ativa do admin):
+      // aqui e transicao automatica do sweep de pre-reservas.
+      para = "Expirado";
+      c.folhaStatus = undefined;
+      c.folhaMotivo = motivo;
       break;
   }
   c.situacao = para;
