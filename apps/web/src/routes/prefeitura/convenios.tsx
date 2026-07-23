@@ -72,7 +72,7 @@ export function PrefeituraConvenios() {
                 <Stat label="Trava regular" value={c.prazoTravaHoras != null ? `${c.prazoTravaHoras}h` : "—"} />
                 <Stat label="Trava portabilidade" value={c.prazoPortabilidadeDU != null ? `${c.prazoPortabilidadeDU} DU` : "—"} />
                 <Stat label="Máx. parcelas" value={c.maxParcelas != null ? String(c.maxParcelas) : "—"} />
-                <Stat label="Taxa máx. a.m." value={c.taxaMaxAm != null ? `${c.taxaMaxAm}%` : "—"} />
+                <Stat label="Taxa a.m." value={c.taxaMaxAm != null ? `${c.taxaMaxAm}%` : "—"} />
                 <Stat label="Máx. comprometimento" value={c.maxComprometimentoPct != null ? `${Math.round(c.maxComprometimentoPct * 100)}%` : "—"} />
                 <Stat label="Faixa etária" value={(c.idadeMin != null && c.idadeMax != null) ? `${c.idadeMin}–${c.idadeMax}` : "—"} />
                 <Stat label="Vigência" value={`${fmtDate(c.vigenciaInicio)} → ${fmtDate(c.vigenciaFim)}`} />

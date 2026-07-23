@@ -463,7 +463,10 @@ function ConfigModal({
           <NumberField label="Trava regular (horas)" value={form.prazoTravaHoras} min={1} max={720} onChange={(e) => setForm({ ...form, prazoTravaHoras: Number(e.target.value) })} hint="Padrão 48h" />
           <NumberField label="Trava portabilidade (dias úteis)" value={form.prazoPortabilidadeDU} min={1} max={30} onChange={(e) => setForm({ ...form, prazoPortabilidadeDU: Number(e.target.value) })} hint="Padrão 7du" />
           <NumberField label="Máx. parcelas" value={form.maxParcelas} min={1} max={120} onChange={(e) => setForm({ ...form, maxParcelas: Number(e.target.value) })} />
-          <NumberField label="Taxa máx. a.m. (%)" value={form.taxaMaxAm} min={0} max={20} step={0.01} onChange={(e) => setForm({ ...form, taxaMaxAm: Number(e.target.value) })} />
+          {/* Taxa UNICA a.m. (cliente 21/07/2026: nao ha mais minima/maxima).
+              Campo interno segue `taxaMaxAm` pra nao exigir migracao de dado —
+              o valor agora representa a taxa praticada, nao um teto. */}
+          <NumberField label="Taxa a.m. (%)" value={form.taxaMaxAm} min={0} max={20} step={0.01} onChange={(e) => setForm({ ...form, taxaMaxAm: Number(e.target.value) })} />
           <NumberField label="Idade mín." value={form.idadeMin} min={0} max={120} onChange={(e) => setForm({ ...form, idadeMin: Number(e.target.value) })} />
           <NumberField label="Idade máx." value={form.idadeMax} min={1} max={120} onChange={(e) => setForm({ ...form, idadeMax: Number(e.target.value) })} />
           <SelectField
