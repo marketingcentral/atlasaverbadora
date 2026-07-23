@@ -29,26 +29,19 @@ export function CamposEditor({
   onRestoreDefault,
   saving,
   dirty,
-  presetTemplateUrl,
 }: {
   campos: ServidorCampoConfig[];
   onChange: (next: ServidorCampoConfig[]) => void;
   onSave: () => void;
   /** Salva IMEDIATAMENTE com a lista fornecida (sem esperar re-render).
-   *  Usado pelo "+ Adicionar": append custom + persist na mesma acao. */
+   *  Usado pelo "+ Adicionar campo": append + persist na mesma acao. */
   onSaveWith: (campos: ServidorCampoConfig[]) => void;
   onRestoreDefault: () => void;
   saving: boolean;
   dirty: boolean;
-  /** Se fornecido, cada custom ganha botao "Baixar exemplo deste preset"
-   *  que usa a URL retornada. `presetKey` = campo custom.key (custom_slug). */
-  presetTemplateUrl?: (presetKey: string) => string;
 }) {
   const [novoNome, setNovoNome] = useState("");
   const [novoTipo, setNovoTipo] = useState<ServidorCampoTipo>("texto");
-  // Drag & drop pra reordenar linhas segurando (alem dos botoes ↑↓). Guarda
-  // apenas o indice da linha sendo arrastada; a reordem acontece em dragOver
-  // do target usando o mesmo move() dos botoes (mas com step arbitrario).
   const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [overIdx, setOverIdx] = useState<number | null>(null);
 
@@ -64,20 +57,8 @@ export function CamposEditor({
   const updateCampo = (idx: number, patch: Partial<ServidorCampoConfig>) => {
     const c = campos[idx];
     if (!c) return;
-    let next = campos.slice();
+    const next = campos.slice();
     next[idx] = { ...c, ...patch };
-    // Regra bidirecional (cliente 21/07/2026, versao final):
-    //  - MARCAR visivel de um preset custom -> DESMARCA sistema (menos travados).
-    //  - DESMARCAR visivel de um custom (e nao sobrar outro custom visivel)
-    //    -> RE-MARCA sistema visivel:true (obrigatorio fica off).
-    if (!c.sistema && patch.visivel === true) {
-      next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: false, obrigatorio: false } : x);
-    } else if (!c.sistema && patch.visivel === false) {
-      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
-      if (!aindaTemCustomVisivel) {
-        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
-      }
-    }
     onChange(next);
   };
 
@@ -92,16 +73,7 @@ export function CamposEditor({
   const removeCampo = (idx: number) => {
     const c = campos[idx];
     if (!c || c.sistema || c.travado) return;
-    let next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
-    // Regra bidirecional (cliente 21/07/2026): excluir um preset custom
-    // segue a mesma logica de desmarcar visivel — se nao sobrar nenhum
-    // custom visivel, re-marca sistema visivel:true (menos travados).
-    if (c.visivel) {
-      const aindaTemCustomVisivel = next.some((x) => !x.sistema && x.visivel);
-      if (!aindaTemCustomVisivel) {
-        next = next.map((x) => x.sistema && !x.travado ? { ...x, visivel: true } : x);
-      }
-    }
+    const next = campos.filter((_, i) => i !== idx).map((c, i) => ({ ...c, ordem: i }));
     onChange(next);
   };
 
@@ -110,13 +82,9 @@ export function CamposEditor({
     if (!slug) return;
     const key = `custom_${slug}`;
     if (campos.some((c) => c.key === key)) return;
-    // Captura SNAPSHOT dos sistema fields no estado atual — o preset "lembra"
-    // o que estava marcado ao criar; csv-template deste preset (via ?preset=
-    // <key>) usa exatamente esse snapshot. Custom entra AO LADO dos sistema
-    // ja ativos — NAO desmarca ninguem.
-    const snapshot: ServidorCampoConfig[] = campos
-      .filter((c) => c.sistema)
-      .map((c) => ({ ...c }));
+    // Custom vira APENAS UM CAMPO A MAIS na lista — mesmo padrao dos sistema
+    // fields, sem snapshot, sem substituir os visiveis, sem regra bidirecional.
+    // (Modelo antigo de "preset" foi removido 23/07/2026 a pedido do cliente.)
     const nextCampos: ServidorCampoConfig[] = [
       ...campos,
       {
@@ -127,7 +95,6 @@ export function CamposEditor({
         visivel: true,
         ordem: campos.length,
         sistema: false,
-        snapshotCampos: snapshot,
       },
     ];
     onChange(nextCampos);
@@ -142,7 +109,7 @@ export function CamposEditor({
         <div>
           <div style={{ fontSize: 15, fontWeight: 700 }}>Campos do servidor</div>
           <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            Ligue/desligue os campos, marque obrigatórios e edite os rótulos. Use "Salvar" abaixo — se preencher o nome do campo, cria um preset novo com o snapshot atual. CPF e matrícula ficam travados (identidade do servidor).
+            Ligue/desligue campos, marque obrigatórios e edite os rótulos. Campos personalizados aparecem junto com os do sistema. CPF e matrícula ficam travados (identidade do servidor).
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -167,24 +134,13 @@ export function CamposEditor({
             </tr>
           </thead>
           <tbody>
-            {(() => {
-              // Enquanto tiver um preset custom marcado como visivel, os
-              // campos sistema ficam bloqueados (nao pode editar label/tipo/
-              // visivel/obrigatorio nem reordenar). Cliente pediu 21/07/2026.
-              const customAtivo = campos.some((c) => !c.sistema && c.visivel);
-              return campos.sort((a, b) => a.ordem - b.ordem).map((c, i) => {
-                const bloqueado = c.travado === true;
-                const sistemaBloqPorPreset = c.sistema && !bloqueado && customAtivo;
-                const inputDisabled = bloqueado || sistemaBloqPorPreset;
-                const arrastando = dragIdx === i;
-                const alvo = overIdx === i && dragIdx != null && dragIdx !== i;
+            {campos.sort((a, b) => a.ordem - b.ordem).map((c, i) => {
+              const bloqueado = c.travado === true;
+              const arrastando = dragIdx === i;
+              const alvo = overIdx === i && dragIdx != null && dragIdx !== i;
               return (
                 <tr
                   key={c.key}
-                  // Draggable NAO fica no <tr> inteiro — so no handle ⋮⋮.
-                  // Antes: draggable no tr pegava eventos de clique em input/
-                  // select da linha e disparava drag acidental. Agora o drag
-                  // so comeca quando o usuario segura o ⋮⋮ explicitamente.
                   onDragOver={(e) => {
                     if (dragIdx == null || dragIdx === i) return;
                     e.preventDefault();
@@ -207,18 +163,15 @@ export function CamposEditor({
                   <td style={td}>
                     <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
                       <span
-                        // O handle e' o UNICO elemento draggable. Segurar aqui
-                        // inicia o drag da linha inteira; segurar qualquer
-                        // outro lugar (input, select, etc) NAO dispara drag.
-                        draggable={!inputDisabled}
+                        draggable={!bloqueado}
                         onDragStart={(e) => {
-                          if (inputDisabled) return;
+                          if (bloqueado) return;
                           setDragIdx(i);
                           e.dataTransfer.effectAllowed = "move";
                           try { e.dataTransfer.setData("text/plain", String(i)); } catch { /* ignore */ }
                         }}
                         onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
-                        title={bloqueado ? "Campo travado — nao pode reordenar" : "Segure aqui e arraste pra reordenar"}
+                        title={bloqueado ? "Campo travado — não pode reordenar" : "Segure aqui e arraste pra reordenar"}
                         style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
                           width: 20, height: 26, color: "var(--text-dim)", fontSize: 14, fontWeight: 700,
@@ -226,23 +179,20 @@ export function CamposEditor({
                           opacity: bloqueado ? 0.3 : 0.7,
                           borderRadius: 4,
                         }}
-                        onMouseDown={(e) => { if (!bloqueado) e.currentTarget.style.cursor = "grabbing"; }}
-                        onMouseUp={(e) => { e.currentTarget.style.cursor = bloqueado ? "not-allowed" : "grab"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.cursor = bloqueado ? "not-allowed" : "grab"; }}
                       >⋮⋮</span>
-                      <button type="button" style={arrowBtn} onClick={() => move(i, -1)} disabled={i === 0 || inputDisabled} title="Subir">↑</button>
-                      <button type="button" style={arrowBtn} onClick={() => move(i, +1)} disabled={i === campos.length - 1 || inputDisabled} title="Descer">↓</button>
+                      <button type="button" style={arrowBtn} onClick={() => move(i, -1)} disabled={i === 0 || bloqueado} title="Subir">↑</button>
+                      <button type="button" style={arrowBtn} onClick={() => move(i, +1)} disabled={i === campos.length - 1 || bloqueado} title="Descer">↓</button>
                     </div>
                   </td>
                   <td style={{ ...td, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)" }}>
-                    {c.key}{c.sistema ? "" : " (custom)"}
+                    {c.key}{c.sistema ? "" : " (personalizado)"}
                   </td>
                   <td style={td}>
                     <input
                       value={c.label}
                       onChange={(e) => updateCampo(i, { label: e.target.value })}
                       style={inputStyle}
-                      disabled={inputDisabled}
+                      disabled={bloqueado}
                     />
                   </td>
                   <td style={td}>
@@ -250,11 +200,7 @@ export function CamposEditor({
                       value={c.tipo}
                       onChange={(e) => updateCampo(i, { tipo: e.target.value as ServidorCampoTipo })}
                       style={inputStyle}
-                      // Tipo editavel em TODOS os campos (menos travados cpf/
-                      // matricula). Antes sistema tinha tipo travado; agora
-                      // averbadora pode ajustar (ex.: mudar salarioLiquido
-                      // de moeda pra numero, ou telefone pra texto).
-                      disabled={inputDisabled}
+                      disabled={bloqueado}
                     >
                       {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
@@ -263,7 +209,7 @@ export function CamposEditor({
                     <input
                       type="checkbox"
                       checked={c.visivel}
-                      disabled={inputDisabled}
+                      disabled={bloqueado}
                       onChange={(e) => updateCampo(i, { visivel: e.target.checked })}
                     />
                   </td>
@@ -271,72 +217,57 @@ export function CamposEditor({
                     <input
                       type="checkbox"
                       checked={c.obrigatorio}
-                      disabled={inputDisabled}
+                      disabled={bloqueado}
                       onChange={(e) => updateCampo(i, { obrigatorio: e.target.checked })}
                     />
                   </td>
                   <td style={{ ...td, textAlign: "right" }}>
                     {c.sistema || bloqueado ? (
                       <span style={{ fontSize: 11, color: "var(--text-dim)" }}>
-                        {bloqueado ? "travado" : sistemaBloqPorPreset ? "bloq. por preset" : "sistema"}
+                        {bloqueado ? "travado" : "sistema"}
                       </span>
                     ) : (
-                      <div style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
-                        {presetTemplateUrl ? (
-                          <a
-                            href={presetTemplateUrl(c.key)}
-                            download
-                            title="Baixar CSV modelo deste preset (com colunas snapshot)"
-                            style={{
-                              display: "inline-flex", alignItems: "center", justifyContent: "center",
-                              width: 26, height: 26, borderRadius: 6,
-                              border: "1px solid var(--gold-500)",
-                              background: "transparent", color: "var(--gold-500)",
-                              cursor: "pointer", fontSize: 12, textDecoration: "none",
-                            }}
-                          >↓</a>
-                        ) : null}
-                        <button type="button" style={removeBtn} onClick={() => removeCampo(i)} title="Remover campo custom">✕</button>
-                      </div>
+                      <button type="button" style={removeBtn} onClick={() => removeCampo(i)} title="Remover campo personalizado">✕</button>
                     )}
                   </td>
                 </tr>
               );
-              });
-            })()}
+            })}
           </tbody>
         </table>
       </div>
 
       <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--border)" }}>
         <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".06em", color: "var(--text-dim)", textTransform: "uppercase", marginBottom: 8 }}>
-          Salvar alterações {"/"}  criar preset customizado
+          Adicionar campo personalizado
         </div>
         <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 10 }}>
-          Preencha o nome pra criar um preset novo (captura snapshot dos sistema visíveis).
-          Deixe vazio pra só salvar as alterações dos campos sem criar preset.
+          O campo entra na lista junto com os do sistema. Depois é só marcar visível/obrigatório como qualquer outro.
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto", gap: 10, alignItems: "end" }}>
-          <TextField label="Nome do campo (opcional)" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex.: Lotação (deixe vazio pra só salvar)" />
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr auto auto", gap: 10, alignItems: "end" }}>
+          <TextField label="Nome do campo" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} placeholder="ex.: Lotação" />
           <SelectField label="Tipo" value={novoTipo} onChange={(e) => setNovoTipo(e.target.value as ServidorCampoTipo)} options={TIPOS.map((t) => ({ value: t.value, label: t.label }))} />
           <Button
             size="sm"
-            onClick={() => {
-              if (novoNome.trim()) {
-                addCustom(); // cria preset + salva
-              } else {
-                onSave(); // so salva estado atual
-              }
-            }}
-            disabled={saving || (!novoNome.trim() && !dirty)}
+            onClick={addCustom}
+            disabled={saving || !novoNome.trim()}
             type="button"
           >
-            {saving ? "Salvando…" : "Salvar"}
+            + Adicionar
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onSave}
+            disabled={saving || !dirty}
+            type="button"
+          >
+            {saving ? "Salvando…" : "Salvar alterações"}
           </Button>
         </div>
         {novoNome.trim() ? (
           <div style={{ marginTop: 6, fontSize: 12, color: "var(--text-dim)" }}>
-            Key do preset: <code style={{ fontFamily: "var(--font-mono)" }}>custom_{slugify(novoNome)}</code>
+            Key: <code style={{ fontFamily: "var(--font-mono)" }}>custom_{slugify(novoNome)}</code>
           </div>
         ) : null}
       </div>
@@ -361,7 +292,6 @@ const arrowBtn: React.CSSProperties = {
 const removeBtn: React.CSSProperties = {
   width: 26, height: 26, borderRadius: 6, border: "1px solid var(--danger-500)",
   background: "transparent", color: "var(--danger-500)", cursor: "pointer",
-  // Centralizacao do ✕ (antes ficava desalinhado por causa do line-height do char).
   display: "inline-flex", alignItems: "center", justifyContent: "center",
   padding: 0, fontSize: 14, lineHeight: 1,
 };

@@ -49,19 +49,10 @@ export function AdminServidoresImportar() {
   useEffect(() => {
     if (!prefId) { setRascunho(null); setSavedAt(null); return; }
     if (configQ.data?.config?.campos) {
-      // Cliente pediu 21/07/2026: ao carregar a prefeitura, presets NAO vem
-      // pre-ativados. Sistema fica visivel (default view), customs aparecem
-      // na lista mas desmarcados. Usuario ativa manualmente marcando o Visivel.
-      const campos = configQ.data.config.campos;
-      const temPresetVisivel = campos.some((c) => !c.sistema && c.visivel);
-      const camposParaEditar = temPresetVisivel
-        ? campos.map((c) => {
-            if (!c.sistema) return { ...c, visivel: false, obrigatorio: false };
-            if (c.travado) return c;
-            return { ...c, visivel: true };
-          })
-        : campos;
-      setRascunho(camposParaEditar);
+      // Modelo "preset" removido 23/07/2026 — customs sao apenas campos a
+      // mais. Nao ha mais logica de "custom visivel desmarca sistema" nem
+      // reset ao carregar. O que veio do backend e' o que a UI mostra.
+      setRascunho(configQ.data.config.campos);
       setSavedAt(configQ.data.config.atualizadoEm ?? null);
     } else if (configQ.isError) {
       setRascunho(DEFAULT_CAMPOS_FALLBACK);
@@ -189,13 +180,8 @@ export function AdminServidoresImportar() {
             onChange={setRascunho}
             onSave={() => saveConfig.mutate(rascunho)}
             /** Chamado pelo "+ Adicionar" do editor: recebe a lista JA com o custom
-             *  anexado e salva imediatamente (sem esperar debounce nem clique manual
-             *  de Salvar). Fluxo pedido pelo cliente 21/07/2026: "clicar em adicionar
-             *  ai sim vai salvar". */
+             *  anexado e salva imediatamente (sem esperar clique manual de Salvar). */
             onSaveWith={(campos) => saveConfig.mutate(campos)}
-            /** URL do CSV modelo pra cada preset custom (snapshot dos sistema
-             *  no momento em que o preset foi criado). */
-            presetTemplateUrl={(presetKey) => atlas.admin.servidoresCsvTemplateUrl(prefIdNum, presetKey)}
             onRestoreDefault={() => {
               // "Restaurar padrao" via backend: manda array vazio -> sanitizeCampos
               // reconstroi so os travados. Mais simples do lado do frontend: pega
