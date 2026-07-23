@@ -33,7 +33,7 @@ const STATUS_OPTS: BancoPropostaStatus[] = [
   "recebida", "aprovada", "averbada", "recusada",
 ];
 
-type TabKey = "todas" | "aguardando" | "aprovadas" | "averbadas" | "recusadas";
+type TabKey = "todas" | "aguardando" | "aprovadas" | "recusadas";
 // Produto virou submenu do sidebar (padrao Cadastros) — nao aparece mais como
 // tab/dropdown na pagina. Vem do query param ?produto=emprestimo|cartao|portabilidade.
 
@@ -41,10 +41,11 @@ function statusPertenceTab(s: BancoPropostaStatus, tab: TabKey): boolean {
   if (tab === "todas") return true;
   if (tab === "aguardando") return s === "recebida" || s === "em_analise" || s === "mais_info";
   // Averbada saiu de "Aprovadas" (cliente 23/07/2026): averbacao confirmada e'
-  // operacao FECHADA, nao proposta aprovada esperando desfecho. Ganhou aba
-  // propria — sem isso, uma proposta averbada nao apareceria em aba nenhuma.
+  // operacao FECHADA, nao proposta aprovada esperando desfecho. NAO ganha aba
+  // propria (cliente: "ja tem um seletor, nao precisa criar uma aba pra cada")
+  // — quem quiser so as averbadas usa o dropdown de Status. Elas seguem
+  // visiveis em "Todas".
   if (tab === "aprovadas") return s === "aprovada" || s === "aguardando_formalizacao" || s === "formalizada";
-  if (tab === "averbadas") return s === "averbada";
   return s === "recusada" || s === "expirada";
 }
 
@@ -109,7 +110,7 @@ export function BancoPropostas() {
         aprovadas++;
         const d = new Date(p.criadaEm);
         if (d.getMonth() === mesAtual && d.getFullYear() === anoAtual) aprovadasNoMes++;
-      } else if (statusPertenceTab(p.status, "averbadas")) averbadas++;
+      } else if (p.status === "averbada") averbadas++;
       else if (statusPertenceTab(p.status, "recusadas")) recusadas++;
     }
     return { total: doProduto.length, aguardando, aprovadas, averbadas, aprovadasNoMes, recusadas };
@@ -172,7 +173,6 @@ export function BancoPropostas() {
         <Tab active={tab === "todas"} onClick={() => setTab("todas")} label={`Todas (${contadores.total})`} tone="neutro" />
         <Tab active={tab === "aguardando"} onClick={() => setTab("aguardando")} label={`Aguardando (${contadores.aguardando})`} tone="gold" />
         <Tab active={tab === "aprovadas"} onClick={() => setTab("aprovadas")} label={`Aprovadas (${contadores.aprovadas})`} tone="emerald" />
-        <Tab active={tab === "averbadas"} onClick={() => setTab("averbadas")} label={`Averbadas (${contadores.averbadas})`} tone="neutro" />
         <Tab active={tab === "recusadas"} onClick={() => setTab("recusadas")} label={`Recusadas (${contadores.recusadas})`} tone="danger" />
       </div>
 
