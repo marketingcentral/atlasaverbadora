@@ -54,10 +54,10 @@ interface ContratoLike {
 }
 interface BancoLike { id: number; nome: string; status?: string; }
 interface PrefeituraLike { id: number; nome: string; status?: string; }
-interface ConvenioLike { id: string; bancoId: number; prefeituraId?: number; }
+interface ConvenioLike { id: string; nome?: string; bancoId: number; prefeituraId?: number; }
 interface AdfLike { id: string; adf: string; idUnico: string; prefeituraId: number; competencia: string; }
 interface ServidorLike { matricula: string; prefeituraId?: number; idConvenio?: string; }
-interface TabelaEmprestimoLike { id: string; taxaAm?: number; ativo?: boolean; }
+interface TabelaEmprestimoLike { id: string; convenioId?: string; taxaAm?: number; ativo?: boolean; }
 interface PortabilidadeLike { id: string; status: string; ofertas: { novaTaxaAm: number }[]; }
 
 export interface VerifyInputs {
@@ -88,6 +88,27 @@ export function grupoA(inputs: VerifyInputs): CheckResult[] {
   const conveniosOrfaos = inputs.convenios.filter((cv) => !bancoIds.has(cv.bancoId) || (cv.prefeituraId != null && !prefIds.has(cv.prefeituraId)));
   const nomesBlacklistados = inputs.bancos.filter((b) => BLACKLIST_NOMES_BANCO.some((r) => r.test(b.nome)));
 
+  // Tabelas de emprestimo -> convenio.bancoId -> banco existente.
+  // Bug reportado 23/07/2026: /servidor/marketplace mostrava "SCred Financeira"
+  // porque /me/ofertas fazia split do NOME do convenio. Se qualquer tabela
+  // ativa aponta pra convenio orfao (ou convenio com bancoId invalido) —
+  // simulador do servidor cai em nome nulo / fantasma.
+  const conveniosMap = new Map(inputs.convenios.map((cv) => [cv.id, cv]));
+  const tabelasOrfas = inputs.tabelasEmprestimo.filter((t) => {
+    if (!t.ativo) return false;
+    const cv = conveniosMap.get((t as { convenioId?: string }).convenioId ?? "");
+    if (!cv) return true; // convenio nao existe
+    return !bancoIds.has(cv.bancoId); // convenio existe mas aponta pra banco removido
+  });
+
+  // Blacklist de nomes tambem no CONVENIO — cliente reportou 23/07/2026 que
+  // "SCred Financeira" reaparecia. Causa: convenio ficou salvo com "SCred"
+  // no texto do nome (do seed antigo) e outro endpoint fazia split disso.
+  const conveniosComNomeSuspeito = inputs.convenios.filter((cv) => {
+    const nome = (cv as { nome?: string }).nome ?? "";
+    return BLACKLIST_NOMES_BANCO.some((r) => r.test(nome));
+  });
+
   return [
     {
       nome: "Contratos com bancoId que existe em `bancos`",
@@ -108,10 +129,22 @@ export function grupoA(inputs: VerifyInputs): CheckResult[] {
       exemplos: conveniosOrfaos.slice(0, 5).map((cv) => ({ id: cv.id, bancoId: cv.bancoId, prefeituraId: cv.prefeituraId })),
     },
     {
-      nome: "Blacklist de nomes historicos (Scred, Banco fake, Banco 1)",
+      nome: "Blacklist de nomes historicos em bancos (Scred, Banco fake, Banco 1)",
       ok: nomesBlacklistados.length === 0,
       detalhes: nomesBlacklistados.length === 0 ? undefined : `${nomesBlacklistados.length} banco(s) com nome que ja foi bug conhecido — recadastrado?`,
       exemplos: nomesBlacklistados.slice(0, 5).map((b) => ({ id: b.id, nome: b.nome })),
+    },
+    {
+      nome: "Tabelas de emprestimo ativas com convenio + banco validos",
+      ok: tabelasOrfas.length === 0,
+      detalhes: tabelasOrfas.length === 0 ? undefined : `${tabelasOrfas.length} tabela(s) ativa(s) apontando pra convenio inexistente ou convenio com bancoId orfao — servidor pode ver oferta de banco fantasma`,
+      exemplos: tabelasOrfas.slice(0, 5).map((t) => ({ id: t.id, convenioId: (t as { convenioId?: string }).convenioId })),
+    },
+    {
+      nome: "Blacklist de nomes historicos em convenios (SCred etc no nome do convenio)",
+      ok: conveniosComNomeSuspeito.length === 0,
+      detalhes: conveniosComNomeSuspeito.length === 0 ? undefined : `${conveniosComNomeSuspeito.length} convenio(s) com texto de banco fantasma no nome — vazava pro simulador via split("/")`,
+      exemplos: conveniosComNomeSuspeito.slice(0, 5).map((cv) => ({ id: cv.id, nome: (cv as { nome?: string }).nome })),
     },
   ];
 }

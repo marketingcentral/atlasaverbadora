@@ -888,7 +888,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/servidores/me/ofertas", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
-    await ensureServidoresLoaded(c.env);
+    await Promise.all([ensureServidoresLoaded(c.env), ensureBancosLoaded(c.env), refreshConvenios(c.env)]);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     // Filtro por prefeituraId da matricula ATIVA: se o servidor tem matricula
@@ -916,13 +916,25 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     });
     return c.json({
       ofertas: tabelas.map((t) => {
-        // "CASTRO / DELTA GLOBAL" -> banco = "DELTA GLOBAL", cidade = "CASTRO"
-        const [cidade = "", banco = ""] = t.convenio.split("/").map((p) => p.trim());
+        // BUG antigo (reportado 23/07/2026): "SCred Financeira" reaparecia no
+        // termo do servidor. Causa: aqui fazia t.convenio.split("/") e usava
+        // o segundo pedaco como bancoNome. Convenios com nome antigo tipo
+        // "MUNICIPIO DE CAPISTRANO / SCred Financeira" (persistido no PG do
+        // seed antigo) faziam vazar "SCred" pra tela do servidor MESMO com o
+        // banco parceiro real renomeado. Fix: resolver bancoId via convenio
+        // -> bancos[i].nome (cadastro real). Fallback so pra convenios orfaos
+        // (bancoId nao existe mais em bancos ativos) — nao mostra fantasma.
+        const conv = CONVENIOS_MOCK.find((cv) => cv.id === t.convenioId);
+        const banco = conv ? bancos.find((b) => b.id === conv.bancoId) : undefined;
+        const bancoNome = banco?.nome ?? "";
+        // Cidade continua vindo do texto do convenio (usado pra rotular no
+        // marketplace do servidor — "Ofertas de X"). Nao critico.
+        const cidade = t.convenio.split("/")[0]?.trim() ?? "";
         // Compat: tabelas legadas so tem taxaMaxAm — usa como taxa unica.
         const tAny = t as unknown as { taxaAm?: number; taxaMaxAm?: number };
         return {
           id: t.id,
-          bancoNome: banco || t.convenio,
+          bancoNome,
           convenioId: t.convenioId,
           convenio: t.convenio,
           cidade,
@@ -931,7 +943,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
           vigenciaInicio: t.vigenciaInicio,
           vigenciaFim: t.vigenciaFim ?? null,
         };
-      }),
+      // Filtra ofertas sem bancoNome resolvido — se o convenio ficou orfao
+      // (bancoId apontando pra banco removido), NAO mostra a oferta pro
+      // servidor (evita "" ou fantasma na UI). O admin ve o problema no
+      // /averbadora/verify (Grupo A).
+      }).filter((o) => o.bancoNome !== ""),
     });
   })
   // Servidor solicita uma proposta (pré-reserva) — CRIA no store do banco, então o
