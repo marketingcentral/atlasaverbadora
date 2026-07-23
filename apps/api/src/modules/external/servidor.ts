@@ -43,19 +43,41 @@ export const externalServidorRoutes = new Hono<{ Bindings: Env }>()
     return c.json({ _meta: meta(t), data: { salario_liquido: s.salarioLiquido, comprometido: Math.round(comprometido * 100) / 100, margens } });
   })
 
-  // Ofertas pré-aprovadas (marketplace)
-  .get("/v1/external/servidor/ofertas", apiTokenAuth(["servidor:read"], "servidor"), (c) => {
+  // Ofertas pré-aprovadas (marketplace) — vindas das TABELAS reais que os
+  // bancos cadastraram (portal_banco_tabelas), filtradas pelos convenios da
+  // prefeitura do servidor. Cliente pediu 22/07/2026: sem bancos ficticios.
+  .get("/v1/external/servidor/ofertas", apiTokenAuth(["servidor:read"], "servidor"), async (c) => {
     const t = c.get("apiToken");
     const s = resolveServidor(t.partnerId);
     const disp = margemDisponivel(s.salarioLiquido, 0, "EMPRESTIMO");
-    const ofertas = [
-      { id: "OFT-1", banco: "SCred Financeira", taxa_am: 0.0151, parcelas_max: 96 },
-      { id: "OFT-2", banco: "Banco BMG", taxa_am: 0.0172, parcelas_max: 84 },
-      { id: "OFT-3", banco: "Pan Crédito", taxa_am: 0.0189, parcelas_max: 72 },
-    ].map((o) => {
+    // Convenios validos pra esta matricula (mesma prefeitura do servidor).
+    const conveniosDaPref = new Set(
+      CONVENIOS_MOCK.filter((cv) => cv.id === s.idConvenio).map((cv) => cv.id),
+    );
+    const hoje = new Date().toISOString().slice(0, 10);
+    const { listTabelas } = await import("../portal-banco/cadastros.js");
+    const tabelas = (await listTabelas(c.env)).filter((tb) => {
+      if (!tb.ativo) return false;
+      if (tb.vigenciaInicio > hoje) return false;
+      if (tb.vigenciaFim && tb.vigenciaFim < hoje) return false;
+      return conveniosDaPref.has(tb.convenioId);
+    });
+    const ofertas = tabelas.map((tb) => {
+      const tAny = tb as unknown as { taxaAm?: number; taxaMaxAm?: number };
+      const taxa = tAny.taxaAm ?? tAny.taxaMaxAm ?? 0;
+      const [, banco = ""] = tb.convenio.split("/").map((p) => p.trim());
       const parcela = disp * 0.9;
-      const valorAprox = (parcela * (1 - Math.pow(1 + o.taxa_am, -o.parcelas_max))) / o.taxa_am;
-      return { ...o, parcela_max_estimada: Math.round(parcela * 100) / 100, valor_aprovado_estimado: Math.round(valorAprox * 100) / 100 };
+      const valorAprox = taxa > 0
+        ? (parcela * (1 - Math.pow(1 + taxa, -tb.prazoMaxMeses))) / taxa
+        : 0;
+      return {
+        id: tb.id,
+        banco: banco || tb.convenio,
+        taxa_am: taxa,
+        parcelas_max: tb.prazoMaxMeses,
+        parcela_max_estimada: Math.round(parcela * 100) / 100,
+        valor_aprovado_estimado: Math.round(valorAprox * 100) / 100,
+      };
     });
     return c.json({ _meta: meta(t), data: ofertas });
   })

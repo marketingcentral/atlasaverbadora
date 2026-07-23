@@ -2,6 +2,7 @@
 // Workflow: receive remessa (CSV) → reconcile → update margins → produce reconciliation report.
 
 import { parseCsv } from "../../_shared/csv.js";
+import { maskCpf as maskCpfShared } from "../../_shared/pii.js";
 import { previewIdUnico } from "./id-unico.js";
 import { SERVIDORES_BUSCA_MOCK, prefeituraIdDe } from "../portal-banco/fixtures.js";
 import { listContratos } from "../portal-banco/store.js";
@@ -90,13 +91,14 @@ function parseBRL(s: string | undefined): number {
   if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
   return Number(t);
 }
-/** Mascara CPF completo -> "000.***.***-00" (mantém 3 primeiros + 2 últimos). */
+/** Wrapper para pad-left de CPF curto — helper compartilhado nao pad,
+ *  mas o CSV de tombamento pode chegar com CPF trimmed (sem zero a esquerda). */
 function maskCpf(cpf: string | undefined): string {
   const raw = (cpf ?? "").replace(/\D/g, "");
-  if (!raw) return "";
-  if (raw.includes("*")) return cpf!; // já mascarado
-  const d = raw.length < 11 ? raw.padStart(11, "0") : raw.slice(-11);
-  return `${d.slice(0, 3)}.***.***-${d.slice(-2)}`;
+  if (raw && raw.length > 0 && raw.length < 11) {
+    return maskCpfShared(raw.padStart(11, "0"));
+  }
+  return maskCpfShared(cpf);
 }
 /** Lê um campo por vários nomes de coluna possíveis (case-insensitive). */
 function pick(norm: Record<string, string>, ...names: string[]): string {
@@ -224,24 +226,12 @@ export interface ExternalLoan {
   motivo?: string;
 }
 
-// Seed de teste — SEMPRE em memoria (nao depende do Postgres), pra o fluxo de
-// portabilidade poder ser validado com os servidores de teste.
-const EXTERNAL_LOANS_SEED: ExternalLoan[] = [
-  // Diego (teste, matricula 993410027): Santander, R$ 50 mil, faltam 40 parcelas.
-  {
-    id: "EXT-993410027-SANTANDER",
-    matricula: "993410027",
-    bancoNome: "Santander",
-    contratoOrigem: "SAN-0099341027",
-    valorParcela: 1483.33,
-    parcelasRestantes: 40,
-    totalParcelas: 60,
-    saldoDevedor: 42000,
-    valorEmprestimo: 50000,
-    taxaAm: 0.0219,
-    tipo: "Empréstimo",
-  },
-];
+// Sem seed hardcoded. Cliente pediu 21/07/2026 remocao do emprestimo externo
+// fake do "Diego" (matricula 993410027, Santander) — era uma bomba-relogia:
+// qualquer servidor reimportado com essa matricula ganhava um emprestimo
+// fantasma consumindo margem. Emprestimos externos vem EXCLUSIVAMENTE do
+// tombamento importado pela prefeitura (_linhas). Mesma regra dos demais
+// seeds ja removidos (servidores, convenios, contratos).
 
 /** Mapeia uma linha de tombamento (planilha importada) para um emprestimo externo portavel. */
 function tombamentoLinhaToLoan(l: TombamentoLinha): ExternalLoan {
@@ -263,20 +253,16 @@ function tombamentoLinhaToLoan(l: TombamentoLinha): ExternalLoan {
 }
 
 /** Emprestimos externos (de outros bancos) de um servidor — para portabilidade.
- *  Une o seed de teste + o que a prefeitura importou via tombamento, pela matricula.
+ *  Vem EXCLUSIVAMENTE do que a prefeitura importou via tombamento, pela matricula.
  *  Ignora cartao beneficio (nao e portavel como emprestimo consignado). */
 export function listExternalLoans(matricula: string): ExternalLoan[] {
-  const seed = EXTERNAL_LOANS_SEED.filter((l) => l.matricula === matricula);
-  const tomb = _linhas
+  return _linhas
     .filter((l) => l.matricula === matricula)
     .filter((l) => !/beneficio|benefício/i.test(l.tipo ?? ""))
     // F2: linhas substituidas por portabilidade averbada saem do calculo de
     // margem e da lista de portaveis (nao pode portar de novo o que ja foi).
     .filter((l) => !l.substituida)
     .map(tombamentoLinhaToLoan);
-  // dedup por contratoOrigem (o seed tem prioridade)
-  const seen = new Set(seed.map((l) => l.contratoOrigem));
-  return [...seed, ...tomb.filter((l) => !seen.has(l.contratoOrigem))];
 }
 
 /** Um emprestimo externo especifico do servidor (para preencher a portabilidade). */

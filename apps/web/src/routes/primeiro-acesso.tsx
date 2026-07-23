@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Button, Card, Input } from "@atlas/ui/web";
+import { Button, Card, Input, formatCpf } from "@atlas/ui/web";
 import { atlas } from "../lib/sdk";
 import { AtlasLogo } from "../components/AtlasBrand";
 
@@ -55,13 +55,7 @@ interface PrefeituraInfo {
   matricula: string;
 }
 
-function formatCpf(v: string): string {
-  const d = v.replace(/\D/g, "").slice(0, 11);
-  if (d.length <= 3) return d;
-  if (d.length <= 6) return `${d.slice(0, 3)}.${d.slice(3)}`;
-  if (d.length <= 9) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6)}`;
-  return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`;
-}
+// formatCpf agora vem de @atlas/ui/web (helper compartilhado).
 
 // Formata (48) 99101-2233 (11 digitos) ou (48) 3234-5678 (10 digitos).
 function formatTelefone(v: string): string {

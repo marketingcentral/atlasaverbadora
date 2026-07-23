@@ -145,8 +145,8 @@ async function ensureSeeded(kv: KVNamespace): Promise<void> {
     const flag = await kv.get(K_SEEDED);
     if (flag) return;
     await kv.put(K_SEEDED, "1");
-    await createToken(kv, { name: "Banco SCred — produção", environment: "production", audience: "banco", partnerId: 1, scopes: ["banco:read", "banco:write", "banco:webhooks"], createdBy: "seed" });
-    await createToken(kv, { name: "Banco SCred — sandbox", environment: "sandbox", audience: "banco", partnerId: 1, scopes: ["banco:read", "banco:write", "banco:webhooks"], createdBy: "seed" });
+    await createToken(kv, { name: "Banco Sandbox — produção", environment: "production", audience: "banco", partnerId: 1, scopes: ["banco:read", "banco:write", "banco:webhooks"], createdBy: "seed" });
+    await createToken(kv, { name: "Banco Sandbox — sandbox", environment: "sandbox", audience: "banco", partnerId: 1, scopes: ["banco:read", "banco:write", "banco:webhooks"], createdBy: "seed" });
     await createToken(kv, { name: "App Servidor — sandbox", environment: "sandbox", audience: "servidor", partnerId: 1, scopes: ["servidor:read", "servidor:write"], createdBy: "seed" });
     await createToken(kv, { name: "Integração Averbadora — sandbox", environment: "sandbox", audience: "averbadora", partnerId: 0, scopes: ["averbadora:read", "averbadora:write", "averbadora:webhooks"], createdBy: "seed" });
   })().catch(() => undefined);

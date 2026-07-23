@@ -1,4 +1,5 @@
 import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes, type ReactNode } from "react";
+import { formatCpf, formatCnpj, formatTelefone, formatCep } from "./masks.js";
 
 interface BaseProps {
   label: string;
@@ -84,6 +85,52 @@ export const NumberField = forwardRef<HTMLInputElement, BaseProps & Omit<InputHT
     );
   },
 );
+
+// Campos com mascara BR (CPF, CNPJ, telefone, CEP). Aceitam value/onChange
+// como string mascarada (o mesmo formato que aparece na tela). O caller
+// extrai so os digitos com `.replace(/\D/g, "")` na hora de persistir.
+// Alternativa: value cru + onChangeDigits (nao adotado pra manter API igual
+// ao TextField — caller que decide se guarda cru ou mascarado no state).
+
+interface MaskedProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "value" | "type" | "maxLength"> {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+}
+
+function makeMaskedField(fmt: (raw: string) => string, defaultPlaceholder: string, maxLen: number) {
+  return forwardRef<HTMLInputElement, BaseProps & MaskedProps>(
+    function MaskedField({ label, hint, error, required, style, value, onChange, placeholder, ...rest }, ref) {
+      const display = fmt(value ?? "");
+      return (
+        <FieldShell label={label} hint={hint} error={error} required={required}>
+          <input
+            ref={ref}
+            type="text"
+            inputMode="numeric"
+            autoComplete="off"
+            maxLength={maxLen}
+            placeholder={placeholder ?? defaultPlaceholder}
+            value={display}
+            onChange={(e) => {
+              // Reescreve o value pra manter só o formato mascarado — evita
+              // usuario colar lixo (letras, virgulas, etc.).
+              const masked = fmt(e.target.value);
+              const synthetic = { ...e, target: { ...e.target, value: masked } } as unknown as React.ChangeEvent<HTMLInputElement>;
+              onChange(synthetic);
+            }}
+            {...rest}
+            style={{ ...inputStyle(error), ...style }}
+          />
+        </FieldShell>
+      );
+    },
+  );
+}
+
+export const CpfField = makeMaskedField(formatCpf, "000.000.000-00", 14);
+export const CnpjField = makeMaskedField(formatCnpj, "00.000.000/0000-00", 18);
+export const TelefoneField = makeMaskedField(formatTelefone, "(00) 00000-0000", 15);
+export const CepField = makeMaskedField(formatCep, "00000-000", 9);
 
 interface SelectFieldProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "children"> {
   options: { value: string; label: string }[];

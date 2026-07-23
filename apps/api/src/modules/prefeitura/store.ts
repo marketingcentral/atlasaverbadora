@@ -11,7 +11,10 @@ import { issueIdUnico } from "../admin/id-unico.js";
 // Folha — movimentação mensal de pessoal
 // ============================================================
 
-export type MovimentacaoTipo = "admissao" | "demissao" | "aposentadoria" | "promocao" | "alteracao";
+// "desconto" = linha de CONFIRMACAO que NAO altera nenhum servidor. Serve pra
+// prefeitura fechar a folha num mes SEM mudanca de pessoal (a regra exige >=1
+// movimentacao pra fechar). Cliente pediu 21/07/2026.
+export type MovimentacaoTipo = "admissao" | "demissao" | "aposentadoria" | "promocao" | "alteracao" | "desconto";
 
 export interface Movimentacao {
   id: string;
@@ -28,7 +31,27 @@ export interface Movimentacao {
 }
 
 const _movimentacoes: Movimentacao[] = [];
-let _movSeq = 1;
+// Counter POR PREFEITURA. Antes _movSeq era global — Prefeitura A criava
+// MOV-000001..14 e a primeira mov da B ja saia MOV-000015 (bug 22/07/2026).
+// Agora cada prefeitura tem seus 000001+. Formato: MOV-{prefId}-{seq6}.
+const _movSeqPorPref: Map<number, number> = new Map();
+function nextMovId(prefeituraId: number): string {
+  // Sincroniza seq com o max ja existente em memoria (best-effort — se cold
+  // start carregar movs do PG antes de gerar novo, pega o topo daquela pref).
+  const cur = _movSeqPorPref.get(prefeituraId) ?? 0;
+  const maxExistente = _movimentacoes
+    .filter((m) => m.prefeituraId === prefeituraId)
+    .reduce((acc, m) => {
+      const match = new RegExp(`^MOV-${prefeituraId}-(\\d+)$`).exec(m.id);
+      if (match) return Math.max(acc, Number(match[1]));
+      const legacy = /^MOV-(\d+)$/.exec(m.id);
+      if (legacy) return Math.max(acc, Number(legacy[1]));
+      return acc;
+    }, 0);
+  const seq = Math.max(cur, maxExistente) + 1;
+  _movSeqPorPref.set(prefeituraId, seq);
+  return `MOV-${prefeituraId}-${String(seq).padStart(6, "0")}`;
+}
 
 export function listMovimentacoes(folhaId: string): Movimentacao[] {
   return _movimentacoes.filter((m) => m.folhaId === folhaId).sort((a, b) => b.criadoEm.localeCompare(a.criadoEm));
@@ -43,6 +66,18 @@ export function applyMovimentacao(input: {
   folhaId: string; prefeituraId: number; tipo: MovimentacaoTipo; matricula: string;
   cargoNovo?: string; salarioNovo?: number; detalhe?: string; nomeNovo?: string; cpf?: string;
 }, now: string): { ok: true; mov: Movimentacao; contratosAtingidos: string[]; servidorAtualizado?: import("../portal-banco/fixtures.js").ServidorBuscaMock } | { ok: false; error: string } {
+  // "desconto": linha de confirmacao — NAO mexe em nenhum servidor, so registra
+  // a movimentacao (pra folha sem mudanca de pessoal poder ser fechada).
+  if (input.tipo === "desconto") {
+    const mov: Movimentacao = {
+      id: nextMovId(input.prefeituraId),
+      folhaId: input.folhaId, prefeituraId: input.prefeituraId, tipo: input.tipo,
+      matricula: (input.matricula || "").trim() || "—", cpfMasked: "", nome: "Folha sem alteração de pessoal",
+      detalhe: input.detalhe ?? defaultDetalhe(input.tipo), criadoEm: now,
+    };
+    _movimentacoes.push(mov);
+    return { ok: true, mov, contratosAtingidos: [] };
+  }
   const s = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === input.matricula && prefeituraIdDe(x) === input.prefeituraId);
 
   // Admissão pode criar um servidor novo se não existir.
@@ -70,13 +105,21 @@ export function applyMovimentacao(input: {
     case "demissao":
     case "aposentadoria": {
       target.situacaoFuncional = input.tipo === "demissao" ? "DESLIGADO" : "APOSENTADO";
-      // Cascade F6: servidor desligado -> ADFs param na folha + contratos viram
-      // "Em cobranca direta". Banco assume cobranca fora da folha. Idempotente.
+      // Cascade F6 (completo): servidor desligado ->
+      //   1. Contrato: situacao "Em cobranca direta" + folhaStatus interrompida
+      //   2. ADF materializada: status "interrompida_desligamento" (mantida
+      //      pra rastreabilidade, banco/averbadora veem o motivo)
+      //   3. Callsite notifica banco por email (nao aqui pra evitar ciclo
+      //      de imports; handler /folhas/:id/movimentacao dispara).
       const motivo = input.tipo === "demissao" ? "Servidor desligado" : "Servidor aposentado";
       const ativos = listContratosAtivosDaMatricula(target.matricula);
       for (const ct of ativos) {
         setContratoDesligamento(ct.adf, motivo);
         contratosAtingidos.push(ct.adf);
+      }
+      // Interrompe ADFs em _adfs (marca, nao remove — rastreio).
+      if (contratosAtingidos.length > 0) {
+        interromperAdfsByContratoAdfs(contratosAtingidos, motivo, now);
       }
       break;
     }
@@ -99,7 +142,7 @@ export function applyMovimentacao(input: {
   }
 
   const mov: Movimentacao = {
-    id: `MOV-${String(_movSeq++).padStart(6, "0")}`,
+    id: nextMovId(input.prefeituraId),
     folhaId: input.folhaId, prefeituraId: input.prefeituraId, tipo: input.tipo,
     matricula: target.matricula, cpfMasked: target.cpfMasked, nome: target.nome,
     detalhe: input.detalhe ?? defaultDetalhe(input.tipo),
@@ -114,7 +157,7 @@ export function applyMovimentacao(input: {
 }
 
 function defaultDetalhe(t: MovimentacaoTipo): string {
-  return { admissao: "Admissão", demissao: "Desligamento", aposentadoria: "Aposentadoria", promocao: "Promoção", alteracao: "Alteração de cargo/salário" }[t];
+  return { admissao: "Admissão", demissao: "Desligamento", aposentadoria: "Aposentadoria", promocao: "Promoção", alteracao: "Alteração de cargo/salário", desconto: "Sem movimentação de pessoal no mês" }[t];
 }
 
 function prefeituraNome(_id: number): string {
@@ -327,6 +370,26 @@ export function listAdfsGlobal(competencia?: string): AdfEntry[] {
   return _adfs.filter((a) => !competencia || a.competencia === competencia);
 }
 
+/** Marca ADFs pré-materializadas como "interrompida_desligamento" quando o
+ *  servidor foi desligado. Usa `adf` do contrato (nao id interno) pra achar.
+ *  Diferente de removeAdfsByContratoAdf: aqui MANTEM a linha pra rastreio;
+ *  a averbadora ainda ve a ADF, so com badge "Interrompida (desligamento)".
+ *  Idempotente: se ja esta interrompida, nao mexe. Retorna quantas foram
+ *  afetadas. */
+export function interromperAdfsByContratoAdfs(contratoAdfs: string[], motivo: string, now: string): number {
+  const set = new Set(contratoAdfs);
+  let n = 0;
+  for (const a of _adfs) {
+    if (set.has(a.adf) && a.status !== "interrompida_desligamento") {
+      a.status = "interrompida_desligamento";
+      a.motivo = motivo;
+      a.atualizadoEm = now;
+      n++;
+    }
+  }
+  return n;
+}
+
 /** Remove entradas de _adfs por lista de ADF ids (a chave `adf` do contrato,
  *  nao o `id` interno). Usado ao reverter cascade de desligamento — sem isso
  *  as ADFs stale com folhaStatus="interrompida_desligamento" nao rehidratam
@@ -514,7 +577,22 @@ export interface PrefeituraPerfil {
 // Perfis novos entram exclusivamente via UI (POST /prefeitura/perfis) atrelados
 // ao prefeituraId do JWT — que corresponde ao CNPJ do login.
 const _perfis: PrefeituraPerfil[] = [];
-let _perfilSeq = 1;
+// Counter POR PREFEITURA. Antes _perfilSeq global — Capistrano criava perfis
+// id=1,2 e Guarulhos ja saia com id=3 (bug reportado pelo cliente 22/07/2026).
+// Agora cada prefeitura tem seus 1,2,3 independentes. Como o id perde
+// unicidade global, a chave da collection PG passou a ser composta
+// `${prefeituraId}:${id}` — refreshPerfisPref migra rows legadas (chave
+// numerica pura) pra nova chave, apagando a antiga.
+const _perfilSeqPorPref: Map<number, number> = new Map();
+function nextPerfilId(prefeituraId: number): number {
+  const maxExistente = _perfis
+    .filter((p) => p.prefeituraId === prefeituraId)
+    .reduce((acc, p) => Math.max(acc, p.id), 0);
+  const cur = _perfilSeqPorPref.get(prefeituraId) ?? 0;
+  const seq = Math.max(cur, maxExistente) + 1;
+  _perfilSeqPorPref.set(prefeituraId, seq);
+  return seq;
+}
 
 /** Migra perfis hidratados do PG sem permissoes[] — deriva da area. Idempotente. */
 export function ensurePerfilPermissoes(p: PrefeituraPerfil): void {
@@ -544,7 +622,7 @@ export function upsertPerfil(input: { id?: number; prefeituraId: number; nome: s
     return existing;
   }
   const novo: PrefeituraPerfil = {
-    id: _perfilSeq++, prefeituraId: input.prefeituraId, nome: input.nome, email: input.email,
+    id: nextPerfilId(input.prefeituraId), prefeituraId: input.prefeituraId, nome: input.nome, email: input.email,
     area: areaResolvida, permissoes, ativo: input.ativo ?? true, twofaEnabled: false, criadoEm: now,
   };
   _perfis.push(novo);
@@ -596,4 +674,90 @@ function randomBase32(len: number): string {
 export function sanitizePerfil(p: PrefeituraPerfil) {
   const { totpSecret, ...rest } = p;
   return { ...rest, hasTotp: !!totpSecret };
+}
+
+// ============================================================
+// Persistencia dos perfis + presets customizados (PG collections).
+// Cliente pediu 21/07/2026: os perfis nao podiam mais viver so em memoria
+// (sumiam no deploy). Presets customizados nomeados viram opcao reutilizavel.
+// ============================================================
+const PG_PERFIS = "prefeitura_perfis";
+const PG_PRESETS = "prefeitura_perfil_presets";
+
+/** Chave composta pra collection PG. Como o perfil.id agora e' por-prefeitura,
+ *  dois perfis podem compartilhar id=1 em prefeituras diferentes — a chave
+ *  precisa incluir prefeituraId pra nao colidir no UPSERT. */
+function perfilPgKey(p: { prefeituraId: number; id: number }): string {
+  return `${p.prefeituraId}:${p.id}`;
+}
+
+/** Recarrega os perfis do PG. Reseta counters por-prefeitura (proximo
+ *  nextPerfilId recalcula sob demanda). Dedup por (prefeituraId, id) — chaves
+ *  legacy (id numerico puro) sao mescladas com a chave nova composta se
+ *  representam o mesmo perfil. */
+export async function refreshPerfisPref(env: Env): Promise<void> {
+  try {
+    const rows = await loadCollection<PrefeituraPerfil>(env, PG_PERFIS);
+    // Dedup: se por acaso houver 2 rows com mesma (prefeituraId, id) — legacy
+    // e novo — mantem o mais recente pela ordem do PG.
+    const seen = new Set<string>();
+    const dedupped: PrefeituraPerfil[] = [];
+    for (const r of rows.slice().reverse()) {
+      const k = perfilPgKey(r);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      dedupped.unshift(r);
+    }
+    _perfis.length = 0;
+    for (const r of dedupped) { ensurePerfilPermissoes(r); _perfis.push(r); }
+    _perfilSeqPorPref.clear();
+  } catch { /* fail-safe: usa in-memory */ }
+}
+export async function persistPerfil(env: Env, p: PrefeituraPerfil): Promise<void> {
+  try { await upsertCollectionRow(env, PG_PERFIS, perfilPgKey(p), p); } catch { /* fail-safe */ }
+}
+/** Recupera o perfil (com secret) pra persistir apos mutacoes no callsite. */
+export function getPerfilRaw(prefeituraId: number, id: number): PrefeituraPerfil | undefined {
+  return _perfis.find((x) => x.id === id && x.prefeituraId === prefeituraId);
+}
+
+/** Preset de permissoes customizado, nomeado, reutilizavel por prefeitura. */
+export interface PrefeituraPerfilPreset {
+  prefeituraId: number;
+  key: string;          // slug do nome (unico por prefeitura)
+  nome: string;         // rotulo exibido no dropdown
+  permissoes: string[];
+  criadoEm: string;
+}
+const _presets: PrefeituraPerfilPreset[] = [];
+
+function slugPreset(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+export function listPerfilPresets(prefeituraId: number): PrefeituraPerfilPreset[] {
+  return _presets.filter((p) => p.prefeituraId === prefeituraId);
+}
+export function upsertPerfilPreset(input: { prefeituraId: number; nome: string; permissoes: string[] }, now: string): PrefeituraPerfilPreset {
+  const key = slugPreset(input.nome);
+  const existing = _presets.find((p) => p.prefeituraId === input.prefeituraId && p.key === key);
+  if (existing) {
+    existing.nome = input.nome.trim();
+    existing.permissoes = [...input.permissoes];
+    return existing;
+  }
+  const novo: PrefeituraPerfilPreset = {
+    prefeituraId: input.prefeituraId, key, nome: input.nome.trim(), permissoes: [...input.permissoes], criadoEm: now,
+  };
+  _presets.push(novo);
+  return novo;
+}
+export async function refreshPerfilPresets(env: Env): Promise<void> {
+  try {
+    const rows = await loadCollection<PrefeituraPerfilPreset>(env, PG_PRESETS);
+    _presets.length = 0;
+    _presets.push(...rows);
+  } catch { /* fail-safe */ }
+}
+export async function persistPerfilPreset(env: Env, p: PrefeituraPerfilPreset): Promise<void> {
+  try { await upsertCollectionRow(env, PG_PRESETS, `${p.prefeituraId}:${p.key}`, p); } catch { /* fail-safe */ }
 }

@@ -200,6 +200,46 @@ export function reactivateAverbadoraUser(id: number): boolean {
   return true;
 }
 
+// ============================================================
+// Presets CUSTOMIZADOS nomeados — reutilizaveis no dropdown "Perfil"
+// ao criar um usuario com configuracao personalizada. Cliente pediu
+// 22/07/2026 pra ter esse recurso em TODOS os perfis (colega ja fez em
+// prefeitura; aqui replica pra averbadora).
+// ============================================================
+export interface AverbadoraPerfilPreset {
+  key: string;      // slug do nome (unico global — averbadora e' o topo)
+  nome: string;     // rotulo exibido no dropdown
+  permissoes: string[];
+  criadoEm: string;
+}
+const _presets: AverbadoraPerfilPreset[] = [];
+
+function slugPreset(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+export function listAverbadoraPresets(): AverbadoraPerfilPreset[] {
+  return [..._presets];
+}
+export function upsertAverbadoraPreset(input: { nome: string; permissoes: string[] }, now: string): AverbadoraPerfilPreset {
+  const key = slugPreset(input.nome);
+  const existing = _presets.find((p) => p.key === key);
+  if (existing) {
+    existing.nome = input.nome.trim();
+    existing.permissoes = [...input.permissoes];
+    return existing;
+  }
+  const novo: AverbadoraPerfilPreset = { key, nome: input.nome.trim(), permissoes: [...input.permissoes], criadoEm: now };
+  _presets.push(novo);
+  return novo;
+}
+export function hydrateAverbadoraPresets(rows: AverbadoraPerfilPreset[]): void {
+  _presets.length = 0;
+  _presets.push(...rows);
+}
+export function exportAverbadoraPresetsRaw(): AverbadoraPerfilPreset[] {
+  return [..._presets];
+}
+
 export function perfilOptions(): { value: AverbadoraPerfil; label: string; descricao: string; permissoes: string[] }[] {
   return [
     { value: "supervisor", label: "Supervisor", descricao: "Acesso total ao painel — todas as permissoes marcadas.",                    permissoes: [...PRESETS.supervisor] },

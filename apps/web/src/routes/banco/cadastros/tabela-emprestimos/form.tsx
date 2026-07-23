@@ -11,6 +11,7 @@ import {
 } from "@atlas/ui/web";
 import { atlas } from "../../../../lib/sdk";
 import type { BancoTabelaInput } from "@atlas/sdk";
+import { ApiHttpError } from "@atlas/sdk";
 
 export function BancoTabelaEmprestimosForm() {
   const params = useParams<{ id?: string }>();
@@ -35,8 +36,7 @@ export function BancoTabelaEmprestimosForm() {
   });
 
   const [convenioId, setConvenioId] = useState("");
-  const [taxaMinPct, setTaxaMinPct] = useState(1.5);
-  const [taxaMaxPct, setTaxaMaxPct] = useState(2.0);
+  const [taxaPct, setTaxaPct] = useState(1.79);
   const [prazoMaxMeses, setPrazoMaxMeses] = useState(120);
   const [vigenciaInicio, setVigenciaInicio] = useState(() => new Date().toISOString().slice(0, 10));
   const [vigenciaFim, setVigenciaFim] = useState("");
@@ -46,8 +46,11 @@ export function BancoTabelaEmprestimosForm() {
     if (existing.data) {
       const t = existing.data.tabela;
       setConvenioId(t.convenioId);
-      setTaxaMinPct(t.taxaMinAm * 100);
-      setTaxaMaxPct(t.taxaMaxAm * 100);
+      // Migracao suave: taxa unica (taxaAm) preferida; se tabela legada so
+      // tem taxaMinAm/taxaMaxAm, usa a max (que era o topo praticado) e
+      // proximo save ja persiste como unica.
+      const raw = (t as { taxaAm?: number; taxaMaxAm?: number; taxaMinAm?: number });
+      setTaxaPct(((raw.taxaAm ?? raw.taxaMaxAm ?? raw.taxaMinAm ?? 0.0179)) * 100);
       setPrazoMaxMeses(t.prazoMaxMeses);
       setVigenciaInicio(t.vigenciaInicio);
       setVigenciaFim(t.vigenciaFim ?? "");
@@ -75,8 +78,7 @@ export function BancoTabelaEmprestimosForm() {
         id,
         convenioId,
         convenio: convenioNome,
-        taxaMinAm: Number((taxaMinPct / 100).toFixed(6)),
-        taxaMaxAm: Number((taxaMaxPct / 100).toFixed(6)),
+        taxaAm: Number((taxaPct / 100).toFixed(6)),
         prazoMaxMeses,
         vigenciaInicio,
         vigenciaFim: vigenciaFim || undefined,
@@ -140,8 +142,7 @@ export function BancoTabelaEmprestimosForm() {
               { value: "0", label: "Inativo" },
             ]}
           />
-          <NumberField label="Taxa min (% a.m.)" step={0.01} value={taxaMinPct} onChange={(e) => setTaxaMinPct(Number(e.target.value))} required />
-          <NumberField label="Taxa max (% a.m.)" step={0.01} value={taxaMaxPct} onChange={(e) => setTaxaMaxPct(Number(e.target.value))} required />
+          <NumberField label="Taxa (% a.m.)" step={0.01} value={taxaPct} onChange={(e) => setTaxaPct(Number(e.target.value))} required hint="Taxa mensal única praticada nesta tabela. Vira o valor que o servidor simula." />
           {/* Prazo max fechado em opcoes fixas — filtradas pelo TETO DA
               PREFEITURA (convenio.maxParcelas). Servidor simulando so ve
               prazos ate esse teto. */}
@@ -159,8 +160,24 @@ export function BancoTabelaEmprestimosForm() {
       </section>
 
       {save.error ? (
-        <div style={{ color: "var(--danger-500)", fontSize: 13 }}>
-          {save.error instanceof Error ? save.error.message : "Erro ao salvar"}
+        <div style={{ color: "var(--danger-500)", fontSize: 13, padding: 12, borderRadius: 8, background: "color-mix(in srgb, var(--danger-500) 8%, transparent)", border: "1px solid var(--danger-500)" }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>
+            {save.error instanceof Error ? save.error.message : "Erro ao salvar"}
+          </div>
+          {(() => {
+            // Backend retorna motivos especificos em `details` (ex.: {prazoMaxMeses:
+            // "excede teto da prefeitura"}). Antes so aparecia "Dados invalidos"
+            // generico — usuario nao sabia o que corrigir.
+            if (!(save.error instanceof ApiHttpError) || !save.error.details) return null;
+            const d = save.error.details as Record<string, string>;
+            return (
+              <ul style={{ margin: "6px 0 0 18px", padding: 0, fontSize: 12 }}>
+                {Object.entries(d).map(([campo, motivo]) => (
+                  <li key={campo}><b>{campo}:</b> {String(motivo)}</li>
+                ))}
+              </ul>
+            );
+          })()}
         </div>
       ) : null}
 

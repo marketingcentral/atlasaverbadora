@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, Input, useThemeMode } from "@atlas/ui/web";
+import { Button, Card, Input, useThemeMode, formatTelefone } from "@atlas/ui/web";
 import type { TermoTipo } from "@atlas/sdk";
 import { atlas } from "../../lib/sdk";
 import { clearAtlasState } from "../../lib/session";
@@ -485,7 +485,7 @@ function ContatoCard({ info }: { info: MatriculaInfo | null }) {
       {passo === "editando" ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Input label="E-mail" type="email" value={draftEmail} onChange={(e) => setDraftEmail(e.target.value)} autoComplete="email" />
-          <Input label="Telefone" value={draftTel} onChange={(e) => setDraftTel(e.target.value)} autoComplete="tel" />
+          <Input label="Telefone" value={formatTelefone(draftTel)} onChange={(e) => setDraftTel(formatTelefone(e.target.value))} autoComplete="tel" inputMode="numeric" maxLength={15} placeholder="(00) 00000-0000" />
           {erro ? (
             <div style={{ padding: "10px 14px", borderRadius: 10, border: "1px solid var(--danger-500)", background: "color-mix(in srgb, var(--danger-500) 12%, transparent)", fontSize: ".88rem" }}>
               {erro}

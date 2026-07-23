@@ -7,7 +7,8 @@ import type { Env } from "../../env.js";
 import { SERVIDORES_BUSCA_MOCK, CONVENIOS_MOCK, COMUNICADOS_MOCK, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
 import { bancos, prefeituras, ensureServidoresLoaded, ensureBancosLoaded, ensureVitrineLoaded, getServidorStatus, pushEvent, vitrine } from "../admin/index.js";
 import { ensureTombamentoLoaded, refreshTombamento, listExternalLoans, getExternalLoan } from "../admin/tombamento.js";
-import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
+import { listContratos, criarContratoOuReserva, persistContrato, refreshContratos, comprometeMargem, deriveTipoMargem, getContrato, monthAdd, MESES } from "../portal-banco/store.js";
+import { refreshConvenios } from "../portal-banco/convenios-store.js";
 import { refreshOfertas, loadOfertas, ofertaCasaComServidor } from "../portal-banco/ofertas-store.js";
 import { refreshBeneficios, loadBeneficios } from "../admin/beneficios-store.js";
 import { loadCliques, refreshCliques, persistClique, nextCliqueId, type BeneficioClique } from "../admin/beneficio-cliques-store.js";
@@ -23,6 +24,7 @@ import { ensureTermosLoaded, getTermo, listTermos, renderTermo, type TermoTipo }
 import { getSuporteConfig } from "../admin/suporte.js";
 import { withIdempotency } from "../../_shared/idempotency.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { appendAudit, auditCtx } from "../admin/auditoria.js";
 
 /** Mascara um e-mail: "diego@x.com" -> "di•••@x.com". */
 function maskEmailSrv(email?: string): string {
@@ -37,12 +39,16 @@ function code6(): string {
   return String(100000 + (n % 900000));
 }
 
-// Dev shadow data — mirrors the SERVIDORES_BUSCA_MOCK identities (source of truth used
-// by todos os outros perfis), para o servidor ver os MESMOS dados.
-const DEV_SERVIDORES = [
-  { id: 1, nome: "ADRIANA MARQUES DA SILVA", cpf: "00011122233", matricula: "852029100", prefeitura_id: 1, vinculo: "ESTATUTARIO" as const, situacao_funcional: "ATIVO" as const, status: "ativo" as const, idConvenio: "CONV-001", idMatricula: "MAT-852029100", salarioLiquido: 4620 },
-  { id: 2, nome: "FERNANDA KELLI TOMAZONI", cpf: "00011122234", matricula: "843796302", prefeitura_id: 2, vinculo: "ESTATUTARIO" as const, situacao_funcional: "ATIVO" as const, status: "ativo" as const, idConvenio: "CONV-002", idMatricula: "MAT-843796302", salarioLiquido: 5320 },
-];
+// DEV_SERVIDORES removido 22/07/2026 — cliente reportou que o servidor via
+// dados DIFERENTES dos que apareciam pra averbadora/banco/prefeitura. Motivo:
+// esta lista shadow (ADRIANA/FERNANDA hardcoded) era consultada em
+// resolveServidor como fonte primaria de identidade + salario, enquanto os
+// outros perfis liam SERVIDORES_BUSCA_MOCK (hidratado do PG). Servidores REAIS
+// importados via CSV colidiam com os IDs sinteticos do DEV e a fonte
+// mentia — mesma matricula mostrava salario diferente por perfil.
+// Agora resolveServidor le exclusivamente SERVIDORES_BUSCA_MOCK. Se o
+// JWT.servidor_id nao bater em ninguem, retorna null (login deveria ter
+// bloqueado antes).
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const bancoNome = (id: number) => bancos.find((b) => b.id === id)?.nome ?? `Banco ${id}`;
@@ -174,12 +180,21 @@ function buildMatriculaInfo(e: ServidorBuscaMock, teleEmAnalise = false) {
   };
   const sortKeyCt = (ct: { criadoEmIso?: string; lancamento: string }): string =>
     ct.criadoEmIso ?? parseLanc(ct.lancamento);
+  // PROXIMA parcela = mes/ano da contratacao (lancamento) + parcelas ja pagas.
+  // Antes a tela mostrava `folhaUltimoDesconto` (a ULTIMA parcela) rotulada como
+  // "Proxima" — bug. Se ja quitou (pagas >= total), nao ha proxima.
+  const proximaParcelaDe = (ct: { lancamento: string; parcelasPagas: number; totalParcelas: number; folhaPrimeiroDesconto?: string }): string => {
+    if (ct.parcelasPagas >= ct.totalParcelas) return "—";
+    const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(ct.lancamento);
+    const base = m ? `${MESES[Number(m[2]) - 1]}/${m[3]}` : ct.folhaPrimeiroDesconto;
+    return base ? monthAdd(base, ct.parcelasPagas) : "—";
+  };
   const contratosMock = contratos
     .filter((ct) => isContratoReal(ct))
     .sort((a, b) => sortKeyCt(b).localeCompare(sortKeyCt(a)))
     .map((ct) => ({
       id: ct.adf, banco: bancoNome(ct.bancoId), parcela: round2(ct.valorParcela), parcelasPagas: ct.parcelasPagas,
-      total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: ct.folhaUltimoDesconto || "—",
+      total: ct.totalParcelas, status: mapContratoStatus(ct.situacao), proximaParcela: proximaParcelaDe(ct),
       taxaAm: ct.taxaAm, valorFinanciado: round2(ct.valorFinanciado), pdfUrl: `/v1/portal/banco/contratos/${ct.adf}/comprovante.pdf`,
       // Rotula corretamente o card no /servidor/contratos: sem esses campos
       // o front nao distingue Cartao Consignado / Cartao Beneficio / Portabilidade
@@ -277,30 +292,8 @@ function fromFixture(s: ServidorBuscaMock): ResolvedServidor {
 function resolveServidor(j: JwtClaims): ResolvedServidor | null {
   const id = j.servidor_id;
   if (id == null) return null;
-  const dev = DEV_SERVIDORES.find((x) => x.id === id);
-  if (dev) {
-    // Prefer the Postgres-hydrated row for this identity (SERVIDORES_BUSCA_MOCK is
-    // replaced by loadServidores() em ensureServidoresLoaded). Fall back ao shadow dev.
-    // Um mesmo CPF pode estar em >1 convênio/prefeitura — casa pelo convênio do dev
-    // (determinístico) pra o servidor cair sempre na prefeitura esperada (login),
-    // senão a ordem do Postgres decide e o ciclo com a prefeitura logada não bate.
-    const fx =
-      SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf && s.idConvenio === dev.idConvenio) ??
-      SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === dev.cpf);
-    if (fx) return fromFixture(fx);
-    // O CPF do DEV nao esta mais na base (seed purgado). NAO devolve o shadow do
-    // DEV aqui: o mesmo id pode pertencer a um servidor REAL importado cuja
-    // matricula termina nos mesmos 5 digitos — ex.: matricula 700100001 gera
-    // id 1, que colide com o DEV id 1. Devolvendo o shadow, /me/matriculas
-    // filtrava pelo CPF do DEV (inexistente na base) e vinha VAZIO: o servidor
-    // logava e a tela "Selecione a matricula" ficava em branco.
-    const real = SERVIDORES_BUSCA_MOCK.find(
-      (s) => Number(s.idMatricula.replace(/\D/g, "").slice(-5)) === id,
-    );
-    if (real) return fromFixture(real);
-    return { ...dev, fromFixture: true };
-  }
-  // ids sintéticos (últimos 5 dígitos da idMatricula) usados quando o servidor vem da fixture
+  // Sem DEV_SERVIDORES — resolve exclusivamente pelo id sintetico (ultimos 5
+  // digitos da idMatricula) contra SERVIDORES_BUSCA_MOCK (hidratado do PG).
   const fx = SERVIDORES_BUSCA_MOCK.find((s) => Number(s.idMatricula.replace(/\D/g, "").slice(-5)) === id);
   return fx ? fromFixture(fx) : null;
 }
@@ -678,6 +671,17 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       origemTela,
     };
     await persistClique(c.env, clique);
+    // Auditoria: clique em benefício é sinal analítico (nao muda margem),
+    // mas util pra rastrear engajamento pos-incidente ("quem clicou no X?").
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "beneficio_clique",
+      cpf: entryAtivo.cpfMasked,
+      matricula: entryAtivo.matricula,
+      userId: `servidor:${s.id}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${entryAtivo.nome} clicou em "Acessar" do beneficio ${beneficioId}${origemTela ? ` (origem: ${origemTela})` : ""}.`,
+    });
     return c.json({ ok: true });
   })
   // F5 do plano de fluxos: servidor clica "Contratar" no beneficio (mensalidade
@@ -731,6 +735,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       criadoEm: new Date().toISOString(),
     };
     await persistIntencao(c.env, intencao);
+    // Auditoria: contratar beneficio vira ADF de mensalidade — mesma classe
+    // de "aceite implicito" da pre_reserva de emprestimo.
+    appendAudit(auditCtx(c), {
+      categoria: "pre_reserva",
+      acao: "beneficio_intencao_criada",
+      propostaId: intencao.id,
+      cpf: entryAtivo.cpfMasked,
+      matricula: entryAtivo.matricula,
+      userId: `servidor:${s.id}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${entryAtivo.nome} solicitou contratacao do beneficio "${beneficio.nome}" — R$ ${valorMensal.toFixed(2)}/mes. Aguardando averbadora aprovar (viraria ADF).`,
+    });
     return c.json({ ok: true, intencao });
   })
   // Solicitacao de COTACAO de telemedicina. O servidor confirma o termo no banner de
@@ -815,6 +831,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     };
     await persistCotacao(c.env, cot);
     pushEvent("info", "servidor.telemedicina_cotacao", `${entryAtivo.nome} solicitou cotacao de telemedicina (adf ${reserva.adf}).`);
+    // Auditoria: cotacao de telemedicina cria RESERVA de margem — reserva
+    // R$ 50/mes x 12 meses (EMPRESTIMO bucket). Vale audit pre_reserva.
+    appendAudit(auditCtx(c), {
+      categoria: "pre_reserva",
+      acao: "telemedicina_cotacao_solicitada",
+      propostaId: reserva.adf,
+      cpf: entryAtivo.cpfMasked,
+      matricula: entryAtivo.matricula,
+      userId: `servidor:${s.id}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${entryAtivo.nome} solicitou cotacao de telemedicina (reserva ADF ${reserva.adf}, R$ 50,00 x 12). Averbadora tem 30 dias pra ativar.`,
+    });
     return c.json({ ok: true, id: cot.id, adf: reserva.adf });
   })
   // Cotacoes de telemedicina DO PROPRIO servidor — o app/web usa pra esconder o botao
@@ -886,14 +914,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ofertas: tabelas.map((t) => {
         // "CASTRO / DELTA GLOBAL" -> banco = "DELTA GLOBAL", cidade = "CASTRO"
         const [cidade = "", banco = ""] = t.convenio.split("/").map((p) => p.trim());
+        // Compat: tabelas legadas so tem taxaMaxAm — usa como taxa unica.
+        const tAny = t as unknown as { taxaAm?: number; taxaMaxAm?: number };
         return {
           id: t.id,
           bancoNome: banco || t.convenio,
           convenioId: t.convenioId,
           convenio: t.convenio,
           cidade,
-          taxaMinAm: t.taxaMinAm,
-          taxaMaxAm: t.taxaMaxAm,
+          taxaAm: tAny.taxaAm ?? tAny.taxaMaxAm ?? 0,
           prazoMaxMeses: t.prazoMaxMeses,
           vigenciaInicio: t.vigenciaInicio,
           vigenciaFim: t.vigenciaFim ?? null,
@@ -913,6 +942,11 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["servidor"]);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
+    // Hidrata CONVENIOS_MOCK antes de resolver conv por idConvenio. Sem isso,
+    // isolate frio nao tinha os convenios carregados e caia no fallback
+    // "Banco Atlas" — proposta ficava orfa e sumia dos filtros do banco
+    // (que agrupam por convenioId, nao por texto).
+    await refreshConvenios(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
     const body = z
@@ -1020,6 +1054,40 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ator: `servidor:${s.id}`,
     });
     await persistContrato(c.env, contrato.adf); // write-through: a proposta chega no banco e sobrevive ao refresh
+    // Auditoria: pre-reserva criada pelo servidor. body.tipo distingue
+    // emprestimo novo x portabilidade x refin no detalhe.
+    appendAudit(auditCtx(c), {
+      categoria: "pre_reserva",
+      acao: "pre_reserva_criada",
+      propostaId: contrato.adf,
+      matricula: entry.matricula,
+      cpf: entry.cpfMasked,
+      userId: `servidor:${s.id}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${entry.nome} criou pre-reserva ADF ${contrato.adf} (${body.tipo}) — R$ ${body.valor.toFixed(2)} em ${body.parcelas}x de R$ ${cet.parcela.toFixed(2)} com ${conv?.nome ?? "Banco Atlas"}.`,
+    });
+    // Aceite implicito dos termos vigentes ao confirmar a proposta. Grava a
+    // VERSAO do termo vigente pra reconstruir depois o que o servidor viu (LGPD:
+    // se o texto do termo mudar, a trilha aponta a versao efetivamente aceita).
+    // Best-effort: se o termo nao existir no editor da averbadora, cai em "?".
+    await ensureTermosLoaded(c.env);
+    const termoTipoAceite: TermoTipo = body.tipo === "portabilidade"
+      ? "portabilidade"
+      : body.tipo === "refinanciamento"
+        ? "refinanciamento"
+        : "emprestimo";
+    const termoVersao = getTermo(termoTipoAceite)?.versao ?? "?";
+    appendAudit(auditCtx(c), {
+      categoria: "termo_aceite",
+      acao: "termo_confirmado_na_proposta",
+      propostaId: contrato.adf,
+      matricula: entry.matricula,
+      cpf: entry.cpfMasked,
+      userId: `servidor:${s.id}`,
+      userRole: "servidor",
+      termoAceito: `${termoTipoAceite}@${termoVersao}`,
+      detalhes: `Servidor ${entry.nome} confirmou termos ao criar proposta ADF ${contrato.adf} — termo "${termoTipoAceite}" versao ${termoVersao}.`,
+    });
     // Notificação em tempo real: e-mail pro servidor + e-mail pro banco.
     // Tenta template editavel em /averbadora/emails/simulacao primeiro;
     // cai no fallback hardcoded se nao houver template ativo.
@@ -1175,6 +1243,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (body.telefone !== undefined) x.telefone = body.telefone;
     });
     await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
+    const brChanges: string[] = [];
+    if (body.email !== undefined) brChanges.push(`email -> ${maskEmailSrv(body.email)}`);
+    if (body.telefone !== undefined) brChanges.push(`telefone -> ${body.telefone.slice(-4).padStart(body.telefone.length, "•")}`);
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "servidor_editou_contato",
+      cpf: maskCPF(s.cpf),
+      matricula: s.matricula,
+      userId: `servidor:${j.sub}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${s.nome} atualizou contato: ${brChanges.join("; ")}. Vetor takeover — verificar se foi de fato o titular.`,
+    });
     return c.json({ ok: n > 0, email: body.email, telefone: body.telefone });
   })
   // Redefinicao direta de senha (fluxo simples, sem codigo por e-mail): valida a
@@ -1202,6 +1282,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const novoHash = await sha256Hex(body.nova_senha);
     await setServidorPassword(c.env, s.cpf, novoHash);
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = novoHash; });
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "servidor_trocou_senha_logado",
+      cpf: maskCPF(s.cpf),
+      matricula: s.matricula,
+      userId: `servidor:${j.sub}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${s.nome} redefiniu a propria senha (fluxo /me/senha/redefinir — exige senha atual, sem codigo).`,
+    });
     return c.json({ ok: true });
   })
   // Troca de senha: valida a senha atual + o código. Persiste o novo hash no Postgres.
@@ -1226,6 +1315,15 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     await setServidorPassword(c.env, s.cpf, novoHash);
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === s.cpf).forEach((x) => { x.passwordHash = novoHash; });
     await c.env.KV_SESSIONS.delete(`chg:${s.cpf}`);
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "servidor_trocou_senha_com_codigo",
+      cpf: maskCPF(s.cpf),
+      matricula: s.matricula,
+      userId: `servidor:${j.sub}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${s.nome} redefiniu a propria senha (fluxo /me/senha — exige senha atual + codigo por email).`,
+    });
     return c.json({ ok: true });
   })
   // Solicita a PORTABILIDADE de um emprestimo externo (do tombamento da prefeitura)
@@ -1426,6 +1524,18 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!matriculasDoCpf.has(i.servidorMatricula)) throw Errors.notFound("intencao");
     const r = await aceitarOferta(c.env, i.id, body.ofertaId, i.servidorMatricula);
     if (!r.ok) throw Errors.validation({ oferta: r.motivo });
+    // Aceite de oferta de portabilidade cria divida nova (migra saldo entre
+    // bancos). Alto valor de auditoria — quem aceitou, qual oferta, saldo.
+    appendAudit(auditCtx(c), {
+      categoria: "pre_reserva",
+      acao: "portabilidade_oferta_aceita",
+      propostaId: i.id,
+      matricula: i.servidorMatricula,
+      cpf: i.servidorCpfMasked,
+      userId: `servidor:${j.sub}`,
+      userRole: "servidor",
+      detalhes: `Servidor ${i.servidorNome} aceitou oferta ${body.ofertaId} pra portar contrato ${i.contratoAdfOrigem} do ${i.bancoOrigemNome} (saldo R$ ${i.saldoDevedor.toFixed(2)}, ${i.parcelasRestantes} parcelas restantes).`,
+    });
     return c.json({ intencao: r.intencao });
   })
   // ===== Termos (renderiza template editado no /averbadora/termos) =====
@@ -1543,22 +1653,32 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .get("/v1/servidores/:id", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["averbadora"]);
+    await ensureServidoresLoaded(c.env);
     const id = Number(c.req.param("id"));
-    const s = DEV_SERVIDORES.find((x) => x.id === id);
+    // id sintetico = ultimos 5 digitos da idMatricula (mesma regra do JWT).
+    const s = SERVIDORES_BUSCA_MOCK.find((x) => Number(x.idMatricula.replace(/\D/g, "").slice(-5)) === id);
     if (!s) throw Errors.notFound("servidor");
+    const conv = CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio);
     return c.json({
-      id: s.id, nome: s.nome, cpf_masked: maskCPF(s.cpf), matricula: s.matricula,
-      prefeitura_id: s.prefeitura_id, vinculo: s.vinculo, situacao_funcional: s.situacao_funcional, status: s.status,
+      id, nome: s.nome, cpf_masked: maskCPF(s.cpf), matricula: s.matricula,
+      prefeitura_id: conv?.prefeituraId ?? null,
+      vinculo: s.vinculo, situacao_funcional: s.situacaoFuncional, status: "ativo",
     });
   })
   .get("/v1/servidores", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["averbadora"]);
+    await ensureServidoresLoaded(c.env);
     return c.json({
-      data: DEV_SERVIDORES.map((s) => ({
-        id: s.id, nome: s.nome, cpf_masked: maskCPF(s.cpf), matricula: s.matricula,
-        prefeitura_id: s.prefeitura_id, vinculo: s.vinculo, situacao_funcional: s.situacao_funcional, status: s.status,
-      })),
+      data: SERVIDORES_BUSCA_MOCK.map((s) => {
+        const id = Number(s.idMatricula.replace(/\D/g, "").slice(-5));
+        const conv = CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio);
+        return {
+          id, nome: s.nome, cpf_masked: maskCPF(s.cpf), matricula: s.matricula,
+          prefeitura_id: conv?.prefeituraId ?? null,
+          vinculo: s.vinculo, situacao_funcional: s.situacaoFuncional, status: "ativo",
+        };
+      }),
       meta: { has_more: false, next_cursor: null, limit: 25 },
     });
   });

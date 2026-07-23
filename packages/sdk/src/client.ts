@@ -409,8 +409,15 @@ export interface BancoTabela {
   id: string;
   convenioId: string;
   convenio: string;
-  taxaMinAm: number;
-  taxaMaxAm: number;
+  /** Taxa unica a.m. Cliente pediu 22/07/2026: antes era taxaMinAm/taxaMaxAm
+   *  mas o intervalo nao era usado por nada (nenhuma validacao ou consumo).
+   *  Agora e' UMA taxa que o simulador do servidor consome diretamente. */
+  taxaAm: number;
+  /** @deprecated Mantido pra compat com tabelas legadas ainda no PG.
+   *  Backend le taxaAm primeiro; se ausente, cai em taxaMaxAm (topo). */
+  taxaMinAm?: number;
+  /** @deprecated Ver taxaMinAm. */
+  taxaMaxAm?: number;
   prazoMaxMeses: number;
   vigenciaInicio: string;
   vigenciaFim?: string;
@@ -422,8 +429,7 @@ export interface BancoTabelaInput {
   id?: string;
   convenioId: string;
   convenio: string;
-  taxaMinAm: number;
-  taxaMaxAm: number;
+  taxaAm: number;
   prazoMaxMeses: number;
   vigenciaInicio: string;
   vigenciaFim?: string;
@@ -460,6 +466,16 @@ export interface BancoUsuarioInput {
   permissoes?: string[];
   ipsPermitidos?: string[];
   ativo?: boolean;
+  /** Nome do preset customizado — quando informado (config personalizada ao
+   *  criar), salva a config como preset reutilizavel no dropdown. */
+  presetNome?: string;
+}
+
+/** Preset customizado de permissao (nomeado, reutilizavel por banco). */
+export interface BancoPerfilPreset {
+  key: string;
+  nome: string;
+  permissoes: string[];
 }
 
 // ===== Admin types =====
@@ -474,6 +490,8 @@ export interface AdminBanco {
   hasPassword: boolean;
   scopes: string[];
   mtlsHabilitado: boolean;
+  /** URL base pra health check (opcional). Ex: https://api.iFractal.com */
+  baseUrl?: string;
   ultimoTeste?: string;
   ultimoTesteOk?: boolean;
   // Dados oficiais preenchidos pela consulta CNPJ (BrasilAPI + fallback).
@@ -496,6 +514,7 @@ export interface AdminBancoInput {
   password?: string;
   scopes?: string[];
   mtlsHabilitado?: boolean;
+  baseUrl?: string;
   cnpj?: string;
   razaoSocial?: string;
   nomeFantasia?: string;
@@ -803,6 +822,13 @@ export interface AdminAverbadoraUser {
   ultimoLogin?: string;
 }
 
+/** Preset customizado de permissao (nomeado, reutilizavel na averbadora). */
+export interface AverbadoraPerfilPreset {
+  key: string;
+  nome: string;
+  permissoes: string[];
+}
+
 export interface AdminServidor {
   id: number;
   nome: string;
@@ -1039,6 +1065,15 @@ export interface PrefeituraPerfilInput {
   /** Fonte de verdade. Opcional — deriva do preset. */
   permissoes?: string[];
   ativo?: boolean;
+  /** Nome do preset customizado — quando informado (config personalizada ao
+   *  criar), salva a config como preset reutilizavel no dropdown. */
+  presetNome?: string;
+}
+/** Preset customizado de permissao (nomeado, reutilizavel por prefeitura). */
+export interface PrefeituraPerfilPreset {
+  key: string;
+  nome: string;
+  permissoes: string[];
 }
 export interface PrefeituraFolha {
   id: string;
@@ -1312,8 +1347,7 @@ export class AtlasClient {
           convenioId: string;
           convenio: string;
           cidade: string;
-          taxaMinAm: number;
-          taxaMaxAm: number;
+          taxaAm: number;
           prazoMaxMeses: number;
           vigenciaInicio: string;
           vigenciaFim: string | null;
@@ -1528,7 +1562,10 @@ export class AtlasClient {
           cpf: string; cpfMasked: string; matricula: string; idMatricula: string;
           nome: string; dataAdmissao: string; dataNascimento: string;
           vinculo: string; origem: string; situacaoFuncional: string;
-          salarioLiquido: number; idConvenio: string;
+          // salarioLiquido NAO vem (LGPD — banco nao ve). Use `margens` pre-calculadas.
+          idConvenio: string;
+          margemDisponivel: number;
+          margens: { tipo: "EMPRESTIMO" | "CARTAO_CONSIGNADO" | "CARTAO_BENEFICIOS"; total: number; utilizado: number; disponivel: number }[];
         };
       }>("/v1/portal/banco/margem/buscar", { method: "POST", body: input }),
     margemExemplos: () =>
@@ -1640,7 +1677,7 @@ export class AtlasClient {
     reativarTabela: (id: string) => this.request<{ ok: boolean }>(`/v1/portal/banco/cadastros/tabela-emprestimos/${id}/reativar`, { method: "POST" }),
 
     listUsuarios: (q?: { perfil?: BancoPerfil; somenteAdmin?: boolean }) =>
-      this.request<{ usuarios: BancoUsuario[] }>("/v1/portal/banco/cadastros/usuarios", { query: q ?? {} }),
+      this.request<{ usuarios: BancoUsuario[]; presets: BancoPerfilPreset[] }>("/v1/portal/banco/cadastros/usuarios", { query: q ?? {} }),
     getUsuario: (id: string) => this.request<{ usuario: BancoUsuario }>(`/v1/portal/banco/cadastros/usuarios/${id}`),
     upsertUsuario: (body: BancoUsuarioInput) => this.request<{ usuario: BancoUsuario }>("/v1/portal/banco/cadastros/usuarios", { method: "POST", body }),
     removerUsuario: (id: string) => this.request<void>(`/v1/portal/banco/cadastros/usuarios/${id}`, { method: "DELETE" }),
@@ -1648,6 +1685,10 @@ export class AtlasClient {
     /** Devolve o CPF completo do usuario (acesso registrado em audit log no servidor). */
     revealUsuarioCpf: (id: string) =>
       this.request<{ id: string; cpf: string; cpfMasked: string }>(`/v1/portal/banco/cadastros/usuarios/${id}/cpf`),
+    perfilPresetsBanco: () =>
+      this.request<{ presets: BancoPerfilPreset[] }>("/v1/portal/banco/perfil-presets"),
+    criarPerfilPresetBanco: (body: { nome: string; permissoes: string[] }) =>
+      this.request<{ preset: BancoPerfilPreset }>("/v1/portal/banco/perfil-presets", { method: "POST", body }),
 
     // Relatorios
     relatorioConsignacoes: (q?: { tipo?: string; inicio?: string; fim?: string }) =>
@@ -1833,9 +1874,13 @@ export class AtlasClient {
 
     // Perfis admin
     listPerfisAdmin: () =>
-      this.request<{ usuarios: AdminAverbadoraUser[]; perfis: { value: AverbadoraPerfil; label: string; descricao: string; permissoes: string[] }[] }>("/v1/admin/perfis"),
-    upsertPerfilAdmin: (body: { id?: number; nome: string; email: string; perfil?: AverbadoraPerfil; permissoes?: string[]; ativo: boolean; password?: string; twoFactorEnabled?: boolean }) =>
+      this.request<{ usuarios: AdminAverbadoraUser[]; perfis: { value: AverbadoraPerfil; label: string; descricao: string; permissoes: string[] }[]; presets: AverbadoraPerfilPreset[] }>("/v1/admin/perfis"),
+    upsertPerfilAdmin: (body: { id?: number; nome: string; email: string; perfil?: AverbadoraPerfil; permissoes?: string[]; ativo: boolean; password?: string; twoFactorEnabled?: boolean; presetNome?: string }) =>
       this.request<{ usuario: AdminAverbadoraUser }>("/v1/admin/perfis", { method: "POST", body }),
+    perfilPresetsAdmin: () =>
+      this.request<{ presets: AverbadoraPerfilPreset[] }>("/v1/admin/perfil-presets"),
+    criarPerfilPresetAdmin: (body: { nome: string; permissoes: string[] }) =>
+      this.request<{ preset: AverbadoraPerfilPreset }>("/v1/admin/perfil-presets", { method: "POST", body }),
     rotate2FA: (id: number) =>
       this.request<{ secret: string; otpauthUrl: string }>(`/v1/admin/perfis/${id}/2fa/rotate`, { method: "POST" }),
     disable2FA: (id: number) =>
@@ -2044,7 +2089,11 @@ export class AtlasClient {
     movimentacaoCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/folhas/movimentacao/csv-template`,
 
     // Convênios + config (passo 5)
-    convenios: () => this.request<{ convenios: (PrefeituraConvenio & { prazoTravaHoras: number; prazoPortabilidadeDU: number; prefixo: string; formatoImportacao: string })[]; prefixo: string }>("/v1/prefeitura/convenios"),
+    convenios: () => this.request<{ convenios: (PrefeituraConvenio & {
+      prazoTravaHoras: number; prazoPortabilidadeDU: number; prefixo: string; formatoImportacao: string;
+      maxParcelas: number; taxaMaxAm: number; maxComprometimentoPct: number; idadeMin: number; idadeMax: number;
+      vigenciaInicio: string; vigenciaFim: string | null; vinculosAceitos: string[]; regrasEspeciais: string; ativo: boolean;
+    })[]; prefixo: string }>("/v1/prefeitura/convenios"),
     convenioConfig: (id: string) =>
       this.request<{ convenio: { id: string; nome: string; bancoNome: string }; config: { prazoTravaHoras: number; prazoPortabilidadeDU: number; maxComprometimentoPct: number; maxParcelas: number; vinculosAceitos: string[]; formatoImportacao: string; regrasEspeciais: string; prefixo: string } }>(`/v1/prefeitura/convenios/${id}/config`),
     salvarConvenioConfig: (id: string, body: { prazoTravaHoras: number; prazoPortabilidadeDU: number; maxComprometimentoPct: number; maxParcelas: number; vinculosAceitos: string[]; formatoImportacao: string; regrasEspeciais: string; prefixo: string }) =>
@@ -2076,9 +2125,12 @@ export class AtlasClient {
     aceitarAnuencia: (aceitoPor: string) => this.request<{ anuencia: { id: string } }>("/v1/prefeitura/anuencia", { method: "POST", body: { aceito: true, aceitoPor } }),
 
     // Perfis + 2FA (passo 1)
-    perfis: () => this.request<{ perfis: PrefeituraPerfil[]; areas: { value: string; label: string }[] }>("/v1/prefeitura/perfis"),
+    perfis: () => this.request<{ perfis: PrefeituraPerfil[]; areas: { value: string; label: string }[]; presets: PrefeituraPerfilPreset[] }>("/v1/prefeitura/perfis"),
     salvarPerfil: (body: PrefeituraPerfilInput) =>
       this.request<{ perfil: PrefeituraPerfil }>("/v1/prefeitura/perfis", { method: "POST", body }),
+    perfilPresets: () => this.request<{ presets: PrefeituraPerfilPreset[] }>("/v1/prefeitura/perfil-presets"),
+    criarPerfilPreset: (body: { nome: string; permissoes: string[] }) =>
+      this.request<{ preset: PrefeituraPerfilPreset }>("/v1/prefeitura/perfil-presets", { method: "POST", body }),
     excluirPerfil: (id: number) => this.request<void>(`/v1/prefeitura/perfis/${id}`, { method: "DELETE" }),
     reativarPerfil: (id: number) => this.request<{ ok: boolean }>(`/v1/prefeitura/perfis/${id}/reativar`, { method: "POST" }),
     rotate2fa: (id: number) => this.request<{ secret: string; otpauthUrl: string }>(`/v1/prefeitura/perfis/${id}/2fa/rotate`, { method: "POST" }),
@@ -2096,18 +2148,50 @@ export class AtlasClient {
       const token = await this.storage.getAccess();
       if (token) headers.Authorization = `Bearer ${token}`;
     }
+    // Idempotency-Key automatico em POSTs de mutacao. Se o cliente re-tenta
+    // o mesmo request por flake de rede / duplo clique, backend devolve a
+    // resposta cacheada (24h TTL) em vez de executar de novo. Passivo — se
+    // o handler nao usa withIdempotency, nao muda nada; se usa, ganha
+    // protecao automatica. Cliente pode sobrescrever passando o header
+    // custom em opts.headers (nao implementado ainda, so pra referencia).
+    const method = (options.method ?? "GET").toUpperCase();
+    if (method === "POST" && !options.isFormData) {
+      headers["Idempotency-Key"] = this.newIdempotencyKey();
+    }
     const buildBody = (): string | FormData | undefined => {
       if (options.body === undefined) return undefined;
       if (options.isFormData) return options.body as FormData;
       return JSON.stringify(options.body);
     };
 
-    let res = await this.fetchImpl(url, {
+    // Retry simples pra network errors ou 5xx transientes: 1 tentativa inicial +
+    // 2 retries com backoff (500ms, 1500ms). Mantem os MESMOS headers, incluindo
+    // Idempotency-Key — backend detecta a duplicata e devolve resposta cacheada.
+    // NAO retenta 4xx (erro do cliente — retentar nao vai corrigir).
+    const doFetch = () => this.fetchImpl(url, {
       method: options.method ?? "GET",
       headers,
       body: buildBody(),
       signal: options.signal,
     });
+    let res: Response;
+    let lastErr: unknown = null;
+    const backoff = [0, 500, 1500];
+    for (let attempt = 0; attempt < backoff.length; attempt++) {
+      if (backoff[attempt]) await new Promise((r) => setTimeout(r, backoff[attempt]));
+      try {
+        res = await doFetch();
+        // 5xx transiente -> retry. 4xx -> nao retenta.
+        if (res.status >= 500 && res.status < 600 && attempt < backoff.length - 1) continue;
+        break;
+      } catch (e) {
+        lastErr = e;
+        // Abort do usuario -> nao retenta.
+        if ((e as Error).name === "AbortError") throw e;
+        if (attempt === backoff.length - 1) throw e;
+      }
+    }
+    if (!res!) throw lastErr ?? new Error("network error");
 
     if (res.status === 401 && !options.skipAuth) {
       const ok = await this.tryRefresh();
@@ -2182,5 +2266,17 @@ export class AtlasClient {
       }
     }
     return url.toString();
+  }
+
+  /** Gera uma chave de idempotencia unica por request (uuid v4). Enviada
+   *  automaticamente no header 'Idempotency-Key' em todo POST. Se o request
+   *  falhar por rede/timeout e o usuario re-tentar, o backend devolve a
+   *  resposta cacheada (24h) em vez de duplicar a operacao. */
+  private newIdempotencyKey(): string {
+    // crypto.randomUUID esta em Node 19+, Deno, browsers modernos, Workers.
+    const c = (globalThis as unknown as { crypto?: { randomUUID?: () => string } }).crypto;
+    if (c?.randomUUID) return c.randomUUID();
+    // Fallback pra ambientes sem crypto.randomUUID (raro): timestamp + random.
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 10)}`;
   }
 }

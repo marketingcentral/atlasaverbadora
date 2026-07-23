@@ -9,30 +9,14 @@ import {
   Pill,
   SelectField,
   TextField,
+  TelefoneField,
+  formatCnpj,
   type Column,
 } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { AdminBanco, AdminBancoInput } from "@atlas/sdk";
 
-// Formata CNPJ progressivamente. Mesma logica do prefeituras.tsx.
-function formatCnpj(raw: string): string {
-  const d = raw.replace(/\D/g, "").slice(0, 14);
-  if (d.length <= 2) return d;
-  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
-  if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
-  if (d.length <= 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
-  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
-}
-
-// Formata telefone BR progressivamente. Max 11 digitos (celular com DDD).
-function formatTelefone(raw: string): string {
-  const d = raw.replace(/\D/g, "").slice(0, 11);
-  if (d.length === 0) return "";
-  if (d.length <= 2) return `(${d}`;
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-}
+// formatCnpj + formatTelefone agora vem de @atlas/ui/web (compartilhado).
 
 // Mesmo estilo do modal de prefeituras — leitura desativada com visual claro.
 const readOnlyInputStyle: React.CSSProperties = {
@@ -222,6 +206,7 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
     password: "",
     scopes: initial?.scopes ?? ["propostas:rw"],
     mtlsHabilitado: initial?.mtlsHabilitado ?? false,
+    baseUrl: initial?.baseUrl ?? "",
     cnpj: initial?.cnpj ?? "",
     razaoSocial: initial?.razaoSocial ?? "",
     nomeFantasia: initial?.nomeFantasia ?? "",
@@ -378,7 +363,7 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
               <TextField label="Nome fantasia" value={form.nomeFantasia ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Data de fundação" value={form.dataFundacao ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Atividade principal" value={form.atividade ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
-              <TextField label="Telefone" value={formatTelefone(form.telefone ?? "")} onChange={(e) => setForm({ ...form, telefone: formatTelefone(e.target.value) })} placeholder="(00) 00000-0000" maxLength={15} required hint="Obrigatório — editável se o telefone oficial estiver desatualizado" />
+              <TelefoneField label="Telefone" value={form.telefone ?? ""} onChange={(e) => setForm({ ...form, telefone: e.target.value })} required hint="Obrigatório — editável se o telefone oficial estiver desatualizado" />
               <TextField label="CEP" value={form.endereco?.cep ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Logradouro" value={form.endereco?.logradouro ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Número" value={form.endereco?.numero ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
@@ -466,6 +451,14 @@ function BancoModal({ initial, onClose }: { initial: AdminBanco | null; onClose:
                   { value: "0", label: "Desabilitado" },
                   { value: "1", label: "Habilitado" },
                 ]}
+              />
+              <TextField
+                label="URL de health check"
+                type="url"
+                value={form.baseUrl ?? ""}
+                onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
+                placeholder="https://api.banco.com.br/health"
+                hint="URL COMPLETA que deve retornar 200. Se preenchida, /averbadora/health pinga esse endpoint (uptime e latência reais)."
               />
             </FormGrid>
           </div>

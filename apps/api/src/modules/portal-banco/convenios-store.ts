@@ -57,12 +57,21 @@ export async function deleteConvenioHard(env: Env, id: string): Promise<void> {
   } catch { /* fail-safe */ }
 }
 
-/** Próximo id de convênio livre (CONV-NNN), evitando colisão com desativados/persistidos. */
-export function nextConvenioId(): string {
+/** Próximo id de convênio livre POR PREFEITURA. Cliente relatou 22/07/2026:
+ *  antes o seq era global — Prefeitura A tinha CONV-001..004, ao criar o
+ *  primeiro convenio da B saia CONV-005. Agora cada prefeitura tem seus 001+.
+ *  Formato: CONV-{prefeituraId}-{seq3}. IDs velhos (CONV-NNN sem prefId) sao
+ *  tratados como "prefeitura 0" pra nao colidir e continuam validos. */
+export function nextConvenioId(prefeituraId: number): string {
   let max = 0;
+  const prefixNovo = `CONV-${prefeituraId}-`;
   for (const c of CONVENIOS_MOCK) {
-    const m = /^CONV-(\d+)$/.exec(c.id);
-    if (m) max = Math.max(max, Number(m[1]));
+    if (c.prefeituraId !== prefeituraId) continue;
+    const m1 = new RegExp(`^CONV-${prefeituraId}-(\\d+)$`).exec(c.id);
+    if (m1) { max = Math.max(max, Number(m1[1])); continue; }
+    // Legacy: se ainda tem CONV-NNN puro desta prefeitura, considera pra seq
+    const m2 = /^CONV-(\d+)$/.exec(c.id);
+    if (m2) max = Math.max(max, Number(m2[1]));
   }
-  return `CONV-${String(max + 1).padStart(3, "0")}`;
+  return `${prefixNovo}${String(max + 1).padStart(3, "0")}`;
 }

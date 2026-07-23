@@ -141,9 +141,9 @@ function idFromMatricula(matricula: string): number {
   return Number(matricula.replace(/\D/g, "").slice(-5)) || 1;
 }
 
-const MESES = ["Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+export const MESES = ["Janeiro", "Fevereiro", "Marco", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
-function monthAdd(fromLabel: string, plus: number): string {
+export function monthAdd(fromLabel: string, plus: number): string {
   const [mesNome, anoStr] = fromLabel.split("/") as [string, string];
   const fromIdx = MESES.indexOf(mesNome);
   const total = fromIdx + plus;
@@ -601,6 +601,8 @@ export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
   const criadoEmIso = new Date(nowMs).toISOString();
   const expiracaoIso = input.isReserva ? new Date(nowMs + reservaDias * 86400_000).toISOString() : null;
   const valorLiquido = input.valorFinanciado - input.iof;
+  const dNow = new Date(nowMs);
+  const mesAtualLabel = `${MESES[dNow.getMonth()]}/${dNow.getFullYear()}`;
   const c: ContratoFull = {
     adf,
     situacao: input.isReserva ? "Aguardando Confirmação do Deferimento" : "Ativo",
@@ -627,8 +629,11 @@ export function criarContratoOuReserva(input: NovoContratoInput): ContratoFull {
     diasCarencia: input.diasCarencia,
     saldoDevedor: round2(input.valorFinanciado),
     parcelasPagas: 0,
-    folhaPrimeiroDesconto: monthAdd("Abril/2026", 0),
-    folhaUltimoDesconto: monthAdd("Abril/2026", input.parcelas - 1),
+    // Primeiro desconto = mes real da contratacao (antes era hardcoded
+    // "Abril/2026", o que deixava as datas de parcela irreais). Ultimo =
+    // primeiro + (parcelas-1).
+    folhaPrimeiroDesconto: mesAtualLabel,
+    folhaUltimoDesconto: monthAdd(mesAtualLabel, input.parcelas - 1),
     codigoVerba: input.codigoVerba,
     dataContrato: new Date().toLocaleDateString("pt-BR"),
     observacoes: input.observacoes,

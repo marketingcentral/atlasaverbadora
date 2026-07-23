@@ -1,6 +1,9 @@
 // Extended convenio configuration — locking deadlines, special rules, import formats.
 // CONVENIOS_MOCK keeps the static relation banco × prefeitura; this layer adds parametric config.
 
+import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
+import type { Env } from "../../env.js";
+
 export type FormatoImportacao = "CSV" | "EXCEL" | "API";
 
 export interface ConvenioConfig {
@@ -95,6 +98,26 @@ export function upsertConvenioConfig(input: Omit<ConvenioConfig, "atualizadoEm">
   if (idx >= 0) _configs[idx] = next;
   else _configs.push(next);
   return next;
+}
+
+// Persistencia (PG collection) — cliente 21/07/2026: a config que a averbadora
+// edita/salva tem que aparecer na prefeitura (outro isolate) e sobreviver a
+// deploy. Antes vivia so em memoria; a prefeitura via os defaults do seed.
+const PG_TABLE = "admin_convenio_configs";
+/** Recarrega do PG e SOBREPÕE o seed in-memory (config editada vence o default). */
+export async function refreshConvenioConfigs(env: Env): Promise<void> {
+  try {
+    const rows = await loadCollection<ConvenioConfig>(env, PG_TABLE);
+    for (const r of rows) {
+      const idx = _configs.findIndex((c) => c.id === r.id);
+      if (idx >= 0) _configs[idx] = r;
+      else _configs.push(r);
+    }
+  } catch { /* fail-safe: usa in-memory */ }
+}
+/** Write-through: persiste no PG apos editar. Best-effort. */
+export async function persistConvenioConfig(env: Env, cfg: ConvenioConfig): Promise<void> {
+  try { await upsertCollectionRow(env, PG_TABLE, cfg.id, cfg); } catch { /* fail-safe */ }
 }
 
 /** Removes the config entry. Returns true if existed. */

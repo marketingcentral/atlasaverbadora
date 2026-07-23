@@ -4,8 +4,11 @@ export interface TabelaEmprestimo {
   id: string;
   convenioId: string;
   convenio: string;
-  taxaMinAm: number;
-  taxaMaxAm: number;
+  /** Taxa de juros a.m. UNICA definida pelo banco (ex.: 0.0179 = 1.79%).
+   *  Cliente pediu 22/07/2026: antes era faixa taxaMinAm/taxaMaxAm mas nada
+   *  no sistema validava BETWEEN — puramente decorativo. Agora e' UMA taxa
+   *  especifica que o simulador do servidor consome direto. */
+  taxaAm: number;
   prazoMaxMeses: number;
   vigenciaInicio: string;
   vigenciaFim?: string;
@@ -88,8 +91,42 @@ function maskCpf(cpf11: string): string {
   return `***.***.***-${cpf11.slice(-2)}`;
 }
 
-let _tblSeq = 100;
-let _userSeq = 999000;
+// Counters POR BANCO. Antes eram globais — banco A cria usuarios U-999001..
+// U-999040, banco B recem-criado ja saia U-999041 (mesma classe do bug de
+// prefeitura). Agora cada banco tem seus seqs isolados: TBL-{bancoId}-{seq} e
+// U-{bancoId}-{seq}. IDs legacy sao considerados na base do seq quando o max
+// bater. Cliente pediu 22/07/2026.
+const _tblSeqPorBanco: Map<number, number> = new Map();
+const _userSeqPorBanco: Map<number, number> = new Map();
+function nextTblId(bancoId: number): string {
+  const maxExistente = _tabelas.reduce((acc, t) => {
+    // Filtro por bancoId derivado do convenio (bancoId do t.convenioId no
+    // CONVENIOS_MOCK — nao acessivel aqui sem circular import; usamos so o
+    // sufixo numerico da propria pref). Alternativa: consultar o campo se
+    // o schema tiver bancoId direto (nao tem). Vamos com o max simples do
+    // banco atraves do prefixo TBL-{bancoId}-.
+    const m1 = new RegExp(`^TBL-${bancoId}-(\\d+)$`).exec(t.id);
+    if (m1) return Math.max(acc, Number(m1[1]));
+    return acc;
+  }, 100);
+  const cur = _tblSeqPorBanco.get(bancoId) ?? 100;
+  const seq = Math.max(cur, maxExistente) + 1;
+  _tblSeqPorBanco.set(bancoId, seq);
+  return `TBL-${bancoId}-${String(seq).padStart(3, "0")}`;
+}
+function nextUserId(bancoId: number): { id: string; codigo: string } {
+  const maxExistente = _usuarios.reduce((acc, u) => {
+    if (u.bancoId !== bancoId) return acc;
+    const m = new RegExp(`^U-${bancoId}-(\\d+)$`).exec(u.id);
+    if (m) return Math.max(acc, Number(m[1]));
+    return acc;
+  }, 0);
+  const cur = _userSeqPorBanco.get(bancoId) ?? 0;
+  const seq = Math.max(cur, maxExistente) + 1;
+  _userSeqPorBanco.set(bancoId, seq);
+  const seqStr = String(seq).padStart(3, "0");
+  return { id: `U-${bancoId}-${seqStr}`, codigo: `${bancoId}${seqStr}` };
+}
 
 // Sincronizacao com Postgres: no primeiro acesso apos boot do isolate,
 // carregamos as tabelas persistidas. Se o DB estiver vazio, seed inicial.
@@ -112,14 +149,16 @@ async function hydrateTabelas(env: Env): Promise<void> {
         const rows = await loadTabelas(env);
         if (rows.length > 0) {
           _tabelas.length = 0;
-          _tabelas.push(...(rows as unknown as TabelaEmprestimo[]));
-          // Alinha o seq com o maior sufixo numerico existente pra evitar colisao.
-          const maxSeq = rows.reduce((acc, r) => {
-            const m = /TBL-(\d+)/.exec(r.id);
-            return m ? Math.max(acc, Number(m[1])) : acc;
-          }, 100);
-          _tblSeq = Math.max(_tblSeq, maxSeq + 1);
+          // Migracao suave: tabelas legadas so tem taxaMinAm/taxaMaxAm.
+          // Normaliza pra taxaAm (usa max — era a taxa efetivamente topada).
+          for (const r of rows as unknown as (TabelaEmprestimo & { taxaMinAm?: number; taxaMaxAm?: number })[]) {
+            if (r.taxaAm == null && r.taxaMaxAm != null) {
+              r.taxaAm = r.taxaMaxAm;
+            }
+            _tabelas.push(r as TabelaEmprestimo);
+          }
         }
+        // Seqs por-banco recalculam sob demanda em nextTblId — nada a fazer.
         _tabelasHydrated = true;
       } catch {
         // Sem DB configurado — segue in-memory (comportamento legado).
@@ -138,7 +177,7 @@ export async function getTabela(env: Env, id: string): Promise<TabelaEmprestimo 
   await hydrateTabelas(env);
   return _tabelas.find((t) => t.id === id);
 }
-export async function upsertTabela(env: Env, input: Omit<TabelaEmprestimo, "id" | "criadoEm"> & { id?: string }): Promise<TabelaEmprestimo> {
+export async function upsertTabela(env: Env, input: Omit<TabelaEmprestimo, "id" | "criadoEm"> & { id?: string }, bancoId: number): Promise<TabelaEmprestimo> {
   await hydrateTabelas(env);
   let saved: TabelaEmprestimo;
   if (input.id) {
@@ -151,7 +190,7 @@ export async function upsertTabela(env: Env, input: Omit<TabelaEmprestimo, "id" 
     }
   }
   saved = {
-    id: `TBL-${String(_tblSeq++).padStart(3, "0")}`,
+    id: nextTblId(bancoId),
     criadoEm: new Date().toISOString().slice(0, 10),
     ...input,
   };
@@ -219,9 +258,10 @@ export function upsertUsuario(input: UsuarioUpsert): BancoUsuario {
       return updated;
     }
   }
+  const gen = nextUserId(input.bancoId);
   const novo: BancoUsuario = {
-    id: `U-${++_userSeq}`,
-    codigo: String(_userSeq),
+    id: gen.id,
+    codigo: gen.codigo,
     criadoEm: new Date().toISOString().slice(0, 10),
     ...normalized,
   };
@@ -241,4 +281,45 @@ export function reativarUsuario(id: string): boolean {
   if (!u) return false;
   u.ativo = true;
   return true;
+}
+
+// ============================================================
+// Presets CUSTOMIZADOS nomeados por banco. Cliente pediu 22/07/2026:
+// ao criar usuario com config PERSONALIZADA, o admin do banco nomeia
+// a config e ela vira preset reutilizavel no dropdown. Isolado por
+// bancoId — cada banco enxerga so seus presets.
+// ============================================================
+export interface BancoPerfilPreset {
+  bancoId: number;
+  key: string;
+  nome: string;
+  permissoes: string[];
+  criadoEm: string;
+}
+const _presets: BancoPerfilPreset[] = [];
+
+function slugBancoPreset(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}
+export function listBancoPresets(bancoId: number): BancoPerfilPreset[] {
+  return _presets.filter((p) => p.bancoId === bancoId);
+}
+export function upsertBancoPreset(input: { bancoId: number; nome: string; permissoes: string[] }, now: string): BancoPerfilPreset {
+  const key = slugBancoPreset(input.nome);
+  const existing = _presets.find((p) => p.bancoId === input.bancoId && p.key === key);
+  if (existing) {
+    existing.nome = input.nome.trim();
+    existing.permissoes = [...input.permissoes];
+    return existing;
+  }
+  const novo: BancoPerfilPreset = { bancoId: input.bancoId, key, nome: input.nome.trim(), permissoes: [...input.permissoes], criadoEm: now };
+  _presets.push(novo);
+  return novo;
+}
+export function hydrateBancoPresets(rows: BancoPerfilPreset[]): void {
+  _presets.length = 0;
+  _presets.push(...rows);
+}
+export function exportBancoPresetsRaw(): BancoPerfilPreset[] {
+  return [..._presets];
 }

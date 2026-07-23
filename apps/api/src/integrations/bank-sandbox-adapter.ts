@@ -39,7 +39,7 @@ export class BankSandboxAdapter implements BankAdapter {
     return {
       token: `sandbox_${Date.now()}`,
       expiresAt: Date.now() + 3600_000,
-      banco: creds.banco ?? "SCRED",
+      banco: creds.banco ?? "SANDBOX",
     };
   }
 

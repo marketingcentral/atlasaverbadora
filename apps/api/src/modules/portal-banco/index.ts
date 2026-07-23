@@ -11,14 +11,54 @@ import { refreshComunicados } from "./comunicados-store.js";
 import { prefeituras, bancos, pushEvent } from "../admin/index.js";
 import { getConvenioConfig } from "../admin/convenios-config.js";
 import { ensurePortabilidadesLoaded, listIntencoesAbertasParaBanco, adicionarOferta } from "../admin/portabilidade-store.js";
-import { aplicarAcao, comprometeMargem, criarContratoOuReserva, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb, tratarFalhaContrato } from "./store.js";
-import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario } from "./cadastros.js";
+import { aplicarAcao, comprometeMargem, criarContratoOuReserva, deriveTipoMargem, getContrato, getContratoEventos, getContratoParcelas, listContratos, persistContrato, refreshContratos, setContratoCcb, tratarFalhaContrato } from "./store.js";
+import { listTabelas, getTabela, upsertTabela, removerTabela, reativarTabela, listUsuarios, getUsuario, upsertUsuario, removerUsuario, reativarUsuario, listBancoPresets, upsertBancoPreset, hydrateBancoPresets, exportBancoPresetsRaw, type BancoPerfilPreset } from "./cadastros.js";
+import { loadCollection, upsertCollectionRow } from "../../db/repos.js";
 import { loadOfertas, refreshOfertas, persistOferta, nextOfertaId, type Oferta, type OfertaFiltro } from "./ofertas-store.js";
 import { enviarNotificacao, dispatchTemplateEmail } from "../admin/mailer.js";
+import { listExternalLoans, refreshTombamento } from "../admin/tombamento.js";
+import { appendAudit, auditCtx } from "../admin/auditoria.js";
 import type { ContratoFull } from "./store.js";
+
+/** Emprestimos externos (tombamento) do bucket EMPRESTIMO de um servidor.
+ *  Sao operacoes ja ativas em OUTROS bancos (Caixa/Bradesco/BMG, etc) que a
+ *  prefeitura declarou — descontam a margem consignavel real do servidor. O
+ *  banco tem que considera-los no calculo de margem, senao simula/averba acima
+ *  do teto real (o servidor e a prefeitura ja descontam — o banco ficou pra
+ *  tras). Cliente pediu 21/07/2026. Bucket derivado do tipo do tombamento:
+ *  beneficio/cartao caem em outros buckets; o resto e EMPRESTIMO. */
+function externosEmprestimo(matricula: string): { valorParcela: number; parcelasRestantes: number }[] {
+  return listExternalLoans(matricula).filter((l) => {
+    // Combina tipo + motivo — no relatorio real o `tipo` costuma ser 'Novo'/
+    // 'Refinanciamento' e o `motivo` e' que carrega 'Cartao Consignado' vs
+    // 'Emprestimo'. Olhar so `tipo` fazia o cartao (ex.: BMG) cair no emprestimo.
+    // Mesma logica do bucketFromTombamento em servidores/index.ts.
+    const t = `${l.tipo ?? ""} ${l.motivo ?? ""}`.toLowerCase();
+    return !(t.includes("benef") || t.includes("cartao") || t.includes("cartão"));
+  });
+}
 
 function requireBancoRole(j: JwtClaims): void {
   if (j.role !== "banco") throw Errors.forbidden("Requer perfil banco");
+}
+
+// Presets CUSTOMIZADOS de permissao por banco (banco_perfil_presets).
+// Hidrata do PG no primeiro request; write-through em cada upsert.
+let _presetsBancoLoad: Promise<void> | null = null;
+async function ensurePresetsBancoLoaded(env: Env): Promise<void> {
+  if (_presetsBancoLoad) return _presetsBancoLoad;
+  _presetsBancoLoad = (async () => {
+    try {
+      const rows = await loadCollection<BancoPerfilPreset>(env, "banco_perfil_presets");
+      hydrateBancoPresets(rows);
+    } catch { _presetsBancoLoad = null; }
+  })();
+  return _presetsBancoLoad;
+}
+async function persistBancoPreset(env: Env, preset: BancoPerfilPreset): Promise<void> {
+  // Chave composta bancoId:key pra nao colidir entre bancos.
+  const id = `${preset.bancoId}:${preset.key}`;
+  try { await upsertCollectionRow(env, "banco_perfil_presets", id, preset); } catch { /* fail-safe */ }
 }
 
 const brlNotif = (n: number) => `R$ ${(Math.round(n * 100) / 100).toFixed(2).replace(".", ",")}`;
@@ -349,14 +389,29 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const found = SERVIDORES_BUSCA_MOCK.find((s) => contatos.has(s.matricula) && matchPred(s));
     if (found) {
       // LGPD: o banco não vê o salário líquido — só a MARGEM disponível.
-      // Comprometido = parcelas de operações já APROVADAS pelo banco (não conta
-      // reserva/proposta pendente) — assim o banco enxerga a margem real que sobra.
+      // Cliente reportou 22/07/2026: UI da ficha mostrava R$ 0,00 nos 3 cards
+      // (total/utilizado/disponivel) porque a UI fazia `f.salarioLiquido ?? 0`
+      // e o endpoint tirava salario (LGPD). Fix: retornar `margens` pre-
+      // calculadas por bucket (mesma forma do /me/matriculas), zero salario.
       const { salarioLiquido, ...ficha } = found;
-      const comprometido = listContratos({ matricula: found.matricula })
-        .filter((ct) => comprometeMargem(ct.situacao))
+      await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
+      const atlasComprometido = listContratos({ matricula: found.matricula })
+        .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
         .reduce((a, ct) => a + ct.valorParcela, 0);
+      const externoComprometido = externosEmprestimo(found.matricula).reduce((a, l) => a + l.valorParcela, 0);
+      const comprometido = atlasComprometido + externoComprometido;
       const margemDisponivelValor = Math.round(margemDisponivel(salarioLiquido, comprometido, "EMPRESTIMO") * 100) / 100;
-      return c.json({ ficha: { ...ficha, margemDisponivel: margemDisponivelValor } });
+      // Margens por bucket — UI usa direto sem precisar de salario.
+      const margens = (["EMPRESTIMO", "CARTAO_CONSIGNADO", "CARTAO_BENEFICIOS"] as const).map((tipo) => {
+        const compBucket = tipo === "EMPRESTIMO" ? comprometido : 0;
+        return {
+          tipo,
+          total: Math.round(margemTotal(salarioLiquido, tipo) * 100) / 100,
+          utilizado: Math.round(compBucket * 100) / 100,
+          disponivel: Math.round(margemDisponivel(salarioLiquido, compBucket, tipo) * 100) / 100,
+        };
+      });
+      return c.json({ ficha: { ...ficha, margemDisponivel: margemDisponivelValor, margens } });
     }
     throw new HttpError(
       404,
@@ -399,19 +454,44 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!matriculasContato(j.banco_id).has(s.matricula)) {
       throw Errors.forbidden("Este servidor não entrou em contato com o banco.");
     }
+    await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
     const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
-    // Comprometido real = parcelas de operações já aprovadas pelo banco.
+    // Comprometido real = parcelas de operações já aprovadas pelo banco (bucket
+    // EMPRESTIMO) + emprestimos EXTERNOS (tombamento) do mesmo bucket. Sem os
+    // externos, o banco liberava simulacao acima do teto real do servidor (a
+    // prefeitura e o proprio servidor ja descontam). Cliente pediu 21/07/2026.
+    const contratosAtivos = listContratos({ matricula: s.matricula })
+      .filter((ct) => comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO");
+    const externos = externosEmprestimo(s.matricula);
     const comprometido = Math.round(
-      listContratos({ matricula: s.matricula })
-        .filter((ct) => comprometeMargem(ct.situacao))
-        .reduce((a, ct) => a + ct.valorParcela, 0) * 100,
+      (contratosAtivos.reduce((a, ct) => a + ct.valorParcela, 0)
+        + externos.reduce((a, l) => a + l.valorParcela, 0)) * 100,
     ) / 100;
     const disponivel = margemDisponivel(s.salarioLiquido, comprometido, "EMPRESTIMO");
-    const projecao = projecoesQuatroMeses(body.mes, body.ano).map((p, idx) => ({
-      competencia: p.yyyymm,
-      rotulo: `${monthLabel(p.mes)}/${p.ano}`,
-      valor: disponivel + idx * 12.5,
-    }));
+    // Projecao REAL dos proximos 4 meses: cada contrato ativo compromete a
+    // margem pelas parcelas restantes (totalParcelas - parcelasPagas). Se um
+    // contrato tem 3 parcelas a vencer, ele deixa de comprometer margem a
+    // partir do 4o mes projetado. Antes: 'disponivel + idx * 12.5' — fake
+    // linear sem sentido. Agora reflete o cronograma real de quitacao.
+    const projecao = projecoesQuatroMeses(body.mes, body.ano).map((p, idx) => {
+      // Mes 0 = mes solicitado (agora). Contrato deixa de contar quando
+      // parcelasRestantes <= idx (ja quitou ate esse ponto do horizonte).
+      const comprometidoNoMes = Math.round(
+        (contratosAtivos
+          .filter((ct) => (ct.totalParcelas - ct.parcelasPagas) > idx)
+          .reduce((a, ct) => a + ct.valorParcela, 0)
+          // Externos tambem saem da margem enquanto tiverem parcelas a vencer.
+          + externos
+            .filter((l) => l.parcelasRestantes > idx)
+            .reduce((a, l) => a + l.valorParcela, 0)) * 100,
+      ) / 100;
+      const disponivelNoMes = Math.max(0, Math.round((total - comprometidoNoMes) * 100) / 100);
+      return {
+        competencia: p.yyyymm,
+        rotulo: `${monthLabel(p.mes)}/${p.ano}`,
+        valor: disponivelNoMes,
+      };
+    });
     return c.json({
       competencia: `${body.ano}${String(body.mes).padStart(2, "0")}`,
       tipo: "EMPRESTIMO",
@@ -588,6 +668,16 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const r = tratarFalhaContrato(adf, body.acao, body.motivo, `user:${j.sub}`);
       if (!r) throw Errors.notFound("contrato");
       await persistContrato(c.env, adf);
+      appendAudit(auditCtx(c), {
+        categoria: "margem",
+        acao: `banco_falha_${body.acao}`,
+        propostaId: adf,
+        matricula: r.matricula,
+        cpf: r.cpfMasked,
+        userId: `banco:${j.banco_id ?? "?"}`,
+        userRole: "banco",
+        detalhes: `Banco ${j.banco_id} tratou falha do contrato ${adf} com acao "${body.acao}" — motivo: ${body.motivo}.`,
+      });
       pushEvent(
         "info",
         "banco.tratou_falha",
@@ -637,6 +727,24 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       const r = aplicarAcao(adf, acao, `user:${j.sub}`, body.motivo, body);
       if (!r) throw Errors.notFound("contrato");
       await persistContrato(c.env, adf); // write-through: decisão do banco persiste e o servidor vê
+      // Auditoria: decisao contratual do banco (aprovar/recusar/quitar/etc)
+      // muda estado de dinheiro e obrigacao. Categoria pre_reserva enquanto
+      // esta em analise; margem quando ja e contrato ativo (quitar/suspender).
+      const bancoNomeAudit = bancos.find((b) => b.id === (j.banco_id ?? -1))?.nome ?? `Banco ${j.banco_id}`;
+      const categoriaAudit = (acao === "quitar" || acao === "suspender" || acao === "alongar" || acao === "alterar")
+        ? "margem" as const
+        : "pre_reserva" as const;
+      const brl = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+      appendAudit(auditCtx(c), {
+        categoria: categoriaAudit,
+        acao: `banco_${acao}`,
+        propostaId: adf,
+        matricula: r.matricula,
+        cpf: r.cpfMasked,
+        userId: `banco:${j.banco_id ?? "?"}`,
+        userRole: "banco",
+        detalhes: `${bancoNomeAudit} ${acao === "aprovar" ? "aprovou" : acao === "confirmar" ? "averbou" : acao === "quitar" ? "quitou" : acao === "cancelar" ? "cancelou" : acao === "suspender" ? "suspendeu" : acao === "alongar" ? "alongou" : "alterou"} a proposta ADF ${adf} (parcela ${brl(r.valorParcela)} x ${r.totalParcelas}, ${r.nome})${body.motivo ? ` — motivo: ${body.motivo}` : ""}.`,
+      });
       // Notifica a averbadora sempre que o banco APROVA ou CONFIRMA.
       if (acao === "aprovar" || acao === "confirmar") {
         const bancoNome = bancos.find((b) => b.id === r.bancoId)?.nome ?? `Banco ${r.bancoId}`;
@@ -703,8 +811,12 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         id: z.string().optional(),
         convenioId: z.string(),
         convenio: z.string(),
-        taxaMinAm: z.number().min(0).max(1),
-        taxaMaxAm: z.number().min(0).max(1),
+        // Taxa unica a.m. (0..1 = 0..100%). Cliente pediu 22/07/2026: antes
+        // era taxaMinAm/taxaMaxAm mas nada consumia o intervalo (puramente
+        // decorativo). Aceita legacy pra tabelas antigas ainda no PG.
+        taxaAm: z.number().min(0).max(1).optional(),
+        taxaMinAm: z.number().min(0).max(1).optional(),
+        taxaMaxAm: z.number().min(0).max(1).optional(),
         // Cliente pediu prazo max fechado — so aceita 12/24/36/48/60/72/96/120.
         // Bloqueio server-side alem do dropdown fechado no form.
         prazoMaxMeses: z.union([
@@ -715,7 +827,24 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         vigenciaFim: z.string().optional(),
         ativo: z.boolean().default(true),
       })
+      .refine((b) => b.taxaAm != null || b.taxaMaxAm != null, {
+        message: "taxaAm obrigatoria (ou taxaMaxAm em requests legadas)",
+        path: ["taxaAm"],
+      })
       .parse(await c.req.json());
+    // Normaliza pra taxaAm unica — legacy taxaMaxAm vira taxaAm (topo era o
+    // valor efetivamente praticado). Descarta taxaMinAm/taxaMaxAm no persist.
+    const taxaAmFinal = body.taxaAm ?? body.taxaMaxAm!;
+    const bodyNorm = {
+      id: body.id,
+      convenioId: body.convenioId,
+      convenio: body.convenio,
+      taxaAm: taxaAmFinal,
+      prazoMaxMeses: body.prazoMaxMeses,
+      vigenciaInicio: body.vigenciaInicio,
+      vigenciaFim: body.vigenciaFim,
+      ativo: body.ativo,
+    };
     // Isolamento: so pode criar/editar tabela em convenio proprio.
     const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
     if (!meusConvenios.has(body.convenioId)) throw Errors.notFound("convenio");
@@ -733,7 +862,15 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         prazoMaxMeses: `Prazo maximo do convenio e' de ${cfg.maxParcelas} parcelas (teto definido pela prefeitura). Reduza o prazo desta tabela.`,
       });
     }
-    return c.json({ tabela: await upsertTabela(c.env, body) });
+    const saved = await upsertTabela(c.env, bodyNorm, j.banco_id!);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: body.id ? "banco_tabela_editada" : "banco_tabela_criada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} ${body.id ? "editou" : "criou"} tabela (id=${saved.id}) no convenio ${body.convenioId}: taxa=${(taxaAmFinal * 100).toFixed(2)}% a.m., prazoMax=${body.prazoMaxMeses}, ativo=${body.ativo}. Muda o cardapio de credito exposto ao servidor.`,
+    });
+    return c.json({ tabela: saved });
   })
   .delete("/v1/portal/banco/cadastros/tabela-emprestimos/:id", async (c) => {
     const j = c.get("jwt");
@@ -743,6 +880,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
     if (!t || !meusConvenios.has(t.convenioId)) throw Errors.notFound("tabela");
     if (!(await removerTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "banco_tabela_desativada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} desativou tabela ${c.req.param("id")} (convenio ${t.convenioId}, taxa ${((t as unknown as { taxaAm?: number; taxaMaxAm?: number }).taxaAm ?? (t as unknown as { taxaMaxAm?: number }).taxaMaxAm ?? 0)}).`,
+    });
     return c.body(null, 204);
   })
   .post("/v1/portal/banco/cadastros/tabela-emprestimos/:id/reativar", async (c) => {
@@ -752,6 +896,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const meusConvenios = new Set(CONVENIOS_MOCK.filter((cv) => cv.bancoId === j.banco_id).map((cv) => cv.id));
     if (!t || !meusConvenios.has(t.convenioId)) throw Errors.notFound("tabela");
     if (!(await reativarTabela(c.env, c.req.param("id")))) throw Errors.notFound("tabela");
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "banco_tabela_reativada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} reativou tabela ${c.req.param("id")} (convenio ${t.convenioId}).`,
+    });
     return c.json({ ok: true });
   })
 
@@ -818,6 +969,17 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       }
       setContratoCcb(adf, key, `user:${j.sub}`);
       await persistContrato(c.env, adf);
+      appendAudit(auditCtx(c), {
+        categoria: "termo_aceite",
+        acao: oldKey ? "ccb_substituida" : "ccb_anexada",
+        propostaId: adf,
+        matricula: owner.matricula,
+        cpf: owner.cpfMasked,
+        userId: `banco:${j.banco_id ?? "?"}`,
+        userRole: "banco",
+        termoAceito: `ccb:${key}`,
+        detalhes: `Banco ${j.banco_id} ${oldKey ? "SUBSTITUIU" : "anexou"} CCB do contrato ADF ${adf} (${file.name}, ${Math.round(file.size / 1024)} KiB, ${storedType})${oldKey ? " — versao anterior removida do R2" : ""}.`,
+      });
     }
     return c.json({ key, size: file.size, contentType: storedType });
   })
@@ -904,6 +1066,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       tipo: body.tipo ?? "credito_novo",
     };
     await persistOferta(c.env, oferta);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: body.id ? "banco_oferta_editada" : "banco_oferta_criada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} ${body.id ? "editou" : "criou"} oferta "${oferta.titulo}" (${oferta.tipo}): taxa=${oferta.taxaAm}%, parcelasMax=${oferta.parcelasMax}, valorMax=${oferta.valorMax}, ativo=${oferta.ativo}. Cardapio exposto ao servidor.`,
+    });
     return c.json({ oferta });
   })
   .patch("/v1/portal/banco/ofertas/:id/pausar", async (c) => {
@@ -914,6 +1083,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!o || o.bancoId !== j.banco_id) throw Errors.notFound("oferta");
     o.ativo = false;
     await persistOferta(c.env, o);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "banco_oferta_pausada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} pausou oferta "${o.titulo}" (id=${o.id}).`,
+    });
     return c.json({ oferta: o });
   })
   .patch("/v1/portal/banco/ofertas/:id/reativar", async (c) => {
@@ -924,6 +1100,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     if (!o || o.bancoId !== j.banco_id) throw Errors.notFound("oferta");
     o.ativo = true;
     await persistOferta(c.env, o);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "banco_oferta_reativada",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} reativou oferta "${o.titulo}" (id=${o.id}).`,
+    });
     return c.json({ oferta: o });
   })
 
@@ -940,7 +1123,32 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const usuarios = listUsuarios({ perfil: perfil ?? undefined, somenteAdmin })
       .filter((u) => u.bancoId === (j.banco_id ?? -1))
       .map(({ cpf: _cpf, ...rest }) => rest);
-    return c.json({ usuarios });
+    // Presets customizados nomeados desse banco — o front usa pra popular o
+    // dropdown no modal de criacao/edicao de usuario.
+    await ensurePresetsBancoLoaded(c.env);
+    const presets = j.banco_id != null
+      ? listBancoPresets(j.banco_id).map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes }))
+      : [];
+    return c.json({ usuarios, presets });
+  })
+  // Endpoints dedicados de presets — get/upsert em tela dedicada ou hot-save
+  // sem passar por criacao de usuario.
+  .get("/v1/portal/banco/perfil-presets", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    await ensurePresetsBancoLoaded(c.env);
+    return c.json({ presets: listBancoPresets(j.banco_id).map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })) });
+  })
+  .post("/v1/portal/banco/perfil-presets", async (c) => {
+    const j = c.get("jwt");
+    requireBancoRole(j);
+    if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
+    const body = z.object({ nome: z.string().min(2).max(60), permissoes: z.array(z.string().min(1).max(64)).min(1).max(200) }).parse(await c.req.json());
+    await ensurePresetsBancoLoaded(c.env);
+    const preset = upsertBancoPreset({ bancoId: j.banco_id, nome: body.nome, permissoes: body.permissoes }, new Date().toISOString());
+    await persistBancoPreset(c.env, preset);
+    return c.json({ preset: { key: preset.key, nome: preset.nome, permissoes: preset.permissoes } }, 201);
   })
   .get("/v1/portal/banco/cadastros/usuarios/:id", async (c) => {
     const j = c.get("jwt");
@@ -986,6 +1194,9 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
         permissoes: z.array(z.string().min(1).max(64)).max(200).optional(),
         ipsPermitidos: z.array(z.string()).default([]),
         ativo: z.boolean().default(true),
+        // Nome do preset customizado — obrigatorio no front quando perfil e'
+        // "personalizado" e esta CRIANDO. Salva a config como preset reusavel.
+        presetNome: z.string().min(2).max(60).optional(),
       })
       .parse(await c.req.json());
     // Isolamento: se editando, usuario existente tem que ser do proprio banco.
@@ -995,7 +1206,20 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     }
     // Fallback bancoId=1 removido — banco sem banco_id nao pode criar usuario.
     if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
-    const saved = upsertUsuario({ ...body, bancoId: j.banco_id });
+    await ensurePresetsBancoLoaded(c.env);
+    const { presetNome, ...bodyUpsert } = body;
+    const saved = upsertUsuario({ ...bodyUpsert, bancoId: j.banco_id });
+    if (presetNome && Array.isArray(body.permissoes) && body.permissoes.length > 0) {
+      const preset = upsertBancoPreset({ bancoId: j.banco_id, nome: presetNome, permissoes: body.permissoes }, new Date().toISOString());
+      await persistBancoPreset(c.env, preset);
+    }
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: body.id ? "banco_usuario_editado" : "banco_usuario_criado",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} ${body.id ? "editou" : "criou"} usuario interno "${saved.nome}" (${saved.email}, perfil=${saved.perfil ?? "-"}, ativo=${saved.ativo}). Insider access — quem edita usuario define quem aprova propostas.`,
+    });
     const { cpf: _cpf, ...rest } = saved;
     return c.json({ usuario: rest });
   })
@@ -1006,6 +1230,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const u = getUsuario(c.req.param("id"));
     if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     if (!removerUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "banco_usuario_removido",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} removeu (soft-delete) usuario interno "${u.nome}" (${u.email}).`,
+    });
     return c.body(null, 204);
   })
   .post("/v1/portal/banco/cadastros/usuarios/:id/reativar", async (c) => {
@@ -1014,6 +1245,13 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     const u = getUsuario(c.req.param("id"));
     if (!u || u.bancoId !== (j.banco_id ?? -1)) throw Errors.notFound("usuario");
     if (!reativarUsuario(c.req.param("id"))) throw Errors.notFound("usuario");
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "banco_usuario_reativado",
+      userId: `banco:${j.banco_id}`,
+      userRole: "banco",
+      detalhes: `Banco ${j.banco_id} reativou usuario interno "${u.nome}" (${u.email}).`,
+    });
     return c.json({ ok: true });
   })
 

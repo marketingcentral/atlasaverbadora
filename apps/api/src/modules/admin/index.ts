@@ -10,18 +10,19 @@ import { refreshComunicados, persistComunicados, removerComunicadoPersistido } f
 import { createToken, setTokenPaused, listTokens, SCOPES_BY_AUDIENCE, sha256Hex, type ApiAudience, type ApiEnvironment, type ApiScope } from "./api-tokens.js";
 import { sql } from "drizzle-orm";
 import { getDb } from "../../db/client.js";
-import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, deleteCollectionRow, deleteTombamentoLote, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato } from "../../db/repos.js";
+import { withIdempotency } from "../../_shared/idempotency.js";
+import { ensureSchema, loadBancos, seedBancosIfEmpty, upsertBanco, deleteBancoRow, loadPrefeituras, seedPrefeiturasIfEmpty, upsertPrefeitura, deletePrefeituraRow, loadServidores, seedServidoresIfEmpty, upsertServidor, reseedAll, purgeServidores, purgeContratosApenas, purgePrefeituras, purgeUsuarios, purgeComunicados, appendLog, loadLogs, loadCollection, upsertCollectionRow, seedCollectionIfEmpty, deleteCollectionRow, deleteTombamentoLote, clearServidorConta, deleteContratosByMatriculas, deleteServidoresByMatriculas, setServidorPassword, setServidorContato, backfillAuditCategoria } from "../../db/repos.js";
 import type { AppLogRow } from "../../db/repos.js";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { MATRICULA_REGEX, normalizeMatricula, MatriculaSchema } from "../../_shared/matricula.js";
 import { WEBHOOK_EVENTS, createWebhook, setWebhooksPausedForPartner, fireEvent, listDeliveries, listWebhooks, testWebhookEvents, type WebhookEvent } from "./webhooks.js";
 import { ensureIdUnicoConfig, getIdUnicoConfig, issueIdUnico, listIdUnicoConfigs, previewIdUnico, upsertIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "./id-unico.js";
-import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
+import { getConvenioConfig, listConvenioConfigs, upsertConvenioConfig, refreshConvenioConfigs, persistConvenioConfig, type FormatoImportacao } from "./convenios-config.js";
 import type { PreReserva, PreReservaStatus, PreReservaSummary } from "./pre-reservas.js";
 import { importTombamento, listLinhas, listLotes, clearTombamentoMemoria, removeLoteMemoria, refreshTombamento, marcarTombamentoSubstituido, persistLotePublic } from "./tombamento.js";
 import { bateCarteiraCsv, gerarBateCarteira } from "./bate-carteira.js";
-import { appendAudit, auditCategorias, listAudit, type AuditCategoria } from "./auditoria.js";
-import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, type AverbadoraUser } from "./perfis-admin.js";
+import { appendAudit, auditCategorias, listAudit, listAuditAsync, auditCtx, type AuditCategoria } from "./auditoria.js";
+import { deleteAverbadoraUser, reactivateAverbadoraUser, disable2FA, getAverbadoraUser, listAverbadoraUsers, perfilOptions, rotateTotpSecret, upsertAverbadoraUser, exportUsersRaw, hydrateUsers, listAverbadoraPresets, upsertAverbadoraPreset, hydrateAverbadoraPresets, exportAverbadoraPresetsRaw, type AverbadoraUser, type AverbadoraPerfilPreset } from "./perfis-admin.js";
 import { loadBeneficios, refreshBeneficios, persistBeneficio, nextBeneficioId, type Beneficio } from "./beneficios-store.js";
 import { loadTemplates, getTemplate, upsertTemplate, removerTemplateSeguro, renderTemplate, exemploVarsRealistas, upsertTemplateBeneficio, removerTemplatePorBeneficio } from "./email-templates.js";
 import { loadCliques, refreshCliques } from "./beneficio-cliques-store.js";
@@ -128,6 +129,10 @@ export interface BancoAdmin {
   passwordHash?: string;
   scopes: string[];
   mtlsHabilitado: boolean;
+  /** URL base pra health check (opcional). Ex: "https://api.iFractal.com".
+   *  Se preenchida, o monitor /averbadora/health pinga `${baseUrl}/health` a
+   *  cada 20s (uptime real). Sem baseUrl, banco aparece como "sem endpoint". */
+  baseUrl?: string;
   ultimoTeste?: string;
   ultimoTesteOk?: boolean;
   /** 2FA opcional pro operador do banco. Self-service via /banco/conta. */
@@ -599,6 +604,22 @@ async function persistPerfis(env: Env): Promise<void> {
     if (env.KV_CACHE && exportUsersRaw().length > 0) await env.KV_CACHE.delete("purge:usuarios");
   } catch { /* fail-safe */ }
 }
+// Presets CUSTOMIZADOS de permissao (admin_perfil_presets) — nomeados,
+// reutilizaveis no dropdown "Perfil" da UI de criacao de usuario averbadora.
+let _presetsAvbLoad: Promise<void> | null = null;
+async function ensurePresetsAvbLoaded(env: Env): Promise<void> {
+  if (_presetsAvbLoad) return _presetsAvbLoad;
+  _presetsAvbLoad = (async () => {
+    try {
+      const rows = await loadCollection<AverbadoraPerfilPreset>(env, "admin_perfil_presets");
+      hydrateAverbadoraPresets(rows);
+    } catch { _presetsAvbLoad = null; }
+  })();
+  return _presetsAvbLoad;
+}
+async function persistAverbadoraPreset(env: Env, preset: AverbadoraPerfilPreset): Promise<void> {
+  try { await upsertCollectionRow(env, "admin_perfil_presets", preset.key, preset); } catch { /* fail-safe */ }
+}
 // Persistência do status do servidor (ativo/bloqueado/arquivado) — o override em memória.
 let _servidorStatusLoad: Promise<void> | null = null;
 function ensureServidorStatusLoaded(env: Env): Promise<void> {
@@ -951,11 +972,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const totalVitrineMes = vitrine.reduce((acc, v) => acc + v.receitaMes, 0);
     const preResumo = resumoPreReservas(todosContratos.map(contratoToPreReserva));
     const folhasAbertas = folhas.filter((f) => f.status === "aberta").length;
-    const volumePorConvenio = todosContratos.reduce<Record<string, number>>((acc, c) => {
+    // "Averbado" = margem efetivamente registrada em folha. Volume AVERBADO
+    // conta SO contratos nesse estado (Ativo/Averbado/Formalizado) — nao
+    // propostas em aberto, aprovadas nem canceladas. Cliente apontou 21/07/2026:
+    // o card somava TODOS os contratos (listContratos({})) sob o rotulo
+    // "averbado", contradizendo a conversao 0% (nada formalizado). Mesmo
+    // criterio de `formalizadas` (conversao) — as duas metricas agora batem.
+    const isAverbado = (ct: typeof todosContratos[number]): boolean => {
+      const s = ct.situacao.toLowerCase();
+      return s === "ativo" || s === "averbado" || s === "formalizado";
+    };
+    const contratosAverbados = todosContratos.filter(isAverbado);
+    const volumePorConvenio = contratosAverbados.reduce<Record<string, number>>((acc, c) => {
       acc[c.convenio] = (acc[c.convenio] ?? 0) + c.valorFinanciado;
       return acc;
     }, {});
-    const volumePorBanco = todosContratos.reduce<Record<string, number>>((acc, c) => {
+    const volumePorBanco = contratosAverbados.reduce<Record<string, number>>((acc, c) => {
       const banco = bancos.find((b) => b.id === c.bancoId)?.nome ?? "—";
       acc[banco] = (acc[banco] ?? 0) + c.valorFinanciado;
       return acc;
@@ -977,10 +1009,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Conversao = formalizadas / total (bruto — nao considera propostas que nunca
     // viraram contrato porque nao temos historico delas na base atual). Ainda
     // assim, muito melhor que o 0.427 hardcoded que o cliente ja viu ha meses.
-    const formalizadas = todosContratos.filter((c) => {
-      const s = c.situacao.toLowerCase();
-      return s === "ativo" || s === "averbado" || s === "formalizado";
-    }).length;
+    const formalizadas = contratosAverbados.length;
     const conversao = todosContratos.length > 0 ? Math.round((formalizadas / todosContratos.length) * 1000) / 1000 : 0;
     return c.json({
       kpis: {
@@ -1301,7 +1330,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ apiKey: z.string().min(20) }).parse(await c.req.json());
     try {
       const status = await setAiKey(c.env, body.apiKey);
-      appendAudit({
+      appendAudit(auditCtx(c), {
         trace_id: c.get("trace_id"),
         categoria: "convenio_config",
         acao: "ai.config.set",
@@ -1320,7 +1349,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(j);
     requirePermissao(j, "configuracoes");
     await clearAiKey(c.env);
-    appendAudit({
+    appendAudit(auditCtx(c), {
       trace_id: c.get("trace_id"),
       categoria: "convenio_config",
       acao: "ai.config.clear",
@@ -1359,7 +1388,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       })
       .parse(await c.req.json());
     const status = await setSmtpConfig(c.env, body);
-    appendAudit({
+    appendAudit(auditCtx(c), {
       trace_id: c.get("trace_id"),
       categoria: "convenio_config",
       acao: "smtp.config.set",
@@ -1375,7 +1404,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     requireAdmin(j);
     requirePermissao(j, "configuracoes");
     await clearSmtpConfig(c.env);
-    appendAudit({
+    appendAudit(auditCtx(c), {
       trace_id: c.get("trace_id"),
       categoria: "convenio_config",
       acao: "smtp.config.clear",
@@ -1418,7 +1447,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       mensagem: z.string().max(200).optional(),
     }).parse(await c.req.json());
     const proximo = await setSuporteConfig(c.env, body);
-    appendAudit({
+    appendAudit(auditCtx(c), {
       categoria: "convenio_config", acao: "suporte.config.set",
       userId: c.get("jwt").sub, userRole: "averbadora",
       detalhes: `Config de suporte atualizada: email=${proximo.email} whatsapp=${proximo.whatsapp || "-"}`,
@@ -1516,7 +1545,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       reason: body.reason,
     });
     pushEvent("error", "admin.destructive_lock.unlock", `Endpoints destrutivos DESTRAVADOS por admin ${j?.sub} por ${duration}s. Motivo: ${body.reason ?? "-"}.`);
-    appendAudit({ categoria: "termo_aceite", acao: "destructive_unlock", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Destravou endpoints destrutivos por ${duration}s. Motivo: ${body.reason ?? "-"}.` });
+    appendAudit(auditCtx(c), { categoria: "termo_aceite", acao: "destructive_unlock", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Destravou endpoints destrutivos por ${duration}s. Motivo: ${body.reason ?? "-"}.` });
     return c.json(state);
   })
   .post("/v1/admin/destructive-lock/lock", async (c) => {
@@ -1543,11 +1572,21 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     pushEvent("error", "admin.db.reseed", `RESEED DESTRUTIVO confirmado por admin ${c.get("jwt")?.sub}: TRUNCATE + re-seed de servidores/bancos/prefeituras.`);
+    // Snapshot dos counts ANTES pra registrar quanto foi apagado (nao so o que
+    // sobrou depois do seed). Pushevent some em 24h; audit e permanente.
+    const beforeCounts = { bancos: bancos.length, prefeituras: prefeituras.length, servidores: SERVIDORES_BUSCA_MOCK.length };
     await reseedAll(c.env, BANCOS_SEED, PREFEITURAS_SEED, SERVIDORES_SEED);
     const [nb, np, ns] = [await loadBancos(c.env), await loadPrefeituras(c.env), await loadServidores(c.env)];
     bancos.length = 0; bancos.push(...nb);
     prefeituras.length = 0; prefeituras.push(...np);
     SERVIDORES_BUSCA_MOCK.length = 0; SERVIDORES_BUSCA_MOCK.push(...ns);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_reseed_destrutivo",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `TRUNCATE + reseed executado. Antes: bancos=${beforeCounts.bancos}, prefeituras=${beforeCounts.prefeituras}, servidores=${beforeCounts.servidores}. Depois (seed): bancos=${nb.length}, prefeituras=${np.length}, servidores=${ns.length}.`,
+    });
     return c.json({ ok: true, counts: { bancos: nb.length, prefeituras: np.length, servidores: ns.length } });
   })
 
@@ -1582,7 +1621,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     // Limpa ADFs stale para que o proximo ensureAdfs recrie com status correto.
     removeAdfsByContratoAdf(revertidos);
-    appendAudit({ categoria: "margem", acao: "reverter_desligamento", userId: ator, userRole: "averbadora", detalhes: `Reversao de cascade F6 em ${revertidos.length} contrato(s): ${revertidos.join(", ")}.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "reverter_desligamento", userId: ator, userRole: "averbadora", detalhes: `Reversao de cascade F6 em ${revertidos.length} contrato(s): ${revertidos.join(", ")}.` });
     pushEvent("info", "admin.contratos.reverter_desligamento", `Reversao F6 por admin ${j?.sub}: ${revertidos.length} contratos.`);
     return c.json({ ok: true, revertidos });
   })
@@ -1605,7 +1644,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (removeAnuenciaMemoria(id)) removidos.push(id);
       else removidos.push(id); // considera removido mesmo se so estava no PG
     }
-    appendAudit({ categoria: "termo_aceite", acao: "anuencia_removida", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Anuencia(s) removida(s) por admin: ${removidos.join(", ")}` });
+    appendAudit(auditCtx(c), { categoria: "termo_aceite", acao: "anuencia_removida", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Anuencia(s) removida(s) por admin: ${removidos.join(", ")}` });
     return c.json({ ok: true, removidos });
   })
   // Delete cirurgico por matricula(s) — protegido por ADMIN_PURGE_PASSWORD.
@@ -1630,6 +1669,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (mats.includes(SERVIDORES_BUSCA_MOCK[i]!.matricula)) SERVIDORES_BUSCA_MOCK.splice(i, 1);
     }
     pushEvent("info", "admin.servidores.delete", `Delete cirurgico por admin ${j?.sub}: matriculas=${mats.join(",")} (${removidosServidores} servidores + ${removidosContratos} contratos).`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "servidores_delete_cirurgico",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `DELETE cirurgico de ${removidosServidores} servidor(es) + ${removidosContratos} contrato(s). Matriculas: ${mats.join(", ")}.`,
+    });
     return c.json({ ok: true, removidosServidores, removidosContratos });
   })
   .post("/v1/admin/db/purge-servidores", async (c) => {
@@ -1644,10 +1690,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     pushEvent("error", "admin.db.purge_servidores", `PURGE DE SERVIDORES confirmado por admin ${j?.sub}: TRUNCATE servidores + contratos + adfs + propostas.`);
+    const antesSrv = SERVIDORES_BUSCA_MOCK.length;
     // Seta flag ANTES do TRUNCATE pra evitar race com seed em isolate frio.
     if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:servidores", "1");
     await purgeServidores(c.env);
     SERVIDORES_BUSCA_MOCK.length = 0;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_servidores",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE TOTAL DE SERVIDORES executado (TRUNCATE servidores + contratos + adfs + propostas). ${antesSrv} servidor(es) em cache do isolate no momento da purge.`,
+    });
     return c.json({ ok: true, mensagem: "Base de servidores zerada. Bancos/prefeituras/convenios preservados." });
   })
 
@@ -1666,6 +1720,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       });
     }
     pushEvent("error", "admin.db.purge_contratos", `PURGE CIRURGICO de contratos confirmado por admin ${j?.sub}: TRUNCATE contratos + propostas + eventos + folhas. TOMBAMENTO PRESERVADO.`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_contratos",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE de contratos + propostas + ADFs + folhas executado. Tombamento e servidores/bancos/prefeituras preservados.`,
+    });
     await purgeContratosApenas(c.env);
     clearContratosMemoria();
     clearAdfsMemoria();
@@ -1705,6 +1766,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     bancos.length = 0;
     pushEvent("info", "admin.bancos.limpar", `Base de bancos zerada por admin ${j?.sub} (${antes} removidos).`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "bancos_limpar_base",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `Base de bancos zerada — ${antes} banco(s) deletado(s).`,
+    });
     return c.json({ ok: true, removidos: antes });
   })
   .post("/v1/admin/prefeituras/limpar-base", async (c) => {
@@ -1725,6 +1793,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     prefeituras.length = 0;
     pushEvent("info", "admin.prefeituras.limpar", `Base de prefeituras zerada por admin ${j?.sub} (${antes} removidas).`);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "prefeituras_limpar_base",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `Base de prefeituras zerada — ${antes} prefeitura(s) deletada(s). Rows dependentes (convenios) ficam orfaos ate purge.`,
+    });
     return c.json({ ok: true, removidas: antes });
   })
   .post("/v1/admin/db/purge-prefeituras", async (c) => {
@@ -1746,10 +1821,18 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await c.env.KV_CACHE.put("purge:prefeituras", "1");
       await c.env.KV_CACHE.put("purge:servidores", "1");
     }
+    const antesP = prefeituras.length, antesC = CONVENIOS_MOCK.length, antesS = SERVIDORES_BUSCA_MOCK.length;
     await purgePrefeituras(c.env);
     prefeituras.length = 0;
     CONVENIOS_MOCK.length = 0;
     SERVIDORES_BUSCA_MOCK.length = 0;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_prefeituras",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE TOTAL DE PREFEITURAS executado (TRUNCATE prefeituras + convenios + folhas + ofertas + tabelas). Antes: prefeituras=${antesP}, convenios=${antesC}, servidores=${antesS}. Bancos preservados.`,
+    });
     return c.json({ ok: true, mensagem: "Prefeituras, convenios, folhas e ofertas zerados. Bancos preservados." });
   })
 
@@ -1776,6 +1859,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     // Limpa memoria in-isolate: users da averbadora.
     hydrateUsers([]);
     _perfisLoad = null;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_usuarios",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE DE USUARIOS executado (TRUNCATE users + banco_usuarios + admin_perfis). Dev-users (admin@atlas.test, banco@atlas.test) preservados.`,
+    });
     return c.json({ ok: true, mensagem: "Usuarios averbadora e banco zerados. Dev-users hardcoded preservados." });
   })
 
@@ -1794,8 +1884,16 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }
     pushEvent("error", "admin.db.purge_comunicados", `PURGE DE COMUNICADOS confirmado por admin ${j?.sub}: TRUNCATE admin_comunicados.`);
     if (c.env.KV_CACHE) await c.env.KV_CACHE.put("purge:comunicados", "1");
+    const antesCom = COMUNICADOS_MOCK.length;
     await purgeComunicados(c.env);
     COMUNICADOS_MOCK.length = 0;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "db_purge_comunicados",
+      userId: `averbadora:${j?.sub}`,
+      userRole: "averbadora",
+      detalhes: `PURGE DE COMUNICADOS executado — ${antesCom} comunicado(s) em cache no momento.`,
+    });
     return c.json({ ok: true, mensagem: "Comunicados zerados." });
   })
 
@@ -1814,6 +1912,9 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         password: z.string().min(6).optional(),
         scopes: z.array(z.string()).default([]),
         mtlsHabilitado: z.boolean().default(false),
+        // URL base pra health check (opcional). Se preenchida, o monitor
+        // /averbadora/health pinga /health desse endpoint a cada request.
+        baseUrl: z.string().url().optional().or(z.literal("")),
         // Campos novos (consulta CNPJ) — armazenados no config jsonb via ...rest.
         cnpj: z.string().max(14).optional().or(z.literal("")),
         razaoSocial: z.string().max(200).optional().or(z.literal("")),
@@ -1848,6 +1949,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const idx = bancos.findIndex((b) => b.id === body.id);
       if (idx < 0) throw Errors.notFound("banco");
       const current = bancos[idx]!;
+      // Snapshot antes → diff pra audit. Rastreia SO os campos que mudam
+      // (status, adapter, scopes, loginEmail, credencial). Sem PII no log.
+      const diff: string[] = [];
+      if (current.status !== body.status) diff.push(`status ${current.status}->${body.status}`);
+      if (current.adapter !== body.adapter) diff.push(`adapter ${current.adapter}->${body.adapter}`);
+      if (current.loginEmail !== normalizedLogin && normalizedLogin) diff.push(`loginEmail alterado`);
+      if (password) diff.push(`senha trocada`);
+      if (JSON.stringify(current.scopes ?? []) !== JSON.stringify(body.scopes)) diff.push(`scopes: [${(body.scopes ?? []).join(",")}]`);
+      if ((current.baseUrl ?? "") !== (body.baseUrl ?? "")) diff.push(`baseUrl alterada`);
       bancos[idx] = {
         ...current,
         ...rest,
@@ -1862,6 +1972,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         const verbo = bancos[idx]!.status === "ativo" ? "reativados" : "pausados";
         pushEvent("info", "admin.bancos.cascata", `Banco "${bancos[idx]!.nome}" ${bancos[idx]!.status}: ${casc.webhooks} webhook(s) ${verbo} junto.`);
       }
+      appendAudit(auditCtx(c), {
+        categoria: "acesso",
+        acao: "banco_editado",
+        userId: `averbadora:${j.sub}`,
+        userRole: "averbadora",
+        detalhes: `Banco "${bancos[idx]!.nome}" (id=${body.id}) editado${diff.length ? ` — mudou: ${diff.join(", ")}` : " (sem alteracao efetiva)"}.`,
+      });
       return c.json({ banco: sanitizeBanco(bancos[idx]!) });
     }
     const novo: BancoAdmin = {
@@ -1873,6 +1990,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     bancos.push(novo);
     pushEvent("info", "admin", `Banco "${novo.nome}" criado${password ? " com credencial de acesso" : ""}`);
     await persistBanco(c.env, novo);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "banco_criado",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Banco "${novo.nome}" (id=${novo.id}) criado — adapter=${novo.adapter}, status=${novo.status}${password ? ", com credencial" : ""}, scopes=[${(novo.scopes ?? []).join(",")}].`,
+    });
     return c.json({ banco: sanitizeBanco(novo) });
   })
   .post("/v1/admin/bancos/:id/testar-conexao", async (c) => {
@@ -1895,6 +2019,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.passwordHash = await sha256Hex(body.password);
     pushEvent("warn", "admin.bancos.reset-password", `Senha do banco "${b.nome}" trocada por user:${c.get("jwt").sub}`);
     await persistBanco(c.env, b);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "banco_reset_password",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Senha do banco "${b.nome}" (id=${b.id}) resetada pela averbadora. Ator: averbadora:${j.sub}.`,
+    });
     return c.json({ banco: sanitizeBanco(b) });
   })
   // Solicita um codigo de confirmacao para uma acao destrutiva. Envia (demo:
@@ -1924,7 +2055,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     b.status = "inativo";
     await persistBanco(c.env, b);
     const casc = syncBancoAccess(b); // pausa webhooks do banco em cascata (tokens são derivados)
-    appendAudit({ categoria: "acesso", acao: "banco_desativado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${b.nome}" (id=${id}) desativado.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "banco_desativado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Banco "${b.nome}" (id=${id}) desativado.` });
     pushEvent("info", "admin.bancos.desativar", `Banco "${b.nome}" desativado por user:${j.sub} — ${casc.webhooks} webhook(s) pausados junto.`);
     return c.json({ banco: sanitizeBanco(b) });
   })
@@ -2245,13 +2376,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await deletePrefeituraRow(c.env, id);
       const idx = prefeituras.findIndex((x) => x.id === id);
       if (idx >= 0) prefeituras.splice(idx, 1);
-      appendAudit({ categoria: "acesso", acao: "prefeitura_hard_deleted", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) DELETADA permanentemente.` });
+      appendAudit(auditCtx(c), { categoria: "acesso", acao: "prefeitura_hard_deleted", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) DELETADA permanentemente.` });
       pushEvent("warn", "admin.prefeituras.hard_delete", `Prefeitura "${p.nome}" DELETADA por user:${j.sub}`);
       return c.json({ ok: true, deleted: id });
     }
     p.status = "inativo";
     await persistPrefeitura(c.env, p);
-    appendAudit({ categoria: "acesso", acao: "prefeitura_desativada", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) desativada.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "prefeitura_desativada", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Prefeitura "${p.nome}" (id=${id}) desativada.` });
     pushEvent("info", "admin.prefeituras.desativar", `Prefeitura "${p.nome}" desativada por user:${j.sub}`);
     return c.json({ prefeitura: sanitizePrefeitura(p) });
   })
@@ -2453,10 +2584,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/folhas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
     await ensureFolhasLoaded(c.env);
-    // Sincroniza contratos antes de contar ADFs (contratos "Aprovado"/"Ativo" viram
-    // ADFs materializadas no _adfs). Sem isso, folhas mostravam 0 ADF ate outro
-    // endpoint tocar refreshContratos.
+    // Reload folhas do PG a CADA request. ensureFolhasLoaded e' memoized por
+    // isolate (e so troca a lista quando rows>0) — a averbadora carregava vazio
+    // uma vez e ficava presa, entao a folha que a prefeitura abriu em OUTRO
+    // isolate nunca aparecia aqui. Cliente reportou 21/07/2026: abriu folha
+    // 202607 na prefeitura (ABERTA), averbadora/folhas continuou "0 de 0".
+    // Mesmo pattern do GET /v1/prefeitura/folhas.
+    try {
+      const rows = await loadCollection<FolhaAdmin>(c.env, "admin_folhas");
+      folhas.length = 0;
+      folhas.push(...rows);
+    } catch { /* fail-safe: usa in-memory */ }
+    // Sincroniza contratos + convenios antes de contar ADFs (contratos
+    // "Aprovado"/"Ativo" viram ADFs materializadas no _adfs; sem refreshConvenios
+    // o ensureAdfs nao mapeia convenioId->prefeitura no isolate frio).
     await refreshContratos(c.env);
+    await refreshConvenios(c.env);
     const now = new Date().toISOString();
     // Materializa ADFs pra todas as competencias que aparecem em folhas
     // (nao so a atual — a averbadora ve o historico completo).
@@ -2465,8 +2608,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const compsUnicas = Array.from(new Set(folhas.map((f) => f.competencia)));
     for (const comp of compsUnicas) ensureAdfsGlobal(comp, bancoNomeById, now, prefIds);
     // Enriquece cada folha com contagem/soma de ADFs (aplicadas + recebidas)
-    // por prefeitura+competencia. Assim a averbadora ve os descontos que ja
-    // caiam naquela folha sem sair da tela.
+    // por prefeitura+competencia. Mais recente no topo.
     const enriched = folhas.map((f) => {
       const adfsFolha = listAdfsGlobal(f.competencia).filter((a) => a.prefeituraId === f.prefeituraId);
       const aplicadas = adfsFolha.filter((a) => a.status === "aplicada");
@@ -2480,6 +2622,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         valorAplicado: Math.round(valorAplicado * 100) / 100,
       };
     });
+    enriched.sort((a, b) => b.competencia.localeCompare(a.competencia));
     return c.json({ folhas: enriched });
   })
   .post("/v1/admin/folhas", async (c) => {
@@ -2525,10 +2668,17 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   })
   .post("/v1/admin/folhas/:id/consolidar", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "folhas");
+    const folhaId = c.req.param("id");
+    // Idempotency: se o operador clica 2x no botao Consolidar (rede lenta,
+    // duplo-clique, retry do SDK), o cascade parcelasPagas roda so 1 vez.
+    // Sem isso, cada retry incrementava as parcelas de novo.
+    const idemKey = c.req.header("Idempotency-Key") ?? c.req.header("idempotency-key");
+    const idemScope = `admin:${j.sub}:POST:/v1/admin/folhas/${folhaId}/consolidar`;
+    const idem = await withIdempotency(c.env, idemKey, idemScope, async () => {
     await ensureFolhasLoaded(c.env);
     await refreshContratos(c.env);
     await Promise.all([ensurePrefeiturasLoaded(c.env), ensureBancosLoaded(c.env), refreshConvenios(c.env)]);
-    const f = folhas.find((x) => x.id === c.req.param("id"));
+    const f = folhas.find((x) => x.id === folhaId);
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "fechada") throw Errors.validation({ status: "so folha 'fechada' pode ser consolidada" });
     // Materializa _adfs pro isolate atual ANTES de ler listAdfsGlobal — sem
@@ -2566,14 +2716,22 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       }
       await persistContrato(c.env, a.adf);
     }
+    // Auditoria SEMPRE — cliente pediu 22/07/2026: mesmo folha vazia (0 ADFs)
+    // precisa ficar rastreada. Antes o audit sumia quando adfsDaFolha=0 e nao
+    // dava pra explicar depois "quem consolidou esta folha vazia e quando".
+    appendAudit(auditCtx(c), {
+      categoria: "margem", acao: "folha_consolidada", userId: ator, userRole: "averbadora",
+      detalhes: adfsDaFolha.length === 0
+        ? `Folha ${f.competencia}/${f.prefeitura} consolidada VAZIA — 0 ADFs aplicadas na competencia. Nenhum contrato avancou.`
+        : `Folha ${f.competencia}/${f.prefeitura} consolidada: ${incrementados} contratos avancaram 1 parcela, ${quitados} quitados (de ${adfsDaFolha.length} ADFs aplicadas).`,
+    });
     if (adfsDaFolha.length > 0) {
-      appendAudit({
-        categoria: "margem", acao: "folha_consolidada", userId: ator, userRole: "averbadora",
-        detalhes: `Folha ${f.competencia}/${f.prefeitura} consolidada: ${incrementados} contratos avancaram 1 parcela, ${quitados} quitados.`,
-      });
       pushEvent("info", "admin.folhas.consolidar", `Folha ${f.id} consolidada: ${incrementados}/${quitados} (avancados/quitados) de ${adfsDaFolha.length} ADFs.`);
     }
-    return c.json({ folha: f, parcelasIncrementadas: incrementados, contratosQuitados: quitados });
+      return { status: 200, body: { folha: f, parcelasIncrementadas: incrementados, contratosQuitados: quitados } };
+    });
+    if (idem.replayed) c.header("Idempotent-Replay", "true");
+    return c.json(idem.result, (idem.status === 200 || idem.status === 201) ? idem.status : 200);
   })
 
   // === ADF (averbadora) — visao global de todos os contratos averbados de
@@ -2666,7 +2824,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       }
       limpos.push({ adf, keyRemovida: key });
     }
-    appendAudit({ categoria: "margem", acao: "limpar_ccb", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Limpou CCB de ${limpos.length} contrato(s): ${limpos.map((x) => x.adf).join(", ")}.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "limpar_ccb", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Limpou CCB de ${limpos.length} contrato(s): ${limpos.map((x) => x.adf).join(", ")}.` });
     return c.json({ ok: true, limpos });
   })
 
@@ -2700,7 +2858,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await persistContrato(c.env, adf);
       marcados.push(adf);
     }
-    appendAudit({ categoria: "margem", acao: "marcar_portabilidade", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Reclassificou ${marcados.length} contrato(s) como portabilidade: ${marcados.join(", ")}` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "marcar_portabilidade", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `Reclassificou ${marcados.length} contrato(s) como portabilidade: ${marcados.join(", ")}` });
     pushEvent("info", "admin.contratos.marcar_portabilidade", `Reclassificou como portabilidade por admin ${j?.sub}: ${marcados.join(", ")}`);
     return c.json({ ok: true, marcados });
   })
@@ -2837,16 +2995,27 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       return { servico: "R2 (arquivos)", ok: r.ok, latenciaMs: r.ms };
     };
 
-    // 4) Bank Adapter (mock/iFractal) — dispara authorize simples e ve se responde.
-    //    So um check consolidado (o adapter em uso). Bancos parceiros individuais
-    //    nao tem URL de health cadastrada — quando o cliente adicionar campo
-    //    baseUrl no BancoAdmin, dai da pra pingar cada um.
+    // 4) Bank Adapter (mock/iFractal) — informa qual esta em uso.
     const adapterCheck = async (): Promise<CheckResult> => {
       const adapter = c.env.BANK_ADAPTER ?? "sandbox";
-      // sandbox e' interno (nao tem URL externa); ifractal precisaria de
-      // env.IFRACTAL_BASE_URL cadastrado como secret pra pingar. Enquanto
-      // nao houver, apenas informa qual esta em uso.
       return { servico: `Bank Adapter (${adapter})`, ok: true, latenciaMs: 0 };
+    };
+
+    // 5) Cada banco ATIVO com baseUrl cadastrada — pinga a URL EXATA que o
+    //    operador cadastrou (nao concatena /health automaticamente). Assim
+    //    da pra apontar pra qualquer endpoint de status que o banco expuser
+    //    (ex: https://api.banco.com/health OU https://status.banco.com/ping).
+    //    Bancos sem baseUrl entram como "sem endpoint" (nao afeta uptime).
+    const bankChecks = async (): Promise<CheckResult[]> => {
+      await ensureBancosLoaded(c.env);
+      const ativos = bancos.filter((b) => b.status === "ativo");
+      return Promise.all(ativos.map(async (b): Promise<CheckResult> => {
+        const url = (b.baseUrl ?? "").trim();
+        if (!url) return { servico: `Banco: ${b.nome}`, ok: true, latenciaMs: 0 };
+        const r = await withTimeout(fetch(url, { method: "GET", headers: { Accept: "application/json,text/plain,*/*" } }).then((res) => res.ok));
+        const okReal = r.ok && (r as { value?: boolean }).value === true;
+        return { servico: `Banco: ${b.nome}`, ok: okReal, latenciaMs: r.ms };
+      }));
     };
 
     const now = new Date().toISOString();
@@ -2857,6 +3026,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       await kvCheck("KV_RATELIMIT", c.env.KV_RATELIMIT),
       await r2Check(),
       await adapterCheck(),
+      ...(await bankChecks()),
     ];
 
     // Persiste historico + agrega. uptime = %OK nos ultimos N checks (persistido);
@@ -3176,7 +3346,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       if (!pref) { out.errors.push({ line, message: `prefeitura ${prefeituraId} nao encontrada` }); return; }
       const existing = CONVENIOS_MOCK.find((c) => c.nome.toLowerCase() === r.nome!.toLowerCase());
       const conv = {
-        id: existing?.id ?? nextConvenioId(),
+        id: existing?.id ?? nextConvenioId(prefeituraId),
         bancoId,
         prefeituraId,
         nome: r.nome!,
@@ -3217,16 +3387,37 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       const idx = CONVENIOS_MOCK.findIndex((c) => c.id === body.id);
       if (idx < 0) throw Errors.notFound("convenio");
       const current = CONVENIOS_MOCK[idx]!;
+      const diff: string[] = [];
+      if (current.bancoId !== body.bancoId) diff.push(`bancoId ${current.bancoId}->${body.bancoId}`);
+      if (current.prefeituraId !== body.prefeituraId) diff.push(`prefeituraId ${current.prefeituraId}->${body.prefeituraId}`);
+      if (current.codigoVerba !== body.codigoVerba) diff.push(`codigoVerba ${current.codigoVerba}->${body.codigoVerba}`);
+      if (current.dataCorte !== body.dataCorte) diff.push(`dataCorte ${current.dataCorte}->${body.dataCorte}`);
+      if (current.diaRepasse !== body.diaRepasse) diff.push(`diaRepasse ${current.diaRepasse}->${body.diaRepasse}`);
+      if (current.nome !== body.nome) diff.push(`nome`);
       CONVENIOS_MOCK[idx] = { ...current, ...body, id: body.id, prefeitura: pref.nome, uf: pref.uf };
       await persistConvenio(c.env, CONVENIOS_MOCK[idx]!); // write-through: sobrevive ao reciclo
       pushEvent("info", "admin.convenios", `Convenio "${CONVENIOS_MOCK[idx]!.nome}" atualizado`);
+      appendAudit(auditCtx(c), {
+        categoria: "convenio_config",
+        acao: "convenio_editado",
+        userId: `averbadora:${j.sub}`,
+        userRole: "averbadora",
+        detalhes: `Convenio "${CONVENIOS_MOCK[idx]!.nome}" (id=${body.id}, ${pref.nome}) editado${diff.length ? ` — mudou: ${diff.join(", ")}` : ""}.`,
+      });
       return c.json({ convenio: CONVENIOS_MOCK[idx] });
     }
-    const id = nextConvenioId();
+    const id = nextConvenioId(body.prefeituraId);
     const novo = { ...body, id, prefeitura: pref.nome, uf: pref.uf };
     CONVENIOS_MOCK.push(novo);
     await persistConvenio(c.env, novo); // write-through: convenio novo persiste no Postgres
     pushEvent("info", "admin.convenios", `Convenio "${novo.nome}" criado`);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "convenio_criado",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Convenio "${novo.nome}" (id=${id}) criado: bancoId=${novo.bancoId}, prefeitura=${pref.nome} (id=${novo.prefeituraId}), codigoVerba=${novo.codigoVerba}, corte=${novo.dataCorte}, repasse=${novo.diaRepasse}.`,
+    });
     return c.json({ convenio: novo });
   })
   // Nunca apaga — DESATIVA (ativo=false). Sai das listagens; referências ficam intactas.
@@ -3239,6 +3430,13 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     cv.ativo = false;
     await persistConvenio(c.env, cv); // write-through: desativacao persiste (nunca some, so ativo=false)
     pushEvent("info", "admin.convenios", `Convenio "${cv.nome}" desativado por user:${c.get("jwt").sub}`);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "convenio_desativado",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Convenio "${cv.nome}" (id=${id}, ${cv.prefeitura}, banco ${cv.bancoId}) desativado (soft-delete).`,
+    });
     return c.body(null, 204);
   })
   // Hard-delete: remove PERMANENTEMENTE. Exige convenio INATIVO + sem
@@ -3259,16 +3457,25 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const { deleteConvenioHard } = await import("../portal-banco/convenios-store.js");
     await deleteConvenioHard(c.env, id);
     pushEvent("warn", "admin.convenios", `Convenio "${cv.nome}" (${id}) EXCLUIDO PERMANENTEMENTE por user:${c.get("jwt").sub}`);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config",
+      acao: "convenio_hard_deleted",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Convenio "${cv.nome}" (id=${id}, ${cv.prefeitura}) EXCLUIDO PERMANENTEMENTE (hard-delete) — sem contratos vinculados.`,
+    });
     return c.body(null, 204);
   })
   .get("/v1/admin/convenios/:id/config", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
     const id = c.req.param("id");
     if (!CONVENIOS_MOCK.find((cv) => cv.id === id)) throw Errors.notFound("convenio");
+    await refreshConvenioConfigs(c.env); // ve a config persistida (pos-deploy/cross-isolate)
     return c.json({ config: getConvenioConfig(id) ?? null });
   })
   .get("/v1/admin/convenios-configs", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "convenios");
+    await refreshConvenioConfigs(c.env);
     return c.json({ configs: listConvenioConfigs() });
   })
   .post("/v1/admin/convenios/:id/config", async (c) => {
@@ -3292,7 +3499,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       })
       .parse(await c.req.json());
     const config = upsertConvenioConfig({ id, ...body });
-    appendAudit({ categoria: "convenio_config", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config do convenio ${id} atualizada (prazoTrava=${body.prazoTravaHoras}h, formato=${body.formatoImportacao}).` });
+    await persistConvenioConfig(c.env, config); // sobrevive a deploy + visivel pra prefeitura
+    appendAudit(auditCtx(c), { categoria: "convenio_config", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config do convenio ${id} atualizada (prazoTrava=${body.prazoTravaHoras}h, formato=${body.formatoImportacao}).` });
     pushEvent("info", "admin.convenios.config", `Config do convenio ${id} salva por user:${c.get("jwt").sub}`);
     return c.json({ config });
   })
@@ -3333,7 +3541,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!prefeituras.find((p) => p.id === body.prefeituraId)) throw Errors.notFound("prefeitura");
     const cfg = upsertIdUnicoConfig(body);
     await persistIdUnicoConfig(c.env, cfg);
-    appendAudit({ categoria: "id_unico", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config ID Unico prefeitura=${body.prefeituraId} prefixo=${body.prefixo} formato=${body.formato}.` });
+    appendAudit(auditCtx(c), { categoria: "id_unico", acao: "config_atualizada", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Config ID Unico prefeitura=${body.prefeituraId} prefixo=${body.prefixo} formato=${body.formato}.` });
     pushEvent("info", "admin.id-unico", `Config ID-Unico prefeitura=${body.prefeituraId} salva`);
     return c.json({ config: cfg, exemplo: previewIdUnico(cfg.prefeituraId) });
   })
@@ -3342,7 +3550,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const body = z.object({ prefeituraId: z.number().int() }).parse(await c.req.json());
     if (!getIdUnicoConfig(body.prefeituraId)) throw Errors.notFound("id_unico_config");
     const id = issueIdUnico(body.prefeituraId);
-    appendAudit({ categoria: "id_unico", acao: "id_emitido", idUnico: id, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `ID Unico ${id} emitido manualmente para prefeitura=${body.prefeituraId}.` });
+    appendAudit(auditCtx(c), { categoria: "id_unico", acao: "id_emitido", idUnico: id, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `ID Unico ${id} emitido manualmente para prefeitura=${body.prefeituraId}.` });
     return c.json({ idUnico: id });
   })
 
@@ -3350,7 +3558,24 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
   .get("/v1/admin/pre-reservas", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "pre-reservas");
     await refreshContratos(c.env); // fluxo real: propostas/reservas criadas pelos servidores
-    const all = listContratos({}).map(contratoToPreReserva);
+    // Mais novas no TOPO (ordem de chegada) — mesmo padrao DESC por timestamp da
+    // tabela de contratos (cliente pediu 21/07/2026: "as que chegam ficam em
+    // primeiro, as antigas descem"). Ordena pelo criadoEmIso REAL do contrato
+    // (com hora), nao pelo criadoEm da pre-reserva que vem so da DATA do
+    // lancamento (empataria todas as do mesmo dia). Ordena antes do map — o
+    // filtro abaixo preserva a ordem.
+    const parseLanc = (s: string): string | undefined => {
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})/.exec(s);
+      return m ? `${m[3]}-${m[2]}-${m[1]}T00:00:00.000Z` : undefined;
+    };
+    const all = listContratos({})
+      .slice()
+      .sort((a, b) => {
+        const ta = a.criadoEmIso ?? parseLanc(a.lancamento) ?? "";
+        const tb = b.criadoEmIso ?? parseLanc(b.lancamento) ?? "";
+        return tb.localeCompare(ta);
+      })
+      .map(contratoToPreReserva);
     const url = new URL(c.req.url);
     const status = url.searchParams.get("status") as PreReservaStatus | null;
     const prefeituraId = Number(url.searchParams.get("prefeitura_id"));
@@ -3372,7 +3597,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!ct) throw Errors.notFound("pre_reserva");
     await persistContrato(c.env, id);
     const r = contratoToPreReserva(ct);
-    appendAudit({ categoria: "margem", acao: "pre_reserva_cancelada", propostaId: id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Pre-reserva ${id} cancelada manualmente. Motivo: ${body.motivo}. Margem R$ ${r.valorMargem.toFixed(2)} liberada.` });
+    appendAudit(auditCtx(c), { categoria: "pre_reserva", acao: "pre_reserva_cancelada", propostaId: id, idUnico: r.idUnico, matricula: r.matricula, cpf: r.servidorCpfMasked, userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Pre-reserva ${id} cancelada manualmente. Motivo: ${body.motivo}. Margem R$ ${r.valorMargem.toFixed(2)} liberada.` });
     pushEvent("warn", "admin.pre-reservas", `Pre-reserva ${id} cancelada por user:${c.get("jwt").sub}`);
     return c.json({ preReserva: r });
   })
@@ -3404,7 +3629,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       removeLoteMemoria(id);
       if (ok) removidos.push(id);
     }
-    appendAudit({ categoria: "tombamento", acao: "lote_excluido", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `${removidos.length} lote(s) removido(s): ${removidos.join(", ")}.` });
+    appendAudit(auditCtx(c), { categoria: "tombamento", acao: "lote_excluido", userId: `averbadora:${j?.sub}`, userRole: "averbadora", detalhes: `${removidos.length} lote(s) removido(s): ${removidos.join(", ")}.` });
     return c.json({ ok: true, removidos });
   })
 
@@ -3447,7 +3672,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       csv: body.csv,
       env: c.env,
     });
-    appendAudit({ categoria: "tombamento", acao: "lote_processado", detalhes: `Lote ${result.lote.id} (${pref.nome}/${body.competencia}): ${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.divergencias} divergencias, ${result.erros.length} erros.` });
+    appendAudit(auditCtx(c), { categoria: "tombamento", acao: "lote_processado", detalhes: `Lote ${result.lote.id} (${pref.nome}/${body.competencia}): ${result.inseridos} inseridos, ${result.atualizados} atualizados, ${result.divergencias} divergencias, ${result.erros.length} erros.` });
     // Notifica a averbadora quando há divergência entre as 3 bases (prefeitura × banco × remessa).
     if (result.divergencias > 0) {
       pushEvent("warn", "admin.tombamento.divergencia", `⚠ Lote ${result.lote.id} (${pref.nome}/${body.competencia}) tem ${result.divergencias} divergência(s) entre as bases. Revise as linhas marcadas.`);
@@ -3479,7 +3704,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     if (!banco) throw Errors.notFound("banco");
     const resolver = (id: number) => bancos.find((b) => b.id === id)?.nome ?? "?";
     const r = gerarBateCarteira({ bancoId: body.bancoId, competencia: body.competencia, prefeituraId: body.prefeituraId }, resolver);
-    appendAudit({ categoria: "tombamento", acao: "bate_carteira_gerado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Bate-de-carteira ${banco.nome}/${body.competencia}: ${r.totalLinhas} linhas, saldo R$ ${r.somaSaldoDevedor.toFixed(2)}.` });
+    appendAudit(auditCtx(c), { categoria: "tombamento", acao: "bate_carteira_gerado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Bate-de-carteira ${banco.nome}/${body.competencia}: ${r.totalLinhas} linhas, saldo R$ ${r.somaSaldoDevedor.toFixed(2)}.` });
     if (body.format === "csv") {
       return csvResponse(`bate-carteira-${banco.nome.replace(/\s+/g, "-")}-${body.competencia}.csv`, bateCarteiraCsv(r));
     }
@@ -3512,7 +3737,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     }).parse(await c.req.json());
     const t = await upsertTermo(c.env, tipo, body);
     if (!t) throw Errors.notFound("termo");
-    appendAudit({ categoria: "convenio_config", acao: "termo_atualizado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Termo ${tipo} atualizado (versao ${t.versao}).` });
+    appendAudit(auditCtx(c), { categoria: "convenio_config", acao: "termo_atualizado", userId: `averbadora:${j.sub}`, userRole: "averbadora", detalhes: `Termo ${tipo} atualizado (versao ${t.versao}).` });
     return c.json({ termo: t });
   })
 
@@ -3527,8 +3752,33 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const desde = url.searchParams.get("desde") ?? undefined;
     const ate = url.searchParams.get("ate") ?? undefined;
     const limit = Math.min(Number(url.searchParams.get("limit") ?? 200), 500);
-    const entries = listAudit({ categoria: categoria ?? undefined, cpf, matricula, propostaId, desde, ate }, limit);
+    // Usa listAuditAsync: quando ha filtro (desde/ate/categoria/cpf/mat/prop),
+    // vai no PG pra alcancar janela historica alem do cache de 2000 do isolate.
+    // Sem filtro, retorna o cache in-memory (rapido).
+    const entries = await listAuditAsync(c.env, { categoria: categoria ?? undefined, cpf, matricula, propostaId, desde, ate }, limit);
     return c.json({ entries, categorias: auditCategorias() });
+  })
+
+  // Backfill idempotente: recategoriza eventos ja gravados quando a categoria
+  // atual esta errada. Usado apos correcao de bug (ex.: pre_reserva_cancelada
+  // era gravado como "margem" ate 22/07/2026). Restrito a admin com permissao
+  // "auditoria" — nao altera o payload alem do campo categoria.
+  .post("/v1/admin/auditoria/backfill-categoria", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "auditoria");
+    const body = z.object({
+      acao: z.string().min(1),
+      categoriaAntiga: z.string().min(1),
+      categoriaNova: z.string().min(1),
+    }).parse(await c.req.json());
+    const n = await backfillAuditCategoria(c.env, body.acao, body.categoriaAntiga, body.categoriaNova);
+    appendAudit(auditCtx(c), {
+      categoria: "convenio_config", // fallback — nao existe categoria "meta" na trilha
+      acao: "audit_backfill_categoria",
+      userId: `averbadora:${j.sub}`,
+      userRole: "averbadora",
+      detalhes: `Backfill: ${n} eventos ${body.acao} movidos de categoria "${body.categoriaAntiga}" -> "${body.categoriaNova}".`,
+    });
+    return c.json({ atualizados: n });
   })
 
   // Identidade do averbadora logado — usado no header do painel pra mostrar nome.
@@ -3545,15 +3795,20 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     });
   })
 
-  // ===== Perfis admin (passo 1: perfis + 2FA) =====
+  // ===== Perfis admin (passo 1: perfis + 2FA + presets customizados) =====
   .get("/v1/admin/perfis", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
-    await ensurePerfisLoaded(c.env);
-    return c.json({ usuarios: listAverbadoraUsers(), perfis: perfilOptions() });
+    await Promise.all([ensurePerfisLoaded(c.env), ensurePresetsAvbLoaded(c.env)]);
+    return c.json({
+      usuarios: listAverbadoraUsers(),
+      perfis: perfilOptions(),
+      // Presets nomeados que o admin ja salvou (aparecem no dropdown do modal).
+      presets: listAverbadoraPresets().map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })),
+    });
   })
   .post("/v1/admin/perfis", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
-    await ensurePerfisLoaded(c.env);
+    await Promise.all([ensurePerfisLoaded(c.env), ensurePresetsAvbLoaded(c.env)]);
     const body = z.object({
       id: z.number().int().optional(),
       nome: z.string().min(2),
@@ -3563,11 +3818,32 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       ativo: z.boolean().default(true),
       password: z.string().min(6).optional(),
       twoFactorEnabled: z.boolean().optional(),
+      // Nome do preset customizado — obrigatorio no front quando a config e'
+      // "personalizado" e esta CRIANDO. Salva a config como preset reutilizavel.
+      presetNome: z.string().min(2).max(60).optional(),
     }).parse(await c.req.json());
     const u = await upsertAverbadoraUser(body);
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: body.id ? "usuario_atualizado" : "usuario_criado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora ${u.email} (perfil=${u.perfil}, 2FA=${u.twoFactorEnabled}) ${body.id ? "atualizado" : "criado"}.` });
+    if (body.presetNome && Array.isArray(body.permissoes) && body.permissoes.length > 0) {
+      const preset = upsertAverbadoraPreset({ nome: body.presetNome, permissoes: body.permissoes }, new Date().toISOString());
+      await persistAverbadoraPreset(c.env, preset);
+    }
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: body.id ? "usuario_atualizado" : "usuario_criado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora ${u.email} (perfil=${u.perfil}, 2FA=${u.twoFactorEnabled}) ${body.id ? "atualizado" : "criado"}${body.presetNome ? ` + preset "${body.presetNome}" salvo` : ""}.` });
     return c.json({ usuario: u });
+  })
+  // Presets customizados de permissao (nomeados, globais na averbadora).
+  .get("/v1/admin/perfil-presets", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
+    await ensurePresetsAvbLoaded(c.env);
+    return c.json({ presets: listAverbadoraPresets().map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })) });
+  })
+  .post("/v1/admin/perfil-presets", async (c) => {
+    const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
+    await ensurePresetsAvbLoaded(c.env);
+    const body = z.object({ nome: z.string().min(2).max(60), permissoes: z.array(z.string().min(1).max(64)).min(1).max(200) }).parse(await c.req.json());
+    const preset = upsertAverbadoraPreset({ nome: body.nome, permissoes: body.permissoes }, new Date().toISOString());
+    await persistAverbadoraPreset(c.env, preset);
+    return c.json({ preset: { key: preset.key, nome: preset.nome, permissoes: preset.permissoes } }, 201);
   })
   .post("/v1/admin/perfis/:id/2fa/rotate", async (c) => {
     const j = c.get("jwt"); requireAdmin(j); requirePermissao(j, "perfis");
@@ -3575,7 +3851,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const r = rotateTotpSecret(id);
     if (!r) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "2fa_rotacionado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} rotacionado. Novo secret deve ser entregue uma unica vez.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "2fa_rotacionado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} rotacionado. Novo secret deve ser entregue uma unica vez.` });
     return c.json(r);
   })
   .post("/v1/admin/perfis/:id/2fa/disable", async (c) => {
@@ -3583,7 +3859,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const id = Number(c.req.param("id"));
     if (!disable2FA(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "2fa_desativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} desativado.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "2fa_desativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `2FA do usuario id=${id} desativado.` });
     return c.json({ ok: true });
   })
   .delete("/v1/admin/perfis/:id", async (c) => {
@@ -3591,7 +3867,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const id = Number(c.req.param("id"));
     if (!deleteAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "usuario_removido", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} desativado.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "usuario_removido", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} desativado.` });
     return c.body(null, 204);
   })
   .post("/v1/admin/perfis/:id/reativar", async (c) => {
@@ -3599,7 +3875,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const id = Number(c.req.param("id"));
     if (!reactivateAverbadoraUser(id)) throw Errors.notFound("usuario");
     await persistPerfis(c.env);
-    appendAudit({ categoria: "acesso", acao: "usuario_reativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} reativado.` });
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "usuario_reativado", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `Usuario averbadora id=${id} reativado.` });
     return c.json({ ok: true });
   })
   // ============================================================
@@ -4007,7 +4283,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         // isolates continuariam vendo o tombamento como portavel.
         for (const loteId of affectedLotes) await persistLotePublic(c.env, loteId);
         if (affectedLotes.length > 0) {
-          appendAudit({
+          appendAudit(auditCtx(c), {
             categoria: "margem", acao: "portabilidade_substituiu_tombamento",
             userId: ator, userRole: "averbadora",
             detalhes: `Contrato ${adf} (REFIN) substituiu tombamento ${ct.contratoOrigem} da matricula ${ct.matricula}.`,
@@ -4015,7 +4291,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
         }
       }
     }
-    appendAudit({ categoria: "margem", acao: "adf_aplicada_admin", userId: ator, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "adf_aplicada_admin", userId: ator, userRole: "averbadora", detalhes: `${adfs.length} ADFs aplicadas em folha pela averbadora.` });
     // Notifica cada servidor por email (best-effort — nunca quebra a request).
     // Tenta template editavel /averbadora/emails/simulacao (averbada) primeiro;
     // fallback hardcoded se nao houver template ativo.
@@ -4084,7 +4360,7 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       setContratoFalhaEmFolha(adf, body.motivo);
       await persistContrato(c.env, adf);
     }
-    appendAudit({ categoria: "margem", acao: "adf_falha_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "adf_falha_admin", userId: `averbadora:${c.get("jwt").sub}`, userRole: "averbadora", detalhes: `${adfs.length} ADFs marcadas como falha: ${body.motivo}.` });
     // Notifica servidor + banco por email (best-effort).
     for (const adf of adfs) {
       const ct = getContrato(adf);

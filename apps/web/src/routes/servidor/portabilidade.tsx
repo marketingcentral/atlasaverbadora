@@ -11,14 +11,11 @@ import {
 } from "../../lib/matricula-data";
 import { atlas } from "../../lib/sdk";
 
-// Bancos que aceitariam portabilidade (mock — em prod viria de
-// atlas.servidor.ofertas() filtrado por convenio + produto portabilidade).
-const BANCOS_DESTINO = [
-  { nome: "SCred Financeira", taxaAm: 1.65 },
-  { nome: "Banco Atlas",      taxaAm: 1.72 },
-  { nome: "BMG Consignado",   taxaAm: 1.78 },
-  { nome: "Daycoval",         taxaAm: 1.82 },
-] as const;
+// Bancos-destino de portabilidade vêm das OFERTAS REAIS cadastradas pelos
+// bancos (via /banco/cadastros/tabela-emprestimos). Cliente pediu 22/07/2026:
+// remover mocks (SCred Financeira/BMG/Daycoval) que não existiam de fato.
+// Fallback vazio → botão "Solicitar" fica desabilitado até algum banco
+// cadastrar tabela pra este convênio.
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -33,15 +30,40 @@ export function ServidorPortabilidade() {
   // caiu aqui via oferta "Refinanciamento" ganhou o CTA `?modo=refin&banco=X`.
   const modoRefin = sp.get("modo") === "refin";
   const bancoFiltro = sp.get("banco") ?? "";
-  // Se veio "?banco=Nome" (vindo de uma oferta de portabilidade), pre-seleciona
-  // esse banco na lista de destinos. Caso contrario, default = melhor taxa.
+  // Ofertas ativas do convenio da matricula ativa. Usa MENOR taxa como banco
+  // preferido — mesma logica do simulador. Poll 3s pra refletir mudancas do
+  // banco na hora.
+  const ofertasQ = useQuery({
+    queryKey: ["servidor", "ofertas", info?.matricula],
+    queryFn: () => atlas.servidor.ofertas(info?.matricula),
+    enabled: !!info?.matricula,
+    refetchInterval: 3_000,
+  });
+  const BANCOS_DESTINO_REAIS = useMemo(() => {
+    const of = ofertasQ.data?.ofertas ?? [];
+    // Dedup por bancoNome (multiplas tabelas do mesmo banco viram uma so —
+    // usa menor taxa como melhor oferta).
+    const porBanco = new Map<string, number>();
+    for (const o of of) {
+      const t = o.taxaAm ?? 0;
+      if (!(t > 0)) continue;
+      const atual = porBanco.get(o.bancoNome);
+      if (atual == null || t < atual) porBanco.set(o.bancoNome, t);
+    }
+    return Array.from(porBanco.entries())
+      .map(([nome, taxaAm]) => ({ nome, taxaAm: taxaAm * 100 }))
+      .sort((a, b) => a.taxaAm - b.taxaAm);
+  }, [ofertasQ.data]);
+  // Se veio "?banco=Nome" (vindo de uma oferta), pre-seleciona esse banco.
+  // Se nao, default = melhor taxa (indice 0 apos sort ascendente).
   const bancoPreselect = useMemo(() => {
     if (!bancoFiltro) return 0;
-    const idx = BANCOS_DESTINO.findIndex((b) => b.nome.toLowerCase() === bancoFiltro.toLowerCase());
+    const idx = BANCOS_DESTINO_REAIS.findIndex((b) => b.nome.toLowerCase() === bancoFiltro.toLowerCase());
     return idx >= 0 ? idx : 0;
-  }, [bancoFiltro]);
+  }, [bancoFiltro, BANCOS_DESTINO_REAIS]);
   const [bancoIdx, setBancoIdx] = useState(bancoPreselect);
-  const BANCO_DESTINO = BANCOS_DESTINO[bancoIdx]!;
+  useEffect(() => { setBancoIdx(bancoPreselect); }, [bancoPreselect]);
+  const BANCO_DESTINO = BANCOS_DESTINO_REAIS[bancoIdx] ?? null;
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -79,14 +101,18 @@ export function ServidorPortabilidade() {
     .filter((c) => selecionados.has(c.id))
     .reduce((a, c) => a + c.parcela, 0);
 
-  // Estimativa de nova parcela com taxa do banco destino (calculo muito simplificado para mockup).
+  // Estimativa de nova parcela com taxa do banco destino (mockup). Se nao ha
+  // banco destino cadastrado, novaParcela=0 e economia=0 — botao Consolidar
+  // fica desabilitado por !BANCO_DESTINO.
   const novoPrazo = 48;
-  const novaParcela = totalSaldo > 0
-    ? totalSaldo * (BANCO_DESTINO.taxaAm / 100) / (1 - Math.pow(1 + BANCO_DESTINO.taxaAm / 100, -novoPrazo))
+  const taxaMes = BANCO_DESTINO ? BANCO_DESTINO.taxaAm / 100 : 0;
+  const novaParcela = BANCO_DESTINO && totalSaldo > 0
+    ? totalSaldo * taxaMes / (1 - Math.pow(1 + taxaMes, -novoPrazo))
     : 0;
   const economia = totalParcelaAtual - novaParcela;
 
   function consolidar() {
+    if (!BANCO_DESTINO) return;
     const params = new URLSearchParams({
       // termo.tsx aceita "refinanciamento" (nao "refin"); enviar a chave errada
       // faz cair no default "novo" e o backend criar como EMPRESTIMO.
@@ -185,12 +211,12 @@ export function ServidorPortabilidade() {
           {modoRefin ? "Refinanciamento" : "Portabilidade / Compra de divida"}
         </span>
         <h1 style={{ margin: "4px 0 0", fontSize: "1.6rem" }}>
-          {modoRefin ? `Refinanciar contrato com ${BANCO_DESTINO.nome}` : "Consolidar seus contratos"}
+          {modoRefin ? `Refinanciar contrato com ${BANCO_DESTINO?.nome ?? "banco destino"}` : "Consolidar seus contratos"}
         </h1>
         <p style={{ color: "var(--text-muted)", marginTop: 6 }}>
           {modoRefin ? (
             <>
-              Selecione o contrato que voce quer renegociar com o <b>{BANCO_DESTINO.nome}</b>. O saldo devedor
+              Selecione o contrato que voce quer renegociar com o <b>{BANCO_DESTINO?.nome ?? "banco destino"}</b>. O saldo devedor
               vira um novo contrato com prazo estendido — a diferenca de parcela vira troco liberado na sua conta.
             </>
           ) : (
@@ -217,6 +243,7 @@ export function ServidorPortabilidade() {
             <select
               value={bancoIdx}
               onChange={(e) => setBancoIdx(Number(e.target.value))}
+              disabled={BANCOS_DESTINO_REAIS.length === 0}
               style={{
                 minWidth: 240,
                 padding: "10px 12px",
@@ -228,17 +255,27 @@ export function ServidorPortabilidade() {
                 cursor: "pointer",
               }}
             >
-              {BANCOS_DESTINO.map((b, i) => (
-                <option key={b.nome} value={i}>
-                  {b.nome} — {b.taxaAm.toFixed(2)}% a.m.
-                </option>
-              ))}
+              {BANCOS_DESTINO_REAIS.length === 0 ? (
+                <option value={0}>Nenhum banco com oferta ativa neste convênio</option>
+              ) : (
+                BANCOS_DESTINO_REAIS.map((b, i) => (
+                  <option key={b.nome} value={i}>
+                    {b.nome} — {b.taxaAm.toFixed(2)}% a.m.
+                  </option>
+                ))
+              )}
             </select>
           </div>
-          <div style={{ marginTop: 12, fontSize: ".82rem", color: "var(--text-muted)" }}>
-            Taxa proposta pelo <b style={{ color: "var(--text)" }}>{BANCO_DESTINO.nome}</b>:{" "}
-            <b style={{ color: "var(--emerald-500)" }}>{BANCO_DESTINO.taxaAm.toFixed(2)}% a.m.</b>
-          </div>
+          {BANCO_DESTINO ? (
+            <div style={{ marginTop: 12, fontSize: ".82rem", color: "var(--text-muted)" }}>
+              Taxa proposta pelo <b style={{ color: "var(--text)" }}>{BANCO_DESTINO.nome}</b>:{" "}
+              <b style={{ color: "var(--emerald-500)" }}>{BANCO_DESTINO.taxaAm.toFixed(2)}% a.m.</b>
+            </div>
+          ) : (
+            <div style={{ marginTop: 12, fontSize: ".82rem", color: "var(--text-muted)" }}>
+              Nenhum banco com oferta ativa neste convênio ainda.
+            </div>
+          )}
         </Card>
       ) : null}
 
@@ -246,7 +283,7 @@ export function ServidorPortabilidade() {
         <Card>
           <p style={{ color: "var(--text-muted)", margin: 0 }}>
             {modoRefin
-              ? `Voce nao tem contrato ativo com ${BANCO_DESTINO.nome} pra refinanciar. Veja outras ofertas no MarketPlace.`
+              ? `Voce nao tem contrato ativo com ${BANCO_DESTINO?.nome ?? "este banco"} pra refinanciar. Veja outras ofertas no MarketPlace.`
               : "Voce nao tem contratos elegiveis para portabilidade no momento."}
           </p>
         </Card>
@@ -311,7 +348,7 @@ export function ServidorPortabilidade() {
             )}
           </div>
           <p style={{ fontSize: ".82rem", color: "var(--text-muted)", marginTop: 12, marginBottom: 16 }}>
-            Estimativa em {novoPrazo} parcelas com a taxa do {BANCO_DESTINO.nome}. O valor final pode variar apos a
+            Estimativa em {novoPrazo} parcelas com a taxa do {BANCO_DESTINO?.nome ?? "banco destino"}. O valor final pode variar apos a
             analise do banco.
             {economia <= 0 ? (
               <>
@@ -322,8 +359,10 @@ export function ServidorPortabilidade() {
               </>
             ) : null}
           </p>
-          <Button onClick={consolidar}>
-            {modoRefin ? "Refinanciar e ir para o termo →" : "Consolidar e ir para o termo →"}
+          <Button onClick={consolidar} disabled={!BANCO_DESTINO}>
+            {!BANCO_DESTINO
+              ? "Aguardando banco destino cadastrar oferta"
+              : modoRefin ? "Refinanciar e ir para o termo →" : "Consolidar e ir para o termo →"}
           </Button>
         </Card>
       ) : null}

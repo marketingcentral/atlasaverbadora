@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
+import { calcCET } from "@atlas/domain";
 import { atlas } from "../../lib/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import {
@@ -86,7 +87,6 @@ export function SimuladorInline({
   const lockProduto = lockProdutoDe(produto);
   const [valor, setValor] = useState<number>(valorDefault);
   const [parcelas, setParcelas] = useState<number>(parcelasDefault);
-  const taxaAm = taxaAmDefault;
 
   // Ofertas ativas do convenio dessa matricula — traz o prazoMaxMeses de cada
   // tabela publicada pelo(s) banco(s). Poll 5s = "tempo real": quando o banco
@@ -119,6 +119,24 @@ export function SimuladorInline({
     if (of.length === 0) return null;
     return Math.min(...of.map((o) => o.prazoMaxMeses));
   }, [ofertasQ.data]);
+  // Taxa vigente = MENOR taxa entre as tabelas ativas (melhor pro servidor).
+  // Cliente reportou 22/07/2026: taxaAm ficava travada em 1.79% mesmo quando
+  // banco editava a tabela. Antes o simulador so lia prazoMaxMeses e
+  // ignorava taxaAm. Fallback pro taxaAmDefault so quando nao ha oferta.
+  // Retorna a oferta vencedora (banco + taxa) — banco fica gravado no termo
+  // em vez de "SCred Financeira" hardcoded (banco fake removido 22/07/2026).
+  const ofertaVencedora = useMemo(() => {
+    const of = ofertasQ.data?.ofertas ?? [];
+    if (of.length === 0) return null;
+    return of.reduce<{ bancoNome: string; taxaAm: number } | null>((best, o) => {
+      const t = o.taxaAm ?? Number.POSITIVE_INFINITY;
+      if (!Number.isFinite(t) || t <= 0) return best;
+      if (!best || t < best.taxaAm) return { bancoNome: o.bancoNome, taxaAm: t };
+      return best;
+    }, null);
+  }, [ofertasQ.data]);
+  const taxaAm = ofertaVencedora?.taxaAm ?? taxaAmDefault;
+  const bancoVigente = ofertaVencedora?.bancoNome ?? "";
   const PARCELAS = useMemo(() => {
     // Enquanto a query nao trouxe dado (loading), fallback pra opcoes basicas
     // — evita "flash" de dropdown vazio no primeiro render.
@@ -251,22 +269,27 @@ export function SimuladorInline({
     if (valor > maxValor) setValor(maxValor);
   }, [maxValor, valor]);
 
-  const parcela = useMemo(() => {
-    if (valor <= 0 || parcelas <= 0) return 0;
-    if (taxaAm <= 0) return valor / parcelas;
-    return (valor * taxaAm) / (1 - Math.pow(1 + taxaAm, -parcelas));
+  // CET calculado pelo helper compartilhado (@atlas/domain) — Newton-Raphson
+  // pra IRR, mesma implementacao usada no backend. Cliente reportou 22/07/2026
+  // que o CET aparecia MENOR que a taxa nominal (0.59% < 1.00%), impossivel:
+  // era formula caseira `(total/liquido)^(1/parcelas)-1` que so calcula taxa
+  // media incorreta. CET real >= taxaNominal porque inclui IOF+tarifas.
+  const { parcela, iof, mensal: cetMensal, totalPago: total } = useMemo(() => {
+    if (valor <= 0 || parcelas <= 0 || taxaAm <= 0) {
+      return { parcela: 0, iof: 0, mensal: 0, totalPago: 0 };
+    }
+    try {
+      return calcCET({ valor, parcelas, taxaMensal: taxaAm });
+    } catch {
+      return { parcela: 0, iof: 0, mensal: 0, totalPago: 0 };
+    }
   }, [valor, parcelas, taxaAm]);
-
-  const iof = valor * 0.0038 + valor * 0.000082 * Math.min(parcelas * 30, 365);
-  const total = parcela * parcelas;
-  const cetBase = valor - iof;
-  const cet = cetBase > 0 && total > 0 && parcelas > 0
-    ? ((total / cetBase) ** (1 / parcelas) - 1) * 100
-    : 0;
+  const cet = cetMensal * 100;
 
   const excedeMargem = info ? parcela > margemEmprestimo : false;
   const locked = !!lockExpiresAt && lockExpiresAt > now;
-  const podeSolicitar = !!info && !excedeMargem && valor > 0 && parcelas > 0 && !locked;
+  // Bloqueia solicitacao se nao ha banco/oferta ativa (nada de placeholder).
+  const podeSolicitar = !!info && !excedeMargem && valor > 0 && parcelas > 0 && !locked && !!bancoVigente;
 
   function solicitar() {
     if (!podeSolicitar || !info) return;
@@ -274,7 +297,7 @@ export function SimuladorInline({
     setClientLockExpiresAt(Date.now() + 48 * 60 * 60 * 1000);
     const params = new URLSearchParams({
       tipo: "novo",
-      banco: "SCred Financeira",
+      banco: bancoVigente, // banco real da oferta vencedora
       valor: String(Math.round(valor)),
       parcelas: String(parcelas),
       parcela: parcela.toFixed(2),

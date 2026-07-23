@@ -130,7 +130,7 @@ export function PrefeituraFolhas() {
               <Button
                 size="sm"
                 disabled={f.movimentacoes === 0 || setStatus.isPending}
-                title={f.movimentacoes === 0 ? "Envie ao menos 1 movimentação antes de fechar" : undefined}
+                title={f.movimentacoes === 0 ? "Importe ao menos 1 movimentação (ou uma linha tipo=desconto) antes de fechar" : undefined}
                 onClick={() => setStatus.mutate({ id: f.id, status: "fechada" })}
               >
                 Fechar
@@ -320,7 +320,7 @@ function MovModal({ folha, onClose, onDone }: { folha: FolhaRow; onClose: () => 
       <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 0 }}>Envie admissões, demissões, aposentadorias, promoções e alterações de cargo/salário. As mudanças recalculam a margem automaticamente.</p>
       <CsvImportPanel
         title="Enviar movimentação (CSV)"
-        columnsHint="tipo (admissao/demissao/aposentadoria/promocao/alteracao), matricula, cpf, nome, cargoNovo, salarioNovo, detalhe"
+        columnsHint="tipo (admissao/demissao/aposentadoria/promocao/alteracao/desconto), matricula, cpf, nome, cargoNovo, salarioNovo, detalhe — use tipo=desconto (demais colunas vazias) pra fechar sem mudança de pessoal"
         templateUrl={atlas.prefeitura.movimentacaoCsvTemplateUrl()}
         onImport={(csv) => atlas.prefeitura.enviarMovimentacao(folha.id, csv)}
         onImported={() => { onDone(); movs.refetch(); }}

@@ -13,20 +13,34 @@ import { bancos as bancosStore, prefeituras as prefeiturasStore, ensureServidore
 import { findByEmail as findAverbadoraByEmail, exportUsersRaw as exportAverbadoraUsers } from "../admin/perfis-admin.js";
 import { verifyTotp } from "../../_shared/totp.js";
 import { setServidorPassword, setServidorContato, emailEmUsoPorOutroCpf, loadServidores, upsertPrefeitura, upsertBanco, upsertCollectionRow } from "../../db/repos.js";
+import { appendAudit, auditCtx } from "../admin/auditoria.js";
+import { maskCpf as maskCpfShared, maskEmail as maskEmailShared, maskPhone as maskPhoneShared } from "../../_shared/pii.js";
 
-/** Mascara um e-mail: "diego.ferreira@x.com" -> "di•••@x.com". */
-function maskEmail(email?: string): string {
-  if (!email || !email.includes("@")) return "seu e-mail";
-  const parts = email.split("@");
-  const user = parts[0] ?? "";
-  const domain = parts[1] ?? "";
-  return `${user.slice(0, 2)}•••@${domain}`;
+/** Deriva CPF mascarado ou email mascarado do identifier de login. */
+function auditIdent(id: string): { cpf?: string; ident: string } {
+  const d = id.replace(/\D/g, "");
+  if (d.length === 11) return { cpf: maskCpfShared(d), ident: maskCpfShared(d) };
+  return { ident: maskEmailShared(id) || "seu e-mail" };
 }
-/** Mascara um telefone deixando os 4 últimos dígitos: "(••) •••••-4407". */
+/** Lista matriculas de um CPF (pode haver N por acumulacao de cargos). Retorna
+ *  string curta pra coluna Matricula da auditoria — "9001", "9001, 9002" ou
+ *  "3 matriculas" quando muitas. Undefined se nenhuma encontrada. */
+function auditMatriculasDoCpf(cpfDigits: string): string | undefined {
+  const linhas = SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === cpfDigits);
+  if (linhas.length === 0) return undefined;
+  const mats = Array.from(new Set(linhas.map((x) => x.matricula)));
+  if (mats.length === 1) return mats[0];
+  if (mats.length <= 3) return mats.join(", ");
+  return `${mats.length} matriculas`;
+}
+
+/** Mascara um e-mail — usa helper compartilhado e cai em "seu e-mail" pra UI
+ *  (o helper retorna string vazia; aqui o placeholder ajuda no display). */
+function maskEmail(email?: string): string {
+  return maskEmailShared(email) || "seu e-mail";
+}
 function maskPhone(phone?: string): string {
-  const d = (phone ?? "").replace(/\D/g, "");
-  if (d.length < 4) return "seu telefone";
-  return `(••) •••••-${d.slice(-4)}`;
+  return maskPhoneShared(phone) || "seu telefone";
 }
 function randomCode(): string {
   const bytes = new Uint8Array(4);
@@ -176,7 +190,7 @@ const DEV_USERS: DevUser[] = [
   // mesmo apos serem "excluidas" do cadastro real. Regra: CPF que nao existe
   // como servidor cadastrado NAO tem acesso — nem via demo. Pra testar,
   // cadastrar via import CSV em /averbadora/servidores/importar.
-  { id: 100, identifier: "banco@atlas.test", password: "teste123", role: "banco", nome: "Operador Banco SCred", banco_id: 1 },
+  { id: 100, identifier: "banco@atlas.test", password: "teste123", role: "banco", nome: "Operador Banco Sandbox", banco_id: 1 },
   { id: 200, identifier: "admin@atlas.test", password: "teste123", role: "averbadora", nome: "Admin Atlas" },
   { id: 300, identifier: "prefeitura@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Palhoca", prefeitura_id: 1 },
   { id: 301, identifier: "florianopolis@atlas.test", password: "teste123", role: "prefeitura", nome: "Prefeitura de Florianopolis", prefeitura_id: 2 },
@@ -287,7 +301,20 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       }
     }
 
-    if (!resolved) throw Errors.unauthorized("Credenciais invalidas");
+    if (!resolved) {
+      const ai = auditIdent(body.identifier);
+      const cpfDig = body.identifier.replace(/\D/g, "");
+      const matricula = cpfDig.length === 11 ? auditMatriculasDoCpf(cpfDig) : undefined;
+      appendAudit(auditCtx(c), {
+        categoria: "acesso",
+        acao: "login_falhou",
+        cpf: ai.cpf,
+        matricula,
+        userRole: "-",
+        detalhes: `Tentativa de login falhou para ${ai.ident} (credenciais invalidas).`,
+      });
+      throw Errors.unauthorized("Credenciais invalidas");
+    }
 
     // Validacao de referencia: se o usuario resolvido carrega banco_id ou
     // prefeitura_id, valida que a entidade referenciada EXISTE e esta ATIVA.
@@ -332,6 +359,19 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       needs2fa = !!(s?.twoFactorEnabled && s.twoFactorSecret);
     }
     if (needs2fa && c.env.KV_SESSIONS) {
+      const ai = auditIdent(body.identifier);
+      const cpfDig2fa = body.identifier.replace(/\D/g, "");
+      const mat2fa = resolved.role === "servidor" && cpfDig2fa.length === 11 ? auditMatriculasDoCpf(cpfDig2fa) : undefined;
+      appendAudit(auditCtx(c), {
+        categoria: "acesso",
+        acao: "login_2fa_pendente",
+        cpf: ai.cpf,
+        matricula: mat2fa,
+        userId: `${resolved.role}:${resolved.id}`,
+        userRole: resolved.role,
+        deviceId: body.device_id,
+        detalhes: `Login OK, aguardando codigo 2FA de ${resolved.nome} (${ai.ident}).`,
+      });
       const mfaToken = generateRefreshToken();
       await c.env.KV_SESSIONS.put(
         `mfa:${mfaToken}`,
@@ -381,6 +421,19 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
         { expirationTtl: 60 * 60 * 24 * 30 },
       );
     }
+    const aiOk = auditIdent(body.identifier);
+    const cpfDigOk = body.identifier.replace(/\D/g, "");
+    const matOk = resolved.role === "servidor" && cpfDigOk.length === 11 ? auditMatriculasDoCpf(cpfDigOk) : undefined;
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "login_sucesso",
+      cpf: aiOk.cpf,
+      matricula: matOk,
+      userId: `${resolved.role}:${resolved.id}`,
+      userRole: resolved.role,
+      deviceId: body.device_id,
+      detalhes: `${resolved.nome} (${aiOk.ident}) autenticado como ${resolved.role}.`,
+    });
     return c.json({
       access_token: accessToken,
       refresh_token: refreshToken,
@@ -430,8 +483,44 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     }
     if (!secret) throw Errors.unauthorized("2FA nao configurado para este usuario");
 
+    // Resolve CPF/matricula do servidor a partir do servidor_id (2FA nao carrega
+    // o identifier original — pra outros roles, cpf/matricula ficam undefined).
+    let cpf2faMask: string | undefined;
+    let mat2faDone: string | undefined;
+    if (parsed.role === "servidor" && parsed.servidor_id != null) {
+      const s = SERVIDORES_BUSCA_MOCK.find((x) => {
+        const idSint = Number(x.idMatricula.replace(/\D/g, "").slice(-5)) || -1;
+        return idSint === parsed.servidor_id;
+      });
+      if (s) {
+        cpf2faMask = maskCpfShared(s.cpf);
+        mat2faDone = auditMatriculasDoCpf(s.cpf);
+      }
+    }
     const ok = await verifyTotp(secret, code);
-    if (!ok) throw Errors.unauthorized("Codigo 2FA invalido ou expirado");
+    if (!ok) {
+      appendAudit(auditCtx(c), {
+        categoria: "acesso",
+        acao: "login_2fa_falhou",
+        cpf: cpf2faMask,
+        matricula: mat2faDone,
+        userId: `${parsed.role}:${parsed.user_id}`,
+        userRole: parsed.role,
+        deviceId: parsed.device_id,
+        detalhes: `Codigo 2FA invalido/expirado para ${parsed.nome}.`,
+      });
+      throw Errors.unauthorized("Codigo 2FA invalido ou expirado");
+    }
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "login_sucesso_2fa",
+      cpf: cpf2faMask,
+      matricula: mat2faDone,
+      userId: `${parsed.role}:${parsed.user_id}`,
+      userRole: parsed.role,
+      deviceId: parsed.device_id,
+      detalhes: `${parsed.nome} autenticado como ${parsed.role} (com 2FA).`,
+    });
 
     // Consome o mfa_token (single-use) e emite o par access+refresh normal.
     await c.env.KV_SESSIONS.delete(`mfa:${mfa_token}`);
@@ -590,6 +679,14 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       if (pending.telefone) x.telefone = pending.telefone;
     });
     await c.env.KV_SESSIONS.delete(`pa:${digits}`);
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "primeiro_acesso_conclusao",
+      cpf: maskCpfShared(digits),
+      matricula: auditMatriculasDoCpf(digits),
+      userRole: "servidor",
+      detalhes: `Servidor concluiu primeiro-acesso: senha definida, email ${maskEmail(pending.email)}${pending.telefone ? `, telefone ${maskPhone(pending.telefone)}` : ""}.`,
+    });
     return c.json({ ok: true });
   })
   // ===== Recuperar senha do servidor (esqueci minha senha) =====
@@ -658,6 +755,14 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
     // Atualiza cache em memoria do isolate — login funciona imediatamente.
     SERVIDORES_BUSCA_MOCK.filter((x) => x.cpf === digits).forEach((x) => { x.passwordHash = hash; });
     await c.env.KV_SESSIONS.delete(`rs:${digits}`);
+    appendAudit(auditCtx(c), {
+      categoria: "dados_pessoais",
+      acao: "senha_redefinida",
+      cpf: maskCpfShared(digits),
+      matricula: auditMatriculasDoCpf(digits),
+      userRole: "servidor",
+      detalhes: `Servidor redefiniu senha via 'esqueci minha senha'.`,
+    });
     return c.json({ ok: true });
   })
   // ==========================================================================

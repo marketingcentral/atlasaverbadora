@@ -10,6 +10,8 @@ import {
   Pill,
   SelectField,
   TextField,
+  TelefoneField,
+  formatCnpj,
   type Column,
 } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -132,28 +134,7 @@ export function AdminPrefeituras() {
   );
 }
 
-// Formata CNPJ progressivamente. Aplica os pontos/barras/hifen conforme o
-// usuario digita — nao espera atingir 14 digitos pra mascarar. Aceita input
-// parcial (usado no onChange do input) e completo (usado na tabela).
-function formatCnpj(raw: string): string {
-  const d = raw.replace(/\D/g, "").slice(0, 14);
-  if (d.length <= 2) return d;
-  if (d.length <= 5) return `${d.slice(0, 2)}.${d.slice(2)}`;
-  if (d.length <= 8) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5)}`;
-  if (d.length <= 12) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8)}`;
-  return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
-}
-
-// Formata telefone BR progressivamente. Limita a 11 digitos (celular com DDD).
-// Fixo (10 digitos): (XX) XXXX-XXXX. Celular (11 digitos): (XX) XXXXX-XXXX.
-function formatTelefone(raw: string): string {
-  const d = raw.replace(/\D/g, "").slice(0, 11);
-  if (d.length === 0) return "";
-  if (d.length <= 2) return `(${d}`;
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-}
+// formatCnpj + formatTelefone agora vem de @atlas/ui/web (compartilhado).
 
 // Estilo aplicado nos campos "read-only" (dados oficiais do CNPJ). Deixa claro
 // visualmente que o operador nao deve alterar — cor cinza + cursor bloqueado
@@ -420,7 +401,7 @@ function PrefeituraModal({ initial, onClose }: { initial: AdminPrefeitura | null
                 hint={form.municipioIbge > 0 ? undefined : "⚠ Não preenchido — refaça a busca por CNPJ antes de salvar"}
                 error={form.municipioIbge > 0 ? undefined : "Código IBGE é obrigatório"}
               />
-              <TextField label="Telefone" value={formatTelefone(form.telefone ?? "")} onChange={(e) => setForm({ ...form, telefone: formatTelefone(e.target.value) })} placeholder="(00) 00000-0000" maxLength={15} required hint="Obrigatório — editável se o telefone oficial estiver desatualizado" />
+              <TelefoneField label="Telefone" value={form.telefone ?? ""} onChange={(e) => setForm({ ...form, telefone: e.target.value })} required hint="Obrigatório — editável se o telefone oficial estiver desatualizado" />
               <TextField label="CEP" value={form.endereco?.cep ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Logradouro" value={form.endereco?.logradouro ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />
               <TextField label="Número" value={form.endereco?.numero ?? ""} readOnly style={readOnlyInputStyle} onChange={() => undefined} />

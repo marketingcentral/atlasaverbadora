@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button, Input } from "@atlas/ui/web";
+import { formatCpf } from "@atlas/ui/web";
 import { atlas } from "../../../lib/sdk";
 import { ApiHttpError } from "@atlas/sdk";
 
@@ -66,11 +67,11 @@ export function BancoMargemContratacaoBusca() {
         <form onSubmit={(e) => buscar("cpf", e)} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <Input
             label="CPF"
-            type="password"
-            value={cpf}
-            onChange={(e) => setCpf(e.target.value)}
+            value={formatCpf(cpf)}
+            onChange={(e) => setCpf(formatCpf(e.target.value))}
             placeholder="000.111.222-33"
             inputMode="numeric"
+            maxLength={14}
             autoComplete="off"
           />
           <Button variant="ghost" type="submit" disabled={loading !== null || !cpf}>

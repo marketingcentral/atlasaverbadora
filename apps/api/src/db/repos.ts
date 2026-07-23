@@ -5,7 +5,7 @@
 // drizzle + postgres-js fazem JSON.stringify duas vezes e gravam o objeto como
 // string escalar ("cannot set path in scalar"); o raw cast evita isso.
 
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { getDb } from "./client.js";
 import { bancos as bancosTable, prefeituras as prefeiturasTable, servidores as servidoresTable } from "./schema.js";
 import type { Env } from "../env.js";
@@ -88,6 +88,7 @@ function rowToBanco(row: typeof bancosTable.$inferSelect): BancoAdmin {
     passwordHash: cfg.passwordHash as string | undefined,
     scopes: (cfg.scopes as string[]) ?? [],
     mtlsHabilitado: Boolean(cfg.mtlsHabilitado),
+    baseUrl: cfg.baseUrl as string | undefined,
     ultimoTeste: cfg.ultimoTeste as string | undefined,
     ultimoTesteOk: cfg.ultimoTesteOk as boolean | undefined,
     // Campos do cadastro por CNPJ — hidratados do jsonb (mesma estrategia do PrefeituraAdmin).
@@ -117,6 +118,7 @@ export async function upsertBanco(env: Env, b: BancoAdmin): Promise<void> {
     passwordHash: b.passwordHash,
     scopes: b.scopes,
     mtlsHabilitado: b.mtlsHabilitado,
+    baseUrl: b.baseUrl, // health check URL (opcional)
     ultimoTeste: b.ultimoTeste,
     ultimoTesteOk: b.ultimoTesteOk,
     cnpj: b.cnpj,
@@ -435,6 +437,55 @@ export async function seedCollectionIfEmpty(env: Env, table: string, rows: { id:
 export async function deleteCollectionRow(env: Env, table: string, id: string): Promise<void> {
   await ensureCollection(env, table);
   await getDb(env).execute(sql`DELETE FROM ${sql.raw(table)} WHERE id = ${id}`);
+}
+
+/** Query direta na trilha de auditoria (admin_auditoria) com filtros server-side.
+ *  Necessario porque listAudit in-memory tem teto de 2000 entries por isolate —
+ *  quando o cliente filtra por janela historica (desde/ate antigos), o cache nao
+ *  cobre e retornaria falso zero. Ordena por (data->>'ts') DESC pra recentes
+ *  primeiro. Todos os filtros sao opcionais e combinaveis. */
+export interface AuditDbFilter {
+  categoria?: string;
+  cpf?: string;
+  matricula?: string;
+  propostaId?: string;
+  desde?: string;
+  ate?: string;
+}
+/** Backfill de categorias de eventos ja gravados. Idempotente — so afeta rows
+ *  onde acao=acaoAlvo E categoria=categoriaAntiga. Retorna quantos updates. */
+export async function backfillAuditCategoria(env: Env, acaoAlvo: string, categoriaAntiga: string, categoriaNova: string): Promise<number> {
+  await ensureCollection(env, "admin_auditoria");
+  const rows = (await getDb(env).execute(sql`
+    UPDATE admin_auditoria
+       SET data = jsonb_set(data, '{categoria}', to_jsonb(${categoriaNova}::text))
+     WHERE data->>'acao' = ${acaoAlvo}
+       AND data->>'categoria' = ${categoriaAntiga}
+    RETURNING id
+  `)) as unknown as { id: string }[];
+  return rows.length;
+}
+
+export async function queryAuditFromDb<T = Record<string, unknown>>(env: Env, filter: AuditDbFilter, limit = 500): Promise<T[]> {
+  await ensureCollection(env, "admin_auditoria");
+  // Monta WHERE incrementalmente. Todos os campos vivem em data->> — indice
+  // GIN em data pode ser adicionado depois pra escalar; a volume atual (< 100k)
+  // a query full scan+filter serve.
+  const conds: SQL[] = [sql`TRUE`];
+  if (filter.categoria) conds.push(sql`data->>'categoria' = ${filter.categoria}`);
+  if (filter.cpf) conds.push(sql`data->>'cpf' = ${filter.cpf}`);
+  if (filter.matricula) conds.push(sql`data->>'matricula' = ${filter.matricula}`);
+  if (filter.propostaId) conds.push(sql`data->>'propostaId' = ${filter.propostaId}`);
+  if (filter.desde) conds.push(sql`(data->>'ts') >= ${filter.desde}`);
+  if (filter.ate) conds.push(sql`(data->>'ts') <= ${filter.ate}`);
+  const where = sql.join(conds, sql` AND `);
+  const rows = (await getDb(env).execute(sql`
+    SELECT data FROM admin_auditoria
+    WHERE ${where}
+    ORDER BY (data->>'ts') DESC
+    LIMIT ${limit}
+  `)) as unknown as { data: T }[];
+  return rows.map((r) => r.data).filter((d): d is T => !!d);
 }
 
 // ============================================================

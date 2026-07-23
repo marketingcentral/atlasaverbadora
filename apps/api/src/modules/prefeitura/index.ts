@@ -11,13 +11,14 @@ import { Errors, HttpError } from "../../_shared/errors.js";
 import type { Env } from "../../env.js";
 import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
-import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, persistFolha, type FolhaAdmin } from "../admin/index.js";
+import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, refreshServidores, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, deriveTipoMargem, getContrato } from "../portal-banco/store.js";
+import { enviarNotificacao } from "../admin/mailer.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
-import { appendAudit } from "../admin/auditoria.js";
-import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs } from "../admin/convenios-config.js";
+import { appendAudit, auditCtx } from "../admin/auditoria.js";
+import { getConvenioConfig, upsertConvenioConfig, listConvenioConfigs, refreshConvenioConfigs } from "../admin/convenios-config.js";
 import { getIdUnicoConfig, upsertIdUnicoConfig, ensureIdUnicoConfig, refreshIdUnicoConfigs, persistIdUnicoConfig } from "../admin/id-unico.js";
 import { importTombamento, listLotes, listLinhas, refreshTombamento, listExternalLoans, ensureTombamentoLoaded } from "../admin/tombamento.js";
 import {
@@ -25,8 +26,10 @@ import {
   ensureAdfs, listAdfs, listAdfCompetencias, setAdfStatus,
   TERMO_VERSAO_ATUAL, TERMO_TEXTO, listAnuencias, anuenciaVigente, registrarAnuencia, refreshAnuencias, persistAnuencia,
   listPerfis, upsertPerfil, deletePerfil, reactivatePerfil, rotateTotp, disable2FA, sanitizePerfil, AREA_LABEL, type PrefeituraArea,
+  refreshPerfisPref, persistPerfil, getPerfilRaw,
+  listPerfilPresets, upsertPerfilPreset, refreshPerfilPresets, persistPerfilPreset,
 } from "./store.js";
-import { upsertPrefeitura, upsertServidor, deleteCollectionRow, loadCollection } from "../../db/repos.js";
+import { upsertPrefeitura, upsertServidor, deleteCollectionRow, loadCollection, loadServidores } from "../../db/repos.js";
 import { MATRICULA_REGEX, normalizeMatricula } from "../../_shared/matricula.js";
 
 /**
@@ -88,6 +91,26 @@ function comprometidoDe(matricula: string, todosContratos: ReturnType<typeof lis
     .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao))
     .reduce((acc, ct) => acc + ct.valorParcela, 0);
   const externos = listExternalLoans(matricula).reduce((acc, l) => acc + l.valorParcela, 0);
+  return atlas + externos;
+}
+
+/** Comprometido SO do bucket EMPRESTIMO (35%) — usado pra MARGEM consignavel de
+ *  emprestimo. Contratos Atlas com deriveTipoMargem EMPRESTIMO + externos cujo
+ *  tipo+motivo NAO e' cartao/beneficio. Separado do comprometidoDe (que soma
+ *  TODOS os buckets pra "descontos do mes"/folha). Cliente reportou 21/07/2026:
+ *  o cartao externo (BMG R$90) estava sendo descontado da margem de EMPRESTIMO,
+ *  fazendo prefeitura mostrar R$490,30 e o servidor R$580,30 pro mesmo servidor.
+ *  Mesma logica de bucket do servidor (servidores/index.ts) e do banco. */
+function comprometidoEmprestimoDe(matricula: string, todosContratos: ReturnType<typeof listContratos>): number {
+  const atlas = todosContratos
+    .filter((ct) => ct.matricula === matricula && comprometeMargem(ct.situacao) && deriveTipoMargem(ct) === "EMPRESTIMO")
+    .reduce((acc, ct) => acc + ct.valorParcela, 0);
+  const externos = listExternalLoans(matricula)
+    .filter((l) => {
+      const t = `${l.tipo ?? ""} ${l.motivo ?? ""}`.toLowerCase();
+      return !(t.includes("benef") || t.includes("cartao") || t.includes("cartão"));
+    })
+    .reduce((acc, l) => acc + l.valorParcela, 0);
   return atlas + externos;
 }
 
@@ -161,12 +184,14 @@ export const prefeituraPublicRoutes = new Hono<{ Bindings: Env }>()
     }]);
     return csvResp("servidores-modelo.csv", csv);
   })
-  .get("/v1/prefeitura/folhas/movimentacao/csv-template", () => {
-    // Dinamico: pega matriculas reais da base pra promocao/demissao. Se vazio,
-    // usa placeholders e comentario avisando. Rota publica (sem JWT) — nao
-    // filtra por prefeitura; se precisar escopar por prefeitura, promover a
-    // rota autenticada.
-    const existentes = SERVIDORES_BUSCA_MOCK.slice(0, 2);
+  .get("/v1/prefeitura/folhas/movimentacao/csv-template", async (c) => {
+    // Dinamico: pega matriculas reais da base pra promocao/demissao. Le direto
+    // do PG (loadServidores) — rota publica sem JWT, entao o SERVIDORES_BUSCA_MOCK
+    // em memoria pode estar vazio num isolate frio que nunca hidratou. Cliente
+    // reportou 21/07/2026: modelo vinha "Base de servidores vazia" mesmo com 31
+    // servidores cadastrados. Nao filtra por prefeitura (rota publica).
+    const rows = await loadServidores(c.env).catch(() => [] as ServidorBuscaMock[]);
+    const existentes = rows.slice(0, 2);
     const headers = ["tipo", "matricula", "cpf", "nome", "cargoNovo", "salarioNovo", "detalhe"];
     if (existentes.length === 0) {
       const aviso = `# Base de servidores vazia. Importe servidores antes de rodar movimentacao.\n${headers.join(",")}\n`;
@@ -208,16 +233,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     if (!p) throw Errors.notFound("prefeitura");
     return c.json({ exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false });
   })
-  .post("/v1/prefeitura/config", async (c) => {
-    const id = requirePrefeitura(c.get("jwt"));
-    const p = prefeituras.find((x) => x.id === id);
-    if (!p) throw Errors.notFound("prefeitura");
-    const body = z.object({ exigeCcb: z.boolean().optional(), exigeBanco2FA: z.boolean().optional() }).parse(await c.req.json());
-    if (body.exigeCcb !== undefined) p.exigeCcb = body.exigeCcb;
-    if (body.exigeBanco2FA !== undefined) p.exigeBanco2FA = body.exigeBanco2FA;
-    try { await upsertPrefeitura(c.env, p); } catch { /* best-effort persist */ }
-    appendAudit({ categoria: "acesso", acao: "config_averbacao", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: exigeCcb=${p.exigeCcb} exigeBanco2FA=${p.exigeBanco2FA}` });
-    return c.json({ exigeCcb: p.exigeCcb ?? false, exigeBanco2FA: p.exigeBanco2FA ?? false });
+  // DESATIVADO (cliente 21/07/2026): a aba Convenios da prefeitura e' SOMENTE
+  // LEITURA — quem configura convenios e exigencias de averbacao e' a averbadora.
+  // A prefeitura apenas consulta o que foi definido.
+  .post("/v1/prefeitura/config", (c) => {
+    requirePrefeitura(c.get("jwt"));
+    throw Errors.forbidden("Convênios e exigências de averbação são configurados pela averbadora — a prefeitura apenas consulta.");
   })
 
   // ===== Passo 2 — Dashboard (com pendências de upload) =====
@@ -230,22 +251,40 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // isolate fresh (ou que perdeu writes de outro isolate) retornava zero
     // descontos/contratos mesmo com propostas ja aprovadas.
     await refreshContratos(c.env);
+    await refreshConvenios(c.env);  // sem isso CONVENIOS_MOCK fica vazio no isolate frio -> conveniosDaPrefeitura/contratosDaPrefeitura retornam 0 (bug 21/07/2026: "Convenios: 0" mesmo com CONV-001 ATIVO)
     await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
     await refreshAnuencias(c.env);  // pra anuenciaVigente(id) ver o PG (bug: dashboard mostrava "pendente" mesmo com anuencia real gravada)
     const servidores = servidoresDaPrefeitura(id);
-    const contratos = contratosDaPrefeitura(id); // usado so nos KPIs de contagem
     const todosContratos = listContratos();      // usado no comprometido (inclui telemedicina/outros)
     const convenios = conveniosDaPrefeitura(id);
+    // "Contratos averbados" = contratos EFETIVAMENTE averbados (Ativo/Averbado/
+    // Formalizado) dos SERVIDORES desta prefeitura, casado por matricula — NAO
+    // por convenio. Cliente reportou 21/07/2026: existia 1 ADF aplicada pra
+    // servidor de Capistrano (averbadora mostrava 1 averbado / volume R$1.200),
+    // mas este card mostrava 0, porque contratosDaPrefeitura filtra por convenio
+    // e Capistrano tem 0 convenio registrado. Agora casa com a averbadora.
+    const matriculasPref = new Set(servidores.map((s) => s.matricula));
+    const ehAverbado = (situacao: string): boolean => {
+      const s = situacao.toLowerCase();
+      return s === "ativo" || s === "averbado" || s === "formalizado";
+    };
+    const contratosAverbadosPref = todosContratos.filter(
+      (ct) => matriculasPref.has(ct.matricula) && ehAverbado(ct.situacao),
+    );
     const folhasPref = folhas.filter((f) => f.prefeituraId === id);
     const ativos = servidores.filter((s) => !["DESLIGADO", "APOSENTADO"].includes(s.situacaoFuncional.toUpperCase()));
 
     let margemTotalAgg = 0, margemComprometidaAgg = 0, descontosMes = 0;
     for (const s of servidores) {
       const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
-      const comprometido = comprometidoDe(s.matricula, todosContratos);
+      // Margem: so o bucket EMPRESTIMO (cartao/beneficio tem margem propria).
+      const compEmprestimo = comprometidoEmprestimoDe(s.matricula, todosContratos);
+      // Descontos do mes: TODAS as consignacoes (emprestimo + cartao + beneficio),
+      // e' o total que cai na folha.
+      const compTotal = comprometidoDe(s.matricula, todosContratos);
       margemTotalAgg += total;
-      margemComprometidaAgg += Math.min(comprometido, total);
-      descontosMes += comprometido;
+      margemComprometidaAgg += Math.min(compEmprestimo, total);
+      descontosMes += compTotal;
     }
 
     const folhaAtual = folhasPref.find((f) => f.status === "aberta") ?? folhasPref[folhasPref.length - 1];
@@ -260,9 +299,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       kpis: {
         servidores: servidores.length,
         servidoresAtivos: ativos.length,
-        contratosAverbados: contratos.length,
+        contratosAverbados: contratosAverbadosPref.length,
         convenios: convenios.length,
-        bancosAtuantes: new Set(contratos.map((ct) => ct.bancoId)).size,
+        bancosAtuantes: new Set(contratosAverbadosPref.map((ct) => ct.bancoId)).size,
         descontosMes: r2(descontosMes),
         margemTotal: r2(margemTotalAgg),
         margemComprometida: r2(margemComprometidaAgg),
@@ -276,8 +315,13 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 6 — Servidores (consulta) =====
-  .get("/v1/prefeitura/servidores", (c) => {
+  .get("/v1/prefeitura/servidores", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    // Refresh do PG antes de calcular margem — sem isso, isolate frio ve
+    // CONVENIOS_MOCK/contratos/tombamento vazios e a "margem disp." sai errada
+    // (comprometido nao considera contratos Atlas do convenio nem os externos).
+    // Bug 21/07/2026: margem aparecia R$0,00 (ou o teto cheio) por falta de sync.
+    await Promise.all([refreshContratos(c.env), refreshConvenios(c.env), refreshTombamento(c.env)]);
     const q = c.req.query("q")?.toLowerCase();
     const vinculo = c.req.query("vinculo");
     const situacao = c.req.query("situacao");
@@ -288,7 +332,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       .filter((s) => !situacao || s.situacaoFuncional === situacao)
       .map((s) => {
         const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
-        const comprometido = Math.min(comprometidoDe(s.matricula, contratos), total);
+        // Margem de EMPRESTIMO desconta so o bucket EMPRESTIMO (cartao/beneficio
+        // externos nao entram — tem margem propria). Casa com servidor e banco.
+        const comprometido = Math.min(comprometidoEmprestimoDe(s.matricula, contratos), total);
         return {
           matricula: s.matricula, nome: s.nome, cpf: s.cpf, cpfMasked: s.cpfMasked, vinculo: s.vinculo,
           situacaoFuncional: s.situacaoFuncional, salarioLiquido: s.salarioLiquido, idConvenio: s.idConvenio,
@@ -404,7 +450,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const notaFalha = persistFailures.length > 0
       ? ` — ATENCAO: ${persistFailures.length} falha(s) de persistencia (1a: ${persistFailures[0]?.message})`
       : "";
-    appendAudit({ categoria: "dados_pessoais", acao: "base_importada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: base importada — ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros${notaFalha}.` });
+    appendAudit(auditCtx(c), { categoria: "dados_pessoais", acao: "base_importada", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `${p.nome}: base importada — ${out.inserted} inseridos, ${out.updated} atualizados, ${out.errors.length} erros${notaFalha}.` });
     return c.json({ ...out, persistFailures });
   })
 
@@ -454,7 +500,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     }
     try { await persistServidorPref(c.env, s); }
     catch (e) { throw new HttpError(500, "persist_failed", `Servidor editado em memória, mas falhou ao salvar no banco: ${(e as Error).message}`); }
-    appendAudit({ categoria: "dados_pessoais", acao: "servidor_editado", matricula: s.matricula, cpf: s.cpfMasked, userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Servidor ${s.matricula} editado pela prefeitura (${changed.join(",")}).` });
+    appendAudit(auditCtx(c), { categoria: "dados_pessoais", acao: "servidor_editado", matricula: s.matricula, cpf: s.cpfMasked, userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Servidor ${s.matricula} editado pela prefeitura (${changed.join(",")}).` });
     return c.json({ servidor: { matricula: s.matricula, nome: s.nome, cpf: s.cpf, cpfMasked: s.cpfMasked, cargo: s.cargo ?? "", endereco: s.endereco ?? "", vinculo: s.vinculo, email: s.email ?? "", telefone: s.telefone ?? "", codigoIbge: s.codigoIbge ?? null } });
   })
 
@@ -515,7 +561,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     };
     folhas.push(folha);
     await persistFolha(c.env, folha); // write-through — sobrevive a redeploy
-    appendAudit({ categoria: "margem", acao: "folha_aberta", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Folha ${body.competencia} aberta (corte ${body.dataCorte}).` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_aberta", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Folha ${body.competencia} aberta (corte ${body.dataCorte}).` });
     return c.json({ folha }, 201);
   })
   .patch("/v1/prefeitura/folhas/:id", async (c) => {
@@ -530,17 +576,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       dataCorte: z.string().optional(),
       dataRepasse: z.string().nullable().optional(),
     }).parse(await c.req.json());
-    // Regra do cliente (17/07/2026): nao pode fechar folha sem ter enviado
-    // ao menos 1 movimentacao. Um mes so eh "confirmado como sem mudancas"
-    // depois que a prefeitura reportou explicitamente — silencio nao vale.
+    // Regra do cliente (17/07/2026, mantida): pra fechar precisa de >=1
+    // movimentacao. Se nao houve mudanca de pessoal no mes, a prefeitura importa
+    // uma linha com tipo=desconto (nao altera ninguem, so confirma a folha) —
+    // conta como a movimentacao do mes e libera o fechamento.
     if (body.status === "fechada" && countMovimentacoes(f.id) === 0) {
-      throw Errors.validation({ status: "Envie ao menos 1 movimentacao antes de fechar a folha. Se realmente nao houve movimentacao no mes, faca uma linha de tipo=alteracao sem alterar cargo/salario (so preencha detalhe: 'sem movimentacoes no mes')." });
+      throw Errors.validation({ status: "Envie ao menos 1 movimentação antes de fechar. Se não houve mudança de pessoal no mês, importe uma linha com tipo=desconto (não altera ninguém, só confirma a folha)." });
     }
     if (body.status) f.status = body.status;
     if (body.dataCorte) f.dataCorte = body.dataCorte;
     if (body.dataRepasse !== undefined) f.dataRepasse = body.dataRepasse;
     await persistFolha(c.env, f);
-    appendAudit({ categoria: "margem", acao: "folha_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} -> status=${f.status}.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} -> status=${f.status}.` });
     return c.json({ folha: f });
   })
   // Exclui folha aberta e SEM movimentacoes (rollback de "abri sem querer").
@@ -559,7 +606,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     }
     folhas.splice(idx, 1);
     try { await deleteCollectionRow(c.env, "admin_folhas", f.id); } catch { /* fail-safe */ }
-    appendAudit({ categoria: "margem", acao: "folha_excluida", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} excluida (estava aberta e sem movimentacoes).` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_excluida", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia} excluida (estava aberta e sem movimentacoes).` });
     return c.json({ ok: true, competencia: f.competencia });
   })
   .get("/v1/prefeitura/folhas/:id/movimentacoes", (c) => {
@@ -575,26 +622,85 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const f = folhas.find((x) => x.id === c.req.param("id") && x.prefeituraId === pid);
     if (!f) throw Errors.notFound("folha");
     if (f.status !== "aberta") throw Errors.validation({ folha: "só é possível movimentar folha aberta" });
+    await refreshServidores(c.env); // base carregada pra validar existencia da matricula
     const { rows } = parseCsv(await readCsvBody(c));
     const now = new Date().toISOString();
     const out: ImportOutcome<{ matricula: string; tipo: string }> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
-    const tipos: MovimentacaoTipo[] = ["admissao", "demissao", "aposentadoria", "promocao", "alteracao"];
-    // for...of pra permitir await do persist (rows.forEach ignoraria promise)
+    const tipos: MovimentacaoTipo[] = ["admissao", "demissao", "aposentadoria", "promocao", "alteracao", "desconto"];
+    const parseSal = (v?: string): number | undefined => {
+      const s = (v ?? "").trim();
+      if (!s) return undefined;
+      const n = Number(s.replace(/\./g, "").replace(",", "."));
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const existe = (mat: string) =>
+      SERVIDORES_BUSCA_MOCK.some((x) => x.matricula === mat && prefeituraIdDe(x) === pid);
+    // VALIDACAO ALL-OR-NOTHING (cliente 21/07/2026: "nao importar se faltar algo
+    // ou estiver incorreto"). Checa TODAS as linhas ANTES de aplicar qualquer
+    // uma; se uma unica falhar, nada e' importado. Rejeita: tipo/matricula
+    // invalidos, linha de EXEMPLO do modelo, salario invalido, campos obrigatorios
+    // por tipo faltando, e matricula inexistente (menos admissao).
     for (let idx = 0; idx < rows.length; idx++) {
       const r = rows[idx]!;
       const line = idx + 2;
-      const tipo = (r.tipo || "").toLowerCase() as MovimentacaoTipo;
-      if (!tipos.includes(tipo)) { out.errors.push({ line, message: `tipo invalido (${tipos.join("/")})` }); continue; }
-      if (!r.matricula) { out.errors.push({ line, message: "matricula obrigatoria" }); continue; }
-      const salarioNovo = r.salarioNovo ? Number(r.salarioNovo) : undefined;
+      const tipo = (r.tipo || "").trim().toLowerCase() as MovimentacaoTipo;
+      const matricula = (r.matricula || "").trim();
+      if (!tipos.includes(tipo)) { out.errors.push({ line, message: `tipo invalido — use ${tipos.join("/")}` }); continue; }
+      // "desconto" = linha de confirmacao (folha sem mudanca de pessoal). Nao
+      // exige matricula nem nenhum outro campo — e' valida sozinha.
+      if (tipo === "desconto") { continue; }
+      if (!matricula) { out.errors.push({ line, message: "matricula obrigatoria" }); continue; }
+      if (/exemplo/i.test(matricula) || /exemplo/i.test(r.nome || "")) {
+        out.errors.push({ line, message: "linha de exemplo do modelo — substitua por dados reais antes de importar" }); continue;
+      }
+      const salInformado = !!(r.salarioNovo || "").trim();
+      const sal = parseSal(r.salarioNovo);
+      if (salInformado && !(sal != null && sal > 0)) {
+        out.errors.push({ line, message: "salarioNovo invalido — use numero maior que zero (ex.: 4200 ou 4200,50)" }); continue;
+      }
+      if (tipo === "admissao") {
+        const cpf = (r.cpf || "").replace(/\D/g, "");
+        if (cpf.length !== 11) { out.errors.push({ line, message: "admissao: cpf com 11 digitos obrigatorio" }); continue; }
+        if (!(r.nome || "").trim()) { out.errors.push({ line, message: "admissao: nome obrigatorio" }); continue; }
+        if (!(r.cargoNovo || "").trim()) { out.errors.push({ line, message: "admissao: cargoNovo obrigatorio" }); continue; }
+        if (!salInformado) { out.errors.push({ line, message: "admissao: salarioNovo obrigatorio" }); continue; }
+      } else {
+        if (!existe(matricula)) { out.errors.push({ line, message: `matricula ${matricula} nao existe na base desta prefeitura` }); continue; }
+        if ((tipo === "promocao" || tipo === "alteracao") && !(r.cargoNovo || "").trim() && !salInformado) {
+          out.errors.push({ line, message: `${tipo}: informe cargoNovo e/ou salarioNovo (nada a alterar)` }); continue;
+        }
+      }
+    }
+    // Se QUALQUER linha falhou, aborta o import inteiro — nada e' aplicado.
+    if (out.errors.length > 0) {
+      return c.json(out);
+    }
+    // Todas validas — aplica de fato.
+    // Coleta granular de F6 (demissao/aposentadoria) pra audit dedicado.
+    // Cliente pediu 22/07/2026 evento proprio nomeando matriculas + contratos
+    // interrompidos — folha_movimentacao (agregado) nao dava rastro suficiente.
+    const f6Registros: { matricula: string; tipo: string; nome?: string; contratos: string[] }[] = [];
+    for (let idx = 0; idx < rows.length; idx++) {
+      const r = rows[idx]!;
+      const line = idx + 2;
+      const tipo = (r.tipo || "").trim().toLowerCase() as MovimentacaoTipo;
+      const matricula = (r.matricula || "").trim();
       const res = applyMovimentacao({
-        folhaId: f.id, prefeituraId: pid, tipo, matricula: r.matricula,
-        cargoNovo: r.cargoNovo || undefined, salarioNovo: Number.isFinite(salarioNovo) ? salarioNovo : undefined,
+        folhaId: f.id, prefeituraId: pid, tipo, matricula,
+        cargoNovo: r.cargoNovo || undefined, salarioNovo: parseSal(r.salarioNovo),
         detalhe: r.detalhe || undefined, nomeNovo: r.nome || undefined, cpf: r.cpf || undefined,
       }, now);
       if (!res.ok) { out.errors.push({ line, message: res.error }); continue; }
       out.inserted++;
-      out.rows.push({ matricula: r.matricula, tipo });
+      out.rows.push({ matricula, tipo });
+      if (tipo === "demissao" || tipo === "aposentadoria") {
+        f6Registros.push({
+          matricula,
+          tipo: tipo === "demissao" ? "DEMISSAO" : "APOSENTADORIA",
+          nome: res.servidorAtualizado?.nome,
+          contratos: [...res.contratosAtingidos],
+        });
+      }
       // AWAIT — sem isso a proxima request de login lia PG antes do upsert
       // terminar e via situacaoFuncional antigo (F6 nao bloqueava).
       if (res.servidorAtualizado) {
@@ -604,7 +710,76 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         try { await persistContrato(c.env, adf); } catch { /* fail-safe */ }
       }
     }
-    appendAudit({ categoria: "margem", acao: "folha_movimentacao", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia}: ${out.inserted} movimentações, ${out.errors.length} erros. Margem recalculada.` });
+    appendAudit(auditCtx(c), { categoria: "margem", acao: "folha_movimentacao", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Folha ${f.competencia}: ${out.inserted} movimentações, ${out.errors.length} erros. Margem recalculada.` });
+    // Audit dedicado F6: um evento por servidor desligado/aposentado nomeando
+    // matricula + contratos que caíram em cobrança direta (ou nenhum se
+    // servidor sem contrato ativo). Categoria "margem" pois libera margem
+    // do servidor + move contratos pra cobrança.
+    for (const f6 of f6Registros) {
+      appendAudit(auditCtx(c), {
+        categoria: "margem",
+        acao: "servidor_desligado_f6",
+        matricula: f6.matricula,
+        userId: `prefeitura:${pid}`,
+        userRole: "prefeitura",
+        detalhes: `${f6.tipo} — servidor ${f6.nome ?? "(?)"} (matricula ${f6.matricula}) desligado via folha ${f.competencia}. ${f6.contratos.length === 0 ? "Nenhum contrato ativo afetado." : `${f6.contratos.length} contrato(s) interrompido(s) em cobranca direta: ${f6.contratos.join(", ")}.`}`,
+      });
+    }
+
+    // Notifica bancos por email quando houve desligamento/aposentadoria.
+    // Agrupa contratos afetados por bancoId, envia 1 email por banco listando
+    // servidor + ADF de cada contrato que agora esta em cobranca direta.
+    // Best-effort via waitUntil — nao segura a response.
+    try {
+      const desligamentos = rows
+        .map((r, i) => ({ r, idx: i }))
+        .filter(({ r }) => {
+          const t = (r.tipo || "").toLowerCase();
+          return t === "demissao" || t === "aposentadoria";
+        });
+      if (desligamentos.length > 0) {
+        const porBanco = new Map<number, { bancoNome: string; email: string; contratos: { adf: string; nome: string; matricula: string; valorParcela: number; tipo: string }[] }>();
+        for (const { r } of desligamentos) {
+          if (!r.matricula) continue;
+          const ativos = listContratos({ matricula: r.matricula }).filter((ct) => {
+            const s = ct.situacao.toLowerCase();
+            return s.includes("cobran"); // agora em cobrança direta
+          });
+          for (const ct of ativos) {
+            const banco = bancos.find((b) => b.id === ct.bancoId);
+            if (!banco?.contatoEmail) continue;
+            const bucket = porBanco.get(ct.bancoId) ?? {
+              bancoNome: banco.nome,
+              email: banco.contatoEmail,
+              contratos: [],
+            };
+            bucket.contratos.push({
+              adf: ct.adf,
+              nome: ct.nome,
+              matricula: ct.matricula,
+              valorParcela: ct.valorParcela,
+              tipo: (r.tipo || "").toLowerCase() === "demissao" ? "Desligado" : "Aposentado",
+            });
+            porBanco.set(ct.bancoId, bucket);
+          }
+        }
+        for (const [, dados] of porBanco) {
+          const linhas = dados.contratos.map((x) => `${x.tipo}: ${x.nome} (mat ${x.matricula}) — ADF ${x.adf}, parcela R$ ${x.valorParcela.toFixed(2)}`).join("\n");
+          const p = enviarNotificacao(c.env, {
+            destinoPadrao: dados.email,
+            titulo: `${dados.contratos.length} contrato(s) fora da folha — servidor(es) desligado(s)`,
+            mensagem: `A prefeitura ${f.prefeitura} processou desligamento/aposentadoria de servidor(es) com contrato ativo no ${dados.bancoNome}. As ADFs foram interrompidas e os contratos abaixo agora estao "Em cobranca direta" — o banco assume a cobranca fora da folha.\n\n${linhas}`,
+            detalhes: [
+              { label: "Prefeitura", valor: f.prefeitura },
+              { label: "Competência", valor: f.competencia },
+              { label: "Contratos afetados", valor: String(dados.contratos.length) },
+            ],
+          });
+          try { c.executionCtx.waitUntil(p); } catch { void p; }
+        }
+      }
+    } catch { /* fail-safe — notificacao nao pode quebrar o processamento */ }
+
     return c.json(out);
   })
 
@@ -618,6 +793,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       ensurePrefeiturasLoaded(c.env),
       refreshConvenios(c.env),
       refreshIdUnicoConfigs(c.env),
+      refreshConvenioConfigs(c.env), // ve a config REAL editada pela averbadora
     ]);
     // Backfill: se ainda nao tem config, gera default e persiste no PG.
     const p = prefeituras.find((x) => x.id === id);
@@ -633,6 +809,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
         dataCorte: cv.dataCorte, diaRepasse: cv.diaRepasse,
         prazoTravaHoras: cfg?.prazoTravaHoras ?? 48, prazoPortabilidadeDU: cfg?.prazoPortabilidadeDU ?? 7,
         prefixo: idcfg?.prefixo ?? "", formatoImportacao: cfg?.formatoImportacao ?? "CSV",
+        // Config completa (read-only pra prefeitura) — mesmos campos que a
+        // averbadora edita. Cliente pediu 21/07/2026 pra exibir tudo aqui.
+        maxParcelas: cfg?.maxParcelas ?? 96,
+        taxaMaxAm: cfg?.taxaMaxAm ?? 1.8,
+        maxComprometimentoPct: cfg?.maxComprometimentoPct ?? 0.35,
+        idadeMin: cfg?.idadeMin ?? 18,
+        idadeMax: cfg?.idadeMax ?? 80,
+        vigenciaInicio: cfg?.vigenciaInicio ?? "",
+        vigenciaFim: cfg?.vigenciaFim ?? null,
+        vinculosAceitos: cfg?.vinculosAceitos ?? [],
+        regrasEspeciais: cfg?.regrasEspeciais ?? "",
+        ativo: cfg?.ativo !== false,
       };
     });
     return c.json({ convenios: detalhado, prefixo: idcfg?.prefixo ?? "" });
@@ -656,46 +844,12 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       },
     });
   })
-  .put("/v1/prefeitura/convenios/:id/config", async (c) => {
-    const pid = requirePrefeitura(c.get("jwt"));
-    const cv = conveniosDaPrefeitura(pid).find((x) => x.id === c.req.param("id"));
-    if (!cv) throw Errors.notFound("convenio");
-    const body = z.object({
-      prazoTravaHoras: z.number().int().min(1).max(720),
-      prazoPortabilidadeDU: z.number().int().min(1).max(30),
-      maxComprometimentoPct: z.number().min(0.05).max(0.7),
-      // Teto de parcelas aplicado ao banco quando ele cria tabelas de
-      // emprestimo. Fechado nas mesmas opcoes que o banco pode escolher.
-      maxParcelas: z.union([
-        z.literal(12), z.literal(24), z.literal(36), z.literal(48),
-        z.literal(60), z.literal(72), z.literal(84), z.literal(96), z.literal(120),
-      ]),
-      vinculosAceitos: z.array(z.enum(VINCULOS)).min(1),
-      formatoImportacao: z.enum(["CSV", "EXCEL", "API"]),
-      regrasEspeciais: z.string().default(""),
-      prefixo: z.string().min(2).max(5).regex(/^[A-Za-z]+$/, "prefixo só letras"),
-    }).parse(await c.req.json());
-    const prev = getConvenioConfig(cv.id);
-    const cfg = upsertConvenioConfig({
-      id: cv.id,
-      prazoTravaHoras: body.prazoTravaHoras, prazoPortabilidadeDU: body.prazoPortabilidadeDU,
-      maxComprometimentoPct: body.maxComprometimentoPct,
-      maxParcelas: body.maxParcelas, taxaMaxAm: prev?.taxaMaxAm ?? 1.8,
-      idadeMin: prev?.idadeMin ?? 18, idadeMax: prev?.idadeMax ?? 80,
-      vinculosAceitos: body.vinculosAceitos, formatoImportacao: body.formatoImportacao,
-      regrasEspeciais: body.regrasEspeciais, vigenciaInicio: prev?.vigenciaInicio ?? "2026-01-01",
-      vigenciaFim: prev?.vigenciaFim, ativo: prev?.ativo ?? true,
-    });
-    const idcfg = getIdUnicoConfig(pid);
-    const novoIdcfg = upsertIdUnicoConfig({
-      prefeituraId: pid, prefixo: body.prefixo.toUpperCase(),
-      formato: idcfg?.formato ?? "SEQ", larguraSeq: idcfg?.larguraSeq ?? 6,
-      proximoSeq: idcfg?.proximoSeq ?? 1, separador: idcfg?.separador ?? "-",
-    });
-    // Persiste no PG pra que a tela /averbadora/id-unico veja o mesmo prefixo.
-    await persistIdUnicoConfig(c.env, novoIdcfg);
-    appendAudit({ categoria: "convenio_config", acao: "config_atualizada", userId: `prefeitura:${pid}`, userRole: "prefeitura", detalhes: `Convenio ${cv.id}: trava=${body.prazoTravaHoras}h, portabilidade=${body.prazoPortabilidadeDU}DU, maxComp=${Math.round(body.maxComprometimentoPct * 100)}%, tetoParcelas=${body.maxParcelas}, prefixo=${body.prefixo.toUpperCase()}.` });
-    return c.json({ config: cfg, prefixo: body.prefixo.toUpperCase() });
+  // DESATIVADO (cliente 21/07/2026): a prefeitura NAO edita convenios — quem
+  // configura (trava, portabilidade, prefixo, vinculos, etc.) e' a averbadora.
+  // A aba Convenios da prefeitura e' somente leitura.
+  .put("/v1/prefeitura/convenios/:id/config", (c) => {
+    requirePrefeitura(c.get("jwt"));
+    throw Errors.forbidden("Configuração de convênio é feita pela averbadora — a prefeitura apenas consulta.");
   })
 
   // ===== Passo 7 — Contratos / Tombamento =====
@@ -768,7 +922,7 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const competencia = c.req.query("competencia") || new Date().toISOString().slice(0, 7).replace("-", "");
     const csv = await readCsvBody(c);
     const res = await importTombamento({ prefeituraId: id, prefeituraNome: p.nome, competencia, recebidoPor: `prefeitura:${id}`, csv, env: c.env });
-    appendAudit({ categoria: "tombamento", acao: "lote_importado", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Lote ${res.lote.id} (${p.nome}/${competencia}): ${res.inseridos} inseridos, ${res.atualizados} atualizados, ${res.divergencias} divergências, ${res.erros.length} erros.` });
+    appendAudit(auditCtx(c), { categoria: "tombamento", acao: "lote_importado", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `Lote ${res.lote.id} (${p.nome}/${competencia}): ${res.inseridos} inseridos, ${res.atualizados} atualizados, ${res.divergencias} divergências, ${res.erros.length} erros.` });
     return c.json(res);
   })
 
@@ -834,27 +988,34 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 9 — Relatórios =====
-  .get("/v1/prefeitura/relatorios/servidores-por-vinculo", (c) => {
+  .get("/v1/prefeitura/relatorios/servidores-por-vinculo", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshServidores(c.env); // sem isso, isolate frio ve base vazia -> relatorio zerado
     const map = new Map<string, number>();
     for (const s of servidoresDaPrefeitura(id)) map.set(s.vinculo, (map.get(s.vinculo) ?? 0) + 1);
     return c.json({ dados: Array.from(map, ([vinculo, total]) => ({ vinculo, total })).sort((a, b) => b.total - a.total) });
   })
-  .get("/v1/prefeitura/relatorios/margem-media", (c) => {
+  .get("/v1/prefeitura/relatorios/margem-media", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    // Refresh completo — servidores/convenios/contratos/tombamento — senao o
+    // relatorio sai zerado/errado em isolate frio (mesmo bug dos outros menus).
+    await Promise.all([refreshServidores(c.env), refreshConvenios(c.env), refreshContratos(c.env), refreshTombamento(c.env)]);
     const servidores = servidoresDaPrefeitura(id);
     const contratos = contratosDaPrefeitura(id);
     let totalMargem = 0, totalDisponivel = 0;
     for (const s of servidores) {
       const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");
       totalMargem += total;
-      totalDisponivel += Math.max(0, total - comprometidoDe(s.matricula, contratos));
+      // Margem de EMPRESTIMO desconta so o bucket EMPRESTIMO (cartao/beneficio
+      // externos tem margem propria) — casa com dashboard/servidor/banco.
+      totalDisponivel += Math.max(0, total - comprometidoEmprestimoDe(s.matricula, contratos));
     }
     const nn = servidores.length || 1;
     return c.json({ servidores: servidores.length, margemMediaTotal: r2(totalMargem / nn), margemMediaDisponivel: r2(totalDisponivel / nn), percentualUsoMedio: totalMargem > 0 ? r2((totalMargem - totalDisponivel) / totalMargem) : 0 });
   })
-  .get("/v1/prefeitura/relatorios/contratos-por-banco", (c) => {
+  .get("/v1/prefeitura/relatorios/contratos-por-banco", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await Promise.all([refreshConvenios(c.env), refreshContratos(c.env)]); // senao contratosDaPrefeitura=[] em isolate frio
     const map = new Map<number, { banco: string; contratos: number; valorParcela: number }>();
     for (const ct of contratosDaPrefeitura(id)) {
       const g = map.get(ct.bancoId) ?? { banco: bancoNome(ct.bancoId), contratos: 0, valorParcela: 0 };
@@ -862,8 +1023,9 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     }
     return c.json({ dados: Array.from(map.values()).map((g) => ({ ...g, valorParcela: r2(g.valorParcela) })).sort((a, b) => b.contratos - a.contratos) });
   })
-  .get("/v1/prefeitura/relatorios/inconsistencias", (c) => {
+  .get("/v1/prefeitura/relatorios/inconsistencias", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshServidores(c.env); // base carregada pra checar inconsistencias reais
     const servidores = servidoresDaPrefeitura(id);
     const problemas: { matricula: string; nome: string; problema: string }[] = [];
     for (const s of servidores) {
@@ -880,8 +1042,18 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const id = requirePrefeitura(c.get("jwt"));
     // Recarrega do PG — sobrevive a redeploy da API.
     await refreshAnuencias(c.env);
-    const vigente = anuenciaVigente(id);
-    return c.json({ versaoAtual: TERMO_VERSAO_ATUAL, termo: TERMO_TEXTO, vigente: vigente ?? null, historico: listAnuencias(id) });
+    // ID exibido e' POR PREFEITURA (cliente 21/07/2026: nao pode ser global —
+    // a 1a anuencia de cada prefeitura e' ANU-0001, independente das outras).
+    // Renumera na leitura pela ordem cronologica desta prefeitura; o id gravado
+    // (unico global) fica so pra storage/dedupe. listAnuencias vem DESC.
+    const hist = listAnuencias(id);
+    const asc = [...hist].sort((a, b) => a.aceitoEm.localeCompare(b.aceitoEm));
+    const displayById = new Map<string, string>();
+    asc.forEach((a, i) => displayById.set(a.id, `ANU-${String(i + 1).padStart(4, "0")}`));
+    const historico = hist.map((a) => ({ ...a, id: displayById.get(a.id) ?? a.id }));
+    const vigenteRaw = anuenciaVigente(id);
+    const vigente = vigenteRaw ? { ...vigenteRaw, id: displayById.get(vigenteRaw.id) ?? vigenteRaw.id } : null;
+    return c.json({ versaoAtual: TERMO_VERSAO_ATUAL, termo: TERMO_TEXTO, vigente, historico });
   })
   .post("/v1/prefeitura/anuencia", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
@@ -893,48 +1065,126 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const anu = registrarAnuencia({ prefeituraId: id, aceitoPor: body.aceitoPor, ip }, new Date().toISOString());
     // Persist no PG — sobrevive a redeploy.
     await persistAnuencia(c.env, anu);
-    appendAudit({ categoria: "termo_aceite", acao: "anuencia_base", termoAceito: TERMO_VERSAO_ATUAL, ip, userId: `prefeitura:${j.sub}`, userRole: "prefeitura", detalhes: `Anuência de uso da base aceita por ${body.aceitoPor} (${TERMO_VERSAO_ATUAL}).` });
-    return c.json({ anuencia: anu }, 201);
+    appendAudit(auditCtx(c), { categoria: "termo_aceite", acao: "anuencia_base", termoAceito: TERMO_VERSAO_ATUAL, ip, userId: `prefeitura:${j.sub}`, userRole: "prefeitura", detalhes: `Anuência de uso da base aceita por ${body.aceitoPor} (${TERMO_VERSAO_ATUAL}).` });
+    // Numero exibido POR PREFEITURA (posicao cronologica desta prefeitura).
+    const seqPref = listAnuencias(id).length; // ja inclui a recem-criada
+    return c.json({ anuencia: { ...anu, id: `ANU-${String(seqPref).padStart(4, "0")}` } }, 201);
   })
 
-  // ===== Passo 1 — Perfis por área + 2FA =====
-  .get("/v1/prefeitura/perfis", (c) => {
+  // ===== Passo 1 — Perfis por área + 2FA + presets customizados =====
+  .get("/v1/prefeitura/perfis", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    return c.json({ perfis: listPerfis(id).map(sanitizePerfil), areas: Object.entries(AREA_LABEL).map(([value, label]) => ({ value, label })) });
+    // Recarrega do PG — perfis e presets sobrevivem a redeploy da API.
+    await Promise.all([refreshPerfisPref(c.env), refreshPerfilPresets(c.env)]);
+    return c.json({
+      perfis: listPerfis(id).map(sanitizePerfil),
+      areas: Object.entries(AREA_LABEL).map(([value, label]) => ({ value, label })),
+      // Presets customizados nomeados — viram opcao no dropdown de permissoes.
+      presets: listPerfilPresets(id).map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })),
+    });
   })
   .post("/v1/prefeitura/perfis", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfisPref(c.env); // seq/ids atualizados antes de criar
     const body = z.object({
       id: z.number().int().optional(),
       nome: z.string().min(2), email: z.string().email(),
       area: z.enum(["rh", "financeiro", "gestor", "personalizado"]).optional(),
       permissoes: z.array(z.string().min(1).max(64)).max(200).optional(),
       ativo: z.boolean().optional(),
+      // Nome do preset customizado — obrigatorio no front quando a config e'
+      // "personalizado" e esta CRIANDO. Se vier, salva a config como preset
+      // reutilizavel (aparece no dropdown pra outros usuarios).
+      presetNome: z.string().min(2).max(60).optional(),
     }).parse(await c.req.json());
     const perfil = upsertPerfil({ prefeituraId: id, ...body, area: body.area as PrefeituraArea | undefined }, new Date().toISOString());
+    await persistPerfil(c.env, perfil);
+    if (body.presetNome && Array.isArray(body.permissoes) && body.permissoes.length > 0) {
+      const preset = upsertPerfilPreset({ prefeituraId: id, nome: body.presetNome, permissoes: body.permissoes }, new Date().toISOString());
+      await persistPerfilPreset(c.env, preset);
+    }
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: body.id ? "perfil_pref_atualizado" : "perfil_pref_criado",
+      userId: `prefeitura:${id}`,
+      userRole: "prefeitura",
+      detalhes: `Perfil ${perfil.email} (area=${perfil.area}, ativo=${perfil.ativo}) ${body.id ? "atualizado" : "criado"}${body.presetNome ? ` + preset "${body.presetNome}" salvo` : ""}.`,
+    });
     return c.json({ perfil: sanitizePerfil(perfil) }, body.id ? 200 : 201);
   })
-  .delete("/v1/prefeitura/perfis/:id", (c) => {
+  .delete("/v1/prefeitura/perfis/:id", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    if (!deletePerfil(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
+    await refreshPerfisPref(c.env);
+    const perfilId = Number(c.req.param("id"));
+    if (!deletePerfil(id, perfilId)) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, perfilId);
+    if (p) await persistPerfil(c.env, p);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "perfil_pref_desativado",
+      userId: `prefeitura:${id}`,
+      userRole: "prefeitura",
+      detalhes: `Perfil id=${perfilId}${p ? ` (${p.email})` : ""} desativado (soft-delete).`,
+    });
     return c.body(null, 204);
   })
-  .post("/v1/prefeitura/perfis/:id/reativar", (c) => {
+  .post("/v1/prefeitura/perfis/:id/reativar", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    if (!reactivatePerfil(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
+    await refreshPerfisPref(c.env);
+    const perfilId = Number(c.req.param("id"));
+    if (!reactivatePerfil(id, perfilId)) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, perfilId);
+    if (p) await persistPerfil(c.env, p);
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "perfil_pref_reativado",
+      userId: `prefeitura:${id}`,
+      userRole: "prefeitura",
+      detalhes: `Perfil id=${perfilId}${p ? ` (${p.email})` : ""} reativado.`,
+    });
     return c.json({ ok: true });
   })
-  .post("/v1/prefeitura/perfis/:id/2fa/rotate", (c) => {
+  .post("/v1/prefeitura/perfis/:id/2fa/rotate", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfisPref(c.env);
     const r = rotateTotp(id, Number(c.req.param("id")));
     if (!r) throw Errors.notFound("perfil");
-    appendAudit({ categoria: "acesso", acao: "2fa_rotate", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `2FA (TOTP) rotacionado para perfil ${c.req.param("id")}.` });
+    const p = getPerfilRaw(id, Number(c.req.param("id")));
+    if (p) await persistPerfil(c.env, p);
+    appendAudit(auditCtx(c), { categoria: "acesso", acao: "2fa_rotate", userId: `prefeitura:${id}`, userRole: "prefeitura", detalhes: `2FA (TOTP) rotacionado para perfil ${c.req.param("id")}.` });
     return c.json(r);
   })
-  .post("/v1/prefeitura/perfis/:id/2fa/disable", (c) => {
+  .post("/v1/prefeitura/perfis/:id/2fa/disable", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
-    if (!disable2FA(id, Number(c.req.param("id")))) throw Errors.notFound("perfil");
+    await refreshPerfisPref(c.env);
+    const perfilId = Number(c.req.param("id"));
+    if (!disable2FA(id, perfilId)) throw Errors.notFound("perfil");
+    const p = getPerfilRaw(id, perfilId);
+    if (p) await persistPerfil(c.env, p);
+    // Disable de 2FA remove camada de protecao — evento CRITICO (mesma
+    // gravidade do 2fa_desativado_self em me/index.ts).
+    appendAudit(auditCtx(c), {
+      categoria: "acesso",
+      acao: "2fa_desativado_perfil_pref",
+      userId: `prefeitura:${id}`,
+      userRole: "prefeitura",
+      detalhes: `2FA DESATIVADO no perfil id=${perfilId}${p ? ` (${p.email})` : ""} pela prefeitura ${id}. Perda de camada de protecao — verificar autorizacao.`,
+    });
     return c.json({ ok: true });
+  })
+  // Presets customizados de permissao (nomeados, reutilizaveis por prefeitura).
+  .get("/v1/prefeitura/perfil-presets", async (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    await refreshPerfilPresets(c.env);
+    return c.json({ presets: listPerfilPresets(id).map((p) => ({ key: p.key, nome: p.nome, permissoes: p.permissoes })) });
+  })
+  .post("/v1/prefeitura/perfil-presets", async (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    const body = z.object({ nome: z.string().min(2).max(60), permissoes: z.array(z.string().min(1).max(64)).min(1).max(200) }).parse(await c.req.json());
+    await refreshPerfilPresets(c.env);
+    const preset = upsertPerfilPreset({ prefeituraId: id, nome: body.nome, permissoes: body.permissoes }, new Date().toISOString());
+    await persistPerfilPreset(c.env, preset);
+    return c.json({ preset: { key: preset.key, nome: preset.nome, permissoes: preset.permissoes } }, 201);
   })
 
   .get("/v1/prefeitura/comunicados", async (c) => {

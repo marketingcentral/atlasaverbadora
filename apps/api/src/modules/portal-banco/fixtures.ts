@@ -87,9 +87,17 @@ export interface ServidorBuscaMock {
  * Prefeitura a que um servidor pertence. Usa o campo explícito quando presente;
  * senão deriva do convênio. É a chave de escopo para busca e deduplicação —
  * mesmo CPF em prefeituras diferentes são registros distintos.
+ *
+ * Retorna 0 (sentinela) quando o servidor NÃO tem prefeitura resolvida — antes
+ * o fallback era 1, o que fazia a primeira prefeitura cadastrada (id=1)
+ * "herdar" órfãos de imports antigos ou convênios deletados (bug reportado
+ * pelo cliente 22/07/2026 no relato de dados vazando entre prefeituras).
+ * Callsites que comparam `prefeituraIdDe(s) === prefId` naturalmente
+ * excluem o 0. Callsites que iteram servidores por prefeitura (dashboard,
+ * listagem) simplesmente ignoram os órfãos.
  */
 export function prefeituraIdDe(s: Pick<ServidorBuscaMock, "prefeituraId" | "idConvenio">): number {
-  return s.prefeituraId ?? CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 1;
+  return s.prefeituraId ?? CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 0;
 }
 
 // Cliente pediu (17/07/2026) remocao TOTAL dos seeds de servidores — incluindo
