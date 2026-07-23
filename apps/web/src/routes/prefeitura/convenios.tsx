@@ -8,6 +8,7 @@ import { BackLink } from "./_ui";
 // Layout em cards com quadrados de pontas redondas.
 interface ConvRow {
   id: string; nome: string; bancoNome: string; codigoVerba: string;
+  dataCorte: number; diaRepasse: number;
   prazoTravaHoras: number; prazoPortabilidadeDU: number; prefixo: string; formatoImportacao: string;
   maxParcelas: number; taxaMaxAm: number; maxComprometimentoPct: number; idadeMin: number; idadeMax: number;
   vigenciaInicio: string; vigenciaFim: string | null; vinculosAceitos: string[]; regrasEspeciais: string; ativo: boolean;
@@ -67,6 +68,11 @@ export function PrefeituraConvenios() {
               {/* Quadrados de pontas redondas com toda a config (defensivo:
                   campos podem faltar se o isolate da API ainda nao propagou). */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10 }}>
+                {/* Dados do cadastro do convenio (modal "Editar" da averbadora) —
+                    cliente pediu 23/07/2026 pra prefeitura enxergar tambem. */}
+                <Stat label="Código verba" value={c.codigoVerba || "—"} />
+                <Stat label="Dia de corte" value={c.dataCorte != null ? `Dia ${c.dataCorte}` : "—"} />
+                <Stat label="Dia de repasse" value={c.diaRepasse != null ? `Dia ${c.diaRepasse}` : "—"} />
                 <Stat label="Prefixo" value={c.prefixo || "—"} />
                 <Stat label="Importação" value={c.formatoImportacao || "—"} />
                 <Stat label="Trava regular" value={c.prazoTravaHoras != null ? `${c.prazoTravaHoras}h` : "—"} />
