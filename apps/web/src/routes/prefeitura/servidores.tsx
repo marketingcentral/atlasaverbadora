@@ -22,6 +22,53 @@ const fmtTel = (tel?: string) => {
 // Busca via matchAny (lib/text-search) — fonte unica compartilhada com todas
 // as outras telas do sistema.
 
+/** Extrai valor por key (built-in ou custom). Custom fields vem em camposCustom. */
+function getValor(s: PrefeituraServidor, key: string): string | number | null | undefined {
+  if (key === "cpf") return s.cpf;
+  const custom = (s as unknown as { camposCustom?: Record<string, string | number | null> }).camposCustom;
+  if (key.startsWith("custom_") && custom) return custom[key];
+  return (s as unknown as Record<string, string | number | null | undefined>)[key];
+}
+
+/** Traduz um campo da config (averbadora) em Column<PrefeituraServidor>. Mesma
+ *  regra visual da /averbadora/servidores/visualizar — CPF mascarado, telefone
+ *  BR, vazio -> "—", situacao vira Pill, moeda em BRL. */
+function campoParaColuna(campo: { key: string; label: string; tipo: ServidorCampoConfig["tipo"] }): Column<PrefeituraServidor> {
+  const base: Column<PrefeituraServidor> = {
+    key: campo.key,
+    header: campo.label,
+    mono: campo.tipo === "texto" && ["matricula", "cpf", "idConvenio", "codigoIbge"].includes(campo.key),
+  };
+  base.render = (s) => {
+    const v = getValor(s, campo.key);
+    const dim = <span style={{ color: "var(--text-dim)" }}>—</span>;
+    if (v == null || v === "") return dim;
+    if (campo.tipo === "numero" && Number(v) === 0) return dim;
+    if (campo.tipo === "moeda" && Number(v) === 0) return dim;
+    if (campo.key === "cpf") return <>{fmtCpf(String(v))}</>;
+    if (campo.key === "telefone" || campo.tipo === "telefone") return <>{fmtTel(String(v))}</>;
+    if (campo.key === "idConvenio") {
+      return <>{String(v) || <span style={{ color: "var(--danger-500)" }}>sem convênio</span>}</>;
+    }
+    if (campo.key === "situacaoFuncional") {
+      const situ = String(v).trim().toUpperCase();
+      if (!situ) return <span style={{ color: "var(--text-dim)", fontSize: 12 }}>NÃO INFORMADO</span>;
+      const variant: "expirado" | "averbado" | "pendente" =
+        /desligado|aposentad/i.test(situ) ? "expirado"
+        : /afastad|licenc|ferias/i.test(situ) ? "pendente"
+        : "averbado";
+      return <Pill variant={variant}>{situ}</Pill>;
+    }
+    switch (campo.tipo) {
+      case "moeda": return <>{fmtBRL(typeof v === "number" ? v : Number(v) || 0)}</>;
+      case "numero": return <>{String(v)}</>;
+      default: return <>{String(v)}</>;
+    }
+  };
+  if (campo.tipo === "moeda" || campo.tipo === "numero") base.align = "right";
+  return base;
+}
+
 export function PrefeituraServidores() {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
@@ -62,23 +109,33 @@ export function PrefeituraServidores() {
   const filtered = (q.data?.servidores ?? [])
     .filter((s) => matchAnyKeys(s, search, ["nome", "matricula", "cpf", "cpfMasked"]));
 
+  // Columns dinamicas: ordem + rotulos vem da config que a averbadora definiu
+  // em /averbadora/servidores/importar. Assim as duas telas (averbadora ver
+  // servidores + prefeitura servidores) ficam SEMPRE na mesma ordem pros
+  // mesmos campos. "Margem disp." (calc backend, nao vem da config) e
+  // "Acoes" (editar) ficam SEMPRE ao final. Fallback: se a config nao carregou
+  // ainda, cai no shape historico pra tela nao aparecer em branco.
+  const CAMPOS_FALLBACK_ORDEM: { key: string; label: string; tipo: ServidorCampoConfig["tipo"] }[] = [
+    { key: "nome", label: "Nome", tipo: "texto" },
+    { key: "matricula", label: "Matrícula", tipo: "texto" },
+    { key: "cpf", label: "CPF", tipo: "texto" },
+    { key: "email", label: "E-mail", tipo: "email" },
+    { key: "telefone", label: "Telefone", tipo: "telefone" },
+    { key: "cargo", label: "Cargo", tipo: "texto" },
+    { key: "vinculo", label: "Vínculo", tipo: "texto" },
+    { key: "situacaoFuncional", label: "Situação", tipo: "texto" },
+    { key: "salarioLiquido", label: "Salário líquido", tipo: "moeda" },
+    { key: "idConvenio", label: "Convênio", tipo: "texto" },
+  ];
+  const camposParaTabela: { key: string; label: string; tipo: ServidorCampoConfig["tipo"] }[] =
+    camposVisiveis.length > 0
+      ? camposVisiveis
+          .filter((c) => c.key !== "acoes")
+          .map((c) => ({ key: c.key, label: c.label, tipo: c.tipo }))
+      : CAMPOS_FALLBACK_ORDEM;
+
   const columns: Column<PrefeituraServidor>[] = [
-    { key: "nome", header: "Nome" },
-    { key: "matricula", header: "Matrícula", mono: true },
-    { key: "cpf", header: "CPF", mono: true, render: (s) => fmtCpf(s.cpf) },
-    { key: "telefone", header: "Telefone", render: (s) => fmtTel(s.telefone) },
-    { key: "cargo", header: "Cargo", render: (s) => s.cargo || "—" },
-    { key: "vinculo", header: "Vínculo" },
-    { key: "situacaoFuncional", header: "Situação", render: (s) => {
-      const situ = (s.situacaoFuncional || "").trim().toUpperCase();
-      if (!situ) return <span style={{ color: "var(--text-dim)", fontSize: 12 }}>NÃO INFORMADO</span>;
-      const variant: "expirado" | "averbado" | "pendente" =
-        /desligado|aposentad/i.test(situ) ? "expirado"
-        : /afastad|licenc|ferias/i.test(situ) ? "pendente"
-        : "averbado";
-      return <Pill variant={variant}>{situ}</Pill>;
-    } },
-    { key: "idConvenio", header: "Convênio", render: (s) => s.idConvenio || <span style={{ color: "var(--danger-500)" }}>sem convênio</span> },
+    ...camposParaTabela.map((c) => campoParaColuna(c)),
     { key: "margemDisponivel", header: "Margem disp.", align: "right", render: (s) => (
       <MargemCell
         salario={s.salarioLiquido}
