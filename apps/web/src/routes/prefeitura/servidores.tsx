@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, CpfField, CsvImportPanel, CurrencyField, DataTable, FilterBar, FormGrid, NumberField, Pill, SelectField, TelefoneField, TextField, type Column } from "@atlas/ui/web";
@@ -92,9 +92,14 @@ export function PrefeituraServidores() {
   const camposQ = useQuery({
     queryKey: ["prefeitura", "servidores-campos"],
     queryFn: () => atlas.prefeitura.servidorCamposConfig(),
-    staleTime: 5 * 60_000,
+    // staleTime curto: se a averbadora acabou de adicionar um custom, o user
+    // ve o novo campo assim que abre a tela (nao precisa esperar 5min).
+    staleTime: 10_000,
     retry: 1,
-    refetchOnWindowFocus: false,
+    // Refetch ao voltar pra tela — captura mudancas feitas pela averbadora em
+    // outra aba/sessao.
+    refetchOnWindowFocus: true,
+    refetchOnMount: "always",
   });
   // Prefere camposQ (mais preciso pos-fetch); cai em meQ quando camposQ
   // ainda esta pending. Sem esse fallback, o CSV baixado nao inclui
@@ -103,19 +108,68 @@ export function PrefeituraServidores() {
   const camposVisiveis = (camposQ.data?.campos ?? [])
     .filter((c) => c.visivel)
     .sort((a, b) => a.ordem - b.ordem);
-  // Header do CSV = keys visiveis (custom_ sem prefixo), na ordem configurada.
-  const colunasCsv = camposVisiveis
-    .map((c) => (c.key.startsWith("custom_") ? c.key.slice("custom_".length) : c.key))
-    .join(", ");
-  // Fallback minimo: se o endpoint falhar OU nao tem config, mostra as
-  // colunas built-in obrigatorias em vez de "carregando..." infinito. Assim
-  // a prefeitura consegue baixar/importar mesmo se a averbadora nao tiver
-  // configurado nada ainda (o endpoint publico do CSV ja cai no default).
-  // Mesma ordem do CHAVES_SISTEMA no backend (admin/servidor-campos.ts) —
-  // hint casa com o CSV real que o Baixar exemplo devolve.
-  const HINT_FALLBACK = "cpf, matricula, email, nome, telefone, cargo, vinculo, situacaoFuncional, salarioLiquido, idConvenio, dataAdmissao, dataNascimento, endereco, codigoIbge";
+  // Slug pro CSV (custom_ sem prefixo) — mesmo header que o backend emite.
+  const csvSlug = (k: string) => k.startsWith("custom_") ? k.slice("custom_".length) : k;
+  const camposCustomVisiveis = camposVisiveis.filter((c) => !c.sistema);
+  // Fallback minimo: mesmo formato do backend quando ainda nao ha config.
+  // Cliente pediu 24/07/2026: hint tem que refletir EXATAMENTE o que a
+  // averbadora configurou, incluindo campos personalizados.
+  const HINT_FALLBACK_KEYS = ["cpf", "matricula", "email", "nome", "telefone", "cargo", "vinculo", "situacaoFuncional", "salarioLiquido", "idConvenio", "dataAdmissao", "dataNascimento", "endereco", "codigoIbge"];
   const hintCarregando = camposQ.isPending;
-  const columnsHint = colunasCsv || (hintCarregando ? "Carregando campos configurados pela averbadora…" : HINT_FALLBACK);
+  const hintErro = camposQ.isError;
+
+  // Renderiza o hint com DESTAQUE nos campos personalizados. Assim quando a
+  // averbadora adiciona custom_rg / custom_sssss, o operador da prefeitura
+  // ve claramente que sao campos novos (nao se confunde com os do sistema).
+  const columnsHint: ReactNode = (() => {
+    if (hintCarregando) return <>Carregando campos configurados pela averbadora…</>;
+    if (camposVisiveis.length === 0) {
+      // Fallback: se a API deu erro OU nao ha config, mostra os 14 SISTEMA.
+      return (
+        <>
+          {HINT_FALLBACK_KEYS.join(", ")}
+          {hintErro ? (
+            <div style={{ color: "var(--danger-500)", marginTop: 4, fontSize: 11 }}>
+              (não foi possível carregar a config da averbadora — usando padrão)
+            </div>
+          ) : null}
+        </>
+      );
+    }
+    const parts: ReactNode[] = [];
+    camposVisiveis.forEach((c, i) => {
+      const slug = csvSlug(c.key);
+      const isCustom = !c.sistema;
+      parts.push(
+        <span
+          key={c.key}
+          style={isCustom ? {
+            color: "var(--gold-500)",
+            fontWeight: 700,
+            padding: "1px 6px",
+            borderRadius: 4,
+            background: "color-mix(in srgb, var(--gold-500) 15%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--gold-500) 40%, transparent)",
+          } : undefined}
+          title={isCustom ? "Campo personalizado adicionado pela averbadora" : undefined}
+        >
+          {slug}
+        </span>,
+      );
+      if (i < camposVisiveis.length - 1) parts.push(", ");
+    });
+    return (
+      <>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 3, alignItems: "center" }}>{parts}</div>
+        <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-dim)" }}>
+          {camposVisiveis.length} campos ({camposCustomVisiveis.length}
+          {" personalizado"}{camposCustomVisiveis.length === 1 ? "" : "s"}
+          {" pela averbadora"})
+          {camposCustomVisiveis.length === 0 ? " — se voce espera personalizados, peca a averbadora pra configurar." : null}
+        </div>
+      </>
+    );
+  })();
 
   // Busca RESTRITA a nome, matricula e CPF (cliente 23/07/2026). Antes usava
   // matchAny (todos os campos), o que trazia os numeros de margem/IBGE/salario

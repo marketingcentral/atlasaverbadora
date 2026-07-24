@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { Button } from "./Button.js";
 import { Card } from "./Card.js";
 
@@ -6,8 +6,9 @@ export interface CsvImportPanelProps {
   /** Title shown in the panel (ex: "Importar bancos"). */
   title: string;
   /** Columns shown in the hint line ("Colunas: nome, status, ..."). Opcional —
-   *  omite quando o modelo eh grande e ja tem "Baixar exemplo" pra guiar. */
-  columnsHint?: string;
+   *  omite quando o modelo eh grande e ja tem "Baixar exemplo" pra guiar.
+   *  Aceita ReactNode pra permitir destaque de campos personalizados. */
+  columnsHint?: ReactNode;
   /** URL para baixar CSV exemplo (gerado pelo backend). */
   templateUrl: string;
   /** Função que recebe o conteúdo do CSV (texto) e chama o endpoint de import. */

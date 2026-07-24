@@ -396,6 +396,16 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const { rows } = parseCsv(await readCsvBody(c));
     const out: ImportOutcome<{ matricula: string; nome: string; cpfMasked: string }> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
     const toPersist: ServidorBuscaMock[] = [];
+    // Regras de identidade (cliente 24/07/2026):
+    //  - Na MESMA prefeitura, matricula e' unica: 2 CPFs distintos nao podem
+    //    ter mesma matricula.
+    //  - Mesmo CPF pode ter varias matriculas na mesma prefeitura (um por
+    //    cargo), mas nunca a mesma matricula duas vezes.
+    //  - Entre prefeituras diferentes, matriculas podem se repetir (sem escopo).
+    // Rastreia matriculas ja vistas neste lote pra bloquear colisoes dentro
+    // do proprio CSV — sem isso, 2 linhas do mesmo arquivo com mesma
+    // matricula e CPFs diferentes passavam (a segunda sobrescrevia a primeira).
+    const matriculaCpfNoLote = new Map<string, string>();
     rows.forEach((r, idx) => {
       const line = idx + 2;
       // Planilhas de Excel perdem o zero a esquerda do CPF (numero). Repadroniza
@@ -458,19 +468,30 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       // Identidade é (prefeituraId, matricula) — nunca só CPF. Assim o mesmo CPF
       // pode ser cadastrado em outra prefeitura (acumulação de cargos) sem colisão.
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === id);
-      // Regra do cliente (24/07/2026): dentro de UMA prefeitura, matricula = 1
-      // CPF. Mesmo CPF com matriculas diferentes so vale entre prefeituras
-      // distintas. Bloqueia os dois casos que geram duplicata:
-      //  (1) matricula ja existe na prefeitura com OUTRO CPF (foi assim que
-      //      "ZZ OBSOLETA" e "CAMILA" ficaram na mesma matricula 700100010).
+      // Regras (cliente 24/07/2026):
+      //  (a) Na MESMA prefeitura, uma matricula = um CPF. 2 CPFs distintos com
+      //      a mesma matricula = erro (nao "sequestra" matricula alheia).
+      //  (b) Mesmo CPF PODE ter varias matriculas na mesma prefeitura (uma por
+      //      cargo). Ex.: Joao com matriculas 100, 200 e 300 na mesma prefeitura.
+      //  (c) Entre prefeituras diferentes, matriculas podem se repetir livremente.
+      // Colisao dentro do lote: mesma matricula no CSV com CPFs diferentes (regra a).
+      const cpfAnterior = matriculaCpfNoLote.get(r.matricula!);
+      if (cpfAnterior && cpfAnterior !== cpf) {
+        return void out.errors.push({
+          line,
+          message: `matricula ${r.matricula} aparece com CPFs diferentes no CSV (linha atual: ${cpf.slice(0,3)}***${cpf.slice(-2)}, ja usada por ${cpfAnterior.slice(0,3)}***${cpfAnterior.slice(-2)}). Matricula e' unica na prefeitura.`,
+        });
+      }
+      matriculaCpfNoLote.set(r.matricula!, cpf);
+      // Colisao com a base: matricula ja existe nesta prefeitura com CPF diferente (regra a).
       if (existing && existing.cpf !== cpf) {
-        return void out.errors.push({ line, message: `matricula ${r.matricula} ja existe nesta prefeitura com outro CPF (${existing.cpfMasked}). Uma matricula so pode ter um CPF — corrija o CSV ou remova o servidor antigo antes.` });
+        return void out.errors.push({
+          line,
+          message: `matricula ${r.matricula} ja pertence a outro servidor (CPF ${existing.cpfMasked}) em ${p.nome}. Escolha uma matricula diferente.`,
+        });
       }
-      //  (2) CPF ja esta na prefeitura em OUTRA matricula.
-      const cpfDuplicado = SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === cpf && s.matricula !== r.matricula && prefeituraIdDe(s) === id);
-      if (cpfDuplicado) {
-        return void out.errors.push({ line, message: `CPF ${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)} ja esta nesta prefeitura na matricula ${cpfDuplicado.matricula}. Mesmo CPF so pode ter matriculas diferentes em prefeituras diferentes.` });
-      }
+      // OBS: nao bloqueia CPF ja usado em outra matricula (regra b — acumulacao
+      // de cargos permitida). Bloquear seria regressao vs pedido do cliente.
       // Contato/endereço vazios no CSV NÃO devem sobrescrever o que o servidor
       // escolheu no primeiro acesso — só entram em `rec` se vierem preenchidos.
       const rec: ServidorBuscaMock = {

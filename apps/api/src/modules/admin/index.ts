@@ -4665,6 +4665,11 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const text = await readCsvBody(c);
     const { rows } = parseCsv(text);
     const out: ImportOutcome<typeof SERVIDORES_BUSCA_MOCK[number]> = { inserted: 0, updated: 0, skipped: 0, errors: [], rows: [] };
+    // Regras de identidade (cliente 24/07/2026):
+    //  - Na MESMA prefeitura, matricula e' unica: 2 CPFs distintos nao podem ter mesma matricula.
+    //  - Mesmo CPF pode ter varias matriculas na mesma prefeitura (uma por cargo).
+    //  - Entre prefeituras diferentes, matriculas podem se repetir.
+    const matriculaCpfNoLote = new Map<string, string>();
     rows.forEach((r, idx) => {
       const line = idx + 2;
       // Obrigatorios TRAVADOS (cpf/matricula/email) + os que a prefeitura marcou
@@ -4697,6 +4702,24 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       }
       // Identidade (prefeituraId, matricula) — permite mesmo CPF em outra prefeitura.
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === prefId);
+      // Colisao dentro do lote: mesma matricula com CPFs diferentes no CSV.
+      const cpfAnterior = matriculaCpfNoLote.get(r.matricula!);
+      if (cpfAnterior && cpfAnterior !== cpf) {
+        out.errors.push({
+          line,
+          message: `matricula ${r.matricula} aparece com CPFs diferentes no CSV (linha atual: ${cpf.slice(0,3)}***${cpf.slice(-2)} vs ${cpfAnterior.slice(0,3)}***${cpfAnterior.slice(-2)}). Matricula e' unica na prefeitura.`,
+        });
+        return;
+      }
+      matriculaCpfNoLote.set(r.matricula!, cpf);
+      // Colisao com a base: matricula ja existe nesta prefeitura com CPF diferente.
+      if (existing && existing.cpf !== cpf) {
+        out.errors.push({
+          line,
+          message: `matricula ${r.matricula} ja pertence a outro servidor (CPF ${existing.cpfMasked}) em ${pref.nome}. Escolha uma matricula diferente.`,
+        });
+        return;
+      }
       // Salario: aceita formato BR ("R$ 5.000,50", "5.000,50") e US ("5000.50").
       const salario = parseNumberBr(r.salarioLiquido);
       const ibge = Number((r.codigoIbge ?? "").toString().replace(/\D/g, ""));
