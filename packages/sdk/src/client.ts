@@ -2118,7 +2118,15 @@ export class AtlasClient {
     importarServidores: (csv: string) => this.request<CsvImportOutcome>("/v1/prefeitura/servidores/importar", { method: "POST", body: { csv } }),
     editarServidor: (matricula: string, patch: Partial<{ nome: string; cpf: string; cargo: string; endereco: string; matriculaNova: string; vinculo: string; email: string; telefone: string; codigoIbge: number; salarioLiquido: number; situacaoFuncional: string; idConvenio: string; dataAdmissao: string; dataNascimento: string; camposCustom: Record<string, string> }>) =>
       this.request<{ servidor: PrefeituraServidor }>(`/v1/prefeitura/servidores/${matricula}`, { method: "PATCH", body: patch }),
-    servidoresCsvTemplateUrl: (): string => `${this.opts.baseUrl}/v1/prefeitura/servidores/csv-template`,
+    // prefeituraId opcional: quando passado, o header do CSV vem da config de
+    // campos que a averbadora definiu pra prefeitura. O frontend pega o id do
+    // servidorCamposConfig() e repassa aqui.
+    servidoresCsvTemplateUrl: (prefeituraId?: number): string =>
+      `${this.opts.baseUrl}/v1/prefeitura/servidores/csv-template${prefeituraId != null ? `?prefeituraId=${prefeituraId}` : ""}`,
+    /** Campos de servidor configurados pela averbadora pra esta prefeitura —
+     *  usado pra montar o cabecalho do CSV (download + import) dinamicamente. */
+    servidorCamposConfig: () =>
+      this.request<{ prefeituraId: number; campos: ServidorCampoConfig[] }>("/v1/prefeitura/servidores/campos-config"),
 
     // Folha (passo 4)
     folhas: () => this.request<{ folhas: (PrefeituraFolha & { movimentacoes: number })[] }>("/v1/prefeitura/folhas"),

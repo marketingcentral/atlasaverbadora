@@ -28,6 +28,16 @@ export function PrefeituraServidores() {
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<PrefeituraServidor | null>(null);
   const q = useQuery({ queryKey: ["prefeitura", "servidores"], queryFn: () => atlas.prefeitura.servidores() });
+  // Config de campos que a averbadora definiu pra esta prefeitura — dita o
+  // cabecalho do CSV (download + hint). Cliente pediu 24/07/2026.
+  const camposQ = useQuery({ queryKey: ["prefeitura", "servidores-campos"], queryFn: () => atlas.prefeitura.servidorCamposConfig() });
+  const camposVisiveis = (camposQ.data?.campos ?? [])
+    .filter((c) => c.visivel)
+    .sort((a, b) => a.ordem - b.ordem);
+  // Header do CSV = keys visiveis (custom_ sem prefixo), na ordem configurada.
+  const colunasCsv = camposVisiveis
+    .map((c) => (c.key.startsWith("custom_") ? c.key.slice("custom_".length) : c.key))
+    .join(", ");
 
   // Busca RESTRITA a nome, matricula e CPF (cliente 23/07/2026). Antes usava
   // matchAny (todos os campos), o que trazia os numeros de margem/IBGE/salario
@@ -86,8 +96,8 @@ export function PrefeituraServidores() {
       {importOpen ? (
         <CsvImportPanel
           title="Importar base de servidores"
-          columnsHint="nome, cpf, email, telefone, matricula, cargo, vinculo, endereco, codigoIbge, salarioLiquido, idConvenio"
-          templateUrl={atlas.prefeitura.servidoresCsvTemplateUrl()}
+          columnsHint={colunasCsv || "carregando campos…"}
+          templateUrl={atlas.prefeitura.servidoresCsvTemplateUrl(camposQ.data?.prefeituraId)}
           onImport={(csv) => atlas.prefeitura.importarServidores(csv)}
           onImported={() => { qc.invalidateQueries({ queryKey: ["prefeitura"] }); }}
         />

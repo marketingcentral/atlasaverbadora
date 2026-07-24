@@ -160,29 +160,23 @@ const VINCULOS = ["CLT", "ESTATUTARIO", "COMISSIONADO", "APOSENTADO", "PENSIONIS
 // link de download simples (<a href download>) funciona sem header de auth.
 export const prefeituraPublicRoutes = new Hono<{ Bindings: Env }>()
   .get("/v1/prefeitura/servidores/csv-template", async (c) => {
-    // Dinamico: usa o primeiro convenio realmente cadastrado. Se base vazia,
-    // devolve CSV com header + comentario avisando pra cadastrar convenio antes.
-    // O import ja aceita idConvenio vazio (cai no default da prefeitura), entao
-    // o CSV segue importavel mesmo com placeholder.
-    if (CONVENIOS_MOCK.length === 0) {
-      try { await refreshConvenios(c.env); } catch { /* ignore */ }
+    // Header vem da CONFIG de campos que a averbadora definiu pra prefeitura
+    // (mesma logica do GET /v1/admin/servidores/csv-template). Como o download
+    // e' um <a href> sem JWT, a prefeitura vem por ?prefeituraId=N (o frontend
+    // pega do campos-config). Sem prefeituraId, cai no header padrao legado.
+    // Cliente pediu 24/07/2026: cabecalho de acordo com a averbadora.
+    await refreshServidorCamposConfigs(c.env);
+    const prefIdRaw = new URL(c.req.url).searchParams.get("prefeituraId");
+    const prefId = Number(prefIdRaw);
+    const csvHeader = (key: string) => key.startsWith("custom_") ? key.slice("custom_".length) : key;
+    if (prefIdRaw && Number.isFinite(prefId)) {
+      const config = ensureServidorCamposConfig(prefId);
+      const headers = config.campos.filter((f) => f.visivel).sort((a, b) => a.ordem - b.ordem).map((f) => csvHeader(f.key));
+      // So o cabecalho (sem linha de exemplo) — evita import de dado fake.
+      return csvResp("servidores-modelo.csv", buildCsv(headers, []));
     }
-    const conv = CONVENIOS_MOCK[0];
-    const headers = ["nome", "cpf", "email", "telefone", "matricula", "cargo", "vinculo", "endereco", "codigoIbge", "salarioLiquido", "idConvenio"];
-    if (!conv) {
-      const aviso = `# Cadastre pelo menos 1 convenio antes de importar servidores.\n# Sem convenio, o servidor fica sem prefeitura resolvida.\n${headers.join(",")}\n`;
-      return csvResp("servidores-modelo.csv", aviso);
-    }
-    const cidade = prefeituras.find((p) => p.id === conv.prefeituraId);
-    const csv = buildCsv(headers, [{
-      nome: "EXEMPLO - MARIA DA SILVA", cpf: "99900011122",
-      email: "maria@example.com", telefone: "48999990000",
-      matricula: "EXEMPLO-900123", cargo: "Professora", vinculo: "ESTATUTARIO",
-      endereco: `Rua Exemplo, 100 - Centro, ${cidade?.nome ?? conv.prefeitura}/${cidade?.uf ?? conv.uf}`,
-      codigoIbge: cidade?.municipioIbge ?? 4211900,
-      salarioLiquido: 4200, idConvenio: conv.id,
-    }]);
-    return csvResp("servidores-modelo.csv", csv);
+    const headers = ["cpf", "matricula", "email", "nome", "telefone", "cargo", "vinculo", "situacaoFuncional", "salarioLiquido", "idConvenio"];
+    return csvResp("servidores-modelo.csv", buildCsv(headers, []));
   })
   .get("/v1/prefeitura/folhas/movimentacao/csv-template", async (c) => {
     // Dinamico: pega matriculas reais da base pra promocao/demissao. Le direto
@@ -327,6 +321,16 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   })
 
   // ===== Passo 6 — Servidores (consulta) =====
+  // Config de campos de servidor da PROPRIA prefeitura (definida pela averbadora
+  // em averbadora/servidores/importar). O frontend usa pra montar o columnsHint
+  // e passar ?prefeituraId no template. Cliente pediu 24/07/2026: o CSV da
+  // prefeitura tem que seguir os campos que a averbadora selecionou.
+  .get("/v1/prefeitura/servidores/campos-config", async (c) => {
+    const id = requirePrefeitura(c.get("jwt"));
+    await refreshServidorCamposConfigs(c.env);
+    const config = ensureServidorCamposConfig(id);
+    return c.json({ prefeituraId: id, campos: config.campos });
+  })
   .get("/v1/prefeitura/servidores", async (c) => {
     const id = requirePrefeitura(c.get("jwt"));
     // Refresh do PG antes de calcular margem — sem isso, isolate frio ve
