@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/react-query";
 import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
+import { ImpersonateReadOnlyNotice, useIsImpersonating } from "../../components/ImpersonateBar";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -18,6 +19,7 @@ const fmtBRL = (n: number) =>
 export function ServidorSolicitarCartao() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
+  const impersonando = useIsImpersonating();
   // Listener de storage: sem isso, trocar matricula no switcher enquanto
   // esta tela esta aberta continuava mostrando margem/limite da matricula
   // anterior e o POST subia matricula errada.
@@ -185,9 +187,10 @@ export function ServidorSolicitarCartao() {
                   {solicitar.error instanceof Error ? solicitar.error.message : "Erro ao enviar solicitação."}
                 </div>
               ) : null}
+              <ImpersonateReadOnlyNotice acao={`Solicitar ${meta.titulo.toLowerCase()}`} />
               <div style={{ display: "flex", gap: 8 }}>
-                <Button disabled={solicitar.isPending} onClick={() => solicitar.mutate()}>
-                  {solicitar.isPending ? "Enviando..." : `Solicitar ${meta.titulo.toLowerCase()} →`}
+                <Button disabled={solicitar.isPending || impersonando} onClick={() => solicitar.mutate()}>
+                  {solicitar.isPending ? "Enviando..." : impersonando ? "Ação indisponível em modo impersonate" : `Solicitar ${meta.titulo.toLowerCase()} →`}
                 </Button>
                 <Button variant="ghost" onClick={() => nav("/servidor/marketplace/portabilidade")}>
                   Cancelar

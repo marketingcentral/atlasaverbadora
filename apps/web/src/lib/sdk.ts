@@ -67,6 +67,14 @@ export function readImpersonateMeta(): ImpersonateMeta | null {
   return raw ? (JSON.parse(raw) as ImpersonateMeta) : null;
 }
 
+/** True se a sessao atual e' um impersonate (averbadora agindo como servidor).
+ *  Usado pra bloquear acoes mutativas — assinatura de termo, contratar
+ *  beneficio, aceitar oferta, mudar senha/contato — que so o titular real pode
+ *  praticar. Backend tem defesa em profundidade (assertNotImpersonating). */
+export function isImpersonating(): boolean {
+  return readImpersonateMeta() !== null;
+}
+
 /** Ativa impersonate: guarda tokens+role atuais e escreve os novos. Chamado
  *  pelo botao "Entrar como" da /averbadora/servidores/visualizar. */
 export function enterImpersonate(input: {

@@ -1,6 +1,84 @@
 import { useEffect, useState } from "react";
 import { readImpersonateMeta, exitImpersonate, type ImpersonateMeta } from "../lib/sdk";
 
+/** Hook: true se a sessao atual e' um impersonate (averbadora agindo como
+ *  servidor). Re-le no focus + polling leve, mesmo padrao do ImpersonateBar. */
+export function useIsImpersonating(): boolean {
+  const [meta, setMeta] = useState<ImpersonateMeta | null>(() => readImpersonateMeta());
+  useEffect(() => {
+    const refresh = () => setMeta(readImpersonateMeta());
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    const id = window.setInterval(refresh, 1500);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+      window.clearInterval(id);
+    };
+  }, []);
+  return meta !== null;
+}
+
+/** Wrapper que ESCONDE o children (botao de acao) quando ha impersonate ativo
+ *  e mostra no lugar um botao desabilitado com a razao. Use em pontos onde
+ *  reescrever o disabled em cada Button e' chato — envolve o botao/link
+ *  externo e o guard cuida sozinho. */
+export function ImpersonateGate({ children, label }: { children: React.ReactNode; label?: string }) {
+  const on = useIsImpersonating();
+  if (!on) return <>{children}</>;
+  return (
+    <button
+      type="button"
+      disabled
+      title="Modo impersonate — so o proprio servidor pode praticar esta acao"
+      style={{
+        padding: "10px 18px",
+        borderRadius: 10,
+        background: "color-mix(in srgb, var(--gold-500) 20%, transparent)",
+        color: "var(--text-muted)",
+        border: "1px dashed var(--gold-500)",
+        fontWeight: 700,
+        fontSize: 13,
+        cursor: "not-allowed",
+      }}
+    >
+      🎭 {label ?? "Ação indisponível em modo impersonate"}
+    </button>
+  );
+}
+
+/** Aviso inline usado em telas de acao (termo, portabilidade, contratar,
+ *  senha, contato). So renderiza quando ha impersonate ativo — usar como
+ *  guard visual acima do botao principal e disabled={isImpersonating}. */
+export function ImpersonateReadOnlyNotice({ acao }: { acao?: string }) {
+  const on = useIsImpersonating();
+  if (!on) return null;
+  return (
+    <div
+      role="status"
+      style={{
+        padding: "12px 14px",
+        borderRadius: 10,
+        background: "color-mix(in srgb, var(--gold-500) 15%, transparent)",
+        border: "1px solid var(--gold-500)",
+        color: "var(--text)",
+        fontSize: 13,
+        lineHeight: 1.5,
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+      }}
+    >
+      <span style={{ fontSize: 18 }}>🎭</span>
+      <span>
+        <b>Modo visualizacao (impersonate).</b>{" "}
+        {acao ?? "Esta acao"} nao pode ser executada pela averbadora — so o proprio servidor, logado
+        com CPF e senha, pode praticar este ato.
+      </span>
+    </div>
+  );
+}
+
 /**
  * Barra fixa no topo que aparece quando um admin da averbadora esta agindo
  * como servidor. Clicar em "Voltar pra averbadora" restaura os tokens

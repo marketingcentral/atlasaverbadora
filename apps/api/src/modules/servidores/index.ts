@@ -23,7 +23,7 @@ import { ensurePortabilidadesLoaded, listIntencoesDoServidor, criarIntencao, can
 import { ensureTermosLoaded, getTermo, listTermos, renderTermo, type TermoTipo } from "../admin/termos-store.js";
 import { getSuporteConfig } from "../admin/suporte.js";
 import { withIdempotency } from "../../_shared/idempotency.js";
-import { actorFromJwt } from "../../_shared/actor.js";
+import { actorFromJwt, assertNotImpersonating } from "../../_shared/actor.js";
 import { setServidorPassword, setServidorContato } from "../../db/repos.js";
 import { appendAudit, auditCtx } from "../admin/auditoria.js";
 
@@ -457,6 +457,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/cartoes", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
     const s = resolveServidor(j);
@@ -695,6 +696,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/beneficios/:id/contratar", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -759,6 +761,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/telemedicina/cotacao", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -961,6 +964,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/propostas", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     await ensureBancosLoaded(c.env);
     // Hidrata CONVENIOS_MOCK antes de resolver conv por idConvenio. Sem isso,
@@ -1224,6 +1228,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .delete("/v1/servidores/me/codigo", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -1234,6 +1239,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/codigo", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -1255,6 +1261,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/contato", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -1292,6 +1299,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/senha/redefinir", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -1324,6 +1332,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/senha", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -1360,6 +1369,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/portabilidade/solicitar", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env);
     await ensureTombamentoLoaded(c.env);
     await refreshContratos(c.env);
@@ -1447,6 +1457,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/portabilidade", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env); await refreshContratos(c.env); await ensurePortabilidadesLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -1528,6 +1539,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/portabilidade/:id/cancelar", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env); await ensurePortabilidadesLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");
@@ -1541,6 +1553,7 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
   .post("/v1/servidores/me/portabilidade/:id/aceitar", async (c) => {
     const j = c.get("jwt");
     requireRoleInline(j, ["servidor"]);
+    assertNotImpersonating(j);
     await ensureServidoresLoaded(c.env); await ensurePortabilidadesLoaded(c.env);
     const s = resolveServidor(j);
     if (!s) throw Errors.notFound("servidor");

@@ -5,6 +5,7 @@ import { Button, Card } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
 import type { TermoTipo } from "@atlas/sdk";
 import { readActiveMatricula } from "../../lib/matricula-data";
+import { ImpersonateReadOnlyNotice, useIsImpersonating } from "../../components/ImpersonateBar";
 
 type Tipo = "novo" | "portabilidade" | "refinanciamento" | "cartao_consignado" | "cartao_beneficio";
 
@@ -66,6 +67,7 @@ export function ServidorTermo() {
   const [submitting, setSubmitting] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [done, setDone] = useState<null | { propostaId: string; quando: Date; ip: string; device: string }>(null);
+  const impersonando = useIsImpersonating();
 
   const prazo = PRAZOS[tipo];
   const tipoLabel = TIPO_LABEL[tipo];
@@ -301,15 +303,17 @@ export function ServidorTermo() {
             )
           )}
         </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".92rem", marginTop: 16, cursor: "pointer" }}>
-          <input type="checkbox" checked={aceito} onChange={(e) => setAceito(e.target.checked)} />
+        <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: ".92rem", marginTop: 16, cursor: impersonando ? "not-allowed" : "pointer", opacity: impersonando ? 0.5 : 1 }}>
+          <input type="checkbox" checked={aceito} onChange={(e) => setAceito(e.target.checked)} disabled={impersonando} />
           Li, entendi e <b>aceito o termo de autorização</b>
         </label>
       </Card>
 
+      <ImpersonateReadOnlyNotice acao="Aceitar termo e criar proposta" />
+
       <div style={{ display: "flex", gap: 8 }}>
-        <Button onClick={autorizar} disabled={!aceito || submitting}>
-          {submitting ? "Registrando aceite..." : "Aceito e autorizo →"}
+        <Button onClick={autorizar} disabled={!aceito || submitting || impersonando}>
+          {submitting ? "Registrando aceite..." : impersonando ? "Ação indisponível em modo impersonate" : "Aceito e autorizo →"}
         </Button>
         {/* Voltar sempre habilitado — se o POST enroscar, o servidor consegue
          *  sair da tela em vez de ficar preso olhando "Registrando aceite...". */}

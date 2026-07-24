@@ -6,6 +6,7 @@ import { atlas } from "../../lib/sdk";
 import type { ServidorBeneficio } from "@atlas/sdk";
 import type { MatriculaInfo } from "../../lib/matricula-data";
 import { readActiveMatricula, STORAGE_KEY_META, STORAGE_KEY_ID } from "../../lib/matricula-data";
+import { ImpersonateGate } from "../../components/ImpersonateBar";
 
 const fmtBRL = (n: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
@@ -530,14 +531,16 @@ function TelemedicinaCard({ matricula }: { matricula?: string }) {
               >
                 Cancelar
               </button>
-              <button
-                type="button"
-                onClick={() => cotacao.mutate()}
-                disabled={cotacao.isPending}
-                style={{ padding: "10px 18px", borderRadius: 10, background: "var(--emerald-500)", color: "white", border: "none", fontWeight: 700, cursor: "pointer" }}
-              >
-                {cotacao.isPending ? "Enviando…" : "Solicitar Cotação"}
-              </button>
+              <ImpersonateGate>
+                <button
+                  type="button"
+                  onClick={() => cotacao.mutate()}
+                  disabled={cotacao.isPending}
+                  style={{ padding: "10px 18px", borderRadius: 10, background: "var(--emerald-500)", color: "white", border: "none", fontWeight: 700, cursor: "pointer" }}
+                >
+                  {cotacao.isPending ? "Enviando…" : "Solicitar Cotação"}
+                </button>
+              </ImpersonateGate>
             </div>
           </div>
         </div>
