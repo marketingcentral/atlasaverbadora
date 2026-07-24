@@ -115,12 +115,11 @@ export function AdminServidoresVisualizar() {
   // varre TODOS os campos do objeto (nome, matricula, cpf, cpfMasked, email,
   // telefone, cargo, vinculo, situacao, salario, convenio, IBGE, datas etc)
   // e trata CPF/telefone/matricula com ou sem pontuacao ("580.886.363-53"
-  // acha com "58088" tambem). Mais recentes no topo (id DESC).
+  // acha com "58088" tambem). Ordem "mais recente no topo" vem do BACKEND
+  // (criadoEmIso/_dbId) — antes ordenava por numero da matricula aqui, o que
+  // so parecia recente por coincidencia. So filtra a busca.
   const filtered = useMemo(
-    () => (dataQ.data?.servidores ?? [])
-      .filter((s) => matchAny(s, search))
-      .slice()
-      .sort((a, b) => b.id - a.id),
+    () => (dataQ.data?.servidores ?? []).filter((s) => matchAny(s, search)),
     [dataQ.data?.servidores, search],
   );
 

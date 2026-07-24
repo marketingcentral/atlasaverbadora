@@ -2569,7 +2569,19 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const url = new URL(c.req.url);
     const prefeituraId = url.searchParams.get("prefeitura_id");
     const status = url.searchParams.get("status");
-    let rows = SERVIDORES_BUSCA_MOCK.map((s) => ({
+    // Ordem de CHEGADA (mais recente no topo) — MESMA regra do
+    // GET /v1/prefeitura/servidores: criadoEmIso (carimbo do import) primario,
+    // _dbId (id serial do PG) como fallback pra base antiga. Antes a tela
+    // ordenava por numero da matricula no frontend, o que so parecia "recente"
+    // por coincidencia. Cliente reportou 24/07/2026.
+    let rows = [...SERVIDORES_BUSCA_MOCK]
+      .sort((a, b) => {
+        const ka = a.criadoEmIso ?? "";
+        const kb = b.criadoEmIso ?? "";
+        if (ka !== kb) return kb.localeCompare(ka);
+        return (b._dbId ?? 0) - (a._dbId ?? 0);
+      })
+      .map((s) => ({
       id: Number(s.idMatricula.replace(/\D/g, "").slice(-5)),
       nome: s.nome,
       cpfMasked: s.cpfMasked,
