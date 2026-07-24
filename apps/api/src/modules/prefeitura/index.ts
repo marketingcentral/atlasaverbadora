@@ -339,7 +339,14 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     // Bug 21/07/2026: margem aparecia R$0,00 (ou o teto cheio) por falta de sync.
     // refreshServidores tambem: recarrega a base do PG e (re)anexa _dbId em
     // cada servidor — necessario pro fallback de ordenacao por id serial.
-    await Promise.all([refreshServidores(c.env), refreshContratos(c.env), refreshConvenios(c.env), refreshTombamento(c.env)]);
+    //
+    // ORDEM IMPORTA: refreshConvenios ANTES de refreshServidores. servidoresDaPrefeitura()
+    // usa prefeituraIdDe() que faz fallback via CONVENIOS_MOCK — se o servidor
+    // carrega sem prefeituraId explicito e o convenios ainda nao esta hidratado,
+    // cai no sentinela 0 e o servidor some da lista da prefeitura. Cliente
+    // reportou 24/07/2026 "ghosts que aparecem as vezes" — sintoma de race.
+    await refreshConvenios(c.env);
+    await Promise.all([refreshServidores(c.env), refreshContratos(c.env), refreshTombamento(c.env)]);
     const q = c.req.query("q")?.toLowerCase();
     const vinculo = c.req.query("vinculo");
     const situacao = c.req.query("situacao");
@@ -554,8 +561,11 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       if (!MATRICULA_REGEX.test(nova)) {
         throw Errors.validation({ matriculaNova: `matricula invalida: use alfanumerico + hifen, 1..30 chars (ex: 852029100, M-009821)` });
       }
-      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === nova);
-      if (dup) throw Errors.validation({ matriculaNova: `matricula ${nova} ja em uso` });
+      // Duplicidade e' por (matricula, prefeituraId) — matricula sozinha
+      // colide legitimamente entre prefeituras. Sem escopo, uma prefeitura
+      // era impedida de usar uma matricula que outra ja usava.
+      const dup = SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === nova && x.prefeituraId === id);
+      if (dup) throw Errors.validation({ matriculaNova: `matricula ${nova} ja em uso nesta prefeitura` });
       s.matricula = nova; s.idMatricula = `MAT-${nova}`; changed.push("matricula");
     }
     try { await persistServidorPref(c.env, s); }

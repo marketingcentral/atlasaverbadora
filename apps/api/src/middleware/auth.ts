@@ -7,6 +7,11 @@ export interface JwtClaims {
   sub: string;        // user id
   role: "servidor" | "banco" | "averbadora" | "prefeitura";
   servidor_id?: number;
+  /** Matricula do servidor (string) — carimbo estavel usado pra desambiguar
+   *  servidor_id em colisoes de last-5-digits entre prefeituras. Presente em
+   *  JWTs emitidos apos 24/07/2026; resolveServidor cai no servidor_id como
+   *  fallback pra JWTs antigos. */
+  servidor_matricula?: string;
   banco_id?: number;
   prefeitura_id?: number;
   /** Rotulo do preset (opcional, apenas display). */

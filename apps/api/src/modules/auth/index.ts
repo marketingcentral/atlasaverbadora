@@ -54,6 +54,8 @@ interface ResolvedUser {
   nome: string;
   role: "servidor" | "banco" | "averbadora" | "prefeitura";
   servidor_id?: number;
+  /** Carimbo estavel da matricula pra desambiguar cross-prefeitura no JWT. */
+  servidor_matricula?: string;
   banco_id?: number;
   prefeitura_id?: number;
 }
@@ -100,7 +102,9 @@ async function resolveServidorByCredentials(
     return { match: null, claimedBy: true };
   }
   const id = Number(s.idMatricula.replace(/\D/g, "").slice(-5)) || 1;
-  return { match: { id, nome: s.nome, role: "servidor", servidor_id: id }, claimedBy: true };
+  // servidor_matricula: carimbo estavel usado pra desambiguar quando id (last-5-digits)
+  // colide entre prefeituras diferentes com matriculas parecidas.
+  return { match: { id, nome: s.nome, role: "servidor", servidor_id: id, servidor_matricula: s.matricula }, claimedBy: true };
 }
 
 /**
@@ -399,6 +403,7 @@ export const authRoutes = new Hono<{ Bindings: Env }>()
       sub: String(resolved.id),
       role: resolved.role,
       servidor_id: resolved.servidor_id,
+      servidor_matricula: resolved.servidor_matricula,
       banco_id: resolved.banco_id,
       prefeitura_id: resolved.prefeitura_id,
       averbadora_perfil: averbadoraPerfil as JwtClaims["averbadora_perfil"] | undefined,

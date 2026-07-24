@@ -285,7 +285,27 @@ export async function upsertServidor(env: Env, s: ServidorBuscaMock): Promise<vo
   await getDb(env).execute(sql`
     INSERT INTO servidores (prefeitura_id, nome, cpf, matricula, vinculo, situacao_funcional, status, data_nascimento, salario_base, data)
     VALUES (${prefeituraIdOf(s)}, ${s.nome}, ${s.cpf}, ${s.matricula}, ${mapVinculo(s.vinculo)}::vinculo, ${mapSituacao(s.situacaoFuncional)}::situacao_funcional, 'ativo'::servidor_status, ${nascimento}, ${String(s.salarioLiquido)}, ${persistivel as unknown as Record<string, unknown>}::jsonb)
-    ON CONFLICT (cpf, matricula) DO UPDATE SET prefeitura_id = EXCLUDED.prefeitura_id, nome = EXCLUDED.nome, vinculo = EXCLUDED.vinculo, situacao_funcional = EXCLUDED.situacao_funcional, status = EXCLUDED.status, data_nascimento = EXCLUDED.data_nascimento, salario_base = EXCLUDED.salario_base, data = COALESCE(servidores.data, '{}'::jsonb) || EXCLUDED.data`);
+    ON CONFLICT (cpf, matricula) DO UPDATE SET
+      -- prefeitura_id: PRESERVA a existente quando o import vem de OUTRA
+      -- prefeitura. Sem isso, importar (cpf, matricula) numa Pref B "sequestra"
+      -- silenciosamente o servidor da Pref A (mesma dupla vira row unico
+      -- porque o unique e' so em cpf+matricula). Cliente reportou 24/07/2026
+      -- ghosts de servidor pulando de prefeitura apos reimport.
+      -- Se admin quiser realocar servidor de prefeitura, faz via PATCH direto.
+      prefeitura_id = CASE
+        WHEN servidores.prefeitura_id = 0 OR servidores.prefeitura_id IS NULL
+          THEN EXCLUDED.prefeitura_id
+        WHEN servidores.prefeitura_id = EXCLUDED.prefeitura_id
+          THEN EXCLUDED.prefeitura_id
+        ELSE servidores.prefeitura_id
+      END,
+      nome = EXCLUDED.nome,
+      vinculo = EXCLUDED.vinculo,
+      situacao_funcional = EXCLUDED.situacao_funcional,
+      status = EXCLUDED.status,
+      data_nascimento = EXCLUDED.data_nascimento,
+      salario_base = EXCLUDED.salario_base,
+      data = COALESCE(servidores.data, '{}'::jsonb) || EXCLUDED.data`);
 }
 
 /** Define/atualiza o passwordHash (SHA-256) no jsonb `data` de todas as matrículas do CPF.

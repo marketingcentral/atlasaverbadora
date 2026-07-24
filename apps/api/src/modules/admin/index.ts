@@ -2534,6 +2534,10 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       sub: String(servidorId),
       role: "servidor",
       servidor_id: servidorId,
+      // servidor_matricula: desambigua servidor_id (last-5-digits) quando
+      // duas prefeituras tem matriculas parecidas. resolveServidor prefere
+      // este quando presente.
+      servidor_matricula: alvo.matricula,
       impersonated_by: { sub: j.sub, role: "averbadora", nome: alvo.nome },
     });
     const refreshToken = generateRefreshToken();
@@ -2569,12 +2573,29 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
     const url = new URL(c.req.url);
     const prefeituraId = url.searchParams.get("prefeitura_id");
     const status = url.searchParams.get("status");
+    // Filtra por prefeituraId ANTES de mapear — matricula NAO e' unica entre
+    // prefeituras, entao filtrar por `Set<matricula>` (regra antiga) vazava
+    // servidor de outra prefeitura sempre que houvesse colisao de string de
+    // matricula ("100" em Pref A + Pref B). Cliente reportou 24/07/2026
+    // "ghosts de servidor de outra prefeitura". Aqui a filtragem opera no
+    // objeto inteiro (que carrega prefeituraId), nao numa string colidivel.
+    const base = prefeituraId
+      ? SERVIDORES_BUSCA_MOCK.filter((s) => {
+          const pid = Number(prefeituraId);
+          // Preferencia: prefeituraId EXPLICITO do proprio servidor. Se
+          // ausente (base antiga sem carimbo), usa a prefeitura do convenio
+          // como fallback pra nao esconder servidor ainda em uso.
+          const explicito = s.prefeituraId
+            ?? CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId;
+          return explicito === pid;
+        })
+      : SERVIDORES_BUSCA_MOCK;
     // Ordem de CHEGADA (mais recente no topo) — MESMA regra do
     // GET /v1/prefeitura/servidores: criadoEmIso (carimbo do import) primario,
     // _dbId (id serial do PG) como fallback pra base antiga. Antes a tela
     // ordenava por numero da matricula no frontend, o que so parecia "recente"
     // por coincidencia. Cliente reportou 24/07/2026.
-    let rows = [...SERVIDORES_BUSCA_MOCK]
+    let rows = [...base]
       .sort((a, b) => {
         const ka = a.criadoEmIso ?? "";
         const kb = b.criadoEmIso ?? "";
@@ -2603,25 +2624,8 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       hasPassword: !!s.passwordHash,
       camposCustom: s.camposCustom ?? {},
     }));
-    if (prefeituraId) {
-      const pid = Number(prefeituraId);
-      // Filtra por prefeituraId EXPLICITO (do servidor ou do convenio),
-      // sem fallback pra id=1. Cliente reportou 21/07/2026: filtro antigo
-      // por `origem.includes(pref.nome)` mostrava 11 servidores enquanto
-      // o dashboard (com fallback) mostrava 31. Agora ambos usam a mesma
-      // regra e o numero e' o mesmo em toda a UI.
-      const matriculasDaPref = new Set(
-        SERVIDORES_BUSCA_MOCK
-          .filter((s) => {
-            const explicito =
-              s.prefeituraId ??
-              CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId;
-            return explicito === pid;
-          })
-          .map((s) => s.matricula),
-      );
-      rows = rows.filter((r) => matriculasDaPref.has(r.matricula));
-    }
+    // Filtro por prefeituraId ja foi aplicado ANTES do map (base). Aqui
+    // resta apenas o filtro de status.
     if (status) rows = rows.filter((r) => r.status === status);
     return c.json({ servidores: rows, total: rows.length });
   })

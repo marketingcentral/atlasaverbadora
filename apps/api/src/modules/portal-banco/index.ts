@@ -152,6 +152,22 @@ function matriculasContato(bancoId: number): Set<string> {
   return new Set(listContratos({}).filter((ct) => ct.bancoId === bancoId).map((ct) => ct.matricula));
 }
 
+/**
+ * Chave composta (matricula + convenioId) dos servidores que ja iniciaram
+ * uma operacao com este bancoId. Substitui `matriculasContato` em pontos
+ * onde matricula sozinha vaza cross-prefeitura — "852029100" em duas
+ * prefeituras diferentes vira duas entries distintas
+ * ("852029100:CONV-001" vs "852029100:CONV-002"). Cliente reportou
+ * 24/07/2026 ghosts de servidor entre prefeituras.
+ */
+function contatosCompostos(bancoId: number): Set<string> {
+  return new Set(
+    listContratos({})
+      .filter((ct) => ct.bancoId === bancoId)
+      .map((ct) => `${ct.matricula}:${ct.convenioId}`),
+  );
+}
+
 function currentCompetencia(): { mes: number; ano: number; yyyymm: string } {
   const d = new Date();
   const mes = d.getMonth() + 1;
@@ -418,12 +434,14 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
     // O banco só acessa quem entrou em contato com ele (tem contrato/reserva).
     if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     await refreshContratos(c.env);
-    const contatos = matriculasContato(j.banco_id);
+    // Chave composta (matricula:convenioId) — matricula sozinha colide entre
+    // prefeituras diferentes que casualmente usam a mesma numeracao.
+    const contatos = contatosCompostos(j.banco_id);
     const cpfNorm = body.cpf?.replace(/\D/g, "");
     const matchPred = (s: typeof SERVIDORES_BUSCA_MOCK[number]) =>
       cpfNorm ? s.cpf === cpfNorm : body.matricula ? s.matricula === body.matricula : false;
     // Busca só entre os contatos do banco (não na base geral da prefeitura).
-    const found = SERVIDORES_BUSCA_MOCK.find((s) => contatos.has(s.matricula) && matchPred(s));
+    const found = SERVIDORES_BUSCA_MOCK.find((s) => contatos.has(`${s.matricula}:${s.idConvenio}`) && matchPred(s));
     if (found) {
       // LGPD: o banco não vê o salário líquido — só a MARGEM disponível.
       // Cliente reportou 22/07/2026: UI da ficha mostrava R$ 0,00 nos 3 cards
@@ -483,13 +501,20 @@ export const portalBancoRoutes = new Hono<{ Bindings: Env; Variables: { jwt: Jwt
       .object({ mes: z.number().int().min(1).max(12), ano: z.number().int() })
       .parse(await c.req.json());
     const idMatricula = c.req.param("idMatricula");
-    const s = SERVIDORES_BUSCA_MOCK.find((x) => x.idMatricula === idMatricula);
-    if (!s) throw Errors.notFound("colaborador");
     // Só calcula margem de quem contatou o banco.
     if (j.banco_id == null) throw Errors.forbidden("banco sem identidade");
     await refreshContratos(c.env);
-    if (!matriculasContato(j.banco_id).has(s.matricula)) {
-      throw Errors.forbidden("Este servidor não entrou em contato com o banco.");
+    // Filtra o candidato ao servidor pelos contatos deste banco ANTES do find
+    // (matricula/idMatricula colide entre prefeituras; procurar no MOCK global
+    // podia devolver o servidor errado de outra prefeitura).
+    const contatos = contatosCompostos(j.banco_id);
+    const s = SERVIDORES_BUSCA_MOCK.find((x) =>
+      x.idMatricula === idMatricula && contatos.has(`${x.matricula}:${x.idConvenio}`),
+    );
+    if (!s) {
+      // Ou nao existe, ou existe mas nao pertence a nenhum contrato deste banco.
+      // Devolve 404 (nao vaza a existencia de servidor em outra prefeitura).
+      throw Errors.notFound("colaborador");
     }
     await refreshTombamento(c.env); // pra listExternalLoans ver o tombamento atual
     const total = margemTotal(s.salarioLiquido, "EMPRESTIMO");

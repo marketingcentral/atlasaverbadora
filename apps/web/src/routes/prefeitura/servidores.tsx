@@ -30,7 +30,16 @@ export function PrefeituraServidores() {
   const q = useQuery({ queryKey: ["prefeitura", "servidores"], queryFn: () => atlas.prefeitura.servidores() });
   // Config de campos que a averbadora definiu pra esta prefeitura — dita o
   // cabecalho do CSV (download + hint). Cliente pediu 24/07/2026.
-  const camposQ = useQuery({ queryKey: ["prefeitura", "servidores-campos"], queryFn: () => atlas.prefeitura.servidorCamposConfig() });
+  //  - staleTime alto: config muda raramente (averbadora edita "as vezes")
+  //  - retry 1: se falhar por 1s de blip, tenta 1x; senao cai no fallback
+  //  - refetchOnWindowFocus false: nao repete request cada vez que a aba volta
+  const camposQ = useQuery({
+    queryKey: ["prefeitura", "servidores-campos"],
+    queryFn: () => atlas.prefeitura.servidorCamposConfig(),
+    staleTime: 5 * 60_000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
   const camposVisiveis = (camposQ.data?.campos ?? [])
     .filter((c) => c.visivel)
     .sort((a, b) => a.ordem - b.ordem);
@@ -38,6 +47,13 @@ export function PrefeituraServidores() {
   const colunasCsv = camposVisiveis
     .map((c) => (c.key.startsWith("custom_") ? c.key.slice("custom_".length) : c.key))
     .join(", ");
+  // Fallback minimo: se o endpoint falhar OU nao tem config, mostra as
+  // colunas built-in obrigatorias em vez de "carregando..." infinito. Assim
+  // a prefeitura consegue baixar/importar mesmo se a averbadora nao tiver
+  // configurado nada ainda (o endpoint publico do CSV ja cai no default).
+  const HINT_FALLBACK = "nome, cpf, matricula, email, telefone, cargo, vinculo, situacaoFuncional, salarioLiquido, idConvenio";
+  const hintCarregando = camposQ.isPending;
+  const columnsHint = colunasCsv || (hintCarregando ? "Carregando campos configurados pela averbadora…" : HINT_FALLBACK);
 
   // Busca RESTRITA a nome, matricula e CPF (cliente 23/07/2026). Antes usava
   // matchAny (todos os campos), o que trazia os numeros de margem/IBGE/salario
@@ -96,7 +112,7 @@ export function PrefeituraServidores() {
       {importOpen ? (
         <CsvImportPanel
           title="Importar base de servidores"
-          columnsHint={colunasCsv || "carregando campos…"}
+          columnsHint={columnsHint}
           templateUrl={atlas.prefeitura.servidoresCsvTemplateUrl(camposQ.data?.prefeituraId)}
           onImport={(csv) => atlas.prefeitura.importarServidores(csv)}
           onImported={() => { qc.invalidateQueries({ queryKey: ["prefeitura"] }); }}

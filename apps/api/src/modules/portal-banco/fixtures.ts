@@ -110,6 +110,19 @@ export function prefeituraIdDe(s: Pick<ServidorBuscaMock, "prefeituraId" | "idCo
   return s.prefeituraId ?? CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio)?.prefeituraId ?? 0;
 }
 
+/**
+ * Versao ESTRITA de prefeituraIdDe: NAO faz fallback via convenio.
+ * Use quando o isolamento por prefeitura e' de seguranca (listagens da
+ * averbadora, exports, filtros criticos). Sem o fallback, servidor com
+ * prefeituraId ausente MAS idConvenio de outra prefeitura NAO vaza pra
+ * essa outra prefeitura. Cliente reportou 24/07/2026 "ghosts entre
+ * prefeituras" — este helper e' pra parar de conta-los como pertencentes
+ * a prefeitura do convenio quando o carimbo explicito falta.
+ */
+export function prefeituraIdEstritaDe(s: Pick<ServidorBuscaMock, "prefeituraId">): number {
+  return s.prefeituraId ?? 0;
+}
+
 // Cliente pediu (17/07/2026) remocao TOTAL dos seeds de servidores — incluindo
 // Diego (993410027) e Mariana (778102055) que ate entao eram protegidos por
 // TEST_CPFS. Regra do cliente: "se eu mando apagar todos, e todos, sem excecao

@@ -297,8 +297,14 @@ function fromFixture(s: ServidorBuscaMock): ResolvedServidor {
 function resolveServidor(j: JwtClaims): ResolvedServidor | null {
   const id = j.servidor_id;
   if (id == null) return null;
-  // Sem DEV_SERVIDORES — resolve exclusivamente pelo id sintetico (ultimos 5
-  // digitos da idMatricula) contra SERVIDORES_BUSCA_MOCK (hidratado do PG).
+  // Preferencia: servidor_matricula (claim novo, carimbo estavel). last-5-digits
+  // do idMatricula colide entre prefeituras diferentes ("852029100" vs
+  // "1029100" ambos viram 29100). Se claim ausente (JWT antigo), cai no
+  // legacy last-5-digits — nesse caso pega o primeiro match e loga se colide.
+  if (j.servidor_matricula) {
+    const fx = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === j.servidor_matricula);
+    return fx ? fromFixture(fx) : null;
+  }
   const fx = SERVIDORES_BUSCA_MOCK.find((s) => Number(s.idMatricula.replace(/\D/g, "").slice(-5)) === id);
   return fx ? fromFixture(fx) : null;
 }
@@ -1695,8 +1701,12 @@ export const servidoresRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     requireRoleInline(j, ["averbadora"]);
     await ensureServidoresLoaded(c.env);
     const id = Number(c.req.param("id"));
-    // id sintetico = ultimos 5 digitos da idMatricula (mesma regra do JWT).
-    const s = SERVIDORES_BUSCA_MOCK.find((x) => Number(x.idMatricula.replace(/\D/g, "").slice(-5)) === id);
+    // Query ?matricula= desambigua o id sintetico (last-5-digits) que colide
+    // entre prefeituras. Quando presente, prevalece sobre o id.
+    const matHint = c.req.query("matricula");
+    const s = matHint
+      ? SERVIDORES_BUSCA_MOCK.find((x) => x.matricula === matHint)
+      : SERVIDORES_BUSCA_MOCK.find((x) => Number(x.idMatricula.replace(/\D/g, "").slice(-5)) === id);
     if (!s) throw Errors.notFound("servidor");
     const conv = CONVENIOS_MOCK.find((cv) => cv.id === s.idConvenio);
     return c.json({
