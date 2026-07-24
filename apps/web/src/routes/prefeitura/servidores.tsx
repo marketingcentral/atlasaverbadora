@@ -75,6 +75,15 @@ export function PrefeituraServidores() {
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<PrefeituraServidor | null>(null);
   const q = useQuery({ queryKey: ["prefeitura", "servidores"], queryFn: () => atlas.prefeitura.servidores() });
+  // Identidade da prefeitura via me — backup pro prefeituraId quando camposQ
+  // ainda esta pending. Sem isso, o link "Baixar exemplo" pode ir sem
+  // ?prefeituraId= e cair no fallback do endpoint (sem customs). Cliente
+  // reportou 24/07/2026 CSV sem campos customizados definidos pela averbadora.
+  const meQ = useQuery({
+    queryKey: ["prefeitura", "me"],
+    queryFn: () => atlas.prefeitura.me(),
+    staleTime: Infinity,
+  });
   // Config de campos que a averbadora definiu pra esta prefeitura — dita o
   // cabecalho do CSV (download + hint). Cliente pediu 24/07/2026.
   //  - staleTime alto: config muda raramente (averbadora edita "as vezes")
@@ -87,6 +96,10 @@ export function PrefeituraServidores() {
     retry: 1,
     refetchOnWindowFocus: false,
   });
+  // Prefere camposQ (mais preciso pos-fetch); cai em meQ quando camposQ
+  // ainda esta pending. Sem esse fallback, o CSV baixado nao inclui
+  // customs (endpoint cai no fallback hardcoded sem prefeituraId).
+  const prefeituraIdSeguro = camposQ.data?.prefeituraId ?? meQ.data?.prefeitura.id;
   const camposVisiveis = (camposQ.data?.campos ?? [])
     .filter((c) => c.visivel)
     .sort((a, b) => a.ordem - b.ordem);
@@ -178,7 +191,7 @@ export function PrefeituraServidores() {
         <CsvImportPanel
           title="Importar base de servidores"
           columnsHint={columnsHint}
-          templateUrl={atlas.prefeitura.servidoresCsvTemplateUrl(camposQ.data?.prefeituraId)}
+          templateUrl={atlas.prefeitura.servidoresCsvTemplateUrl(prefeituraIdSeguro)}
           onImport={(csv) => atlas.prefeitura.importarServidores(csv)}
           onImported={() => { qc.invalidateQueries({ queryKey: ["prefeitura"] }); }}
         />
