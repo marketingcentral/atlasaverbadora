@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, CpfField, CsvImportPanel, CurrencyField, DataTable, FilterBar, FormGrid, NumberField, Pill, SelectField, TelefoneField, TextField, type Column } from "@atlas/ui/web";
 import { atlas } from "../../lib/sdk";
@@ -110,19 +111,25 @@ export function PrefeituraServidores() {
 function MargemCell({ salario, margemTotal, margemDisponivel }: { salario: number; margemTotal: number; margemDisponivel: number }) {
   const [aberto, setAberto] = useState(false);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
-  const [placeAcima, setPlaceAcima] = useState(false);
+  // Posicao FIXA (viewport) calculada a partir do "i" — o popover e' renderizado
+  // via portal no <body>, FORA da tabela. A tabela tem overflow-x:auto (scroll
+  // horizontal) que, por spec CSS, tambem recorta o eixo Y — entao um popover
+  // absolute dentro da celula ficava CORTADO (cliente reportou 24/07/2026, o
+  // "abrir pra cima" nao resolvia porque quem corta e' o container, nao a
+  // janela). Com portal + position:fixed ele escapa do recorte.
+  const [coords, setCoords] = useState<{ top: number; right: number; acima: boolean } | null>(null);
   const comprometido = Math.max(0, margemTotal - margemDisponivel);
   const pctUso = margemTotal > 0 ? Math.round((comprometido / margemTotal) * 100) : 0;
-  // Se estamos na parte de baixo do viewport (ultimas linhas), abre o popover
-  // PRA CIMA — evita ficar cortado pela borda inferior/scrollbar. Cliente
-  // reportou 24/07/2026 que o "i" da ultima linha nao aparecia — era o
-  // scrollbar horizontal cobrindo o popover; agora popover sobe.
   const abrir = () => {
     const el = wrapRef.current;
     if (el) {
       const rect = el.getBoundingClientRect();
-      const espacoBaixo = window.innerHeight - rect.bottom;
-      setPlaceAcima(espacoBaixo < 220); // popover ~200px de altura
+      const acima = window.innerHeight - rect.bottom < 220; // ~200px de altura
+      setCoords({
+        top: acima ? rect.top - 6 : rect.bottom + 6,
+        right: window.innerWidth - rect.right,
+        acima,
+      });
     }
     setAberto(true);
   };
@@ -142,13 +149,13 @@ function MargemCell({ salario, margemTotal, margemDisponivel }: { salario: numbe
         width: 14, height: 14, display: "inline-flex", alignItems: "center", justifyContent: "center", lineHeight: 1,
         flexShrink: 0,
       }}>i</span>
-      {aberto ? (
+      {aberto && coords ? createPortal(
         <span
           role="tooltip"
           style={{
-            position: "absolute", right: 0,
-            ...(placeAcima ? { bottom: "calc(100% + 6px)" } : { top: "calc(100% + 6px)" }),
-            zIndex: 50,
+            position: "fixed", right: coords.right,
+            ...(coords.acima ? { bottom: window.innerHeight - coords.top } : { top: coords.top }),
+            zIndex: 1000, pointerEvents: "none",
             background: "var(--bg-elev)", border: "1px solid var(--border-strong)", borderRadius: 8,
             padding: "10px 12px", boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
             minWidth: 260, fontSize: 12, color: "var(--text)", textAlign: "left",
@@ -171,7 +178,8 @@ function MargemCell({ salario, margemTotal, margemDisponivel }: { salario: numbe
           <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-dim)" }}>
             Uso atual: <b style={{ color: pctUso >= 90 ? "var(--danger-500)" : pctUso >= 70 ? "var(--gold-500)" : "var(--text)" }}>{pctUso}%</b>. Cartão consignado e cartão benefício têm buckets próprios (5%+5%), não descontam desta.
           </div>
-        </span>
+        </span>,
+        document.body,
       ) : null}
     </span>
   );
