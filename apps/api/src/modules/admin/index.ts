@@ -990,6 +990,15 @@ export const adminRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtClaims
       ensureBancosLoaded(c.env),
       ensurePrefeiturasLoaded(c.env),
     ]);
+    // Reload folhas do PG a CADA request — MESMO fix do GET /v1/admin/folhas
+    // (linha ~2706). ensureFolhasLoaded e' memoized e trava numa lista vazia:
+    // sem este reload, "Folhas em aberto" no dashboard ficava 0 mesmo com folha
+    // aberta pela prefeitura em outro isolate. Cliente reportou 23/07/2026.
+    try {
+      const folhasFresh = await loadCollection<FolhaAdmin>(c.env, "admin_folhas");
+      folhas.length = 0;
+      folhas.push(...folhasFresh);
+    } catch { /* fail-safe: usa in-memory */ }
     const todosContratos = listContratos({});
     // Contagem REAL de servidores por prefeitura — usa EXCLUSIVAMENTE o
     // vinculo explicito (prefeituraId do servidor ou prefeituraId do
