@@ -98,7 +98,9 @@ export function PrefeituraServidores() {
   // colunas built-in obrigatorias em vez de "carregando..." infinito. Assim
   // a prefeitura consegue baixar/importar mesmo se a averbadora nao tiver
   // configurado nada ainda (o endpoint publico do CSV ja cai no default).
-  const HINT_FALLBACK = "nome, cpf, matricula, email, telefone, cargo, vinculo, situacaoFuncional, salarioLiquido, idConvenio";
+  // Mesma ordem do CHAVES_SISTEMA no backend (admin/servidor-campos.ts) —
+  // hint casa com o CSV real que o Baixar exemplo devolve.
+  const HINT_FALLBACK = "cpf, matricula, email, nome, telefone, cargo, vinculo, situacaoFuncional, salarioLiquido, idConvenio, dataAdmissao, dataNascimento, endereco, codigoIbge";
   const hintCarregando = camposQ.isPending;
   const columnsHint = colunasCsv || (hintCarregando ? "Carregando campos configurados pela averbadora…" : HINT_FALLBACK);
 
@@ -113,19 +115,25 @@ export function PrefeituraServidores() {
   // em /averbadora/servidores/importar. Assim as duas telas (averbadora ver
   // servidores + prefeitura servidores) ficam SEMPRE na mesma ordem pros
   // mesmos campos. "Margem disp." (calc backend, nao vem da config) e
-  // "Acoes" (editar) ficam SEMPRE ao final. Fallback: se a config nao carregou
-  // ainda, cai no shape historico pra tela nao aparecer em branco.
+  // "Acoes" (editar) ficam SEMPRE ao final. Fallback: mesma ordem do backend
+  // (admin/servidor-campos.ts CHAVES_SISTEMA) pra tela nao divergir da
+  // averbadora quando o fetch demora/falha. Cliente reportou 24/07/2026
+  // divergencia (nome-first vs cpf-first).
   const CAMPOS_FALLBACK_ORDEM: { key: string; label: string; tipo: ServidorCampoConfig["tipo"] }[] = [
-    { key: "nome", label: "Nome", tipo: "texto" },
-    { key: "matricula", label: "Matrícula", tipo: "texto" },
     { key: "cpf", label: "CPF", tipo: "texto" },
+    { key: "matricula", label: "Matrícula", tipo: "texto" },
     { key: "email", label: "E-mail", tipo: "email" },
+    { key: "nome", label: "Nome", tipo: "texto" },
     { key: "telefone", label: "Telefone", tipo: "telefone" },
     { key: "cargo", label: "Cargo", tipo: "texto" },
     { key: "vinculo", label: "Vínculo", tipo: "texto" },
-    { key: "situacaoFuncional", label: "Situação", tipo: "texto" },
+    { key: "situacaoFuncional", label: "Situação funcional", tipo: "texto" },
     { key: "salarioLiquido", label: "Salário líquido", tipo: "moeda" },
     { key: "idConvenio", label: "Convênio", tipo: "texto" },
+    { key: "dataAdmissao", label: "Admissão", tipo: "data" },
+    { key: "dataNascimento", label: "Nascimento", tipo: "data" },
+    { key: "endereco", label: "Endereço", tipo: "texto" },
+    { key: "codigoIbge", label: "Código IBGE", tipo: "numero" },
   ];
   const camposParaTabela: { key: string; label: string; tipo: ServidorCampoConfig["tipo"] }[] =
     camposVisiveis.length > 0
