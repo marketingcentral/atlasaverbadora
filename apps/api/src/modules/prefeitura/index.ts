@@ -13,7 +13,7 @@ import { margemTotal } from "@atlas/domain";
 import { parseCsv, buildCsv, type ImportOutcome } from "../../_shared/csv.js";
 import { bancos, folhas, prefeituras, ensureFolhasLoaded, ensurePrefeiturasLoaded, refreshServidores, persistFolha, type FolhaAdmin } from "../admin/index.js";
 import { CONVENIOS_MOCK, COMUNICADOS_MOCK, SERVIDORES_BUSCA_MOCK, prefeituraIdDe, type ServidorBuscaMock } from "../portal-banco/fixtures.js";
-import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, deriveTipoMargem, getContrato, getContratoEventos } from "../portal-banco/store.js";
+import { listContratos, refreshContratos, persistContrato, comprometeMargem, deriveProdutoLabel, deriveTipoMargem, getContrato, getContratoEventos, situacaoContaComoAverbado } from "../portal-banco/store.js";
 import { enviarNotificacao } from "../admin/mailer.js";
 import { refreshComunicados } from "../portal-banco/comunicados-store.js";
 import { refreshConvenios } from "../portal-banco/convenios-store.js";
@@ -458,6 +458,19 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
       // Identidade é (prefeituraId, matricula) — nunca só CPF. Assim o mesmo CPF
       // pode ser cadastrado em outra prefeitura (acumulação de cargos) sem colisão.
       const existing = SERVIDORES_BUSCA_MOCK.find((s) => s.matricula === r.matricula && prefeituraIdDe(s) === id);
+      // Regra do cliente (24/07/2026): dentro de UMA prefeitura, matricula = 1
+      // CPF. Mesmo CPF com matriculas diferentes so vale entre prefeituras
+      // distintas. Bloqueia os dois casos que geram duplicata:
+      //  (1) matricula ja existe na prefeitura com OUTRO CPF (foi assim que
+      //      "ZZ OBSOLETA" e "CAMILA" ficaram na mesma matricula 700100010).
+      if (existing && existing.cpf !== cpf) {
+        return void out.errors.push({ line, message: `matricula ${r.matricula} ja existe nesta prefeitura com outro CPF (${existing.cpfMasked}). Uma matricula so pode ter um CPF — corrija o CSV ou remova o servidor antigo antes.` });
+      }
+      //  (2) CPF ja esta na prefeitura em OUTRA matricula.
+      const cpfDuplicado = SERVIDORES_BUSCA_MOCK.find((s) => s.cpf === cpf && s.matricula !== r.matricula && prefeituraIdDe(s) === id);
+      if (cpfDuplicado) {
+        return void out.errors.push({ line, message: `CPF ${cpf.slice(0, 3)}.***.***-${cpf.slice(-2)} ja esta nesta prefeitura na matricula ${cpfDuplicado.matricula}. Mesmo CPF so pode ter matriculas diferentes em prefeituras diferentes.` });
+      }
       // Contato/endereço vazios no CSV NÃO devem sobrescrever o que o servidor
       // escolheu no primeiro acesso — só entram em `rec` se vierem preenchidos.
       const rec: ServidorBuscaMock = {
@@ -1097,7 +1110,13 @@ export const prefeituraRoutes = new Hono<{ Bindings: Env; Variables: { jwt: JwtC
     const id = requirePrefeitura(c.get("jwt"));
     await Promise.all([refreshConvenios(c.env), refreshContratos(c.env)]); // senao contratosDaPrefeitura=[] em isolate frio
     const map = new Map<number, { banco: string; contratos: number; valorParcela: number }>();
+    // SO contratos AVERBADOS (Ativo/Averbado/Quitado) — mesma regra do "volume
+    // averbado" da averbadora. Antes contava TUDO (propostas, reservas,
+    // cancelados, cartao), inflando o numero e nao batendo com a averbadora nem
+    // com a margem. Cliente reportou 24/07/2026. Quitado tem parcela viva 0, so
+    // conta na contagem, nao infla o valor.
     for (const ct of contratosDaPrefeitura(id)) {
+      if (!situacaoContaComoAverbado(ct.situacao)) continue;
       const g = map.get(ct.bancoId) ?? { banco: bancoNome(ct.bancoId), contratos: 0, valorParcela: 0 };
       g.contratos++; g.valorParcela += ct.valorParcela; map.set(ct.bancoId, g);
     }
